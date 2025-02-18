@@ -1,0 +1,3 @@
+[console_scripts]
+cognomic-run = cognomic.cli:run
+cognomic-server = cognomic.api.server:main
