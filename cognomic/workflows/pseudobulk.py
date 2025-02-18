@@ -323,34 +323,65 @@ class KallistoQuantAgent(ExecutionAgent):
         input_files = params['input_files']
         output_dir = os.path.join(params['output_dir'], 'quant')
         os.makedirs(output_dir, exist_ok=True)
+        paired_end = params.get('paired_end', True)
+        threads = params.get('threads', 4)
 
         index_file = os.path.join(params['output_dir'], 'kalindex', 'transcripts.idx')
         
         results = []
-        for input_file in input_files:
-            sample_name = os.path.splitext(os.path.basename(input_file))[0]
-            sample_dir = os.path.join(output_dir, sample_name)
-            os.makedirs(sample_dir, exist_ok=True)
+        # Handle paired-end vs single-end reads
+        if paired_end:
+            # Ensure even number of files for paired-end
+            if len(input_files) % 2 != 0:
+                raise ValueError("Odd number of input files provided for paired-end data")
+            
+            # Process pairs of files
+            for i in range(0, len(input_files), 2):
+                read1 = input_files[i]
+                read2 = input_files[i + 1]
+                sample_name = os.path.splitext(os.path.basename(read1))[0].replace('_1', '')
+                sample_dir = os.path.join(output_dir, sample_name)
+                os.makedirs(sample_dir, exist_ok=True)
 
-            cmd = f"kallisto quant -i {index_file} -o {sample_dir} {input_file}"
+                cmd = f"kallisto quant -i {index_file} -o {sample_dir} -t {threads} {read1} {read2}"
+                
+                result = await self.execute_command(cmd)
+                output = {
+                    "input_files": [read1, read2],
+                    "output_dir": sample_dir,
+                    "success": result["returncode"] == 0,
+                    "stdout": result["stdout"],
+                    "stderr": result["stderr"],
+                    "duration": result["duration"]
+                }
+                results.append(output)
+        else:
+            # Process single-end reads
+            for input_file in input_files:
+                sample_name = os.path.splitext(os.path.basename(input_file))[0]
+                sample_dir = os.path.join(output_dir, sample_name)
+                os.makedirs(sample_dir, exist_ok=True)
+
+                # For single-end reads, we need to specify an estimated fragment length
+                cmd = f"kallisto quant -i {index_file} -o {sample_dir} -t {threads} --single -l 200 -s 20 {input_file}"
+                
+                result = await self.execute_command(cmd)
+                output = {
+                    "input_file": input_file,
+                    "output_dir": sample_dir,
+                    "success": result["returncode"] == 0,
+                    "stdout": result["stdout"],
+                    "stderr": result["stderr"],
+                    "duration": result["duration"]
+                }
+                results.append(output)
             
-            result = await self.execute_command(cmd)
-            
-            output = {
-                "input_file": input_file,
-                "output_dir": sample_dir,
-                "success": result["returncode"] == 0,
-                "stdout": result["stdout"],
-                "stderr": result["stderr"],
-                "duration": result["duration"]
-            }
-            
-            results.append(output)
-            
-            if not output["success"]:
-                self.logger.error(f"Kallisto quantification failed for {input_file}")
-                self.logger.error(f"Error: {output['stderr']}")
-                raise RuntimeError(f"Kallisto quantification failed for {input_file}")
+        # Check for any failures
+        failed_samples = [r for r in results if not r["success"]]
+        if failed_samples:
+            error_msg = "\n".join([f"Failed sample: {r.get('input_file', r.get('input_files', []))} - {r['stderr']}" 
+                                 for r in failed_samples])
+            raise RuntimeError(f"Kallisto quantification failed for some samples:\n{error_msg}")
                 
         return {"results": results}
 
