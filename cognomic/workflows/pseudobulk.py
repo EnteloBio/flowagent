@@ -14,6 +14,7 @@ import asyncio
 import subprocess
 from pydantic import BaseModel
 from ..utils.logging import get_logger
+from ..agents.llm_agent import LLMAgent
 
 logger = get_logger(__name__)
 
@@ -32,9 +33,111 @@ class ExecutionAgent:
     """Base class for execution agents."""
     
     def __init__(self):
+        """Initialize the execution agent."""
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.command_logger = logging.getLogger("cognomic.commands")
         
+        # Initialize with LLM disabled
+        self.llm_agent = None
+        self.has_llm = False
+        
+        # Try to initialize LLM agent
+        try:
+            self.llm_agent = LLMAgent()
+            self.has_llm = True
+            logger.info("LLM agent initialized successfully")
+        except Exception as e:
+            logger.warning(f"Could not initialize LLM agent: {str(e)}")
+            logger.warning("Continuing without LLM assistance")
+            self.disable_llm()
+            
+    def disable_llm(self):
+        """Disable LLM functionality and cleanup."""
+        if self.has_llm:
+            logger.info("Disabling LLM functionality")
+            self.has_llm = False
+            self.llm_agent = None
+            
+    async def execute_command(self, cmd: str, **kwargs) -> Dict[str, Any]:
+        """Execute a shell command with LLM assistance if available.
+        
+        Args:
+            cmd: Command to execute
+            **kwargs: Additional arguments for command execution
+            
+        Returns:
+            Dict containing execution results
+        """
+        self.command_logger.info(f"Preparing to execute command: {cmd}")
+        
+        execution_plan = []
+        
+        # Get command analysis from LLM if available
+        if self.has_llm and self.llm_agent:
+            try:
+                analysis = await self.llm_agent.analyze_data({
+                    'command': cmd,
+                    'parameters': kwargs,
+                    'context': 'command_execution'
+                })
+                execution_plan = await self.llm_agent.plan_execution(analysis)
+            except Exception as e:
+                logger.warning(f"Error getting LLM execution plan: {str(e)}")
+                self.disable_llm()
+                execution_plan = [{'command': cmd, 'parameters': kwargs}]
+        else:
+            execution_plan = [{'command': cmd, 'parameters': kwargs}]
+            
+        # Execute command
+        start_time = time.time()
+        try:
+            for step in execution_plan:
+                cmd_to_run = step.get('command', cmd)
+                cmd_params = {**kwargs, **step.get('parameters', {})}
+                
+                process = await asyncio.create_subprocess_shell(
+                    cmd_to_run,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    **cmd_params
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                if process.returncode != 0:
+                    if self.has_llm and self.llm_agent:
+                        try:
+                            error_handling = await self.llm_agent.handle_error(
+                                Exception(f"Command failed with code {process.returncode}"),
+                                {
+                                    'command': cmd_to_run,
+                                    'stdout': stdout.decode() if stdout else "",
+                                    'stderr': stderr.decode() if stderr else ""
+                                }
+                            )
+                            if not error_handling.get('continue', False):
+                                raise RuntimeError(f"Command failed: {cmd_to_run}")
+                        except Exception as llm_error:
+                            logger.warning(f"Error getting LLM error handling: {str(llm_error)}")
+                            self.disable_llm()
+                            raise RuntimeError(f"Command failed: {cmd_to_run}")
+                    else:
+                        raise RuntimeError(f"Command failed: {cmd_to_run}")
+                        
+            duration = time.time() - start_time
+            self.command_logger.info(f"Command completed in {duration:.2f}s")
+            
+            return {
+                'stdout': stdout.decode() if stdout else "",
+                'stderr': stderr.decode() if stderr else "",
+                'returncode': process.returncode,
+                'duration': duration
+            }
+            
+        except Exception as e:
+            self.command_logger.error(f"Command failed: {str(e)}")
+            raise
+
     async def plan(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Plan is not applicable for ExecutionAgent."""
         raise NotImplementedError("ExecutionAgent does not plan tasks")
@@ -48,44 +151,6 @@ class ExecutionAgent:
         """Validate task results."""
         self.logger.info(f"Validating results: {json.dumps(result, indent=2)}")
         raise NotImplementedError("ExecutionAgent must implement validate")
-
-    async def _run_command(self, cmd: str, **kwargs) -> Dict[str, Any]:
-        """Run a shell command with logging."""
-        self.command_logger.info(f"Executing command: {cmd}")
-        self.command_logger.info(f"Command parameters: {json.dumps(kwargs, indent=2)}")
-        
-        start_time = time.time()
-        try:
-            process = await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                **kwargs
-            )
-            stdout, stderr = await process.communicate()
-            
-            duration = time.time() - start_time
-            self.command_logger.info(f"Command completed in {duration:.2f}s")
-            self.command_logger.info(f"Exit code: {process.returncode}")
-            
-            stdout_str = stdout.decode() if stdout else ""
-            stderr_str = stderr.decode() if stderr else ""
-            
-            if stdout_str:
-                self.command_logger.debug(f"STDOUT:\n{stdout_str}")
-            if stderr_str:
-                self.command_logger.debug(f"STDERR:\n{stderr_str}")
-                
-            return {
-                "returncode": process.returncode,
-                "stdout": stdout_str,
-                "stderr": stderr_str,
-                "duration": duration
-            }
-            
-        except Exception as e:
-            self.command_logger.error(f"Command failed: {str(e)}")
-            raise
 
 
 class FastQCAgent(ExecutionAgent):
@@ -109,7 +174,7 @@ class FastQCAgent(ExecutionAgent):
                 f"{input_file}"
             )
             
-            result = await self._run_command(cmd)
+            result = await self.execute_command(cmd)
             
             output = {
                 "input_file": input_file,
@@ -165,7 +230,7 @@ class MultiQCAgent(ExecutionAgent):
 
         cmd = f"multiqc {input_dir} -f -d -s -o {output_dir}"
         
-        result = await self._run_command(cmd)
+        result = await self.execute_command(cmd)
         
         output = {
             "input_dir": input_dir,
@@ -216,7 +281,7 @@ class KallistoIndexAgent(ExecutionAgent):
         output_index = os.path.join(output_dir, 'transcripts.idx')
         cmd = f"kallisto index -i {output_index} {reference}"
         
-        result = await self._run_command(cmd)
+        result = await self.execute_command(cmd)
         
         output = {
             "reference": reference,
@@ -269,7 +334,7 @@ class KallistoQuantAgent(ExecutionAgent):
 
             cmd = f"kallisto quant -i {index_file} -o {sample_dir} {input_file}"
             
-            result = await self._run_command(cmd)
+            result = await self.execute_command(cmd)
             
             output = {
                 "input_file": input_file,
@@ -315,114 +380,179 @@ class KallistoMultiQCAgent(ExecutionAgent):
     """Agent for running MultiQC on Kallisto results."""
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        self.logger.info("Starting MultiQC on Kallisto results")
-        input_dir = os.path.join(params['output_dir'], 'quant')
-        output_file = os.path.join(input_dir, 'kallisto_multiqc.html')
-
-        cmd = f"multiqc -f -n kallisto_multiqc.html -o {input_dir} {input_dir}"
+        self.logger.info("Starting MultiQC for Kallisto")
+        output_dir = os.path.join(params["output_dir"], "kallisto_multiqc")
+        os.makedirs(output_dir, exist_ok=True)
         
-        result = await self._run_command(cmd)
+        # Run MultiQC on Kallisto results
+        cmd = f"multiqc {params['output_dir']}/kallisto -o {output_dir}"
+        result = await self.execute_command(cmd)
         
-        output = {
-            "input_dir": input_dir,
-            "output_file": output_file,
-            "success": result["returncode"] == 0,
-            "stdout": result["stdout"],
-            "stderr": result["stderr"],
-            "duration": result["duration"]
+        if result["returncode"] != 0:
+            raise RuntimeError(f"MultiQC failed: {result['stderr']}")
+            
+        return {
+            "output_dir": output_dir,
+            "report": os.path.join(output_dir, "multiqc_report.html"),
+            "command_result": result
         }
         
-        if not output["success"]:
-            self.logger.error(f"MultiQC on Kallisto results failed for {input_dir}")
-            self.logger.error(f"Error: {output['stderr']}")
-            raise RuntimeError(f"MultiQC on Kallisto results failed for {input_dir}")
-            
-        return {"result": output}
-
     async def validate(self, result: Dict[str, Any]) -> bool:
         """Validate MultiQC on Kallisto results."""
-        if not result.get("result"):
+        if not os.path.exists(result["report"]):
+            self.logger.error("MultiQC report not found")
             return False
             
-        r = result["result"]
-        if not r.get("success"):
-            return False
-            
-        output_file = r.get("output_file")
-        if not output_file or not os.path.exists(output_file):
+        if result["command_result"]["returncode"] != 0:
+            self.logger.error("MultiQC command failed")
             return False
             
         return True
 
 
 class PseudoBulkWorkflow:
-    """Implementation of PseudoBulk analysis workflow."""
-
-    def __init__(self, params: PseudoBulkParams) -> None:
-        """Initialize PseudoBulk workflow."""
+    """Workflow for pseudobulk RNA-seq analysis."""
+    
+    def __init__(self, params: PseudoBulkParams):
+        """Initialize workflow with parameters."""
         self.params = params
-        self.steps = self._create_workflow_steps()
-
-    def _create_workflow_steps(self) -> List[Dict[str, Any]]:
-        """Create workflow steps for PseudoBulk analysis."""
-        return [
-            {
-                "name": "quality_control",
-                "agent": FastQCAgent(),
-                "params": {
-                    "input_files": self.params.input_files,
-                    "output_dir": self.params.output_dir,
-                }
-            },
-            {
-                "name": "multiqc",
-                "agent": MultiQCAgent(),
-                "params": {
-                    "input_files": self.params.input_files,
-                    "output_dir": self.params.output_dir,
-                }
-            },
-            {
-                "name": "kallisto_index",
-                "agent": KallistoIndexAgent(),
-                "params": {
-                    "reference_transcriptome": self.params.reference_transcriptome,
-                    "output_dir": self.params.output_dir,
-                }
-            },
-            {
-                "name": "kal_quant",
-                "agent": KallistoQuantAgent(),
-                "params": {
-                    "input_files": self.params.input_files,
-                    "reference_transcriptome": self.params.reference_transcriptome,
-                    "output_dir": self.params.output_dir,
-                }
-            },
-            {
-                "name": "kallisto_multiqc",
-                "agent": KallistoMultiQCAgent(),
-                "params": {
-                    "input_files": self.params.input_files,
-                    "output_dir": self.params.output_dir,
-                }
-            },
-        ]
-
+        self.logger = get_logger(__name__)
+        
+        # Try to initialize LLM agent, but make it optional
+        try:
+            self.llm_agent = LLMAgent()
+            self.has_llm = True
+        except Exception as e:
+            self.logger.warning(f"Could not initialize LLM agent: {str(e)}")
+            self.logger.warning("Continuing without LLM assistance")
+            self.has_llm = False
+        
+        # Initialize execution agents
+        self.agents = {
+            'quality_control': FastQCAgent(),
+            'multiqc': MultiQCAgent(),
+            'kallisto_index': KallistoIndexAgent(),
+            'kal_quant': KallistoQuantAgent(),
+            'kallisto_multiqc': KallistoMultiQCAgent()
+        }
+        
     async def execute(self) -> None:
-        """Execute the PseudoBulk workflow."""
-        for step in self.steps:
-            logger.info(f"Executing step: {step['name']}")
-            agent = step['agent']
-            params = step['params']
-            try:
-                # Execute the step using the agent
-                result = await agent.execute(params)
-                # Validate the results
-                if await agent.validate(result):
-                    logger.info(f"Step {step['name']} completed successfully.")
-                else:
-                    logger.error(f"Validation failed for step {step['name']}.")
-            except Exception as e:
-                logger.error(f"Error executing step {step['name']}: {e}")
-                raise
+        """Execute the workflow."""
+        try:
+            # Convert Pydantic model to dict for analysis
+            params_dict = self.params.model_dump()
+            
+            if self.has_llm:
+                try:
+                    # Get analysis and recommendations from LLM
+                    analysis = await self.llm_agent.analyze_data({
+                        'input_files': self.params.input_files,
+                        'parameters': {
+                            'threads': self.params.threads,
+                            'memory': self.params.memory
+                        }
+                    })
+                    
+                    # Get execution plan from LLM
+                    execution_plan = await self.llm_agent.plan_execution(analysis)
+                except Exception as e:
+                    self.logger.warning(f"Error getting LLM execution plan: {str(e)}")
+                    self.has_llm = False  # Disable LLM for the rest of the workflow
+                    execution_plan = [
+                        {
+                            'name': 'quality_control',
+                            'parameters': {}
+                        },
+                        {
+                            'name': 'multiqc',
+                            'parameters': {}
+                        },
+                        {
+                            'name': 'kallisto_index',
+                            'parameters': {}
+                        },
+                        {
+                            'name': 'kal_quant',
+                            'parameters': {}
+                        },
+                        {
+                            'name': 'kallisto_multiqc',
+                            'parameters': {}
+                        }
+                    ]
+            else:
+                execution_plan = [
+                    {
+                        'name': 'quality_control',
+                        'parameters': {}
+                    },
+                    {
+                        'name': 'multiqc',
+                        'parameters': {}
+                    },
+                    {
+                        'name': 'kallisto_index',
+                        'parameters': {}
+                    },
+                    {
+                        'name': 'kal_quant',
+                        'parameters': {}
+                    },
+                    {
+                        'name': 'kallisto_multiqc',
+                        'parameters': {}
+                    }
+                ]
+            
+            # Execute steps according to plan
+            for step in execution_plan:
+                self.logger.info(f"Executing step: {step['name']}")
+                
+                try:
+                    # Get agent for this step
+                    agent = self.agents[step['name']]
+                    
+                    # Convert step parameters to dict and merge with workflow params
+                    step_params = {
+                        'input_files': self.params.input_files,
+                        'output_dir': self.params.output_dir,
+                        'reference_transcriptome': self.params.reference_transcriptome,
+                        'threads': self.params.threads,
+                        'memory': self.params.memory,
+                        **step.get('parameters', {})
+                    }
+                    
+                    # Execute step with parameters
+                    result = await agent.execute(step_params)
+                    
+                    # Validate results
+                    if not await agent.validate(result):
+                        raise RuntimeError(f"Validation failed for step {step['name']}.")
+                        
+                    self.logger.info(f"Step {step['name']} completed successfully.")
+                    
+                except Exception as e:
+                    if self.has_llm:
+                        # Get error handling from LLM
+                        error_handling = await self.llm_agent.handle_error(e, {
+                            'step': step,
+                            'params': params_dict,
+                            'result': result if 'result' in locals() else None
+                        })
+                        
+                        # If error is recoverable, try recovery steps
+                        if error_handling.get('recoverable', False):
+                            self.logger.info(f"Attempting recovery for step {step['name']}")
+                            for recovery_step in error_handling['recovery_steps']:
+                                # Execute recovery step
+                                pass  # TODO: Implement recovery execution
+                        else:
+                            self.has_llm = False  # Disable LLM after error
+                            raise RuntimeError(f"Error executing step {step['name']}: {str(e)}")
+                    else:
+                        # Without LLM, just raise the error
+                        raise RuntimeError(f"Error executing step {step['name']}: {str(e)}")
+                        
+        except Exception as e:
+            self.logger.error(f"Workflow failed: {str(e)}")
+            raise
