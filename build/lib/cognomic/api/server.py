@@ -50,11 +50,6 @@ class WorkflowResponse(BaseModel):
     steps: List[Dict[str, Any]]
 
 
-@app.get("/")
-async def read_root() -> Dict[str, str]:
-    return {"message": "Welcome to the Cognomic API!"}
-
-
 @app.post("/api/v1/workflows", response_model=WorkflowResponse)
 async def create_workflow(
     request: WorkflowRequest,
@@ -160,57 +155,7 @@ async def delete_workflow(
             )
 
 
-@app.post("/api/v1/tasks/fastqc")
-async def run_fastqc() -> Dict[str, str]:
-    # Logic to execute the fastqc task
-    # Placeholder for task execution
-    return {"status": "fastqc task executed"}
-
-
-@app.post("/api/v1/tasks/multiqc")
-async def run_multiqc() -> Dict[str, str]:
-    # Logic to execute the multiqc task
-    # Placeholder for task execution
-    return {"status": "multiqc task executed"}
-
-
-@app.post("/api/v1/tasks/kallisto_index")
-async def run_kallisto_index() -> Dict[str, str]:
-    # Logic to execute the kallisto_index task
-    # Placeholder for task execution
-    return {"status": "kallisto_index task executed"}
-
-
-@app.post("/api/v1/tasks/kal_quant")
-async def run_kal_quant() -> Dict[str, str]:
-    # Logic to execute the kal_quant task
-    # Placeholder for task execution
-    return {"status": "kal_quant task executed"}
-
-
-@app.post("/api/v1/tasks/kallisto_multiqc")
-async def run_kallisto_multiqc() -> Dict[str, str]:
-    # Logic to execute the kallisto_multiqc task
-    # Placeholder for task execution
-    return {"status": "kallisto_multiqc task executed"}
-
-
-@app.post("/api/v1/workflows/pseudobulk")
-async def run_pseudobulk_workflow() -> Dict[str, str]:
-    # Logic to execute the pseudobulk workflow
-    # Placeholder for workflow execution
-    return {"status": "pseudobulk workflow executed"}
-
-
 @app.get("/health")
 async def health_check() -> Dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy"}
-
-
-def main():
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-if __name__ == "__main__":
-    main()

@@ -46,12 +46,12 @@ cp env.example /path/to/your/.env
 
 2. Run the server:
 ```bash
-python -m cognomic.server
+cognomic-server
 ```
 
 3. Execute a workflow:
 ```bash
-python -m cognomic.cli run --workflow rnaseq --input data/
+cognomic-run --workflow rnaseq --input data/
 ```
 
 ## API Key Configuration
@@ -70,7 +70,7 @@ SECRET_KEY=your-secure-secret-key
 OPENAI_API_KEY=your-openai-api-key
 ```
 
-### Setting Up API Keys
+### Setting Up OpenAI API Keys
 
 There are two ways to configure your API keys:
 
