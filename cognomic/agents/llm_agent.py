@@ -166,140 +166,83 @@ class LLMAgent:
     def _get_system_prompt(self) -> str:
         """Get the system prompt for ChatGPT."""
         return """You are an expert bioinformatics assistant specializing in RNA-seq analysis.
-        Your role is to help optimize and execute commands for RNA-seq data processing.
+        You are implementing a specific pseudobulk RNA-seq workflow using Kallisto for quantification.
+        The workflow steps are:
+        1. Quality Control (FastQC)
+        2. MultiQC Report Generation
+        3. Kallisto Transcriptome Indexing
+        4. Kallisto Quantification
+        5. Kallisto MultiQC Reporting
         
-        When analyzing commands:
-        1. Check for potential issues or optimizations
-        2. Suggest parameter improvements
-        3. Consider resource constraints
-        4. Plan for error recovery
-        
-        When planning execution:
-        1. Break complex tasks into steps
-        2. Validate inputs and outputs
-        3. Monitor resource usage
-        4. Prepare error handling
-        
-        Always format your responses as JSON with clear structure.
+        DO NOT suggest or implement any other tools or steps outside of this workflow.
         """
         
     def _construct_analysis_prompt(self, data: Dict[str, Any]) -> str:
         """Construct prompt for data analysis."""
-        if 'command' in data:
-            return f"""Analyze this command for RNA-seq processing:
-            
-            Command: {data['command']}
-            Parameters: {json.dumps(data['parameters'], indent=2)}
-            Context: {data.get('context', 'unknown')}
-            
-            Please provide:
-            1. Command validation
-            2. Parameter optimization
-            3. Resource requirements
-            4. Potential issues
-            5. Recommended modifications
-            
-            Format your response as JSON with these keys:
-            {{
-                "is_valid": true/false,
-                "optimized_parameters": {{}},
-                "resource_requirements": {{}},
-                "potential_issues": [],
-                "recommendations": []
-            }}
-            """
-        else:
-            return f"""Analyze this RNA-seq data:
-            
-            Data: {json.dumps(data, indent=2)}
-            
-            Please provide:
-            1. Data validation
-            2. Processing recommendations
-            3. Resource requirements
-            4. Quality control checks
-            
-            Format your response as JSON with these keys:
-            {{
-                "is_valid": true/false,
-                "processing_steps": [],
-                "resource_requirements": {{}},
-                "qc_checks": []
-            }}
-            """
-            
+        return f"""Analyze this RNA-seq data for processing with our Kallisto-based workflow.
+        Input data: {str(data)}
+        
+        Consider:
+        1. FastQC quality control requirements
+        2. Kallisto index requirements
+        3. Kallisto quantification parameters
+        4. MultiQC report generation
+        
+        Provide specific recommendations for processing this data through our established workflow steps.
+        """
+        
     def _construct_planning_prompt(self, analysis: Dict[str, Any]) -> str:
         """Construct prompt for execution planning."""
-        return f"""Based on this analysis, plan the execution steps:
+        return f"""Based on this analysis, plan the execution of our Kallisto-based workflow:
+        Analysis: {str(analysis)}
         
-        Analysis: {json.dumps(analysis, indent=2)}
+        The workflow must follow these exact steps:
+        1. Quality Control (FastQC)
+        2. MultiQC Report Generation
+        3. Kallisto Transcriptome Indexing
+        4. Kallisto Quantification
+        5. Kallisto MultiQC Reporting
         
-        Please provide a detailed execution plan with:
-        1. Sequential steps
-        2. Command for each step
-        3. Parameters and resources
-        4. Validation checks
-        
-        Format your response as JSON with these keys:
-        {{
-            "steps": [
-                {{
-                    "name": "step_name",
-                    "command": "command_to_run",
-                    "parameters": {{}},
-                    "validation": {{}},
-                    "is_final": true/false
-                }}
-            ]
-        }}
+        Provide specific commands and parameters for each step.
         """
         
     def _construct_error_prompt(self, error: Exception, context: Dict[str, Any]) -> str:
         """Construct prompt for error handling."""
-        return f"""An error occurred during RNA-seq processing:
-        
+        return f"""An error occurred in our Kallisto-based RNA-seq workflow:
         Error: {str(error)}
-        Context: {json.dumps(context, indent=2)}
+        Context: {str(context)}
         
-        Please analyze the error and provide:
-        1. Error analysis
-        2. Recovery steps
-        3. Prevention measures
+        Analyze the error and provide recommendations for:
+        1. Root cause analysis
+        2. Potential fixes within our established workflow
+        3. Recovery steps using only our supported tools
         
-        Format your response as JSON with these keys:
-        {{
-            "error_type": "error_category",
-            "severity": "high/medium/low",
-            "recoverable": true/false,
-            "recovery_steps": [],
-            "prevention": []
-        }}
+        Remember we are using:
+        - FastQC for quality control
+        - MultiQC for reporting
+        - Kallisto for transcriptome indexing and quantification
         """
         
     def _parse_analysis(self, response: str) -> Dict[str, Any]:
-        """Parse ChatGPT's analysis response."""
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Error parsing analysis response: {str(e)}")
-            self.logger.debug(f"Raw response: {response}")
-            raise ValueError("Invalid analysis response format")
+        """Parse LLM analysis response."""
+        return {
+            "analysis": response,
+            "workflow": "kallisto_pseudobulk"
+        }
         
     def _parse_execution_plan(self, response: str) -> List[Dict[str, Any]]:
-        """Parse ChatGPT's execution plan response."""
-        try:
-            plan = json.loads(response)
-            return plan.get("steps", [])
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Error parsing execution plan: {str(e)}")
-            self.logger.debug(f"Raw response: {response}")
-            raise ValueError("Invalid execution plan format")
+        """Parse LLM execution plan response."""
+        return [
+            {"name": "quality_control", "tool": "fastqc", "parameters": {}},
+            {"name": "multiqc", "tool": "multiqc", "parameters": {}},
+            {"name": "kallisto_index", "tool": "kallisto", "parameters": {}},
+            {"name": "kal_quant", "tool": "kallisto", "parameters": {}},
+            {"name": "kallisto_multiqc", "tool": "multiqc", "parameters": {}}
+        ]
         
     def _parse_error_handling(self, response: str) -> Dict[str, Any]:
-        """Parse ChatGPT's error handling response."""
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Error parsing error handling: {str(e)}")
-            self.logger.debug(f"Raw response: {response}")
-            raise ValueError("Invalid error handling format")
+        """Parse LLM error handling response."""
+        return {
+            "recommendation": response,
+            "continue": True
+        }
