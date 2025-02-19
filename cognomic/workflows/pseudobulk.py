@@ -320,90 +320,56 @@ class KallistoQuantAgent(ExecutionAgent):
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         self.logger.info("Starting Kallisto quantification")
-        input_files = params['input_files']
-        output_dir = os.path.join(params['output_dir'], 'quant')
-        os.makedirs(output_dir, exist_ok=True)
-        paired_end = params.get('paired_end', True)
-        threads = params.get('threads', 4)
-
-        index_file = os.path.join(params['output_dir'], 'kalindex', 'transcripts.idx')
         
-        results = []
-        # Handle paired-end vs single-end reads
-        if paired_end:
-            # Ensure even number of files for paired-end
-            if len(input_files) % 2 != 0:
-                raise ValueError("Odd number of input files provided for paired-end data")
+        # Create output directory for quantification
+        quant_dir = os.path.join(params["output_dir"], "quant")
+        os.makedirs(quant_dir, exist_ok=True)
+        
+        # Get input files from params
+        input_files = params.get("input_files", [])
+        if not input_files:
+            raise RuntimeError("No input files provided")
             
-            # Process pairs of files
-            for i in range(0, len(input_files), 2):
-                read1 = input_files[i]
-                read2 = input_files[i + 1]
-                sample_name = os.path.splitext(os.path.basename(read1))[0].replace('_1', '')
-                sample_dir = os.path.join(output_dir, sample_name)
-                os.makedirs(sample_dir, exist_ok=True)
-
-                cmd = f"kallisto quant -i {index_file} -o {sample_dir} -t {threads} {read1} {read2}"
-                
-                result = await self.execute_command(cmd)
-                output = {
-                    "input_files": [read1, read2],
-                    "output_dir": sample_dir,
-                    "success": result["returncode"] == 0,
-                    "stdout": result["stdout"],
-                    "stderr": result["stderr"],
-                    "duration": result["duration"]
-                }
-                results.append(output)
-        else:
-            # Process single-end reads
-            for input_file in input_files:
-                sample_name = os.path.splitext(os.path.basename(input_file))[0]
-                sample_dir = os.path.join(output_dir, sample_name)
-                os.makedirs(sample_dir, exist_ok=True)
-
-                # For single-end reads, we need to specify an estimated fragment length
-                cmd = f"kallisto quant -i {index_file} -o {sample_dir} -t {threads} --single -l 200 -s 20 {input_file}"
-                
-                result = await self.execute_command(cmd)
-                output = {
-                    "input_file": input_file,
-                    "output_dir": sample_dir,
-                    "success": result["returncode"] == 0,
-                    "stdout": result["stdout"],
-                    "stderr": result["stderr"],
-                    "duration": result["duration"]
-                }
-                results.append(output)
+        # Sort to ensure consistent order
+        input_files.sort()
+        
+        # Use first filename as sample name, removing all extensions
+        sample_name = os.path.basename(input_files[0])
+        for ext in ['.gz', '.fastq', '.fq']:
+            sample_name = os.path.splitext(sample_name)[0]
             
-        # Check for any failures
-        failed_samples = [r for r in results if not r["success"]]
-        if failed_samples:
-            error_msg = "\n".join([f"Failed sample: {r.get('input_file', r.get('input_files', []))} - {r['stderr']}" 
-                                 for r in failed_samples])
-            raise RuntimeError(f"Kallisto quantification failed for some samples:\n{error_msg}")
-                
-        return {"results": results}
+        output_dir = os.path.join(quant_dir, sample_name)
+        
+        # Get index file path
+        index_file = os.path.join(params["output_dir"], "kalindex", "transcripts.idx")
+        if not os.path.exists(index_file):
+            raise RuntimeError(f"Kallisto index not found: {index_file}")
+        
+        # Run Kallisto quantification
+        cmd = (f"kallisto quant -i {index_file} -o {output_dir} "
+               f"-t {params.get('threads', 4)} {' '.join(input_files)}")
+               
+        result = await self.execute_command(cmd)
+        
+        if result["returncode"] != 0:
+            raise RuntimeError(f"Kallisto quantification failed: {result['stderr']}")
+            
+        return {
+            "output_dir": output_dir,
+            "abundance_file": os.path.join(output_dir, "abundance.h5"),
+            "command_result": result
+        }
 
     async def validate(self, result: Dict[str, Any]) -> bool:
-        """Validate Kallisto quant results."""
-        if not result.get("results"):
+        """Validate Kallisto quantification results."""
+        if not os.path.exists(result["abundance_file"]):
+            self.logger.error("Abundance file not found")
             return False
             
-        for r in result["results"]:
-            if not r.get("success"):
-                return False
-                
-            output_dir = r.get("output_dir")
-            if not output_dir or not os.path.exists(output_dir):
-                return False
-                
-            # Check for abundance files
-            abundance_h5 = os.path.join(output_dir, "abundance.h5")
-            abundance_tsv = os.path.join(output_dir, "abundance.tsv")
-            if not os.path.exists(abundance_h5) or not os.path.exists(abundance_tsv):
-                return False
-                
+        if result["command_result"]["returncode"] != 0:
+            self.logger.error("Kallisto command failed")
+            return False
+            
         return True
 
 
@@ -412,28 +378,79 @@ class KallistoMultiQCAgent(ExecutionAgent):
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         self.logger.info("Starting MultiQC for Kallisto")
-        output_dir = os.path.join(params["output_dir"], "kallisto_multiqc")
-        os.makedirs(output_dir, exist_ok=True)
         
-        # Run MultiQC on Kallisto results
-        cmd = f"multiqc {params['output_dir']}/kallisto -o {output_dir}"
+        # Validate input directory
+        input_dir = os.path.abspath(os.path.join(params["output_dir"], "quant"))
+        if not os.path.exists(input_dir):
+            raise RuntimeError(f"Kallisto output directory not found: {input_dir}")
+
+        # Create output directory with proper permissions
+        output_dir = os.path.abspath(os.path.join(params["output_dir"], "kallisto_multiqc"))
+        os.makedirs(output_dir, exist_ok=True, mode=0o755)
+
+        # Verify Kallisto outputs
+        required_files = [
+            'abundance.h5',
+            'abundance.tsv',
+            'run_info.json'
+        ]
+
+        sample_dirs = []
+        for d in os.listdir(input_dir):
+            dir_path = os.path.join(input_dir, d)
+            if os.path.isdir(dir_path):
+                missing = [f for f in required_files if not os.path.exists(os.path.join(dir_path, f))]
+                if not missing:
+                    sample_dirs.append(d)
+                else:
+                    self.logger.warning(f"Skipping incomplete Kallisto directory {d}: Missing {', '.join(missing)}")
+
+        if not sample_dirs:
+            raise RuntimeError(f"No valid Kallisto directories found in {input_dir}")
+
+        self.logger.info(f"Processing {len(sample_dirs)} Kallisto samples")
+
+        # Run MultiQC with explicit file recognition
+        cmd = (
+            f"multiqc {input_dir} -f -v -o {output_dir} "
+            f"--module kallisto --filename 'kallisto_multiqc_report.html'"
+        )
+
         result = await self.execute_command(cmd)
         
-        if result["returncode"] != 0:
-            raise RuntimeError(f"MultiQC failed: {result['stderr']}")
-            
+        # Debug output
+        self.logger.debug(f"MultiQC stdout:\n{result['stdout']}")
+        self.logger.debug(f"MultiQC stderr:\n{result['stderr']}")
+
+        # Handle MultiQC's output paths
+        report_path = os.path.join(output_dir, "kallisto_multiqc_report.html")
+        if not os.path.exists(report_path):
+            # Check for alternative default naming
+            alt_report = os.path.join(output_dir, "multiqc_report.html")
+            if os.path.exists(alt_report):
+                report_path = alt_report
+            else:
+                raise RuntimeError("MultiQC report not found at either expected path")
+
         return {
             "output_dir": output_dir,
-            "report": os.path.join(output_dir, "multiqc_report.html"),
+            "report": report_path,
             "command_result": result
         }
-        
+
     async def validate(self, result: Dict[str, Any]) -> bool:
         """Validate MultiQC on Kallisto results."""
+        # Check if the report exists
         if not os.path.exists(result["report"]):
-            self.logger.error("MultiQC report not found")
+            self.logger.error(f"MultiQC report not found at: {result['report']}")
             return False
             
+        # Check if the report has content
+        if os.path.getsize(result["report"]) == 0:
+            self.logger.error("MultiQC report is empty")
+            return False
+            
+        # Check command result
         if result["command_result"]["returncode"] != 0:
             self.logger.error("MultiQC command failed")
             return False
