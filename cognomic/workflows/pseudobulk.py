@@ -25,10 +25,11 @@ class PseudoBulkParams(BaseModel):
     input_files: List[str]
     reference_transcriptome: str
     output_dir: str
-    paired_end: bool = True
+    paired_end: bool = False
     threads: int = 4
     memory: str = "16G"
-
+    fragment_length: int = 200  # For single-end reads
+    fragment_sd: int = 20  # For single-end reads
 
 class ExecutionAgent:
     """Base class for execution agents."""
@@ -561,19 +562,13 @@ class KallistoMultiQCAgent(ExecutionAgent):
 class PseudoBulkWorkflow:
     """Workflow for pseudobulk RNA-seq analysis."""
     
-    def __init__(self, params: PseudoBulkParams, task_agent: TASK_agent):
+    name = "pseudobulk"
+    description = "Pseudobulk RNA-seq analysis using Kallisto"
+    required_tools = ["kallisto", "fastqc", "multiqc"]
+    
+    def __init__(self, params: Dict[str, Any], task_agent: Any):
         """Initialize workflow with parameters."""
-        self.params = params
-        self.logger = get_logger(__name__)
-        
-        # Try to initialize LLM agent, but make it optional
-        try:
-            self.llm_agent = LLMAgent()
-            self.has_llm = True
-        except Exception as e:
-            self.logger.warning(f"Could not initialize LLM agent: {str(e)}")
-            self.logger.warning("Continuing without LLM assistance")
-            self.has_llm = False
+        self.params = PseudoBulkParams(**params)
         
         # Initialize execution agents
         self.agents = {
@@ -583,124 +578,86 @@ class PseudoBulkWorkflow:
             'kal_quant': KallistoQuantAgent(task_agent),
             'kallisto_multiqc': KallistoMultiQCAgent(task_agent)
         }
+    
+    async def validate_params(self) -> bool:
+        """Validate workflow parameters."""
+        # Check input files exist
+        for file in self.params.input_files:
+            if not os.path.exists(file):
+                self.logger.error(f"Input file not found: {file}")
+                return False
         
-    async def execute(self) -> None:
+        # Check reference exists
+        if not os.path.exists(self.params.reference_transcriptome):
+            self.logger.error(f"Reference not found: {self.params.reference_transcriptome}")
+            return False
+            
+        # Create output directory
+        os.makedirs(self.params.output_dir, exist_ok=True)
+        
+        return True
+    
+    async def execute(self) -> Dict[str, Any]:
         """Execute the workflow."""
-        try:
-            # Convert Pydantic model to dict for analysis
-            params_dict = self.params.model_dump()
+        results = {}
+        
+        # 1. Create Kallisto index
+        index_results = await self.agents['kallisto_index'].execute({
+            "reference": self.params.reference_transcriptome,
+            "output_dir": self.params.output_dir
+        })
+        results['index'] = index_results
+        
+        # 2. Run Kallisto quantification
+        quant_results = await self.agents['kal_quant'].execute({
+            "index": index_results['result']['output_index'],
+            "input_files": self.params.input_files,
+            "output_dir": os.path.join(self.params.output_dir, "kallisto"),
+            "paired_end": self.params.paired_end,
+            "fragment_length": self.params.fragment_length,
+            "fragment_sd": self.params.fragment_sd,
+            "threads": self.params.threads
+        })
+        results['quantification'] = quant_results
+        
+        # 3. Run FastQC
+        fastqc_results = await self.agents['quality_control'].execute({
+            "input_files": self.params.input_files,
+            "output_dir": os.path.join(self.params.output_dir, "fastqc")
+        })
+        results['fastqc'] = fastqc_results
+        
+        # 4. Run MultiQC
+        multiqc_results = await self.agents['multiqc'].execute({
+            "input_dirs": [
+                os.path.join(self.params.output_dir, "fastqc"),
+                os.path.join(self.params.output_dir, "kallisto")
+            ],
+            "output_dir": os.path.join(self.params.output_dir, "multiqc")
+        })
+        results['multiqc'] = multiqc_results
+        
+        return results
+    
+    async def validate_results(self, results: Dict[str, Any]) -> bool:
+        """Validate workflow results."""
+        # Check index results
+        if not await self.agents['kallisto_index'].validate(results.get('index', {})):
+            return False
             
-            if self.has_llm:
-                try:
-                    # Get analysis and recommendations from LLM
-                    analysis = await self.llm_agent.analyze_data({
-                        'input_files': self.params.input_files,
-                        'parameters': {
-                            'threads': self.params.threads,
-                            'memory': self.params.memory
-                        }
-                    })
-                    
-                    # Get execution plan from LLM
-                    execution_plan = await self.llm_agent.plan_execution(analysis)
-                except Exception as e:
-                    self.logger.warning(f"Error getting LLM execution plan: {str(e)}")
-                    self.has_llm = False  # Disable LLM for the rest of the workflow
-                    execution_plan = [
-                        {
-                            'name': 'quality_control',
-                            'parameters': {}
-                        },
-                        {
-                            'name': 'multiqc',
-                            'parameters': {}
-                        },
-                        {
-                            'name': 'kallisto_index',
-                            'parameters': {}
-                        },
-                        {
-                            'name': 'kal_quant',
-                            'parameters': {}
-                        },
-                        {
-                            'name': 'kallisto_multiqc',
-                            'parameters': {}
-                        }
-                    ]
-            else:
-                execution_plan = [
-                    {
-                        'name': 'quality_control',
-                        'parameters': {}
-                    },
-                    {
-                        'name': 'multiqc',
-                        'parameters': {}
-                    },
-                    {
-                        'name': 'kallisto_index',
-                        'parameters': {}
-                    },
-                    {
-                        'name': 'kal_quant',
-                        'parameters': {}
-                    },
-                    {
-                        'name': 'kallisto_multiqc',
-                        'parameters': {}
-                    }
-                ]
+        # Check quantification results
+        if not await self.agents['kal_quant'].validate(results.get('quantification', {})):
+            return False
             
-            # Execute steps according to plan
-            for step in execution_plan:
-                self.logger.info(f"Executing step: {step['name']}")
-                
-                try:
-                    # Get agent for this step
-                    agent = self.agents[step['name']]
-                    
-                    # Convert step parameters to dict and merge with workflow params
-                    step_params = {
-                        'input_files': self.params.input_files,
-                        'output_dir': self.params.output_dir,
-                        'reference_transcriptome': self.params.reference_transcriptome,
-                        'threads': self.params.threads,
-                        'memory': self.params.memory,
-                        **step.get('parameters', {})
-                    }
-                    
-                    # Execute step with parameters
-                    result = await agent.execute(step_params)
-                    
-                    # Validate results
-                    if not await agent.validate(result):
-                        raise RuntimeError(f"Validation failed for step {step['name']}.")
-                        
-                    self.logger.info(f"Step {step['name']} completed successfully.")
-                    
-                except Exception as e:
-                    if self.has_llm:
-                        # Get error handling from LLM
-                        error_handling = await self.llm_agent.handle_error(e, {
-                            'step': step,
-                            'params': params_dict,
-                            'result': result if 'result' in locals() else None
-                        })
-                        
-                        # If error is recoverable, try recovery steps
-                        if error_handling.get('recoverable', False):
-                            self.logger.info(f"Attempting recovery for step {step['name']}")
-                            for recovery_step in error_handling['recovery_steps']:
-                                # Execute recovery step
-                                pass  # TODO: Implement recovery execution
-                        else:
-                            self.has_llm = False  # Disable LLM after error
-                            raise RuntimeError(f"Error executing step {step['name']}: {str(e)}")
-                    else:
-                        # Without LLM, just raise the error
-                        raise RuntimeError(f"Error executing step {step['name']}: {str(e)}")
-                        
-        except Exception as e:
-            self.logger.error(f"Workflow failed: {str(e)}")
-            raise
+        # Check FastQC results
+        if not await self.agents['quality_control'].validate(results.get('fastqc', {})):
+            return False
+            
+        # Check MultiQC results
+        if not await self.agents['multiqc'].validate(results.get('multiqc', {})):
+            return False
+            
+        return True
+
+# Register the workflow
+# WorkflowRegistry.register(PseudoBulkWorkflow)
