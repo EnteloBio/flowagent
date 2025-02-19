@@ -1,30 +1,43 @@
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
-def setup_logging(log_dir: str = None) -> None:
-    """Setup logging configuration."""
+def setup_logging(log_dir: Optional[str] = None, level: int = logging.INFO) -> None:
+    """Setup logging configuration.
+    
+    Args:
+        log_dir: Optional directory for log files
+        level: Logging level (default: logging.INFO)
+    """
     
     # Create formatters
     detailed_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        '%(asctime)s [%(levelname)s] %(name)s - %(message)s'
     )
     command_formatter = logging.Formatter(
-        '%(asctime)s - COMMAND - %(message)s'
+        '%(asctime)s [COMMAND] %(message)s'
     )
     
-    # Setup handlers
+    # Setup console handler with colors
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(detailed_formatter)
+    console_handler.setLevel(level)
     
     # Setup loggers
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(level)
     root_logger.addHandler(console_handler)
     
-    # Setup command logger
+    # Setup command logger with its own handler for better visibility
     command_logger = logging.getLogger("cognomic.commands")
-    command_logger.setLevel(logging.INFO)
+    command_logger.setLevel(level)
+    command_logger.propagate = False  # Don't propagate to root logger
+    
+    command_console_handler = logging.StreamHandler(sys.stdout)
+    command_console_handler.setFormatter(command_formatter)
+    command_console_handler.setLevel(level)
+    command_logger.addHandler(command_console_handler)
     
     if log_dir:
         log_path = Path(log_dir)
@@ -35,6 +48,7 @@ def setup_logging(log_dir: str = None) -> None:
             log_path / "cognomic.log"
         )
         file_handler.setFormatter(detailed_formatter)
+        file_handler.setLevel(level)
         root_logger.addHandler(file_handler)
         
         # File handler for command logs
@@ -42,6 +56,7 @@ def setup_logging(log_dir: str = None) -> None:
             log_path / "commands.log"
         )
         command_file_handler.setFormatter(command_formatter)
+        command_file_handler.setLevel(level)
         command_logger.addHandler(command_file_handler)
 
 def get_logger(name: str) -> logging.Logger:

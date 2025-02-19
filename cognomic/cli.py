@@ -1,128 +1,80 @@
-import sys
-import argparse
-import os
-import shutil
-import glob
 import asyncio
+import argparse
+import logging
+from pathlib import Path
 from .core.workflow_manager import WorkflowManager
-from .utils.logging import get_logger, setup_logging
+from .core.knowledge import initialize_knowledge_base
+from .utils.logging import setup_logging
 
-def check_java() -> bool:
-    """Check if Java is installed and accessible."""
+logger = logging.getLogger(__name__)
+
+async def run_workflow(prompt: str):
+    """Run workflow based on natural language prompt"""
+    # Initialize knowledge base
+    knowledge_db = initialize_knowledge_base()
+    
+    # Create workflow manager
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+    
+    manager = WorkflowManager(knowledge_db, output_dir)
+    
     try:
-        result = os.system('java -version 2>&1')
-        return result == 0
-    except Exception:
-        return False
+        logger.info(f"Planning workflow from prompt: {prompt}")
+        results = await manager.execute_from_prompt(prompt)
+        
+        logger.info("Workflow completed successfully!")
+        logger.info(f"Results available in: {output_dir}")
+        logger.info("Generated artifacts:")
+        for name, path in results['artifacts'].items():
+            logger.info(f"  {name}: {path}")
+            
+        return results
+        
+    except Exception as e:
+        logger.error(f"Workflow failed: {str(e)}")
+        raise
 
-def check_dependencies() -> bool:
-    """Check if required external tools are available."""
-    # First check Java as it's required by FastQC
-    if not check_java():
-        logger.error("Java Runtime Environment (JRE) not found")
-        logger.error("FastQC requires Java to run. Please install Java first:")
-        logger.error("On macOS:")
-        logger.error("  brew install openjdk")
-        logger.error("  # or download from https://www.java.com/")
-        return False
-
-    # Check bioinformatics tools
-    required_tools = ['fastqc', 'multiqc', 'kallisto']
-    missing_tools = []
+def main():
+    """Main entry point for the CLI"""
+    parser = argparse.ArgumentParser(
+        description='Run bioinformatics workflows using natural language.'
+    )
     
-    for tool in required_tools:
-        if shutil.which(tool) is None:
-            missing_tools.append(tool)
+    parser.add_argument(
+        'prompt',
+        type=str,
+        help='Natural language description of the workflow to run'
+    )
     
-    if missing_tools:
-        logger.error("Missing required tools: " + ", ".join(missing_tools))
-        logger.error("Please install the missing tools using one of these methods:")
-        logger.error("")
-        logger.error("1. Using conda (recommended):")
-        logger.error(f"   conda install -c bioconda {' '.join(missing_tools)}")
-        logger.error("")
-        logger.error("2. Using homebrew:")
-        logger.error(f"   brew install {' '.join(missing_tools)}")
-        logger.error("")
-        logger.error("3. Manual installation:")
-        logger.error("   FastQC: https://www.bioinformatics.babraham.ac.uk/projects/fastqc/")
-        logger.error("   MultiQC: https://multiqc.info/")
-        logger.error("   Kallisto: https://pachterlab.github.io/kallisto/")
-        return False
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        default='output',
+        help='Directory for workflow outputs (default: output)'
+    )
     
-    return True
-
-def run():
-    """Entry point for the cognomic-run command."""
-    parser = argparse.ArgumentParser(description='Run the Cognomic workflow.')
-    parser.add_argument('--workflow', type=str, required=True,
-                        help='Specify the workflow to execute (e.g., rnaseq, pseudobulk).')
-    parser.add_argument('--input', type=str, required=True,
-                        help='Specify the input data directory.')
-    parser.add_argument('--output', type=str, default='output',
-                        help='Specify the output directory. Default: output')
-    parser.add_argument('--reference', type=str,
-                        help='Path to reference transcriptome (required for RNA-seq workflows).')
-    parser.add_argument('--threads', type=int, default=4,
-                        help='Number of threads to use. Default: 4')
-    parser.add_argument('--memory', type=str, default='16G',
-                        help='Memory limit per process. Default: 16G')
-    parser.add_argument('--log-dir', type=str, default='logs',
-                        help='Directory for log files')
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging'
+    )
     
     args = parser.parse_args()
     
     # Setup logging
-    setup_logging(args.log_dir)
-    logger = get_logger(__name__)
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    setup_logging(level=log_level)
     
-    logger.info(f"Starting Cognomic with arguments: {vars(args)}")
-    
-    # Check dependencies before proceeding
-    if not check_dependencies():
-        logger.error("Missing required dependencies. Please install them and try again.")
-        sys.exit(1)
-    
-    # Validate input directory
-    if not os.path.exists(args.input):
-        logger.error(f"Input directory does not exist: {args.input}")
-        sys.exit(1)
-
-    # Find FASTQ files
-    input_files = glob.glob(os.path.join(args.input, "*.fastq*"))
-    if not input_files:
-        logger.error(f"No FASTQ files found in input directory: {args.input}")
-        logger.error("Expected files with extensions: .fastq, .fastq.gz")
-        logger.error(f"Contents of {args.input}:")
-        for f in os.listdir(args.input):
-            logger.error(f"  {f}")
-        sys.exit(1)
-    
-    # Create output directory if it doesn't exist
-    os.makedirs(args.output, exist_ok=True)
-
-    # Validate reference file
-    if args.reference and not os.path.exists(args.reference):
-        logger.error(f"Reference file does not exist: {args.reference}")
-        sys.exit(1)
-
-    # Prepare workflow parameters
-    workflow_params = {
-        'input_files': input_files,
-        'output_dir': args.output,
-        'threads': args.threads,
-        'memory': args.memory,
-    }
-
-    # Add reference transcriptome if provided
-    if args.reference:
-        workflow_params['reference_transcriptome'] = args.reference
-
     try:
-        # Run the workflow
-        WorkflowManager.run_workflow(args.workflow, workflow_params)
+        # Run workflow
+        asyncio.run(run_workflow(args.prompt))
+    except KeyboardInterrupt:
+        logger.info("Workflow interrupted by user")
+        exit(1)
     except Exception as e:
-        logger.error(f"Error running workflow: {e}")
-        sys.exit(1)
+        logger.error(f"Workflow failed: {str(e)}")
+        exit(1)
 
-    sys.exit(0)
+if __name__ == '__main__':
+    main()
