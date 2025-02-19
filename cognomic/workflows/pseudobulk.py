@@ -272,8 +272,13 @@ class MultiQCAgent(ExecutionAgent):
         # Check for MultiQC report
         report_path = os.path.join(output_dir, "multiqc_report.html")
         if not os.path.exists(report_path):
-            return False
-            
+            # Check for alternative default naming
+            alt_report = os.path.join(output_dir, "multiqc_report.html")
+            if os.path.exists(alt_report):
+                report_path = alt_report
+            else:
+                raise RuntimeError("MultiQC report not found at either expected path")
+
         return True
 
 
@@ -288,13 +293,33 @@ class KallistoIndexAgent(ExecutionAgent):
 
         output_index = os.path.join(output_dir, 'transcripts.idx')
         
+        # Check Kallisto version first
+        version_cmd = await self.task_agent.get_tool_command(
+            tool_name="kallisto",
+            action="version",
+            parameters={}
+        )
+        version_result = await self.execute_command(version_cmd)
+        if version_result["returncode"] != 0:
+            raise RuntimeError("Failed to get Kallisto version")
+        
+        # Parse version string (expected format: "kallisto, version X.Y.Z")
+        version_str = version_result["stdout"].strip()
+        try:
+            version = version_str.split("version")[1].strip()
+            self.logger.info(f"Using Kallisto version {version}")
+        except:
+            self.logger.warning("Could not parse Kallisto version")
+            version = "unknown"
+        
         # Get command from LLM
         command = await self.task_agent.get_tool_command(
             tool_name="kallisto",
             action="index",
             parameters={
                 "reference": reference,
-                "output_index": output_index
+                "output_index": output_index,
+                "version": version  # Pass version to LLM for command generation
             }
         )
         
@@ -303,6 +328,7 @@ class KallistoIndexAgent(ExecutionAgent):
         output = {
             "reference": reference,
             "output_index": output_index,
+            "kallisto_version": version,
             "success": result["returncode"] == 0,
             "stdout": result["stdout"],
             "stderr": result["stderr"],
@@ -329,6 +355,39 @@ class KallistoIndexAgent(ExecutionAgent):
         if not output_index or not os.path.exists(output_index):
             return False
             
+        # Verify index version compatibility
+        try:
+            # Run kallisto inspect on the index
+            inspect_cmd = await self.task_agent.get_tool_command(
+                tool_name="kallisto",
+                action="inspect",
+                parameters={"index": output_index}
+            )
+            inspect_result = await self.execute_command(inspect_cmd)
+            
+            if inspect_result["returncode"] != 0:
+                self.logger.error("Failed to inspect Kallisto index")
+                return False
+                
+            # Check for version compatibility in inspect output
+            if "version" in inspect_result["stdout"].lower():
+                index_version = None
+                for line in inspect_result["stdout"].split("\n"):
+                    if "version" in line.lower():
+                        try:
+                            index_version = line.split(":")[1].strip()
+                            break
+                        except:
+                            pass
+                
+                if index_version and index_version != r.get("kallisto_version"):
+                    self.logger.error(f"Index version mismatch. Index: {index_version}, Kallisto: {r.get('kallisto_version')}")
+                    return False
+                    
+        except Exception as e:
+            self.logger.error(f"Error validating index version: {str(e)}")
+            return False
+            
         return True
 
 
@@ -350,51 +409,63 @@ class KallistoQuantAgent(ExecutionAgent):
         # Sort to ensure consistent order
         input_files.sort()
         
-        # Use first filename as sample name, removing all extensions
-        sample_name = os.path.basename(input_files[0])
-        for ext in ['.gz', '.fastq', '.fq']:
-            sample_name = os.path.splitext(sample_name)[0]
+        # Process each file independently
+        results = []
+        for input_file in input_files:
+            # Use filename as sample name, removing all extensions
+            sample_name = os.path.basename(input_file)
+            for ext in ['.gz', '.fastq', '.fq']:
+                sample_name = os.path.splitext(sample_name)[0]
+                
+            output_dir = os.path.join(quant_dir, sample_name)
+            os.makedirs(output_dir, exist_ok=True)
             
-        output_dir = os.path.join(quant_dir, sample_name)
-        
-        # Get index file path
-        index_file = os.path.join(params["output_dir"], "kalindex", "transcripts.idx")
-        if not os.path.exists(index_file):
-            raise RuntimeError(f"Kallisto index not found: {index_file}")
-        
-        # Get command from LLM
-        command = await self.task_agent.get_tool_command(
-            tool_name="kallisto",
-            action="quant",
-            parameters={
-                "input_files": input_files,
+            # Get index file path
+            index_file = params.get("index")
+            if not os.path.exists(index_file):
+                raise RuntimeError(f"Kallisto index not found: {index_file}")
+            
+            # Get command from LLM for single-end processing
+            command = await self.task_agent.get_tool_command(
+                tool_name="kallisto",
+                action="quant",
+                parameters={
+                    "input_files": [input_file],  # Process single file
+                    "output_dir": output_dir,
+                    "index_file": index_file,
+                    "threads": params.get("threads", 4),
+                    "single_end": True,  # Specify single-end mode
+                    "fragment_length": 200,  # Default fragment length for single-end
+                    "sd": 20  # Default standard deviation for fragment length
+                }
+            )
+            
+            self.logger.info(f"Processing file: {input_file}")
+            result = await self.execute_command(command)
+            
+            if result["returncode"] != 0:
+                raise RuntimeError(f"Kallisto quantification failed for {input_file}: {result['stderr']}")
+                
+            results.append({
+                "input_file": input_file,
                 "output_dir": output_dir,
-                "index_file": index_file,
-                "threads": params.get("threads", 4)
-            }
-        )
-        
-        result = await self.execute_command(command)
-        
-        if result["returncode"] != 0:
-            raise RuntimeError(f"Kallisto quantification failed: {result['stderr']}")
+                "abundance_file": os.path.join(output_dir, "abundance.h5"),
+                "command_result": result
+            })
             
-        return {
-            "output_dir": output_dir,
-            "abundance_file": os.path.join(output_dir, "abundance.h5"),
-            "command_result": result
-        }
+        return {"results": results}
 
     async def validate(self, result: Dict[str, Any]) -> bool:
         """Validate Kallisto quantification results."""
-        if not os.path.exists(result["abundance_file"]):
-            self.logger.error("Abundance file not found")
+        if not result.get("results"):
+            self.logger.error("No results found")
             return False
             
-        if result["command_result"]["returncode"] != 0:
-            self.logger.error("Kallisto command failed")
-            return False
-            
+        for r in result["results"]:
+            if not os.path.exists(r["abundance_file"]):
+                self.logger.error(f"Abundance file not found for {r['input_file']}")
+                return False
+                
         return True
 
 
