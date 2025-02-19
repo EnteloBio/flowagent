@@ -1,198 +1,113 @@
-import os
-import json
-import logging
-from typing import Any, Dict, Optional
-from openai import AsyncOpenAI
+"""LLM interface for workflow planning and execution."""
 
-logger = logging.getLogger(__name__)
+from typing import Dict, Any, List
+import json
+import os
+from pathlib import Path
+
+from ..utils.logging import get_logger
+from ..workflows.base import WorkflowRegistry
+
+logger = get_logger(__name__)
 
 class LLMInterface:
-    """Interface for LLM interactions"""
-    def __init__(self):
-        self.client = AsyncOpenAI()
-        self.model = "gpt-3.5-turbo"
-        self.api_key = os.getenv("OPENAI_API_KEY")
+    """Interface for LLM-based workflow planning and execution."""
+    
+    def __init__(self, api_key: str = None):
+        """Initialize LLM interface."""
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
-        self.client.api_key = self.api_key
-        logger.info(f"Initialized LLM interface with model: {self.model}")
-        
-    async def generate(self, prompt: str) -> str:
-        """Generate response from LLM"""
+            raise ValueError("OpenAI API key not found")
+            
+        self.logger = get_logger(__name__)
+    
+    def _get_workflow_planning_prompt(self, workflow_name: str) -> str:
+        """Get workflow-specific planning prompt."""
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a bioinformatics workflow assistant. Generate precise, safe commands for bioinformatics tools."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,  # Low temperature for more deterministic outputs
-                max_tokens=500
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            logger.error(f"LLM generation failed: {str(e)}")
-            raise
-
-    async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
-        """Generate workflow plan from natural language prompt"""
-        system_prompt = self._get_workflow_planning_prompt()
-        
+            workflow_class = WorkflowRegistry.get_workflow(workflow_name)
+            return workflow_class.get_workflow_prompt()
+        except ValueError as e:
+            available_workflows = [w["name"] for w in WorkflowRegistry.list_workflows()]
+            raise ValueError(f"Unknown workflow: {workflow_name}. Available workflows: {available_workflows}")
+    
+    async def plan_workflow(self, workflow_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Plan workflow execution using LLM."""
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
-            )
+            # Get workflow-specific prompt
+            prompt = self._get_workflow_planning_prompt(workflow_name)
             
-            plan = json.loads(response.choices[0].message.content.strip())
+            # Add input data to prompt
+            prompt += f"\nInput data:\n{json.dumps(input_data, indent=2)}"
             
-            # Validate plan structure
-            required_keys = ['inputs', 'steps', 'outputs', 'validation']
-            if not all(key in plan for key in required_keys):
-                raise ValueError(f"Workflow plan missing required keys: {required_keys}")
-            if not isinstance(plan['steps'], list) or not plan['steps']:
-                raise ValueError("Workflow plan must contain non-empty steps list")
+            # Get LLM response
+            response = await self._get_llm_response(prompt)
+            
+            # Parse and validate response
+            try:
+                workflow_plan = json.loads(response)
+                self._validate_workflow_plan(workflow_plan)
+                return workflow_plan
+            except json.JSONDecodeError:
+                raise ValueError("LLM response is not valid JSON")
+            except ValueError as e:
+                raise ValueError(f"Invalid workflow plan: {str(e)}")
                 
-            return plan
-            
         except Exception as e:
-            logger.error(f"Workflow planning failed: {str(e)}")
+            self.logger.error(f"Error planning workflow: {str(e)}")
             raise
-
-    def _get_workflow_planning_prompt(self) -> str:
-        return """You are a bioinformatics workflow planner. Create a workflow plan following these guidelines:
-
-1. Data Type Detection:
-   - Check if files are single-end or paired-end reads
-   - For paired-end, files should have _1/_2 or R1/R2 in their names
-   - Process each file independently unless explicitly paired
-
-2. Quality Control:
-   - Run FastQC on each input file
-   - Generate MultiQC report for all FastQC results
-
-3. Kallisto Analysis:
-   - Create Kallisto index from reference transcriptome
-   - Run Kallisto quantification:
-     * For single-end reads: process each file independently with --single -l 200 -s 20
-     * For paired-end reads: process read pairs together
-   - Verify index compatibility before quantification
-
-4. Output Organization:
-   - Create separate output directories for each sample
-   - Use consistent naming conventions
-   - Save all reports and logs
-
-Return a JSON object with exactly this structure:
-{
-    "inputs": {
-        "fastq_files": ["file patterns"],
-        "reference": "reference file",
-        "output_dir": "output directory"
-    },
-    "steps": [
-        {
-            "name": "Kallisto Index",
-            "tool": "kallisto",
-            "action": "index",
-            "type": "index",
-            "parameters": {
-                "reference": "reference file path",
-                "output": "index file path with .idx extension"
+    
+    def _validate_workflow_plan(self, plan: Dict[str, Any]) -> None:
+        """Validate workflow plan structure."""
+        required_keys = ["inputs", "steps", "outputs", "validation"]
+        for key in required_keys:
+            if key not in plan:
+                raise ValueError(f"Missing required key in workflow plan: {key}")
+                
+        if not isinstance(plan["steps"], list):
+            raise ValueError("Steps must be a list")
+            
+        for step in plan["steps"]:
+            required_step_keys = ["name", "tool", "action", "type", "parameters"]
+            for key in required_step_keys:
+                if key not in step:
+                    raise ValueError(f"Missing required key in step: {key}")
+    
+    async def _get_llm_response(self, prompt: str) -> str:
+        """Get response from LLM API."""
+        # TODO: Implement actual LLM API call
+        # For now, return a basic workflow plan
+        return json.dumps({
+            "inputs": {
+                "required_files": ["*.fastq.gz"],
+                "parameters": {
+                    "threads": "Number of threads to use",
+                    "memory": "Memory limit"
+                }
+            },
+            "steps": [
+                {
+                    "name": "quality_control",
+                    "tool": "fastqc",
+                    "action": "analyze",
+                    "type": "qc",
+                    "parameters": {}
+                }
+            ],
+            "outputs": {
+                "qc_reports": "fastqc_output"
+            },
+            "validation": {
+                "required_files": ["*_fastqc.html"],
+                "output_checks": ["Check FastQC reports exist"]
             }
-        },
-        {
-            "name": "Kallisto Quantification",
-            "tool": "kallisto",
-            "action": "quant",
-            "type": "quantification",
-            "parameters": {
-                "index": "index file path",
-                "input_files": ["fastq files"],
-                "output_dir": "output directory",
-                "single_end": true,
-                "fragment_length": 200,
-                "sd": 20
-            }
-        },
-        {
-            "name": "FastQC Analysis",
-            "tool": "fastqc",
-            "action": "analyze",
-            "type": "qc",
-            "parameters": {
-                "input_files": "fastq file pattern",
-                "output_dir": "fastqc output directory"
-            }
+        })
+    
+    async def analyze_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze error and suggest recovery steps."""
+        # TODO: Implement error analysis
+        return {
+            "error_type": type(error).__name__,
+            "message": str(error),
+            "recoverable": False,
+            "suggestions": ["Check input files exist", "Verify tool installations"]
         }
-    ],
-    "outputs": {
-        "kallisto_results": "kallisto output directory",
-        "qc_reports": "fastqc output directory"
-    },
-    "validation": {
-        "required_files": ["reference file", "fastq files"],
-        "output_checks": ["abundance.h5", "fastqc reports"]
-    }
-}
-
-Return only valid JSON without explanation. Ensure all steps are included in the correct order."""
-
-    async def generate_command(self, tool: str, action: str, parameters: Dict[str, Any]) -> str:
-        """Generate command for tool execution"""
-        prompt = f"""Generate the exact command line for:
-        Tool: {tool}
-        Action: {action}
-        Parameters: {json.dumps(parameters, indent=2)}
-        
-        Return only the command, no explanation.
-        Ensure the command follows best practices and is safe to execute."""
-        
-        try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a bioinformatics command generator. Generate precise, safe commands."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            logger.error(f"Command generation failed: {str(e)}")
-            raise
-
-    async def diagnose_error(self, error_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Diagnose workflow error and suggest recovery"""
-        prompt = f"""Analyze this workflow error and suggest recovery steps:
-        Error: {error_context.get('error_log')}
-        State: {json.dumps(error_context.get('workflow_state'), indent=2)}
-        
-        Return a JSON object with:
-        1. diagnosis: Brief error analysis
-        2. action: One of ['retry', 'fix', 'abort']
-        3. solution: Specific steps to resolve the issue"""
-        
-        try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a bioinformatics error diagnostician. Analyze errors and suggest fixes."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
-            )
-            
-            return json.loads(response.choices[0].message.content.strip())
-            
-        except Exception as e:
-            logger.error(f"Error diagnosis failed: {str(e)}")
-            raise
