@@ -66,9 +66,9 @@ class LLMInterface:
             raise
 
     def _get_workflow_planning_prompt(self) -> str:
-        return """Plan a bioinformatics workflow based on the user's request. Follow these guidelines:
+        return """You are a bioinformatics workflow planner. Create a workflow plan following these guidelines:
 
-1. Determine input data type:
+1. Data Type Detection:
    - Check if files are single-end or paired-end reads
    - For paired-end, files should have _1/_2 or R1/R2 in their names
    - Process each file independently unless explicitly paired
@@ -89,18 +89,60 @@ class LLMInterface:
    - Use consistent naming conventions
    - Save all reports and logs
 
-Return a JSON object with these fields:
+Return a JSON object with exactly this structure:
 {
+    "inputs": {
+        "fastq_files": ["file patterns"],
+        "reference": "reference file",
+        "output_dir": "output directory"
+    },
     "steps": [
         {
-            "name": "step name",
-            "tool": "tool name",
-            "action": "action type",
-            "type": "step type",
-            "parameters": {}
+            "name": "Kallisto Index",
+            "tool": "kallisto",
+            "action": "index",
+            "type": "index",
+            "parameters": {
+                "reference": "reference file path",
+                "output": "index file path with .idx extension"
+            }
+        },
+        {
+            "name": "Kallisto Quantification",
+            "tool": "kallisto",
+            "action": "quant",
+            "type": "quantification",
+            "parameters": {
+                "index": "index file path",
+                "input_files": ["fastq files"],
+                "output_dir": "output directory",
+                "single_end": true,
+                "fragment_length": 200,
+                "sd": 20
+            }
+        },
+        {
+            "name": "FastQC Analysis",
+            "tool": "fastqc",
+            "action": "analyze",
+            "type": "qc",
+            "parameters": {
+                "input_files": "fastq file pattern",
+                "output_dir": "fastqc output directory"
+            }
         }
-    ]
-}"""
+    ],
+    "outputs": {
+        "kallisto_results": "kallisto output directory",
+        "qc_reports": "fastqc output directory"
+    },
+    "validation": {
+        "required_files": ["reference file", "fastq files"],
+        "output_checks": ["abundance.h5", "fastqc reports"]
+    }
+}
+
+Return only valid JSON without explanation. Ensure all steps are included in the correct order."""
 
     async def generate_command(self, tool: str, action: str, parameters: Dict[str, Any]) -> str:
         """Generate command for tool execution"""
