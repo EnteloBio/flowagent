@@ -15,6 +15,7 @@ import subprocess
 from pydantic import BaseModel
 from ..utils.logging import get_logger
 from ..agents.llm_agent import LLMAgent
+from pathlib import Path
 
 logger = get_logger(__name__)
 
@@ -32,10 +33,11 @@ class PseudoBulkParams(BaseModel):
 class ExecutionAgent:
     """Base class for execution agents."""
     
-    def __init__(self):
+    def __init__(self, task_agent: TASK_agent):
         """Initialize the execution agent."""
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.command_logger = logging.getLogger("cognomic.commands")
+        self.task_agent = task_agent
         
         # Initialize with LLM disabled
         self.llm_agent = None
@@ -163,36 +165,34 @@ class FastQCAgent(ExecutionAgent):
         os.makedirs(output_dir, exist_ok=True)
         threads = params.get("threads", 1)
         
-        results = []
-        for input_file in input_files:
-            self.logger.info(f"Processing file: {input_file}")
-            
-            cmd = (
-                f"fastqc "
-                f"--outdir={output_dir} "
-                f"--threads={threads} "
-                f"{input_file}"
-            )
-            
-            result = await self.execute_command(cmd)
-            
-            output = {
-                "input_file": input_file,
+        # Get command from LLM
+        command = await self.task_agent.get_tool_command(
+            tool_name="fastqc",
+            action="analyze",
+            parameters={
+                "input_files": input_files,
                 "output_dir": output_dir,
-                "success": result["returncode"] == 0,
-                "stdout": result["stdout"],
-                "stderr": result["stderr"],
-                "duration": result["duration"]
+                "threads": threads
             }
-            
-            results.append(output)
-            
-            if not output["success"]:
-                self.logger.error(f"FastQC failed for {input_file}")
-                self.logger.error(f"Error: {output['stderr']}")
-                raise RuntimeError(f"FastQC failed for {input_file}")
+        )
+        
+        result = await self.execute_command(command)
+        
+        output = {
+            "input_file": input_files,
+            "output_dir": output_dir,
+            "success": result["returncode"] == 0,
+            "stdout": result["stdout"],
+            "stderr": result["stderr"],
+            "duration": result["duration"]
+        }
+        
+        if not output["success"]:
+            self.logger.error(f"FastQC failed for {input_files}")
+            self.logger.error(f"Error: {output['stderr']}")
+            raise RuntimeError(f"FastQC failed for {input_files}")
                 
-        return {"results": results}
+        return {"results": [output]}
 
     async def validate(self, result: Dict[str, Any]) -> bool:
         """Validate FastQC results."""
@@ -228,9 +228,17 @@ class MultiQCAgent(ExecutionAgent):
         if not fastqc_files:
             raise RuntimeError(f"No FastQC reports found in {input_dir}")
 
-        cmd = f"multiqc {input_dir} -f -d -s -o {output_dir}"
+        # Get command from LLM
+        command = await self.task_agent.get_tool_command(
+            tool_name="multiqc",
+            action="report",
+            parameters={
+                "input_dir": input_dir,
+                "output_dir": output_dir
+            }
+        )
         
-        result = await self.execute_command(cmd)
+        result = await self.execute_command(command)
         
         output = {
             "input_dir": input_dir,
@@ -279,9 +287,18 @@ class KallistoIndexAgent(ExecutionAgent):
         os.makedirs(output_dir, exist_ok=True)
 
         output_index = os.path.join(output_dir, 'transcripts.idx')
-        cmd = f"kallisto index -i {output_index} {reference}"
         
-        result = await self.execute_command(cmd)
+        # Get command from LLM
+        command = await self.task_agent.get_tool_command(
+            tool_name="kallisto",
+            action="index",
+            parameters={
+                "reference": reference,
+                "output_index": output_index
+            }
+        )
+        
+        result = await self.execute_command(command)
         
         output = {
             "reference": reference,
@@ -345,11 +362,19 @@ class KallistoQuantAgent(ExecutionAgent):
         if not os.path.exists(index_file):
             raise RuntimeError(f"Kallisto index not found: {index_file}")
         
-        # Run Kallisto quantification
-        cmd = (f"kallisto quant -i {index_file} -o {output_dir} "
-               f"-t {params.get('threads', 4)} {' '.join(input_files)}")
-               
-        result = await self.execute_command(cmd)
+        # Get command from LLM
+        command = await self.task_agent.get_tool_command(
+            tool_name="kallisto",
+            action="quant",
+            parameters={
+                "input_files": input_files,
+                "output_dir": output_dir,
+                "index_file": index_file,
+                "threads": params.get("threads", 4)
+            }
+        )
+        
+        result = await self.execute_command(command)
         
         if result["returncode"] != 0:
             raise RuntimeError(f"Kallisto quantification failed: {result['stderr']}")
@@ -410,13 +435,17 @@ class KallistoMultiQCAgent(ExecutionAgent):
 
         self.logger.info(f"Processing {len(sample_dirs)} Kallisto samples")
 
-        # Run MultiQC with explicit file recognition
-        cmd = (
-            f"multiqc {input_dir} -f -v -o {output_dir} "
-            f"--module kallisto --filename 'kallisto_multiqc_report.html'"
+        # Get command from LLM
+        command = await self.task_agent.get_tool_command(
+            tool_name="multiqc",
+            action="report",
+            parameters={
+                "input_dir": input_dir,
+                "output_dir": output_dir
+            }
         )
-
-        result = await self.execute_command(cmd)
+        
+        result = await self.execute_command(command)
         
         # Debug output
         self.logger.debug(f"MultiQC stdout:\n{result['stdout']}")
@@ -461,7 +490,7 @@ class KallistoMultiQCAgent(ExecutionAgent):
 class PseudoBulkWorkflow:
     """Workflow for pseudobulk RNA-seq analysis."""
     
-    def __init__(self, params: PseudoBulkParams):
+    def __init__(self, params: PseudoBulkParams, task_agent: TASK_agent):
         """Initialize workflow with parameters."""
         self.params = params
         self.logger = get_logger(__name__)
@@ -477,11 +506,11 @@ class PseudoBulkWorkflow:
         
         # Initialize execution agents
         self.agents = {
-            'quality_control': FastQCAgent(),
-            'multiqc': MultiQCAgent(),
-            'kallisto_index': KallistoIndexAgent(),
-            'kal_quant': KallistoQuantAgent(),
-            'kallisto_multiqc': KallistoMultiQCAgent()
+            'quality_control': FastQCAgent(task_agent),
+            'multiqc': MultiQCAgent(task_agent),
+            'kallisto_index': KallistoIndexAgent(task_agent),
+            'kal_quant': KallistoQuantAgent(task_agent),
+            'kallisto_multiqc': KallistoMultiQCAgent(task_agent)
         }
         
     async def execute(self) -> None:

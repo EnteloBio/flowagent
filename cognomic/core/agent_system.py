@@ -7,6 +7,7 @@ from pathlib import Path
 import hashlib
 import logging
 from datetime import datetime
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -55,40 +56,93 @@ class TASK_agent(BaseAgent):
     def __init__(self, knowledge_db: chromadb.Client, max_retries: int = 5):
         super().__init__(knowledge_db)
         self.max_retries = max_retries
-
-    async def execute_step(self, step: WorkflowStep) -> Dict[str, Any]:
-        for attempt in range(self.max_retries):
-            try:
-                tool_config = self._get_tool_config(step.name)
-                validated = self._validate_inputs(step, tool_config)
-                result = await self._execute_tool(validated)
-                return self._validate_outputs(result)
-            except Exception as e:
-                logger.warning(f"Attempt {attempt+1} failed: {str(e)}")
-                if attempt == self.max_retries - 1:
-                    raise RuntimeError(f"Step {step.name} failed after {self.max_retries} attempts")
+        self.llm = None  # Initialize LLM connection here
+        
+    async def get_tool_command(self, tool_name: str, action: str, parameters: Dict[str, Any]) -> str:
+        """Generate command using LLM based on tool documentation"""
+        # Get tool documentation from knowledge base
+        tool_doc = await self.knowledge_db.get_tool_doc(tool_name)
+        
+        # Format prompt for LLM
+        prompt = self._format_command_prompt(tool_name, action, parameters, tool_doc)
+        
+        # Get command from LLM
+        response = await self.llm.generate(prompt)
+        
+        # Validate and return command
+        command = self._validate_command(response)
+        return command
+        
+    def _format_command_prompt(self, tool_name: str, action: str, parameters: Dict[str, Any], tool_doc: str) -> str:
+        """Format prompt for command generation"""
+        return f"""
+        Tool: {tool_name}
+        Action: {action}
+        Parameters: {json.dumps(parameters, indent=2)}
+        
+        Documentation:
+        {tool_doc}
+        
+        Generate the exact command line to execute this tool with the given parameters.
+        The command should follow best practices and be safe to execute.
+        Only return the command itself, no explanation or additional text.
+        """
+        
+    def _validate_command(self, command: str) -> str:
+        """Validate generated command for safety and correctness"""
+        # Remove any dangerous shell operators
+        dangerous_ops = ['|', '>', '<', ';', '&&', '||', '`', '$']
+        for op in dangerous_ops:
+            if op in command:
+                raise ValueError(f"Generated command contains dangerous operator: {op}")
+        
+        # Validate command structure
+        if not command.strip():
+            raise ValueError("Empty command generated")
+            
+        return command.strip()
+        
+    async def execute_command(self, command: str) -> Dict[str, Any]:
+        """Execute a shell command and return results"""
+        try:
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            return {
+                "returncode": process.returncode,
+                "stdout": stdout.decode(),
+                "stderr": stderr.decode(),
+                "command": command
+            }
+            
+        except Exception as e:
+            raise RuntimeError(f"Command execution failed: {str(e)}")
+            
+    async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a workflow step"""
+        try:
+            # Get command for step
+            command = await self.get_tool_command(
+                step["tool"],
+                step["action"],
+                step["parameters"]
+            )
+            
+            # Execute command
+            result = await self.execute_command(command)
+            
+            if result["returncode"] != 0:
+                raise RuntimeError(f"Step failed: {result['stderr']}")
                 
-    def _get_tool_config(self, tool_name: str) -> Dict:
-        results = self.collections['tool_docs'].query(
-            query_texts=[tool_name],
-            where={"tool": tool_name},
-            n_results=1
-        )
-        if not results['documents']:
-            raise ValueError(f"No configuration found for tool: {tool_name}")
-        return json.loads(results['documents'][0])
-        
-    def _validate_inputs(self, step: WorkflowStep, tool_config: Dict) -> Dict:
-        # Implement input validation logic
-        return step.parameters
-        
-    async def _execute_tool(self, params: Dict) -> Dict:
-        # Implement tool execution logic
-        return {"status": "success", "output": params}
-        
-    def _validate_outputs(self, result: Dict) -> Dict:
-        # Implement output validation logic
-        return result
+            return result
+            
+        except Exception as e:
+            raise RuntimeError(f"Step execution failed: {str(e)}")
 
 class DEBUG_agent(BaseAgent):
     async def diagnose_failure(self, error_context: Dict) -> Dict:
