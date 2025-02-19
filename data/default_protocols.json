@@ -1,0 +1,1 @@
+[{"id": "rnaseq-v1", "description": "Standard RNA-Seq analysis workflow with quality control, alignment, and quantification", "steps": ["fastqc", "multiqc", "kallisto", "deseq2"]}]
