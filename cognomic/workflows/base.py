@@ -4,8 +4,8 @@ from typing import Dict, Any, Type, List
 import abc
 import logging
 from ..utils.logging import get_logger
+from ..core.agent_types import TASK_agent
 from ..agents.llm_agent import LLMAgent
-from ..core.agent_system import TASK_agent
 
 logger = get_logger(__name__)
 

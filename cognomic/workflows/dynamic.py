@@ -4,14 +4,16 @@ from typing import Dict, Any, List, Optional
 import os
 from pathlib import Path
 import json
+import asyncio
 from pydantic import BaseModel, Field
 
 from .base import WorkflowBase, WorkflowRegistry
 from ..utils.logging import get_logger
 from ..core.llm import LLMInterface
 from ..core.agent_system import TASK_agent
+from ..config.settings import settings
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, level=settings.LOG_LEVEL)
 
 class DynamicWorkflowParams(BaseModel):
     """Dynamic parameters that can adapt to any workflow type."""
@@ -21,6 +23,9 @@ class DynamicWorkflowParams(BaseModel):
     output_dir: str = Field(..., description="Output directory")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters")
     required_tools: List[str] = Field(default_factory=list, description="Required tools")
+    timeout: int = Field(default=settings.WORKFLOW_TIMEOUT, description="Workflow timeout in seconds")
+    max_retries: int = Field(default=settings.AGENT_MAX_RETRIES, description="Maximum number of retries for failed steps")
+    retry_delay: float = Field(default=settings.AGENT_RETRY_DELAY, description="Delay between retries in seconds")
 
 class DynamicWorkflow(WorkflowBase):
     """A flexible workflow that can adapt to any bioinformatics task."""
@@ -36,6 +41,12 @@ class DynamicWorkflow(WorkflowBase):
         self.workflow_plan = None
         self.agents = {}
         
+        # Configure logging based on settings
+        self.logger = get_logger(
+            f"{__name__}.{self.__class__.__name__}",
+            level=settings.LOG_LEVEL
+        )
+    
     async def _plan_workflow(self) -> Dict[str, Any]:
         """Use LLM to plan the workflow based on description."""
         prompt = f"""
@@ -74,6 +85,29 @@ class DynamicWorkflow(WorkflowBase):
             else:
                 # Create a generic agent that can execute the tool
                 self.agents[tool] = GenericToolAgent(self.task_agent, tool)
+
+    async def _execute_with_timeout(self, coro):
+        """Execute coroutine with timeout."""
+        try:
+            return await asyncio.wait_for(coro, timeout=self.params.timeout)
+        except asyncio.TimeoutError:
+            raise TimeoutError(f"Workflow execution timed out after {self.params.timeout} seconds")
+    
+    async def _execute_with_retry(self, coro, step_name: str):
+        """Execute coroutine with retry logic."""
+        for attempt in range(self.params.max_retries):
+            try:
+                return await coro
+            except Exception as e:
+                if attempt < self.params.max_retries - 1:
+                    delay = self.params.retry_delay * (attempt + 1)
+                    self.logger.warning(
+                        f"Step {step_name} failed (attempt {attempt + 1}/{self.params.max_retries}). "
+                        f"Retrying in {delay} seconds. Error: {str(e)}"
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise
 
     async def validate_params(self) -> bool:
         """Validate workflow parameters."""
@@ -127,10 +161,10 @@ class DynamicWorkflow(WorkflowBase):
                 
                 # Execute step
                 if tool in self.agents:
-                    result = await self.agents[tool].execute({
+                    result = await self._execute_with_retry(self.agents[tool].execute({
                         "action": action,
                         **parameters
-                    })
+                    }), step_name)
                     results[step_name] = result
                 else:
                     raise ValueError(f"No agent available for tool: {tool}")
@@ -191,43 +225,68 @@ class DynamicWorkflow(WorkflowBase):
             self.logger.error(f"Error validating results: {str(e)}")
             return False
 
-class GenericToolAgent:
+class GenericToolAgent(BaseAgent):
     """Generic agent that can execute any command-line tool."""
     
     def __init__(self, task_agent: TASK_agent, tool_name: str):
         """Initialize generic tool agent."""
+        super().__init__(f"GenericToolAgent_{tool_name}")
         self.task_agent = task_agent
         self.tool_name = tool_name
-        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
         
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the tool with given parameters."""
         action = params.pop("action")
+        operation = f"{self.tool_name} {action}"
         
-        # Convert parameters to command-line arguments
-        args = []
-        for key, value in params.items():
-            if isinstance(value, bool):
-                if value:
-                    args.append(f"--{key}")
-            else:
-                args.append(f"--{key} {value}")
-                
-        command = f"{self.tool_name} {action} {' '.join(args)}"
+        self._log_start(operation, params)
         
-        # Execute command
-        result = await self.task_agent.run_command(command)
-        
-        return {
-            "command": command,
-            "output": result.stdout,
-            "error": result.stderr,
-            "exit_code": result.returncode
-        }
+        try:
+            # Convert parameters to command-line arguments
+            args = []
+            for key, value in params.items():
+                if isinstance(value, bool):
+                    if value:
+                        args.append(f"--{key}")
+                else:
+                    args.append(f"--{key} {value}")
+                    
+            command = f"{self.tool_name} {action} {' '.join(args)}"
+            
+            # Execute command with retry
+            result = await self.execute_with_retry(
+                self.task_agent.run_command(command),
+                operation
+            )
+            
+            output = {
+                "command": command,
+                "output": result.stdout,
+                "error": result.stderr,
+                "exit_code": result.returncode
+            }
+            
+            self._log_complete(operation, output)
+            return output
+            
+        except Exception as e:
+            self._log_error(operation, e)
+            raise
         
     async def validate(self, result: Dict[str, Any]) -> bool:
         """Validate tool execution result."""
-        return result.get("exit_code", 1) == 0
+        if not result:
+            return False
+            
+        exit_code = result.get("exit_code")
+        if exit_code != 0:
+            self.logger.error(
+                f"Tool {self.tool_name} failed with exit code {exit_code}. "
+                f"Error: {result.get('error', 'No error message')}"
+            )
+            return False
+            
+        return True
 
 # Register the workflow
 WorkflowRegistry.register(DynamicWorkflow)

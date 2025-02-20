@@ -1,7 +1,7 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 def setup_logging(log_dir: Optional[str] = None, level: int = logging.INFO) -> None:
     """Setup logging configuration.
@@ -59,6 +59,19 @@ def setup_logging(log_dir: Optional[str] = None, level: int = logging.INFO) -> N
         command_file_handler.setLevel(level)
         command_logger.addHandler(command_file_handler)
 
-def get_logger(name: str) -> logging.Logger:
-    """Get a logger instance."""
-    return logging.getLogger(name)
+def get_logger(name: str, level: Optional[Union[int, str]] = None) -> logging.Logger:
+    """Get a logger instance.
+    
+    Args:
+        name: Logger name
+        level: Optional logging level (default: None, uses root logger level)
+        
+    Returns:
+        logging.Logger: Configured logger instance
+    """
+    logger = logging.getLogger(name)
+    if level is not None:
+        if isinstance(level, str):
+            level = getattr(logging, level.upper())
+        logger.setLevel(level)
+    return logger
