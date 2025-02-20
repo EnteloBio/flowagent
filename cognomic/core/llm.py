@@ -8,7 +8,7 @@ import openai
 from openai import AsyncOpenAI
 
 from ..utils.logging import get_logger
-from ..workflows.base import WorkflowRegistry
+from ..config.settings import settings
 
 logger = get_logger(__name__)
 
@@ -17,168 +17,247 @@ class LLMInterface:
     
     def __init__(self, api_key: str = None):
         """Initialize LLM interface."""
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key or settings.openai_api_key
         if not self.api_key:
             raise ValueError("OpenAI API key not found")
             
-        self.client = AsyncOpenAI(api_key=self.api_key)
-        self.model = "gpt-4"  # Using GPT-4 for better reasoning
+        self.client = AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=settings.OPENAI_BASE_URL
+        )
+        self.model = settings.OPENAI_MODEL
         self.logger = get_logger(__name__)
-    
-    def _get_workflow_planning_prompt(self, workflow_name: str) -> str:
-        """Get workflow-specific planning prompt."""
-        if workflow_name == "dynamic":
-            return """You are a bioinformatics workflow planner. Your task is to create a detailed workflow plan for processing biological data.
+        
+        self.logger.info(f"Initialized LLM interface with model: {self.model}")
 
-Instructions:
-1. Analyze the input description and files to understand the task requirements
-2. Identify required bioinformatics tools and their versions
-3. Design a step-by-step workflow that accomplishes the task
-4. Include appropriate quality control and validation steps
+    def _get_workflow_planning_prompt(self) -> str:
+        """Get the prompt for workflow planning."""
+        return """You are an expert bioinformatics workflow planner.
+Your task is to create detailed workflow plans for RNA-seq analysis.
 
-Return a JSON object with exactly this structure:
+Return a JSON object with the following structure:
 {
-    "required_tools": [
-        {"name": "tool_name", "version": "version", "purpose": "description"}
-    ],
+    "workflow_type": "rna_seq",
     "steps": [
         {
-            "name": "step_name",
+            "name": "unique_step_name",
             "tool": "tool_name",
-            "action": "action",
-            "type": "step_type",
+            "action": "action_name",
             "parameters": {
-                "param1": "value1"
+                "param1": "value1",
+                "param2": "value2"
             },
-            "description": "step description"
+            "type": "command",
+            "description": "Optional description of what this step does"
         }
-    ],
-    "outputs": {
-        "output_name": {
-            "path": "relative/path",
-            "description": "output description"
-        }
-    },
-    "validation": {
-        "output_checks": [
-            {
-                "type": "file_exists",
-                "parameters": {"path": "expected/file/path"}
-            },
-            {
-                "type": "file_content",
-                "parameters": {
-                    "path": "file/path",
-                    "content_type": "content type",
-                    "validation_rules": ["rule1", "rule2"]
-                }
-            }
-        ]
-    }
+    ]
 }
 
-Return only valid JSON without explanation."""
-        else:
-            try:
-                workflow_class = WorkflowRegistry.get_workflow(workflow_name)
-                return workflow_class.get_workflow_prompt()
-            except ValueError as e:
-                available_workflows = [w["name"] for w in WorkflowRegistry.list_workflows()]
-                raise ValueError(f"Unknown workflow: {workflow_name}. Available workflows: {available_workflows}")
-    
-    async def plan_workflow(self, workflow_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Plan workflow execution using LLM."""
-        try:
-            # Get workflow-specific prompt
-            prompt = self._get_workflow_planning_prompt(workflow_name)
-            
-            # Add input data to prompt
-            prompt += f"\n\nInput data:\n{json.dumps(input_data, indent=2)}"
-            
-            # Get LLM response
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": "Plan the workflow for the given input data."}
-                ],
-                temperature=0.2,  # Lower temperature for more consistent outputs
-                max_tokens=2000
-            )
-            
-            # Parse and validate response
-            try:
-                workflow_plan = json.loads(response.choices[0].message.content.strip())
-                self._validate_workflow_plan(workflow_plan)
-                return workflow_plan
-            except json.JSONDecodeError:
-                raise ValueError("LLM response is not valid JSON")
-            except ValueError as e:
-                raise ValueError(f"Invalid workflow plan: {str(e)}")
-                
-        except Exception as e:
-            self.logger.error(f"Error planning workflow: {str(e)}")
-            raise
-    
-    def _validate_workflow_plan(self, plan: Dict[str, Any]) -> None:
-        """Validate workflow plan structure."""
-        required_keys = ["required_tools", "steps", "outputs", "validation"]
-        for key in required_keys:
-            if key not in plan:
-                raise ValueError(f"Missing required key in workflow plan: {key}")
-                
-        if not isinstance(plan["steps"], list):
-            raise ValueError("Steps must be a list")
-            
-        for step in plan["steps"]:
-            required_step_keys = ["name", "tool", "action", "type", "parameters"]
-            for key in required_step_keys:
-                if key not in step:
-                    raise ValueError(f"Missing required key in step: {key}")
-    
-    async def analyze_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze error and suggest recovery steps."""
-        prompt = f"""Analyze this workflow error and suggest recovery steps:
+For RNA-seq analysis, consider these common steps:
+1. Quality control (FastQC)
+2. Index building (Kallisto)
+3. Quantification (Kallisto)
+4. MultiQC report generation
 
-Error: {str(error)}
-Error Type: {type(error).__name__}
-Step: {json.dumps(context.get('step', {}), indent=2)}
-Results so far: {json.dumps(context.get('results', {}), indent=2)}
+Ensure each step has:
+- A unique, descriptive name
+- The correct tool name
+- A clear action
+- All required parameters
+- Proper file paths and output directories"""
 
-Determine if the error is recoverable and suggest specific recovery steps.
-Return a JSON object with:
-{{
-    "error_type": "error classification",
-    "message": "error description",
-    "recoverable": true/false,
+    def _get_error_diagnosis_prompt(self) -> str:
+        """Get the prompt for error diagnosis."""
+        return """You are an expert at diagnosing and fixing bioinformatics workflow errors.
+
+Return a JSON object with the following structure:
+{
+    "diagnosis": "Detailed description of the error",
+    "error_type": "Specific error category",
     "recovery_steps": [
-        {{
-            "action": "action to take",
-            "parameters": {{}}
-        }}
+        "Step 1 description",
+        "Step 2 description"
     ],
     "suggestions": [
-        "user-friendly suggestion"
+        "Suggestion 1",
+        "Suggestion 2"
     ]
-}}"""
+}"""
 
+    def _get_command_generation_prompt(self) -> str:
+        """Get the prompt for command generation."""
+        return """You are an expert at generating shell commands for bioinformatics tools.
+Your task is to generate the exact command line string for a given tool and action.
+
+Common tools and their command formats:
+
+1. Filesystem:
+   - mkdir: mkdir -p <directory>
+   - rm: rm [-r] <path>
+   - cp: cp [-r] <source> <destination>
+
+2. FastQC:
+   - analyze: fastqc <input_files> -o <output_dir> [options]
+   Note: FastQC can accept file globs (e.g., *.fastq.gz) directly
+
+3. Kallisto:
+   - index: kallisto index -i <index_file> <reference_fasta>
+   - quant (single-end): kallisto quant -i <index> -o <output_dir> --single -l 200 -s 20 <single_input_file>
+   - quant (paired-end): kallisto quant -i <index> -o <output_dir> <reads1> <reads2>
+   Note: Kallisto quantification MUST process each file separately - never use globs
+
+4. MultiQC:
+   - report: multiqc <input_dir> -o <output_dir> [options]
+
+Important Rules:
+1. NEVER use shell operators like |, >, <, ;, &&, ||
+2. For Kallisto quantification, if a glob pattern is detected, return the error message: 'ERROR: Kallisto quantification requires individual file processing'
+3. For single-end RNA-seq, always include --single -l 200 -s 20 parameters
+4. Ensure all paths are properly specified
+5. FastQC and MultiQC can accept glob patterns directly, but Kallisto quantification cannot
+
+Return ONLY the command string, with no additional text or explanation."""
+
+    async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
+        """Generate a workflow plan from a natural language prompt."""
         try:
+            messages = [
+                {"role": "system", "content": self._get_workflow_planning_prompt()},
+                {"role": "user", "content": f"Create a detailed workflow plan for the following task: {prompt}"}
+            ]
+            
             response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": "Analyze the error and suggest recovery steps."}
-                ],
-                temperature=0.2
+                messages=messages,
+                temperature=0.2,
+                max_tokens=1000,
+                response_format={"type": "json_object"}
             )
             
-            return json.loads(response.choices[0].message.content.strip())
+            # Parse the response into a workflow plan
+            workflow_text = response.choices[0].message.content
+            try:
+                workflow_plan = json.loads(workflow_text)
+                
+                # Validate workflow structure
+                if not isinstance(workflow_plan, dict):
+                    raise ValueError("Workflow plan must be a dictionary")
+                if 'workflow_type' not in workflow_plan:
+                    raise ValueError("Workflow plan must specify workflow_type")
+                if 'steps' not in workflow_plan:
+                    raise ValueError("Workflow plan must contain steps")
+                if not isinstance(workflow_plan['steps'], list):
+                    raise ValueError("Steps must be a list")
+                
+                # Validate each step
+                seen_names = set()
+                for step in workflow_plan['steps']:
+                    # Check required fields
+                    required = ['name', 'tool', 'action', 'parameters']
+                    missing = [key for key in required if key not in step]
+                    if missing:
+                        raise ValueError(f"Step missing required keys: {missing}")
+                    
+                    # Validate name uniqueness
+                    if step['name'] in seen_names:
+                        raise ValueError(f"Duplicate step name: {step['name']}")
+                    seen_names.add(step['name'])
+                    
+                    # Ensure parameters is a dictionary
+                    if not isinstance(step['parameters'], dict):
+                        raise ValueError(f"Parameters for step {step['name']} must be a dictionary")
+                    
+                    # Add optional fields if missing
+                    if 'type' not in step:
+                        step['type'] = 'command'
+                    if 'description' not in step:
+                        step['description'] = None
+                
+                return workflow_plan
+                
+            except json.JSONDecodeError:
+                self.logger.error("Failed to parse workflow plan as JSON")
+                raise ValueError("Invalid workflow plan format")
             
         except Exception as e:
-            self.logger.error(f"Error analyzing error: {str(e)}")
-            return {
-                "error_type": type(error).__name__,
-                "message": str(error),
-                "recoverable": False,
-                "suggestions": ["Check input files exist", "Verify tool installations"]
-            }
+            self.logger.error(f"Error generating workflow plan: {str(e)}")
+            raise
+
+    async def generate_command(self, tool: str, action: str, parameters: Dict[str, Any]) -> str:
+        """Generate a command string for a given tool and action."""
+        try:
+            # Convert parameters to a formatted string
+            params_str = json.dumps(parameters, indent=2)
+            
+            messages = [
+                {"role": "system", "content": self._get_command_generation_prompt()},
+                {"role": "user", "content": f"Generate the command for:\nTool: {tool}\nAction: {action}\nParameters: {params_str}"}
+            ]
+            
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.1,  # Lower temperature for more consistent outputs
+                max_tokens=200  # Commands should be relatively short
+            )
+            
+            command = response.choices[0].message.content.strip()
+            
+            # Basic validation
+            if not command:
+                raise ValueError("Generated empty command")
+            
+            return command
+            
+        except Exception as e:
+            self.logger.error(f"Error generating command: {str(e)}")
+            raise
+
+    async def decompose_workflow(self, prompt: str) -> Dict[str, Any]:
+        """Convert prompt into workflow steps."""
+        return await self.generate_workflow_plan(prompt)
+
+    async def diagnose_error(
+        self,
+        error_type: str,
+        error_message: str,
+        step_name: str,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Diagnose workflow errors and suggest recovery steps."""
+        try:
+            messages = [
+                {"role": "system", "content": self._get_error_diagnosis_prompt()},
+                {"role": "user", "content": f"""
+Diagnose this workflow error and suggest recovery steps:
+Error Type: {error_type}
+Error Message: {error_message}
+Step: {step_name}
+Context: {json.dumps(context, indent=2)}
+"""}
+            ]
+            
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=1000,
+                response_format={"type": "json_object"}
+            )
+            
+            # Parse the response into diagnosis
+            diagnosis_text = response.choices[0].message.content
+            try:
+                diagnosis = json.loads(diagnosis_text)
+                required = ['diagnosis', 'error_type', 'recovery_steps', 'suggestions']
+                if not all(key in diagnosis for key in required):
+                    raise ValueError(f"Diagnosis missing required keys: {required}")
+            except json.JSONDecodeError:
+                self.logger.error("Failed to parse error diagnosis as JSON")
+                raise ValueError("Invalid diagnosis format")
+            
+            return diagnosis
+            
+        except Exception as e:
+            self.logger.error(f"Failed to diagnose error: {str(e)}")
+            raise

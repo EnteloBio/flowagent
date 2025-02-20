@@ -1,3 +1,5 @@
+"""Agent system for workflow execution."""
+
 import asyncio
 from typing import Dict, List, Any, Optional
 from pathlib import Path
@@ -8,9 +10,13 @@ import os
 from datetime import datetime
 import chromadb
 from pydantic import BaseModel
-from .llm import LLMInterface
 
-logger = logging.getLogger(__name__)
+from ..utils.logging import get_logger
+from .agent_types import TASK_agent, PLAN_agent, DEBUG_agent
+from .llm import LLMInterface
+from ..config.settings import settings
+
+logger = get_logger(__name__)
 
 class DiskSpaceError(Exception):
     """Raised when there isn't enough disk space"""
@@ -21,7 +27,7 @@ class PermissionError(Exception):
     pass
 
 class WorkflowStep(BaseModel):
-    """Model for a workflow step"""
+    """Model for a workflow step."""
     name: str
     tool: str
     action: str
@@ -29,7 +35,8 @@ class WorkflowStep(BaseModel):
     type: str
 
 class WorkflowStateManager:
-    """Manages workflow state and results"""
+    """Manages workflow state and results."""
+    
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
         self.state = {
@@ -52,31 +59,50 @@ class WorkflowStateManager:
         return self.state
 
 class BaseAgent:
-    """Base class for all agents"""
+    """Base class for all agents."""
+    
     def __init__(self, knowledge_db: chromadb.Client):
+        """Initialize base agent."""
         self.knowledge_db = knowledge_db
         self.llm = LLMInterface()
+        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
 
 class PLAN_agent(BaseAgent):
-    """Agent responsible for workflow planning"""
+    """Agent responsible for workflow planning."""
+    
     async def plan_from_prompt(self, prompt: str) -> Dict[str, Any]:
-        """Parse natural language prompt and create workflow plan"""
-        return await self.llm.generate_workflow_plan(prompt)
+        """Parse natural language prompt and create workflow plan."""
+        try:
+            workflow_plan = await self.llm.generate_workflow_plan(prompt)
+            if not self._validate_workflow_plan(workflow_plan):
+                raise ValueError("Invalid workflow plan structure")
+            return workflow_plan
+        except Exception as e:
+            self.logger.error(f"Failed to generate workflow plan: {str(e)}")
+            raise
     
-    def _validate_workflow_plan(self, plan: Dict) -> Dict:
-        """Validate workflow plan structure"""
-        required_keys = ['inputs', 'steps', 'outputs', 'validation']
+    def _validate_workflow_plan(self, plan: Dict[str, Any]) -> bool:
+        """Validate workflow plan structure."""
+        required_keys = ['workflow_type', 'steps']
         if not all(key in plan for key in required_keys):
-            raise ValueError(f"Workflow plan missing required keys: {required_keys}")
-        if not isinstance(plan['steps'], list) or not plan['steps']:
-            raise ValueError("Workflow plan must contain non-empty steps list")
-        return plan
+            return False
+        
+        if not isinstance(plan['steps'], list):
+            return False
+            
+        for step in plan['steps']:
+            if not all(key in step for key in ['name', 'tool', 'action', 'parameters']):
+                return False
+        
+        return True
     
-    async def decompose_workflow(self, prompt: str) -> List[WorkflowStep]:
-        """Convert prompt into workflow steps"""
-        plan = await self.plan_from_prompt(prompt)
-        plan = self._validate_workflow_plan(plan)
-        return [WorkflowStep(**step) for step in plan['steps']]
+    async def decompose_workflow(self, prompt: str) -> Dict[str, Any]:
+        """Convert prompt into workflow steps."""
+        try:
+            return await self.llm.decompose_workflow(prompt)
+        except Exception as e:
+            self.logger.error(f"Failed to decompose workflow: {str(e)}")
+            raise
 
 class TASK_agent(BaseAgent):
     """Agent responsible for task execution"""
@@ -219,19 +245,85 @@ class TASK_agent(BaseAgent):
                 self._check_disk_space(param_value)
                 self._check_permissions(param_value)
         
+        # Special handling for Kallisto quantification with multiple files
+        if step.tool.lower() == 'kallisto' and step.action.lower() == 'quant':
+            input_pattern = step.parameters.get('input')
+            if input_pattern and '*' in input_pattern:
+                # Get list of matching files
+                import glob
+                input_files = sorted(glob.glob(input_pattern))
+                if not input_files:
+                    raise ValueError(f"No files found matching pattern: {input_pattern}")
+                logger.info(f"Found input files for Kallisto quantification: {input_files}")
+                
+                results = []
+                for input_file in input_files:
+                    # Create parameters for this file
+                    file_params = step.parameters.copy()
+                    file_params['input'] = input_file
+                    
+                    # Generate and execute command for this file
+                    command = await self.llm.generate_command(step.tool, step.action, file_params)
+                    command = self._validate_command(command)
+                    logger.info(f"Generated command for {input_file}: {command}")
+                    
+                    result = await self.execute_command(command)
+                    results.append(result)
+                    
+                    if result['returncode'] != 0:
+                        raise RuntimeError(f"Command failed for {input_file}: {result['error']}")
+                
+                return {'results': results}
+        
+        # For FastQC and MultiQC, verify that glob pattern matches files before running
+        if step.tool.lower() in ['fastqc', 'multiqc']:
+            input_pattern = step.parameters.get('input')
+            if input_pattern and '*' in input_pattern:
+                import glob
+                matching_files = sorted(glob.glob(input_pattern))
+                if not matching_files:
+                    raise ValueError(f"No files found matching pattern: {input_pattern}")
+                logger.info(f"Found {len(matching_files)} files matching pattern for {step.tool}: {matching_files}")
+        
+        # Normal execution for other steps
         command = await self.get_tool_command(step.tool, step.action, step.parameters)
+        if command.startswith('ERROR:'):
+            if 'Kallisto quantification requires individual file processing' in command:
+                # Handle individual file processing
+                input_pattern = step.parameters.get('input')
+                if input_pattern and '*' in input_pattern:
+                    import glob
+                    input_files = sorted(glob.glob(input_pattern))
+                    if not input_files:
+                        raise ValueError(f"No files found matching pattern: {input_pattern}")
+                    logger.info(f"Found input files: {input_files}")
+                    
+                    results = []
+                    for input_file in input_files:
+                        file_params = step.parameters.copy()
+                        file_params['input'] = input_file
+                        
+                        command = await self.llm.generate_command(step.tool, step.action, file_params)
+                        command = self._validate_command(command)
+                        logger.info(f"Generated command for {input_file}: {command}")
+                        
+                        result = await self.execute_command(command)
+                        results.append(result)
+                        
+                        if result['returncode'] != 0:
+                            raise RuntimeError(f"Command failed for {input_file}: {result['error']}")
+                    
+                    return {'results': results}
+            else:
+                raise ValueError(f"Command generation failed: {command}")
+        
         result = await self.execute_command(command)
         
         if result['returncode'] == 0:
-            logger.info(f"Step {step.name} completed successfully")
-            if result['stdout']:
-                logger.debug(f"Command output:\n{result['stdout']}")
+            return result
         else:
-            logger.error(f"Step {step.name} failed")
-            logger.error(f"Command error output:\n{result['stderr']}")
-            
-        return result
-    
+            raise RuntimeError(f"Command failed: {result['error']}")
+
     async def execute_command(self, command: str) -> Dict[str, Any]:
         """Execute a shell command"""
         logger.info(f"Executing command: {command}")
@@ -274,7 +366,45 @@ class TASK_agent(BaseAgent):
             raise
 
 class DEBUG_agent(BaseAgent):
-    """Agent responsible for error diagnosis and recovery"""
-    async def diagnose_failure(self, error_context: Dict) -> Dict[str, Any]:
-        """Diagnose workflow failure and suggest recovery steps"""
-        return await self.llm.diagnose_error(error_context)
+    """Agent responsible for error diagnosis and recovery."""
+    
+    async def diagnose_failure(self, error_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Diagnose workflow failure and suggest recovery steps."""
+        try:
+            # Get error details
+            error_type = error_context.get('error_type', 'Unknown')
+            error_message = error_context.get('error_message', '')
+            step_name = error_context.get('step_name', '')
+            
+            # Log error for diagnosis
+            self.logger.error(
+                f"Diagnosing failure in step '{step_name}': "
+                f"{error_type} - {error_message}"
+            )
+            
+            # Generate diagnosis and recovery plan
+            diagnosis = await self.llm.diagnose_error(
+                error_type=error_type,
+                error_message=error_message,
+                step_name=step_name,
+                context=error_context
+            )
+            
+            return {
+                'error_type': error_type,
+                'error_message': error_message,
+                'step_name': step_name,
+                'diagnosis': diagnosis.get('diagnosis', ''),
+                'recovery_steps': diagnosis.get('recovery_steps', []),
+                'suggestions': diagnosis.get('suggestions', [])
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to diagnose error: {str(e)}")
+            return {
+                'error_type': 'DiagnosisError',
+                'error_message': str(e),
+                'diagnosis': 'Failed to diagnose error',
+                'recovery_steps': [],
+                'suggestions': ['Contact support for assistance']
+            }
