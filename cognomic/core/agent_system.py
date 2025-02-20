@@ -213,11 +213,36 @@ class TASK_agent(BaseAgent):
                 
     async def get_tool_command(self, tool: str, action: str, parameters: Dict[str, Any]) -> str:
         """Generate command for tool execution"""
-        command = await self.llm.generate_command(tool, action, parameters)
-        command = self._validate_command(command)
-        logger.info(f"Generated command: {command}")
-        return command
+        if tool.lower() == 'kallisto':
+            return self._generate_kallisto_command(action, parameters)
+        else:
+            command = await self.llm.generate_command(tool, action, parameters)
+            command = self._validate_command(command)
+            logger.info(f"Generated command: {command}")
+            return command
     
+    def _generate_kallisto_command(self, action: str, parameters: Dict[str, Any]) -> str:
+        """Generate Kallisto command."""
+        if action == "index":
+            reference = parameters.get('reference')
+            output = parameters.get('output')
+            return f"kallisto index -i {output} {reference}"
+            
+        elif action == "quant":
+            index = parameters.get('index')
+            output_dir = parameters.get('output_dir')
+            fragment_length = parameters.get('fragment_length', 200)
+            sd = parameters.get('sd', 20)
+            
+            # Return a function that generates command for a single file
+            def make_command(input_file: str) -> str:
+                return (f"kallisto quant -i {index} -o {output_dir} "
+                       f"--single -l {fragment_length} -s {sd} {input_file}")
+            return make_command
+            
+        else:
+            raise ValueError(f"Unknown Kallisto action: {action}")
+
     def _validate_command(self, command: str) -> str:
         """Validate generated command"""
         dangerous_ops = ['|', '>', '<', ';', '&&', '||', '`', '$']
@@ -227,103 +252,98 @@ class TASK_agent(BaseAgent):
                 raise ValueError(f"Generated command contains dangerous operator: {op}")
         return command.strip()
     
+    def _find_input_files(self, pattern: str) -> List[str]:
+        """Find input files matching the given pattern."""
+        # Define valid FASTQ extensions
+        fastq_extensions = ('.fastq', '.fastq.gz', '.fq', '.fq.gz')
+        
+        # Get all files in current directory
+        files = [f for f in os.listdir(self.cwd) 
+                if os.path.isfile(os.path.join(self.cwd, f))]
+        
+        # Filter for FASTQ files
+        fastq_files = [f for f in files if any(f.endswith(ext) for ext in fastq_extensions)]
+        
+        if not fastq_files:
+            self.logger.warning(f"No FASTQ files found in {self.cwd}")
+            return []
+            
+        self.logger.info(f"Found {len(fastq_files)} FASTQ files: {fastq_files}")
+        return fastq_files
+
+    def _generate_fastqc_command(self, input_file: str, output_dir: str) -> str:
+        """Generate FastQC command for a single file."""
+        return f"fastqc {input_file} -o {output_dir}"
+
     async def execute_step(self, step: WorkflowStep) -> Dict[str, Any]:
         """Execute a workflow step"""
         logger.info(f"Generating command for step: {step.name}")
         logger.info(f"Tool: {step.tool}, Action: {step.action}, Type: {step.type}")
         logger.info(f"Parameters: {json.dumps(step.parameters, indent=2)}")
         
-        # Special handling for Kallisto index
-        if step.tool.lower() == 'kallisto' and step.action.lower() == 'index':
-            self._validate_kallisto_params(step.parameters)
-            self._cleanup_kallisto_index(step.parameters.get('output', ''))
-        
-        # Check disk space and permissions for output paths
-        for param_name, param_value in step.parameters.items():
-            if any(key in param_name.lower() for key in ['output', 'outdir', 'out_dir', 'index']):
-                logger.info(f"Checking disk space and permissions for: {param_value}")
-                self._check_disk_space(param_value)
-                self._check_permissions(param_value)
-        
-        # Special handling for Kallisto quantification with multiple files
-        if step.tool.lower() == 'kallisto' and step.action.lower() == 'quant':
-            input_pattern = step.parameters.get('input')
-            if input_pattern and '*' in input_pattern:
-                # Get list of matching files
-                import glob
-                input_files = sorted(glob.glob(input_pattern))
-                if not input_files:
-                    raise ValueError(f"No files found matching pattern: {input_pattern}")
-                logger.info(f"Found input files for Kallisto quantification: {input_files}")
+        # Check disk space and permissions for output directory
+        if 'output_dir' in step.parameters:
+            output_dir = step.parameters['output_dir']
+            self._check_disk_space(output_dir)
+            self._check_permissions(output_dir)
+            
+        if step.tool.lower() == 'fastqc':
+            # For FastQC, process each file individually
+            fastq_files = self._find_input_files("*")
+            results = []
+            
+            for input_file in fastq_files:
+                command = self._generate_fastqc_command(input_file, step.parameters['output_dir'])
+                command = self._validate_command(command)
+                logger.info(f"Generated command: {command}")
                 
+                result = await self.execute_command(command)
+                results.append(result)
+                
+            # Return combined results
+            return {
+                'status': 'success' if all(r['returncode'] == 0 for r in results) else 'error',
+                'output': '\n'.join(r.get('stdout', '') for r in results),
+                'error': '\n'.join(r.get('stderr', '') for r in results if r.get('stderr'))
+            }
+            
+        elif step.tool.lower() == 'kallisto':
+            if step.action == "index":
+                # For index, just run single command
+                command = self._generate_kallisto_command(step.action, step.parameters)
+                command = self._validate_command(command)
+                logger.info(f"Generated command: {command}")
+                return await self.execute_command(command)
+            elif step.action == "quant":
+                # For quant, process each file individually
+                fastq_files = self._find_input_files("*")
                 results = []
-                for input_file in input_files:
-                    # Create parameters for this file
-                    file_params = step.parameters.copy()
-                    file_params['input'] = input_file
-                    
-                    # Generate and execute command for this file
-                    command = await self.llm.generate_command(step.tool, step.action, file_params)
+                
+                # Get command generator function
+                make_command = self._generate_kallisto_command(step.action, step.parameters)
+                
+                for input_file in fastq_files:
+                    command = make_command(input_file)
                     command = self._validate_command(command)
-                    logger.info(f"Generated command for {input_file}: {command}")
+                    logger.info(f"Generated command: {command}")
                     
                     result = await self.execute_command(command)
                     results.append(result)
-                    
-                    if result['returncode'] != 0:
-                        raise RuntimeError(f"Command failed for {input_file}: {result['error']}")
                 
-                return {'results': results}
-        
-        # For FastQC and MultiQC, verify that glob pattern matches files before running
-        if step.tool.lower() in ['fastqc', 'multiqc']:
-            input_pattern = step.parameters.get('input')
-            if input_pattern and '*' in input_pattern:
-                import glob
-                matching_files = sorted(glob.glob(input_pattern))
-                if not matching_files:
-                    raise ValueError(f"No files found matching pattern: {input_pattern}")
-                logger.info(f"Found {len(matching_files)} files matching pattern for {step.tool}: {matching_files}")
-        
-        # Normal execution for other steps
-        command = await self.get_tool_command(step.tool, step.action, step.parameters)
-        if command.startswith('ERROR:'):
-            if 'Kallisto quantification requires individual file processing' in command:
-                # Handle individual file processing
-                input_pattern = step.parameters.get('input')
-                if input_pattern and '*' in input_pattern:
-                    import glob
-                    input_files = sorted(glob.glob(input_pattern))
-                    if not input_files:
-                        raise ValueError(f"No files found matching pattern: {input_pattern}")
-                    logger.info(f"Found input files: {input_files}")
-                    
-                    results = []
-                    for input_file in input_files:
-                        file_params = step.parameters.copy()
-                        file_params['input'] = input_file
-                        
-                        command = await self.llm.generate_command(step.tool, step.action, file_params)
-                        command = self._validate_command(command)
-                        logger.info(f"Generated command for {input_file}: {command}")
-                        
-                        result = await self.execute_command(command)
-                        results.append(result)
-                        
-                        if result['returncode'] != 0:
-                            raise RuntimeError(f"Command failed for {input_file}: {result['error']}")
-                    
-                    return {'results': results}
-            else:
-                raise ValueError(f"Command generation failed: {command}")
-        
-        result = await self.execute_command(command)
-        
-        if result['returncode'] == 0:
-            return result
+                # Return combined results
+                return {
+                    'status': 'success' if all(r['returncode'] == 0 for r in results) else 'error',
+                    'output': '\n'.join(r.get('stdout', '') for r in results),
+                    'error': '\n'.join(r.get('stderr', '') for r in results if r.get('stderr'))
+                }
+            
         else:
-            raise RuntimeError(f"Command failed: {result['error']}")
-
+            # For other tools, use LLM command generation
+            command = await self.get_tool_command(step.tool, step.action, step.parameters)
+            command = self._validate_command(command)
+            logger.info(f"Generated command: {command}")
+            return await self.execute_command(command)
+    
     async def execute_command(self, command: str) -> Dict[str, Any]:
         """Execute a shell command"""
         logger.info(f"Executing command: {command}")
