@@ -30,41 +30,78 @@ class LLMInterface:
         
         self.logger.info(f"Initialized LLM interface with model: {self.model}")
 
-    def _get_workflow_planning_prompt(self) -> str:
+    def _get_workflow_planning_prompt(self, request: str) -> str:
         """Get the prompt for workflow planning."""
-        return """You are an expert bioinformatics workflow planner.
-Your task is to create detailed workflow plans for RNA-seq analysis.
+        return f"""Plan a bioinformatics workflow based on the following request:
+{request}
 
-Return a JSON object with the following structure:
-{
+Follow these rules when planning:
+1. Break down the workflow into logical steps
+2. For each step specify:
+   - Tool name
+   - Action
+   - Required parameters
+   - Expected outputs
+3. For file patterns:
+   - For input files, just use '*' to match all files of appropriate type
+   - The system will automatically handle file extensions (.fastq, .fastq.gz, etc.)
+   - For output files and directories, use full paths with appropriate extensions
+4. Always include quality control steps
+5. Always specify output directories for each step
+6. Consider error handling and data validation
+
+Example workflow plan:
+{{
     "workflow_type": "rna_seq",
     "steps": [
-        {
-            "name": "unique_step_name",
-            "tool": "tool_name",
-            "action": "action_name",
-            "parameters": {
-                "param1": "value1",
-                "param2": "value2"
-            },
+        {{
+            "name": "quality_control",
+            "tool": "FastQC",
+            "action": "Perform quality control on the input fastq files",
             "type": "command",
-            "description": "Optional description of what this step does"
-        }
+            "parameters": {{
+                "input": "*",  # Will match .fastq, .fastq.gz, .fq, .fq.gz
+                "output_dir": "results/rna_seq_analysis/fastqc_reports"
+            }}
+        }},
+        {{
+            "name": "build_index",
+            "tool": "kallisto",
+            "action": "index",
+            "type": "command",
+            "parameters": {{
+                "reference": "Homo_sapiens.GRCh38.cdna.all.fa",
+                "output": "results/rna_seq_analysis/kallisto_index"
+            }}
+        }},
+        {{
+            "name": "quantify",
+            "tool": "kallisto",
+            "action": "quant",
+            "type": "command",
+            "parameters": {{
+                "index": "results/rna_seq_analysis/kallisto_index",
+                "input": "*",  # Will match .fastq, .fastq.gz, .fq, .fq.gz
+                "output_dir": "results/rna_seq_analysis/kallisto_output",
+                "single": true,
+                "fragment_length": 200,
+                "sd": 20
+            }}
+        }},
+        {{
+            "name": "generate_report",
+            "tool": "MultiQC",
+            "action": "Generate quality control report",
+            "type": "command",
+            "parameters": {{
+                "input": "results/rna_seq_analysis",
+                "output_dir": "results/rna_seq_analysis/multiqc_report"
+            }}
+        }}
     ]
-}
+}}
 
-For RNA-seq analysis, consider these common steps:
-1. Quality control (FastQC)
-2. Index building (Kallisto)
-3. Quantification (Kallisto)
-4. MultiQC report generation
-
-Ensure each step has:
-- A unique, descriptive name
-- The correct tool name
-- A clear action
-- All required parameters
-- Proper file paths and output directories"""
+Generate a workflow plan in JSON format:"""
 
     def _get_error_diagnosis_prompt(self) -> str:
         """Get the prompt for error diagnosis."""
@@ -122,7 +159,7 @@ Return ONLY the command string, with no additional text or explanation."""
         """Generate a workflow plan from a natural language prompt."""
         try:
             messages = [
-                {"role": "system", "content": self._get_workflow_planning_prompt()},
+                {"role": "system", "content": self._get_workflow_planning_prompt(prompt)},
                 {"role": "user", "content": f"Create a detailed workflow plan for the following task: {prompt}"}
             ]
             

@@ -5,6 +5,7 @@ import logging
 import os
 from .agent_system import PLAN_agent, TASK_agent, DEBUG_agent, WorkflowStateManager, WorkflowStep
 from ..validation.validator import ValidationService, BioValidationSchemas
+from ..analysis.report_generator import ReportGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,30 @@ class WorkflowManager:
                 
             # Archive results
             logger.info("Archiving workflow results...")
-            return self.state_manager.archive_results()
+            results = self.state_manager.archive_results()
+            
+            # Generate analysis report
+            logger.info("Generating analysis report...")
+            report_generator = ReportGenerator(self.state_manager.output_dir)
+            analysis_report = report_generator.generate_report()
+            
+            if analysis_report.get('status') == 'error':
+                logger.error(f"Failed to generate analysis report: {analysis_report.get('message')}")
+            else:
+                logger.info(f"Analysis report status: {analysis_report['summary']['status']}")
+                if analysis_report['summary']['major_issues']:
+                    logger.warning("Major issues found:")
+                    for issue in analysis_report['summary']['major_issues']:
+                        logger.warning(f"  - {issue}")
+                if analysis_report['summary']['recommendations']:
+                    logger.info("Recommendations:")
+                    for rec in analysis_report['summary']['recommendations']:
+                        logger.info(f"  - {rec}")
+            
+            return {
+                'workflow_results': results,
+                'analysis_report': analysis_report
+            }
             
         except Exception as e:
             logger.error(f"Workflow execution failed: {str(e)}")
