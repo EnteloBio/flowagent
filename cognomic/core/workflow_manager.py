@@ -3,187 +3,172 @@ from pathlib import Path
 from typing import Dict, Any, List
 import logging
 import os
-from .agent_system import PLAN_agent, TASK_agent, DEBUG_agent, WorkflowStateManager, WorkflowStep
-from ..validation.validator import ValidationService, BioValidationSchemas
-from ..analysis.report_generator import ReportGenerator
+import json
+from .agent_system import PLAN_agent, TASK_agent, DEBUG_agent, WorkflowStep
 
 logger = logging.getLogger(__name__)
 
 class WorkflowManager:
-    def __init__(self, knowledge_db, output_dir: Path):
-        self.plan_agent = PLAN_agent(knowledge_db)
-        self.task_agent = TASK_agent(knowledge_db)
-        self.debug_agent = DEBUG_agent(knowledge_db)
-        self.state_manager = WorkflowStateManager(output_dir)
-        self.validation = ValidationService({
-            'kallisto_quant': BioValidationSchemas.KallistoQuantInput,
-            'fastqc': BioValidationSchemas.FastQCInput,
-            'multiqc': BioValidationSchemas.MultiQCInput,
-            'deseq2': BioValidationSchemas.DESeq2Input
-        })
+    """Manager for workflow execution and coordination."""
+    
+    def __init__(self, llm=None, logger=None):
+        """Initialize workflow manager."""
+        self.llm = llm
+        self.logger = logger or logging.getLogger(__name__)
+        self.cwd = os.getcwd()
+        self.logger.info(f"Initial working directory: {self.cwd}")
         
-        # Store the initial working directory
-        self.initial_cwd = os.getcwd()
-        logger.info(f"Initial working directory: {self.initial_cwd}")
+        # Initialize agents
+        self.plan_agent = PLAN_agent(llm=llm)
+        self.task_agent = TASK_agent(llm=llm)
+        self.debug_agent = DEBUG_agent(llm=llm)
 
-    def _workflow_plan_to_steps(self, plan: Dict[str, Any]) -> List[WorkflowStep]:
-        """Convert workflow plan to list of WorkflowStep objects."""
-        steps = []
-        for step_data in plan['steps']:
-            step = WorkflowStep(
-                name=step_data['name'],
-                tool=step_data['tool'],
-                action=step_data['action'],
-                parameters=step_data['parameters'],
-                type=step_data.get('type', 'command')  # Default to command type
-            )
-            steps.append(step)
-        return steps
-
-    def _create_output_directories(self, steps: List[WorkflowStep]) -> None:
-        """Create output directories specified in workflow steps."""
-        for step in steps:
-            # Create output directory if specified in parameters
-            output_dir = step.parameters.get('output_dir')
-            if output_dir:
-                os.makedirs(output_dir, exist_ok=True)
-                logger.info(f"Created output directory: {output_dir}")
-
-    def _initialize_state(self, steps: List[WorkflowStep]) -> None:
-        """Initialize workflow state with steps."""
-        self.state_manager.state['steps'] = {
-            step.name: {
-                'status': 'pending',
-                'tool': step.tool,
-                'action': step.action,
-                'parameters': step.parameters
-            }
-            for step in steps
-        }
-
-    async def execute_from_prompt(self, prompt: str) -> Dict[str, Any]:
-        """Execute workflow based on natural language prompt"""
+    async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
+        """Execute workflow from prompt."""
         try:
-            # Plan workflow steps from prompt
-            logger.info("Planning workflow steps...")
-            workflow_plan = await self.plan_agent.decompose_workflow(prompt)
+            self.logger.info("Planning workflow steps...")
+            workflow_steps = await self.plan_agent.decompose_workflow(prompt)
             
-            # Convert plan to steps
-            steps = self._workflow_plan_to_steps(workflow_plan)
+            # Create output directories
+            for step in workflow_steps:
+                output_dir = step.parameters.get("output_dir")
+                if output_dir:
+                    os.makedirs(output_dir, exist_ok=True)
+                    self.logger.info(f"Created output directory: {output_dir}")
             
-            # Initialize state and create directories
-            self._initialize_state(steps)
-            self._create_output_directories(steps)
+            # Set working directory for task agent
+            self.task_agent.cwd = self.cwd
+            self.logger.info(f"Set task agent working directory to: {self.cwd}")
             
-            # Update task agent's working directory
-            self.task_agent.cwd = self.initial_cwd
-            logger.info(f"Set task agent working directory to: {self.task_agent.cwd}")
-            
-            # Execute steps in order
-            for step in steps:
-                logger.info(f"Executing step: {step.name}")
+            # Execute each step
+            results = []
+            for step in workflow_steps:
+                self.logger.info(f"Executing step: {step.name}")
                 try:
-                    await self._execute_with_retry(step)
+                    result = await self.task_agent.execute_step(step)
+                    results.append({
+                        "step": step.name,
+                        "status": "success",
+                        "result": result
+                    })
                 except Exception as e:
-                    logger.error(f"Step failed: {step.name} - {str(e)}")
-                    raise
-                
+                    self.logger.error(f"Step execution failed: {str(e)}")
+                    # Try to diagnose the error
+                    try:
+                        diagnosis = await self.debug_agent.diagnose_error(e, {
+                            "step": {
+                                "name": step.name,
+                                "tool": step.tool,
+                                "action": step.action,
+                                "type": step.type,
+                                "parameters": step.parameters
+                            },
+                            "error": str(e),
+                            "context": {
+                                "working_directory": self.cwd,
+                                "step_parameters": step.parameters
+                            }
+                        })
+                        results.append({
+                            "step": step.name,
+                            "status": "failed",
+                            "error": str(e),
+                            "diagnosis": diagnosis
+                        })
+                    except Exception as diag_error:
+                        self.logger.error(f"Error diagnosis failed: {str(diag_error)}")
+                        results.append({
+                            "step": step.name,
+                            "status": "failed",
+                            "error": str(e),
+                            "diagnosis": None
+                        })
+            
             # Archive results
-            logger.info("Archiving workflow results...")
-            results = self.state_manager.archive_results()
+            self.logger.info("Archiving workflow results...")
+            archive_path = os.path.join("results", "workflow_archive.json")
+            os.makedirs(os.path.dirname(archive_path), exist_ok=True)
+            with open(archive_path, "w") as f:
+                json.dump(results, f, indent=2)
             
             # Generate analysis report
-            logger.info("Generating analysis report...")
-            report_generator = ReportGenerator(self.state_manager.output_dir)
-            analysis_report = report_generator.generate_report()
-            
-            if analysis_report.get('status') == 'error':
-                logger.error(f"Failed to generate analysis report: {analysis_report.get('message')}")
-            else:
-                logger.info(f"Analysis report status: {analysis_report['summary']['status']}")
-                if analysis_report['summary']['major_issues']:
-                    logger.warning("Major issues found:")
-                    for issue in analysis_report['summary']['major_issues']:
-                        logger.warning(f"  - {issue}")
-                if analysis_report['summary']['recommendations']:
-                    logger.info("Recommendations:")
-                    for rec in analysis_report['summary']['recommendations']:
-                        logger.info(f"  - {rec}")
+            self.logger.info("Generating analysis report...")
+            report = await self._generate_analysis_report(results)
             
             return {
-                'workflow_results': results,
-                'analysis_report': analysis_report
+                "status": "success",
+                "results": results,
+                "report": report,
+                "archive_path": archive_path
             }
             
         except Exception as e:
-            logger.error(f"Workflow execution failed: {str(e)}")
+            self.logger.error(f"Workflow execution failed: {str(e)}")
             try:
-                if self.debug_agent:
-                    error_context = {
-                        'prompt': prompt,
-                        'error': str(e),
-                        'state': self.state_manager.state
+                diagnosis = await self.debug_agent.diagnose_error(e, {
+                    "error": str(e),
+                    "context": {
+                        "working_directory": self.cwd,
+                        "prompt": prompt
                     }
-                    diagnosis = await self.debug_agent.diagnose_failure(error_context)
-                    logger.info(f"Error diagnosis: {diagnosis}")
-            except Exception as debug_error:
-                logger.error(f"Error diagnosis failed: {str(debug_error)}")
+                })
+                self.logger.info(f"Error diagnosis: {diagnosis}")
+            except Exception as diag_error:
+                self.logger.error(f"Error diagnosis failed: {str(diag_error)}")
             raise
 
-    async def _execute_with_retry(self, step: WorkflowStep) -> None:
-        """Execute a workflow step with retry logic."""
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
-            try:
-                # Special handling for Kallisto quantification
-                if step.tool.lower() == 'kallisto' and step.action.lower() == 'quant':
-                    # Get input files
-                    input_pattern = step.parameters.get('input')
-                    if input_pattern and '*' in input_pattern:
-                        # Get list of matching files
-                        import glob
-                        input_files = sorted(glob.glob(input_pattern))
-                        logger.info(f"Found input files: {input_files}")
-                        
-                        # Process each file individually
-                        for input_file in input_files:
-                            file_params = step.parameters.copy()
-                            file_params['input'] = input_file
-                            
-                            # Create file-specific step
-                            file_step = WorkflowStep(
-                                name=f"{step.name}_{os.path.basename(input_file)}",
-                                tool=step.tool,
-                                action=step.action,
-                                parameters=file_params,
-                                type=step.type
-                            )
-                            
-                            # Execute for individual file
-                            await self.task_agent.execute_step(file_step)
-                            self.state_manager.state['steps'][file_step.name] = {
-                                'status': 'completed',
-                                'tool': file_step.tool,
-                                'action': file_step.action,
-                                'parameters': file_step.parameters
-                            }
-                    else:
-                        # Single file case
-                        await self.task_agent.execute_step(step)
-                        self.state_manager.state['steps'][step.name]['status'] = 'completed'
-                else:
-                    # Normal execution for other steps
-                    await self.task_agent.execute_step(step)
-                    self.state_manager.state['steps'][step.name]['status'] = 'completed'
-                break
-                
-            except Exception as e:
-                retry_count += 1
-                logger.warning(f"Step failed (attempt {retry_count}/{max_retries}): {str(e)}")
-                if retry_count >= max_retries:
-                    logger.error(f"Step failed after {max_retries} attempts")
-                    self.state_manager.state['steps'][step.name]['status'] = 'failed'
-                    self.state_manager.state['steps'][step.name]['error'] = str(e)
-                    raise
+    async def _generate_analysis_report(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate analysis report from workflow results."""
+        try:
+            # Check if we have any results
+            if not results:
+                return {
+                    "status": None,
+                    "quality": "unknown",
+                    "issues": [{
+                        "severity": "high",
+                        "description": "No tool outputs available",
+                        "impact": "Lack of tool outputs makes it impossible to assess the quality or draw any meaningful conclusions from the analysis.",
+                        "solution": "Check the workflow configuration to ensure that tools are properly executed and their outputs are captured for analysis."
+                    }],
+                    "warnings": [{
+                        "severity": "high",
+                        "description": "Missing tool outputs",
+                        "impact": "Without tool outputs, it is not possible to verify the analysis results or troubleshoot any potential issues.",
+                        "solution": "Review the workflow execution logs to identify any errors or issues that might have prevented tool outputs from being generated."
+                    }],
+                    "recommendations": [{
+                        "type": "quality",
+                        "description": "Ensure all tools in the workflow are properly configured and executed to generate necessary outputs.",
+                        "reason": "Having complete tool outputs is essential for quality assessment and interpretation of the analysis results."
+                    }]
+                }
+            
+            # Analyze results
+            status = all(r["status"] == "success" for r in results)
+            quality = "good" if status else "poor"
+            
+            issues = []
+            warnings = []
+            recommendations = []
+            
+            for result in results:
+                if result["status"] != "success":
+                    issues.append({
+                        "severity": "high",
+                        "description": f"Step '{result['step']}' failed",
+                        "error": result.get("error", "Unknown error"),
+                        "diagnosis": result.get("diagnosis", {})
+                    })
+            
+            return {
+                "status": "success" if status else "failed",
+                "quality": quality,
+                "issues": issues,
+                "warnings": warnings,
+                "recommendations": recommendations
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate analysis report: {str(e)}")
+            return None
