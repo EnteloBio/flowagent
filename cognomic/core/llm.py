@@ -342,66 +342,59 @@ Context: {json.dumps(context, indent=2)}
             self.logger.error(f"Failed to diagnose error: {str(e)}")
             raise
 
-    async def generate_analysis(self, prompt: str) -> Dict[str, Any]:
-        """Generate analysis from workflow outputs."""
+    async def generate_analysis(self, data: Dict[str, Any], query: str) -> str:
+        """Generate analysis of workflow outputs using LLM."""
+        # Create a structured prompt for comprehensive analysis
+        prompt = f"""Analyze the following workflow output data and provide a detailed report addressing:
+
+1. Workflow Summary & Metadata
+- Workflow type and version
+- Parameters and settings used
+- Date of execution
+- Sample information and experimental design
+
+2. Quality Control Analysis
+- FastQC metrics and red flags
+- Read quality distribution
+- Adapter contamination
+- Overrepresented sequences
+- Duplication rates
+
+3. Alignment Statistics (if applicable)
+- Overall alignment rates
+- Uniquely mapped reads
+- Multi-mapping statistics
+- Read distribution (exonic/intronic/intergenic)
+- Insert size metrics
+- rRNA/mitochondrial content
+
+4. Key Findings and Recommendations
+- Major quality concerns
+- Potential experimental design issues
+- Suggestions for improvement
+- Next steps
+
+Data to analyze:
+{json.dumps(data, indent=2)}
+
+User query: {query}
+
+Focus on actionable insights and potential issues that could affect interpretation."""
+
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": """You are an expert bioinformatician analyzing workflow outputs.
-                    For any workflow type, focus on providing clear, actionable insights about:
-                    1. Quality metrics and their interpretation
-                    2. Tool-specific outputs and their meaning
-                    3. Any technical issues that need attention
-                    4. Workflow-specific recommendations
-                    
-                    Format your response as a JSON object with these keys:
-                    {
-                        "overall_quality": "good|warning|poor",
-                        "key_metrics": {
-                            "tool_name": {
-                                "metric_name": "value",
-                                "interpretation": "what this value means"
-                            }
-                        },
-                        "issues": [
-                            {
-                                "severity": "high|medium|low",
-                                "description": "issue description",
-                                "impact": "how this affects results",
-                                "solution": "how to fix it"
-                            }
-                        ],
-                        "warnings": [...],
-                        "recommendations": [
-                            {
-                                "type": "quality|performance|analysis",
-                                "description": "what to do",
-                                "reason": "why this is recommended"
-                            }
-                        ]
-                    }
-                    """},
+                    {"role": "system", "content": "You are a bioinformatics analysis expert. Provide a detailed report based on the given data and query."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=2000,
-                response_format={"type": "json_object"}
+                max_tokens=1000,
+                response_format={"type": "text"}
             )
             
-            # Parse JSON response
-            analysis = json.loads(response.choices[0].message.content)
-            return analysis
+            return response.choices[0].message.content
             
         except Exception as e:
-            self.logger.error(f"Error generating analysis: {str(e)}")
-            return {
-                "overall_quality": "unknown",
-                "error": str(e),
-                "issues": [{
-                    "severity": "high",
-                    "description": "Failed to analyze tool outputs",
-                    "impact": "Cannot provide quality assessment",
-                    "solution": "Check logs for details"
-                }]
-            }
+            self.logger.error(f"Error generating analysis: {e}")
+            return f"Error generating analysis: {str(e)}"

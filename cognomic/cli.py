@@ -95,47 +95,26 @@ def run(prompt: str):
         sys.exit(1)
 
 @cli.command()
-@click.argument('query')
-@click.option('--output-dir', '-o', default=None, help='Directory containing outputs to analyze. Uses current directory if not specified.')
-def analyze(query: str, output_dir: str = None):
-    """Run LLM analysis on any tool outputs in the specified directory."""
-    from .analysis.report_generator import ReportGenerator
-    from pathlib import Path
-    import logging
-    import asyncio
-    
-    # Set debug logging
-    logging.basicConfig(level=logging.DEBUG)
-    
-    # Use current directory if no output dir specified
-    output_dir = Path(output_dir) if output_dir else Path.cwd()
-    
+@click.argument('query', type=str)
+@click.option('--output-dir', type=click.Path(exists=True, file_okay=False, dir_okay=True), help='Directory containing workflow outputs')
+def analyze(query: str, output_dir: str):
+    """Analyze workflow outputs and generate a report."""
     async def run_analysis():
         try:
-            # Run analysis
+            from .analysis.report_generator import ReportGenerator
             generator = ReportGenerator()
-            result = await generator.analyze_tool_outputs(output_dir)
+            report = await generator.generate_analysis_report(Path(output_dir), query)
             
-            # Print results
-            if result and result.get('status') == 'success':
-                print("\nAnalysis Report:")
-                print("-" * 80)
-                print(result.get('analysis', 'No analysis available'))
-                print("-" * 80)
-            else:
-                error_msg = result.get('message') if result else 'Unknown error occurred'
-                print(f"\nError: {error_msg}")
-                
+            click.echo("\nAnalysis Report:")
+            click.echo("-" * 80)
+            click.echo(report)
+            click.echo("-" * 80)
+            
         except Exception as e:
-            print(f"Error running analysis: {str(e)}")
+            click.echo(f"\nError: {str(e)}", err=True)
     
     # Run the async analysis in an event loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(run_analysis())
-    finally:
-        loop.close()
+    asyncio.run(run_analysis())
 
 if __name__ == "__main__":
     cli()

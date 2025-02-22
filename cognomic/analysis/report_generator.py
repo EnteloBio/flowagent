@@ -11,6 +11,7 @@ import pkg_resources
 from ..utils.logging import get_logger
 from ..core.llm import LLMInterface
 import fnmatch
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -411,13 +412,16 @@ class ReportGenerator:
         
         return 'unknown'
     
-    async def _collect_file_content(self, file_path: Path, max_size: int = 50000) -> Dict[str, Any]:
-        """Safely collect file content with size limits and format detection."""
+    async def _collect_file_content(self, file_path: Path, max_size: int = 500000) -> Dict[str, Any]:
+        """Safely collect file content with focus on log and data files."""
         result = {
             'path': str(file_path),
             'size': file_path.stat().st_size if file_path.exists() else 0,
             'is_json': False,
+            'is_log': False,
+            'is_data': False,
             'content': None,
+            'parsed_content': None,
             'error': None
         }
         
@@ -426,26 +430,109 @@ class ReportGenerator:
             if result['size'] > max_size:
                 result['content'] = f"File too large ({result['size']} bytes)"
                 return result
-                
-            # Read file content
+            
+            # Determine file type
+            suffix = file_path.suffix.lower()
+            name = file_path.name.lower()
+            
+            # Identify log files
+            result['is_log'] = any([
+                suffix in ['.log', '.out', '.err'],
+                'log' in name,
+                'output' in name,
+                'error' in name
+            ])
+            
+            # Identify data files
+            result['is_data'] = any([
+                suffix in ['.tsv', '.csv', '.txt', '.json', '.stats', '.metrics'],
+                'metrics' in name,
+                'stats' in name,
+                'report' in name
+            ])
+            
+            # Read and parse content based on type
             with open(file_path, 'r') as f:
                 content = f.read()
                 
-            # Try to parse as JSON
-            try:
-                if file_path.suffix == '.json':
-                    result['content'] = json.loads(content)
-                    result['is_json'] = True
+                if suffix == '.json' or name.endswith('.json'):
+                    try:
+                        result['content'] = json.loads(content)
+                        result['is_json'] = True
+                        result['parsed_content'] = {
+                            'type': 'json',
+                            'metrics': result['content']
+                        }
+                    except json.JSONDecodeError:
+                        result['content'] = content
+                
+                elif result['is_log']:
+                    result['content'] = content
+                    # Parse log content for key information
+                    result['parsed_content'] = {
+                        'type': 'log',
+                        'summary': self._parse_log_content(content)
+                    }
+                
+                elif result['is_data']:
+                    result['content'] = content
+                    # Parse data file content
+                    result['parsed_content'] = {
+                        'type': 'data',
+                        'summary': self._parse_data_content(content, suffix)
+                    }
+                
                 else:
                     result['content'] = content
-            except json.JSONDecodeError:
-                result['content'] = content
-                
+                    
         except Exception as e:
             result['error'] = str(e)
             self.logger.error(f"Error reading {file_path}: {e}")
             
         return result
+        
+    def _parse_log_content(self, content: str) -> Dict[str, Any]:
+        """Parse log content for key information."""
+        lines = content.split('\n')
+        return {
+            'total_lines': len(lines),
+            'errors': [l for l in lines if 'error' in l.lower()],
+            'warnings': [l for l in lines if 'warning' in l.lower()],
+            'stats': [l for l in lines if any(x in l.lower() for x in ['processed', 'aligned', 'total', 'rate', 'percentage'])],
+            'parameters': [l for l in lines if any(x in l.lower() for x in ['parameter', 'option', 'setting', 'config', '--', '-p'])]
+        }
+        
+    def _parse_data_content(self, content: str, suffix: str) -> Dict[str, Any]:
+        """Parse data file content based on type."""
+        lines = content.split('\n')
+        
+        # Handle TSV/CSV files
+        if suffix in ['.tsv', '.csv']:
+            delimiter = '\t' if suffix == '.tsv' else ','
+            try:
+                # Get header and first few data rows
+                rows = [line.split(delimiter) for line in lines if line.strip()]
+                if len(rows) > 0:
+                    return {
+                        'headers': rows[0],
+                        'num_columns': len(rows[0]),
+                        'num_rows': len(rows) - 1,
+                        'sample_rows': rows[1:min(6, len(rows))]
+                    }
+            except Exception as e:
+                self.logger.error(f"Error parsing {suffix} content: {e}")
+                
+        # Handle metrics/stats files
+        elif suffix in ['.stats', '.metrics']:
+            return {
+                'metrics': [l for l in lines if ':' in l],
+                'total_metrics': len([l for l in lines if ':' in l])
+            }
+            
+        return {
+            'total_lines': len(lines),
+            'content_preview': '\n'.join(lines[:5])
+        }
 
     async def analyze_tool_outputs(self, output_dir: Union[str, Path]) -> Dict[str, Any]:
         """Analyze tool outputs using LLM."""
@@ -458,39 +545,81 @@ class ReportGenerator:
         
         try:
             self.logger.debug(f"Starting analysis of directory: {output_dir}")
-            tool_outputs = await self._collect_tool_outputs(output_dir)
             
-            if not isinstance(tool_outputs, dict):
-                self.logger.error(f"Expected dict for tool_outputs, got {type(tool_outputs)}")
+            # Helper function to recursively find files
+            def find_files(directory: Path) -> List[Path]:
+                files = []
+                try:
+                    for item in directory.iterdir():
+                        if item.is_file():
+                            files.append(item)
+                        elif item.is_dir():
+                            files.extend(find_files(item))
+                except (PermissionError, OSError) as e:
+                    self.logger.warning(f"Error accessing directory {directory}: {e}")
+                return files
+            
+            # Find all files
+            files = find_files(output_dir)
+            if not files:
                 return {
                     'status': 'error',
-                    'message': f'Invalid tool outputs format: expected dict, got {type(tool_outputs)}'
+                    'message': f'No files found in directory {output_dir} or its subdirectories'
                 }
+                
+            # Count files by type
+            file_types = {}
+            for f in files:
+                ext = f.suffix.lower()
+                file_types[ext] = file_types.get(ext, 0) + 1
+                    
+            self.logger.debug(f"Found files by type: {file_types}")
             
-            raw_outputs = tool_outputs.get('raw_outputs')
-            metrics = tool_outputs.get('metrics')
+            # Look for specific file types we care about
+            log_files = [f for f in files if f.suffix.lower() == '.log']
+            data_files = [f for f in files if f.suffix.lower() in ['.tsv', '.csv']]
+            qc_files = [f for f in files if 'multiqc_data' in str(f)]
             
-            if not raw_outputs or not metrics:
-                self.logger.debug(f"No outputs found. Raw outputs: {raw_outputs}, Metrics: {metrics}")
+            if not any([log_files, data_files, qc_files]):
                 return {
                     'status': 'error',
-                    'message': 'No tool outputs found to analyze'
+                    'message': 'No analyzable files found. Looking for: .log, .tsv, .csv, or multiqc data files'
                 }
             
-            # Prepare analysis prompt
-            self.logger.debug("Preparing analysis prompt...")
+            # Extract content from files
+            log_content = self._extract_log_content(log_files)
+            data_content = self._extract_data_content(data_files)
+            qc_content = self._extract_qc_content(qc_files)
+            
+            # Build analysis prompt with actual content
             prompt = f"""
-            Analyze the following workflow outputs and provide a comprehensive summary:
+            Please analyze these workflow outputs:
             
-            Output Structure:
-            {json.dumps(metrics, indent=2)}
+            Files Found:
+            {json.dumps(file_types, indent=2)}
+            
+            Log Content:
+            {log_content}
+            
+            Data Content:
+            {data_content}
+            
+            QC Content:
+            {qc_content}
             
             Please provide:
-            1. Overall workflow success assessment
-            2. Quality metrics analysis
-            3. Tool-specific findings
-            4. Any warnings or potential issues
-            5. Recommendations for improvement
+            1. Summary of Files:
+               - Types and counts of files found
+               - Any missing expected files
+            
+            2. Content Analysis:
+               - Key information from logs
+               - Important metrics from data files
+               - Quality control findings
+            
+            3. Issues and Recommendations:
+               - Any problems identified
+               - Suggested next steps
             """
             
             # Generate analysis
@@ -500,7 +629,13 @@ class ReportGenerator:
             return {
                 'status': 'success',
                 'analysis': analysis,
-                'metrics': metrics
+                'file_summary': {
+                    'total_files': len(files),
+                    'by_type': file_types,
+                    'log_files': len(log_files),
+                    'data_files': len(data_files),
+                    'qc_files': len(qc_files)
+                }
             }
             
         except Exception as e:
@@ -509,7 +644,7 @@ class ReportGenerator:
                 'status': 'error',
                 'message': f'Failed to analyze outputs: {str(e)}'
             }
-    
+
     async def _extract_metrics_from_outputs(self, outputs: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metrics from collected outputs."""
         self.logger.debug(f"Starting metrics extraction from outputs: {outputs}")
@@ -575,45 +710,297 @@ class ReportGenerator:
 
     async def _collect_tool_outputs(self, output_dir: Path) -> Dict[str, Any]:
         """Collect all tool outputs from the workflow directory."""
-        try:
-            # Collect all outputs
-            self.logger.debug("Starting to collect directory outputs...")
-            outputs = await self._collect_directory_outputs(output_dir)
-            self.logger.debug(f"Raw directory outputs: {outputs}")
-            
-            # Extract metrics and metadata
-            self.logger.debug("Extracting metrics from outputs...")
-            metrics = await self._extract_metrics_from_outputs(outputs)
-            self.logger.debug(f"Extracted metrics: {metrics}")
-            
-            return {
-                'raw_outputs': outputs,
-                'metrics': metrics
-            }
-        except Exception as e:
-            self.logger.error(f"Error in _collect_tool_outputs: {str(e)}")
-            raise
-
-    async def _collect_directory_outputs(self, directory: Path) -> Dict[str, Any]:
-        """Recursively collect outputs from a directory."""
-        if not directory.exists():
-            return {'files': [], 'subdirs': {}}
-
-        result = {'files': [], 'subdirs': {}}
+        outputs = {
+            'metadata': {
+                'workflow_date': datetime.now().isoformat(),
+                'workflow_dir': str(output_dir),
+                'tool_versions': {},
+                'parameters': {},
+            },
+            'quality_control': {
+                'fastqc': {},
+                'adapter_content': {},
+                'sequence_quality': {},
+                'duplication_rates': {},
+                'overrepresented_sequences': {},
+            },
+            'alignment': {
+                'overall_rate': None,
+                'unique_rate': None,
+                'multi_mapped': None,
+                'unmapped': None,
+                'read_distribution': {},
+                'insert_size': {},
+                'contamination': {},
+            },
+            'expression': {
+                'total_reads': None,
+                'mapped_reads': None,
+                'quantified_targets': None,
+                'samples': {}
+            },
+            'issues': [],
+            'warnings': [],
+            'recommendations': []
+        }
         
         try:
-            for item in directory.iterdir():
-                if item.name.startswith('.'):
-                    continue
-                    
-                if item.is_file():
-                    result['files'].append(await self._collect_file_content(item))
-                elif item.is_dir():
-                    result['subdirs'][item.name] = await self._collect_directory_outputs(item)
-        except Exception as e:
-            self.logger.error(f"Error collecting outputs from {directory}: {str(e)}")
+            # Find all relevant files recursively
+            fastqc_files = list(output_dir.rglob('*_fastqc.zip')) + list(output_dir.rglob('*_fastqc.html'))
+            multiqc_files = list(output_dir.rglob('multiqc_data.json'))
+            run_info_files = list(output_dir.rglob('run_info.json'))
             
-        return result
+            # Process FastQC outputs
+            for file in fastqc_files:
+                try:
+                    if file.suffix == '.zip':
+                        # Handle zip files
+                        import zipfile
+                        with zipfile.ZipFile(file, 'r') as zip_ref:
+                            data_file = next((f for f in zip_ref.namelist() if f.endswith('fastqc_data.txt')), None)
+                            if data_file:
+                                with zip_ref.open(data_file) as f:
+                                    content = f.read().decode('utf-8')
+                            else:
+                                continue
+                    else:
+                        # Handle HTML files
+                        with open(file) as f:
+                            content = f.read()
+                    
+                    sample_name = file.stem.replace('_fastqc', '')
+                    outputs['quality_control']['fastqc'][sample_name] = {}
+                    
+                    if 'Per base sequence quality' in content:
+                        quality_data = self._parse_fastqc_section(content, 'Per base sequence quality')
+                        outputs['quality_control']['sequence_quality'][sample_name] = quality_data
+                    if 'Adapter Content' in content:
+                        adapter_data = self._parse_fastqc_section(content, 'Adapter Content')
+                        outputs['quality_control']['adapter_content'][sample_name] = adapter_data
+                    if 'Sequence Duplication Levels' in content:
+                        dup_data = self._parse_fastqc_section(content, 'Sequence Duplication Levels')
+                        outputs['quality_control']['duplication_rates'][sample_name] = dup_data
+                except Exception as e:
+                    outputs['issues'].append(f"Error parsing FastQC file {file.name}: {str(e)}")
+            
+            # Process MultiQC data
+            for file in multiqc_files:
+                try:
+                    with open(file) as f:
+                        mqc_data = json.load(f)
+                        if 'report_general_stats_data' in mqc_data:
+                            for stats in mqc_data['report_general_stats_data']:
+                                for sample, metrics in stats.items():
+                                    if 'FastQC' in metrics:
+                                        outputs['quality_control']['fastqc'][sample] = metrics['FastQC']
+                except Exception as e:
+                    outputs['issues'].append(f"Error parsing MultiQC data from {file.name}: {str(e)}")
+            
+            # Process expression data (Kallisto outputs)
+            for info_file in run_info_files:
+                try:
+                    # Find corresponding abundance file in the same directory
+                    abundance_file = info_file.parent / 'abundance.tsv'
+                    if not abundance_file.exists():
+                        continue
+                        
+                    # Get run info
+                    with open(info_file) as f:
+                        run_info = json.load(f)
+                        # Use parent directory name as sample name, removing any .fastq extension
+                        sample_name = info_file.parent.name
+                        if sample_name.endswith('.fastq'):
+                            sample_name = sample_name[:-6]
+                        outputs['expression']['samples'][sample_name] = {
+                            'n_processed': run_info.get('n_processed', 0),
+                            'n_pseudoaligned': run_info.get('n_pseudoaligned', 0),
+                            'n_unique': run_info.get('n_unique', 0),
+                            'p_pseudoaligned': run_info.get('p_pseudoaligned', 0)
+                        }
+                    
+                    # Get abundance data
+                    with open(abundance_file) as f:
+                        header = f.readline().strip().split('\t')
+                        if 'tpm' in [h.lower() for h in header]:
+                            tpm_idx = [h.lower() for h in header].index('tpm')
+                            tpm_values = []
+                            for line in f:
+                                fields = line.strip().split('\t')
+                                if len(fields) > tpm_idx:
+                                    try:
+                                        tpm = float(fields[tpm_idx])
+                                        tpm_values.append(tpm)
+                                    except ValueError:
+                                        continue
+                            
+                            if tpm_values:
+                                outputs['expression']['samples'][sample_name]['expressed_genes'] = len([t for t in tpm_values if t > 1])
+                                outputs['expression']['samples'][sample_name]['median_tpm'] = sorted(tpm_values)[len(tpm_values)//2]
+                except Exception as e:
+                    outputs['issues'].append(f"Error processing expression data for {info_file.parent.name}: {str(e)}")
+            
+            # Add recommendations based on metrics
+            for sample, metrics in outputs['expression']['samples'].items():
+                if metrics.get('p_pseudoaligned', 0) < 70:
+                    outputs['recommendations'].append(
+                        f"Low alignment rate ({metrics['p_pseudoaligned']:.1f}%) for sample {sample}. "
+                        "Consider checking for contamination or updating reference transcriptome."
+                    )
+            
+            if outputs['quality_control']['fastqc']:
+                for sample, metrics in outputs['quality_control']['fastqc'].items():
+                    if metrics.get('per_base_quality', {}).get('mean', 0) < 30:
+                        outputs['recommendations'].append(
+                            f"Low base quality scores detected in {sample}. Consider more stringent quality filtering."
+                        )
+            
+            return outputs
+            
+        except Exception as e:
+            self.logger.error(f"Error collecting tool outputs: {e}")
+            return {
+                'status': 'error',
+                'message': str(e)
+            }    
+
+    def _parse_fastqc_section(self, content: str, section_name: str) -> Dict[str, Any]:
+        """Parse a specific section from FastQC output."""
+        try:
+            # Split content into lines and find section
+            lines = content.split('\n')
+            section_start = -1
+            section_end = -1
+            
+            # Find section boundaries
+            for i, line in enumerate(lines):
+                if line.startswith(f'>>{section_name}'):
+                    section_start = i
+                elif line.startswith('>>END_MODULE') and section_start != -1:
+                    section_end = i
+                    break
+            
+            if section_start == -1:
+                self.logger.debug(f"Section {section_name} not found")
+                return {}
+                
+            if section_end == -1:
+                section_end = len(lines)
+            
+            # Extract section lines
+            section_lines = lines[section_start:section_end]
+            self.logger.debug(f"Found section {section_name} with {len(section_lines)} lines")
+            self.logger.debug(f"First few lines:\n" + '\n'.join(section_lines[:5]))
+            
+            # Remove module header and column header lines
+            data_lines = []
+            for line in section_lines:
+                if not line.startswith('>>') and not line.startswith('#'):
+                    data_lines.append(line)
+            
+            if not data_lines:
+                self.logger.debug(f"No data lines found in section {section_name}")
+                return {}
+            
+            # Parse based on section type
+            data = {}
+            
+            if section_name == "Per base sequence quality":
+                # First line is column headers, skip it
+                data['base_positions'] = []
+                data['mean_scores'] = []
+                data['median_scores'] = []
+                data['lower_quartile'] = []
+                data['upper_quartile'] = []
+                
+                for line in data_lines[1:]:  # Skip header row
+                    if not line.strip():
+                        continue
+                    try:
+                        parts = line.strip().split('\t')
+                        self.logger.debug(f"Processing line: {parts}")
+                        if len(parts) >= 6:
+                            base = parts[0]
+                            mean = float(parts[1])
+                            median = float(parts[2])
+                            lower = float(parts[3])
+                            upper = float(parts[4])
+                            
+                            data['base_positions'].append(base)
+                            data['mean_scores'].append(mean)
+                            data['median_scores'].append(median)
+                            data['lower_quartile'].append(lower)
+                            data['upper_quartile'].append(upper)
+                    except (ValueError, IndexError) as e:
+                        self.logger.debug(f"Error parsing line {line}: {str(e)}")
+                        continue
+                
+                if data['mean_scores']:
+                    data['overall_mean'] = sum(data['mean_scores']) / len(data['mean_scores'])
+                    data['overall_median'] = sum(data['median_scores']) / len(data['median_scores'])
+                
+            elif section_name == "Adapter Content":
+                # Get adapter names from first data line
+                header = data_lines[0].strip().split('\t')
+                if len(header) > 1:
+                    adapter_names = header[1:]  # Skip 'Position' column
+                    data['positions'] = []
+                    data['adapters'] = {name: [] for name in adapter_names}
+                    
+                    for line in data_lines[1:]:
+                        if not line.strip():
+                            continue
+                        try:
+                            parts = line.strip().split('\t')
+                            self.logger.debug(f"Processing adapter line: {parts}")
+                            if len(parts) >= len(adapter_names) + 1:
+                                position = parts[0]
+                                data['positions'].append(position)
+                                for i, adapter in enumerate(adapter_names):
+                                    value = parts[i + 1]
+                                    if value.endswith('%'):
+                                        value = value[:-1]
+                                    data['adapters'][adapter].append(float(value))
+                        except (ValueError, IndexError) as e:
+                            self.logger.debug(f"Error parsing adapter line {line}: {str(e)}")
+                            continue
+                    
+                    # Calculate max adapter content
+                    max_content = 0
+                    for values in data['adapters'].values():
+                        if values:
+                            max_content = max(max_content, max(values))
+                    data['max_adapter_content'] = max_content
+                
+            elif section_name == "Sequence Duplication Levels":
+                data['duplication_levels'] = []
+                data['percentages'] = []
+                
+                for line in data_lines[1:]:  # Skip header
+                    if not line.strip() or line.startswith('Total'):  # Skip empty lines and summary
+                        continue
+                    try:
+                        parts = line.strip().split('\t')
+                        self.logger.debug(f"Processing duplication line: {parts}")
+                        if len(parts) >= 2:
+                            level = parts[0]
+                            percentage = parts[1]
+                            if percentage.endswith('%'):
+                                percentage = percentage[:-1]
+                            data['duplication_levels'].append(level)
+                            data['percentages'].append(float(percentage))
+                    except (ValueError, IndexError) as e:
+                        self.logger.debug(f"Error parsing duplication line {line}: {str(e)}")
+                        continue
+                
+                if data['percentages']:
+                    data['total_duplication'] = sum(data['percentages'])
+                    data['max_duplication'] = max(data['percentages'])
+            
+            return data
+            
+        except Exception as e:
+            self.logger.warning(f"Error parsing FastQC section {section_name}: {str(e)}")
+            return {}
 
     async def generate_report(self, output_dir: Union[str, Path]) -> Dict[str, Any]:
         """Generate comprehensive analysis report."""
@@ -642,3 +1029,160 @@ class ReportGenerator:
                 'message': 'Failed to generate analysis report',
                 'error': str(e)
             }
+
+    async def generate_analysis_report(self, workflow_dir: Path, query: str = None) -> str:
+        """Generate analysis report for workflow outputs."""
+        try:
+            # Collect all outputs
+            outputs = await self._collect_tool_outputs(workflow_dir)
+            
+            if 'status' in outputs and outputs['status'] == 'error':
+                return f"Error analyzing outputs: {outputs.get('message', 'Unknown error')}"
+                
+            # Generate analysis using LLM
+            analysis = await self.llm.generate_analysis(outputs, query or "Analyze the workflow outputs and provide key findings")
+            
+            # Format report
+            report = f"""
+            # Workflow Analysis Report
+            Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            
+            {analysis}
+            
+            ## Files Analyzed
+            - Log files: {len(outputs.get('metadata', {}).get('tool_versions', {}))} tools
+            - QC metrics: {len(outputs.get('quality_control', {}).get('fastqc', {}))} samples
+            - Issues found: {len(outputs.get('issues', []))}
+            - Recommendations: {len(outputs.get('recommendations', []))}
+            """
+            
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing outputs: {e}")
+            return f"Error analyzing outputs: {str(e)}"
+
+    def _extract_log_content(self, log_files: List[Path]) -> str:
+        """Extract relevant content from log files."""
+        content = []
+        for file in log_files:
+            try:
+                content.append(f"\n# Log File: {file.name}")
+                with open(file, 'r') as f:
+                    # Read file in chunks to handle large files
+                    chunk_size = 8192  # 8KB chunks
+                    buffer = []
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        buffer.append(chunk)
+                        
+                    text = ''.join(buffer)
+                    lines = text.split('\n')
+                    
+                    # Extract key information
+                    version_lines = [l.strip() for l in lines if 'version' in l.lower()]
+                    error_lines = [l.strip() for l in lines if 'error' in l.lower()]
+                    warning_lines = [l.strip() for l in lines if 'warning' in l.lower()]
+                    stat_lines = [l.strip() for l in lines if any(x in l.lower() for x in ['processed', 'aligned', 'total', 'rate', 'percentage'])]
+                    param_lines = [l.strip() for l in lines if any(x in l.lower() for x in ['parameter', 'option', 'setting', 'config', '--', '-p'])]
+                    
+                    # Add organized sections
+                    if version_lines:
+                        content.append("Versions:")
+                        content.extend(version_lines)
+                    if error_lines:
+                        content.append("\nErrors:")
+                        content.extend(error_lines)
+                    if warning_lines:
+                        content.append("\nWarnings:")
+                        content.extend(warning_lines)
+                    if stat_lines:
+                        content.append("\nStatistics:")
+                        content.extend(stat_lines)
+                    if param_lines:
+                        content.append("\nParameters:")
+                        content.extend(param_lines)
+                        
+            except Exception as e:
+                self.logger.warning(f"Could not read {file}: {str(e)}")
+                content.append(f"Error reading file: {str(e)}")
+                
+        return '\n'.join(content) if content else "No log content found"
+        
+    def _extract_data_content(self, data_files: List[Path]) -> str:
+        """Extract relevant content from data files."""
+        content = []
+        for file in data_files:
+            try:
+                content.append(f"\n# Data File: {file.name}")
+                with open(file, 'r') as f:
+                    # Read header and sample data
+                    header = f.readline().strip()
+                    content.append(f"Header: {header}")
+                    
+                    # Get column names
+                    columns = header.split('\t')
+                    content.append(f"Number of columns: {len(columns)}")
+                    content.append("Column names:")
+                    content.extend([f"  {i+1}. {col}" for i, col in enumerate(columns)])
+                    
+                    # Read sample data
+                    data = []
+                    for _ in range(100):  # Read up to 100 lines
+                        line = f.readline()
+                        if not line:
+                            break
+                        data.append(line.strip().split('\t'))
+                        
+                    if data:
+                        content.append(f"\nRows analyzed: {len(data)}")
+                        
+                        # Try to get stats for numeric columns
+                        for col_idx, col_name in enumerate(columns):
+                            try:
+                                col_data = []
+                                for row in data:
+                                    if col_idx < len(row):  # Ensure column exists
+                                        try:
+                                            val = float(row[col_idx])
+                                            col_data.append(val)
+                                        except ValueError:
+                                            continue
+                                
+                                if col_data:  # Only show stats if we found numeric values
+                                    content.append(f"\nStats for column '{col_name}':")
+                                    content.append(f"  Min: {min(col_data):.2f}")
+                                    content.append(f"  Max: {max(col_data):.2f}")
+                                    content.append(f"  Mean: {sum(col_data)/len(col_data):.2f}")
+                                    content.append(f"  Values found: {len(col_data)}")
+                            except Exception as e:
+                                self.logger.debug(f"Could not analyze column {col_idx}: {e}")
+                                
+            except Exception as e:
+                self.logger.warning(f"Could not read {file}: {str(e)}")
+                content.append(f"Error reading file: {str(e)}")
+                
+        return '\n'.join(content) if content else "No data content found"
+
+    def _extract_qc_content(self, qc_files: List[Path]) -> str:
+        """Extract relevant content from QC files."""
+        content = []
+        for file in qc_files:
+            try:
+                if file.suffix in ['.txt', '.tsv', '.csv', '.json']:
+                    with open(file, 'r') as f:
+                        content.append(f"\n# QC File: {file.name}")
+                        for line in f:
+                            line = line.strip()
+                            # Only include informative QC metrics
+                            if any(key in line.lower() for key in [
+                                'quality', 'score', 'metric', 'stat',
+                                'pass', 'fail', 'warning', 'error',
+                                'total', 'mean', 'median', 'std'
+                            ]):
+                                content.append(line)
+            except Exception as e:
+                self.logger.warning(f"Could not read {file}: {str(e)}")
+        return "\n".join(content)
