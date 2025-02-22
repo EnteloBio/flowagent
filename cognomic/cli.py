@@ -6,6 +6,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
+import click
 
 from .core.workflow_manager import WorkflowManager
 from .core.llm import LLMInterface
@@ -78,17 +79,63 @@ async def run_workflow(prompt: str) -> None:
         logger.error(f"Workflow failed: {str(e)}")
         raise
 
-def main() -> None:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Cognomic: Intelligent RNA-seq Analysis Pipeline")
-    parser.add_argument("prompt", help="Natural language description of the analysis to perform")
-    args = parser.parse_args()
-    
+@click.group()
+def cli():
+    """Cognomic CLI."""
+    pass
+
+@cli.command()
+@click.argument('prompt')
+def run(prompt: str):
+    """Run workflow from prompt."""
     try:
-        asyncio.run(run_workflow(args.prompt))
+        asyncio.run(run_workflow(prompt))
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
         sys.exit(1)
 
+@cli.command()
+@click.argument('query')
+@click.option('--output-dir', '-o', default=None, help='Directory containing outputs to analyze. Uses current directory if not specified.')
+def analyze(query: str, output_dir: str = None):
+    """Run LLM analysis on any tool outputs in the specified directory."""
+    from .analysis.report_generator import ReportGenerator
+    from pathlib import Path
+    import logging
+    import asyncio
+    
+    # Set debug logging
+    logging.basicConfig(level=logging.DEBUG)
+    
+    # Use current directory if no output dir specified
+    output_dir = Path(output_dir) if output_dir else Path.cwd()
+    
+    async def run_analysis():
+        try:
+            # Run analysis
+            generator = ReportGenerator()
+            result = await generator.analyze_tool_outputs(output_dir)
+            
+            # Print results
+            if result and result.get('status') == 'success':
+                print("\nAnalysis Report:")
+                print("-" * 80)
+                print(result.get('analysis', 'No analysis available'))
+                print("-" * 80)
+            else:
+                error_msg = result.get('message') if result else 'Unknown error occurred'
+                print(f"\nError: {error_msg}")
+                
+        except Exception as e:
+            print(f"Error running analysis: {str(e)}")
+    
+    # Run the async analysis in an event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(run_analysis())
+    finally:
+        loop.close()
+
 if __name__ == "__main__":
-    main()
+    cli()
