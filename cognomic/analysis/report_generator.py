@@ -4,12 +4,13 @@ import json
 import os
 from pathlib import Path
 import logging
-from typing import Dict, Any, List, Optional, Type
+from typing import Dict, Any, List, Optional, Type, Union
 from abc import ABC, abstractmethod
 import importlib
 import pkg_resources
 from ..utils.logging import get_logger
 from ..core.llm import LLMInterface
+import fnmatch
 
 logger = get_logger(__name__)
 
@@ -244,177 +245,400 @@ class KallistoAnalyzer(ToolAnalyzer):
             'status': 'success',
             'issues': [],
             'warnings': [],
-            'metrics': {}
+            'metrics': {
+                'summary': {},
+                'samples': {}
+            }
         }
+        
+        # Check kallisto index
+        index_dir = self.output_dir / "kallisto_index"
+        if not index_dir.exists():
+            results['warnings'].append("Kallisto index directory not found")
+        else:
+            index_files = list(index_dir.glob("*.idx"))
+            if not index_files:
+                results['warnings'].append("No Kallisto index file found")
+            else:
+                results['metrics']['summary']['index'] = str(index_files[0].name)
         
         # Look in kallisto_output directory
         kallisto_dir = self.output_dir / "kallisto_output"
         if not kallisto_dir.exists():
             return {'status': 'error', 'message': 'Kallisto output directory not found'}
             
-        # Find run_info.json files
-        info_files = list(kallisto_dir.glob("*/run_info.json"))
-        if not info_files:
-            return {'status': 'error', 'message': 'No Kallisto run info files found'}
+        # Find abundance.h5 and run_info.json files
+        sample_dirs = [d for d in kallisto_dir.iterdir() if d.is_dir()]
+        if not sample_dirs:
+            return {'status': 'error', 'message': 'No Kallisto output directories found'}
             
-        for info_file in info_files:
-            sample_name = info_file.parent.name
-            try:
-                # Parse run info
-                with open(info_file) as f:
-                    run_info = json.load(f)
-                results['metrics'][sample_name] = run_info
-                
-                # Check for potential issues
-                if run_info.get('n_processed', 0) == 0:
-                    results['issues'].append(f"{sample_name}: No reads processed")
-                elif run_info.get('n_pseudoaligned', 0) / run_info.get('n_processed', 1) < 0.5:
-                    results['warnings'].append(
-                        f"{sample_name}: Low alignment rate "
-                        f"({run_info.get('n_pseudoaligned', 0) / run_info.get('n_processed', 1) * 100:.1f}%)"
-                    )
+        total_reads = 0
+        total_pseudoaligned = 0
+        
+        for sample_dir in sample_dirs:
+            sample_name = sample_dir.name
+            results['metrics']['samples'][sample_name] = {}
+            
+            # Check run info
+            run_info_file = sample_dir / "run_info.json"
+            if run_info_file.exists():
+                try:
+                    with open(run_info_file) as f:
+                        run_info = json.load(f)
+                    results['metrics']['samples'][sample_name]['run_info'] = run_info
                     
-            except Exception as e:
-                results['issues'].append(f"Error parsing {sample_name}: {str(e)}")
+                    # Update totals
+                    n_processed = run_info.get('n_processed', 0)
+                    n_pseudoaligned = run_info.get('n_pseudoaligned', 0)
+                    total_reads += n_processed
+                    total_pseudoaligned += n_pseudoaligned
+                    
+                    # Check alignment rate
+                    if n_processed == 0:
+                        results['issues'].append(f"{sample_name}: No reads processed")
+                    else:
+                        alignment_rate = n_pseudoaligned / n_processed
+                        results['metrics']['samples'][sample_name]['alignment_rate'] = alignment_rate
+                        
+                        if alignment_rate < 0.5:
+                            results['warnings'].append(
+                                f"{sample_name}: Low alignment rate ({alignment_rate * 100:.1f}%)"
+                            )
+                        elif alignment_rate < 0.3:
+                            results['issues'].append(
+                                f"{sample_name}: Very low alignment rate ({alignment_rate * 100:.1f}%)"
+                            )
+                            
+                except Exception as e:
+                    results['issues'].append(f"Error parsing run info for {sample_name}: {str(e)}")
+            else:
+                results['issues'].append(f"{sample_name}: No run_info.json found")
+            
+            # Check abundance files
+            abundance_file = sample_dir / "abundance.h5"
+            if not abundance_file.exists():
+                results['issues'].append(f"{sample_name}: No abundance.h5 file found")
+                
+        # Add summary metrics
+        if total_reads > 0:
+            overall_alignment_rate = total_pseudoaligned / total_reads
+            results['metrics']['summary'].update({
+                'total_reads': total_reads,
+                'total_pseudoaligned': total_pseudoaligned,
+                'overall_alignment_rate': overall_alignment_rate
+            })
+            
+            if overall_alignment_rate < 0.5:
+                results['warnings'].append(
+                    f"Overall low alignment rate ({overall_alignment_rate * 100:.1f}%)"
+                )
                 
         return results
 
 class ReportGenerator:
     """Generates comprehensive analysis reports for any workflow."""
     
-    def __init__(self, output_dir: str, workflow_type: str = None):
-        """Initialize report generator.
-        
-        Args:
-            output_dir: Directory containing workflow outputs
-            workflow_type: Optional type of workflow (e.g. 'rna_seq', 'chip_seq', etc.)
-                         If not provided, will be inferred from outputs
-        """
-        self.output_dir = Path(output_dir)
-        self.workflow_type = workflow_type
+    def __init__(self):
+        """Initialize the report generator."""
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
+    
+    async def _infer_workflow_type(self, outputs: Dict[str, Any]) -> str:
+        """Infer workflow type from available outputs."""
+        # Extract directory names and file patterns
+        directories = set()
+        file_patterns = set()
         
-    def _infer_workflow_type(self, tool_outputs: Dict[str, List]) -> str:
-        """Infer workflow type from available tool outputs."""
-        # Look for characteristic tool outputs
-        tools = set()
-        for dir_name in tool_outputs.keys():
-            tools.add(dir_name.lower())
-            
-        # Common workflow signatures
+        def collect_patterns(data: Dict[str, Any]):
+            # Add directory names
+            for dirname in data.get('subdirs', {}).keys():
+                directories.add(dirname.lower())
+                
+            # Add file patterns
+            for file in data.get('files', []):
+                name = Path(file['path']).name.lower()
+                file_patterns.add(name)
+                
+            # Recurse into subdirectories
+            for subdir in data.get('subdirs', {}).values():
+                collect_patterns(subdir)
+        
+        collect_patterns(outputs.get('raw_outputs', {}))
+        
+        # Define workflow signatures
         signatures = {
-            'rna_seq': {'kallisto', 'star', 'fastqc', 'multiqc', 'deseq2', 'salmon'},
-            'chip_seq': {'bowtie2', 'macs2', 'fastqc', 'multiqc', 'homer'},
-            'atac_seq': {'bowtie2', 'macs2', 'fastqc', 'multiqc', 'homer'},
-            'wgs': {'bwa', 'samtools', 'gatk', 'fastqc', 'multiqc'},
-            'metagenomics': {'kraken2', 'metaphlan', 'fastqc', 'multiqc'},
-            'variant_calling': {'gatk', 'samtools', 'bcftools', 'fastqc', 'multiqc'}
+            'rna_seq': {
+                'dirs': {'fastqc', 'kallisto', 'star', 'salmon', 'multiqc'},
+                'files': {'abundance.h5', 'run_info.json', '*_fastqc.html', 'multiqc_report.html'}
+            },
+            'chip_seq': {
+                'dirs': {'bowtie2', 'macs2', 'fastqc', 'multiqc', 'homer'},
+                'files': {'*.bam', '*.bed', '*_peaks.narrowPeak', '*_fastqc.html'}
+            },
+            'atac_seq': {
+                'dirs': {'bowtie2', 'macs2', 'fastqc', 'multiqc'},
+                'files': {'*.bam', '*.bed', '*_peaks.narrowPeak', '*_fastqc.html'}
+            },
+            'single_cell': {
+                'dirs': {'cellranger', '10x', 'seurat', 'scanpy'},
+                'files': {'matrix.mtx', 'barcodes.tsv', 'features.tsv', 'web_summary.html'}
+            },
+            'variant_calling': {
+                'dirs': {'gatk', 'samtools', 'bcftools'},
+                'files': {'*.vcf', '*.bam', '*.bai', '*.g.vcf'}
+            },
+            'metagenomics': {
+                'dirs': {'kraken2', 'metaphlan', 'humann'},
+                'files': {'*.kreport', '*.biom', 'metaphlan_bugs_list.tsv'}
+            }
         }
         
-        # Find best matching workflow type
-        best_match = None
-        best_score = 0
+        # Score each workflow type
+        scores = {}
         for wf_type, signature in signatures.items():
-            score = len(tools & signature)
-            if score > best_score:
-                best_score = score
-                best_match = wf_type
-                
-        return best_match or 'unknown'
+            dir_score = len(directories & signature['dirs'])
+            file_score = 0
+            for pattern in signature['files']:
+                if any(fnmatch.fnmatch(f, pattern) for f in file_patterns):
+                    file_score += 1
+            scores[wf_type] = dir_score + file_score
+        
+        # Find best match
+        if scores:
+            best_match = max(scores.items(), key=lambda x: x[1])
+            if best_match[1] > 0:  # Only return if we have some match
+                return best_match[0]
+        
+        return 'unknown'
     
-    async def analyze_tool_outputs(self) -> Dict[str, Any]:
-        """Use LLM to analyze tool outputs."""
-        tool_outputs = {}
-        
-        # Collect all output files from subdirectories
-        for dir_path in self.output_dir.iterdir():
-            if dir_path.is_dir() and not dir_path.name.startswith('.'):
-                tool_outputs[dir_path.name] = []
-                # Collect all file contents
-                for file in dir_path.rglob('*'):
-                    if file.is_file():
-                        try:
-                            if file.suffix in ['.json', '.txt', '.log', '.out', '.tsv', '.csv']:
-                                with open(file) as f:
-                                    content = f.read()
-                                    # Truncate very large files
-                                    if len(content) > 10000:
-                                        content = content[:10000] + "\n... (truncated)"
-                                tool_outputs[dir_path.name].append({
-                                    'file': str(file.relative_to(dir_path)),
-                                    'content': content
-                                })
-                            elif file.suffix in ['.html', '.pdf', '.png', '.jpg']:
-                                tool_outputs[dir_path.name].append({
-                                    'file': str(file.relative_to(dir_path)),
-                                    'type': file.suffix[1:]  # Remove leading dot
-                                })
-                        except Exception as e:
-                            self.logger.warning(f"Error reading {file}: {str(e)}")
-        
-        # Infer workflow type if not provided
-        if not self.workflow_type:
-            self.workflow_type = self._infer_workflow_type(tool_outputs)
-        
-        # Ask LLM to analyze outputs
-        prompt = f"""
-        Analyze the following {self.workflow_type} workflow outputs and provide a comprehensive summary:
-
-        Workflow type: {self.workflow_type}
-        Tool outputs available:
-        {json.dumps(tool_outputs, indent=2)}
-
-        Please provide:
-        1. Overall quality assessment
-        2. Key metrics and findings specific to this type of analysis
-        3. Any potential issues or warnings
-        4. Recommendations for the user
-
-        Focus on the most important information that would be relevant to a bioinformatician.
-        If you see any concerning patterns or unusual results, highlight them.
-        
-        For any metrics, provide context about what values are considered good/bad.
-        
-        If you see output from tools you don't recognize, focus on general quality metrics
-        and any clear error messages or warnings.
-        """
+    async def _collect_file_content(self, file_path: Path, max_size: int = 50000) -> Dict[str, Any]:
+        """Safely collect file content with size limits and format detection."""
+        result = {
+            'path': str(file_path),
+            'size': file_path.stat().st_size if file_path.exists() else 0,
+            'is_json': False,
+            'content': None,
+            'error': None
+        }
         
         try:
-            analysis = await self.llm.generate_analysis(prompt)
-            return analysis
+            # Skip if file is too large
+            if result['size'] > max_size:
+                result['content'] = f"File too large ({result['size']} bytes)"
+                return result
+                
+            # Read file content
+            with open(file_path, 'r') as f:
+                content = f.read()
+                
+            # Try to parse as JSON
+            try:
+                if file_path.suffix == '.json':
+                    result['content'] = json.loads(content)
+                    result['is_json'] = True
+                else:
+                    result['content'] = content
+            except json.JSONDecodeError:
+                result['content'] = content
+                
         except Exception as e:
-            self.logger.error(f"Error generating analysis: {str(e)}")
+            result['error'] = str(e)
+            self.logger.error(f"Error reading {file_path}: {e}")
+            
+        return result
+
+    async def analyze_tool_outputs(self, output_dir: Union[str, Path]) -> Dict[str, Any]:
+        """Analyze tool outputs using LLM."""
+        output_dir = Path(output_dir)
+        if not output_dir.exists():
+            return {
+                'status': 'error',
+                'message': f'Output directory {output_dir} does not exist'
+            }
+        
+        try:
+            self.logger.debug(f"Starting analysis of directory: {output_dir}")
+            tool_outputs = await self._collect_tool_outputs(output_dir)
+            
+            if not isinstance(tool_outputs, dict):
+                self.logger.error(f"Expected dict for tool_outputs, got {type(tool_outputs)}")
+                return {
+                    'status': 'error',
+                    'message': f'Invalid tool outputs format: expected dict, got {type(tool_outputs)}'
+                }
+            
+            raw_outputs = tool_outputs.get('raw_outputs')
+            metrics = tool_outputs.get('metrics')
+            
+            if not raw_outputs or not metrics:
+                self.logger.debug(f"No outputs found. Raw outputs: {raw_outputs}, Metrics: {metrics}")
+                return {
+                    'status': 'error',
+                    'message': 'No tool outputs found to analyze'
+                }
+            
+            # Prepare analysis prompt
+            self.logger.debug("Preparing analysis prompt...")
+            prompt = f"""
+            Analyze the following workflow outputs and provide a comprehensive summary:
+            
+            Output Structure:
+            {json.dumps(metrics, indent=2)}
+            
+            Please provide:
+            1. Overall workflow success assessment
+            2. Quality metrics analysis
+            3. Tool-specific findings
+            4. Any warnings or potential issues
+            5. Recommendations for improvement
+            """
+            
+            # Generate analysis
+            self.logger.debug("Generating analysis with LLM...")
+            analysis = await self.llm.generate_analysis(prompt)
+            
+            return {
+                'status': 'success',
+                'analysis': analysis,
+                'metrics': metrics
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing outputs: {str(e)}")
             return {
                 'status': 'error',
                 'message': f'Failed to analyze outputs: {str(e)}'
             }
     
-    async def generate_report(self) -> Dict[str, Any]:
-        """Generate comprehensive analysis report."""
-        try:
-            # Analyze outputs using LLM
-            analysis = await self.analyze_tool_outputs()
+    async def _extract_metrics_from_outputs(self, outputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract metrics from collected outputs."""
+        self.logger.debug(f"Starting metrics extraction from outputs: {outputs}")
+        
+        metrics = {
+            'file_counts': {},
+            'file_sizes': {},
+            'error_counts': 0,
+            'warning_counts': 0,
+            'tool_metrics': {}
+        }
+        
+        async def process_directory(data: Dict[str, Any], prefix: str):
+            self.logger.debug(f"Processing directory with prefix '{prefix}': {data}")
             
-            report = {
-                'summary': {
-                    'status': 'success',
-                    'workflow_type': self.workflow_type,
-                    'analysis': analysis
-                }
+            # Process files
+            files = data.get('files', [])
+            if not isinstance(files, list):
+                self.logger.error(f"Expected list for files, got {type(files)}")
+                return
+                
+            for file in files:
+                if not isinstance(file, dict):
+                    self.logger.error(f"Expected dict for file, got {type(file)}")
+                    continue
+                    
+                # Get file extension
+                ext = Path(file.get('path', '')).suffix
+                metrics['file_counts'][ext] = metrics['file_counts'].get(ext, 0) + 1
+                metrics['file_sizes'][ext] = metrics['file_sizes'].get(ext, 0) + file.get('size', 0)
+                
+                # Check for errors and warnings in content
+                content = file.get('content', '')
+                if isinstance(content, str):
+                    metrics['error_counts'] += content.lower().count('error')
+                    metrics['warning_counts'] += content.lower().count('warning')
+                
+                # Extract JSON metrics if present
+                if file.get('is_json') and isinstance(file.get('content'), dict):
+                    tool_name = prefix.strip('/') or 'unknown'
+                    if tool_name not in metrics['tool_metrics']:
+                        metrics['tool_metrics'][tool_name] = []
+                    metrics['tool_metrics'][tool_name].append(file['content'])
+            
+            # Process subdirectories
+            subdirs = data.get('subdirs', {})
+            if not isinstance(subdirs, dict):
+                self.logger.error(f"Expected dict for subdirs, got {type(subdirs)}")
+                return
+                
+            for name, subdir in subdirs.items():
+                new_prefix = f"{prefix}/{name}" if prefix else name
+                await process_directory(subdir, new_prefix)
+        
+        # Start processing from root
+        if isinstance(outputs, dict):
+            await process_directory(outputs, '')
+        else:
+            self.logger.error(f"Expected dict for outputs, got {type(outputs)}")
+        
+        self.logger.debug(f"Extracted metrics: {metrics}")
+        return metrics
+
+    async def _collect_tool_outputs(self, output_dir: Path) -> Dict[str, Any]:
+        """Collect all tool outputs from the workflow directory."""
+        try:
+            # Collect all outputs
+            self.logger.debug("Starting to collect directory outputs...")
+            outputs = await self._collect_directory_outputs(output_dir)
+            self.logger.debug(f"Raw directory outputs: {outputs}")
+            
+            # Extract metrics and metadata
+            self.logger.debug("Extracting metrics from outputs...")
+            metrics = await self._extract_metrics_from_outputs(outputs)
+            self.logger.debug(f"Extracted metrics: {metrics}")
+            
+            return {
+                'raw_outputs': outputs,
+                'metrics': metrics
             }
+        except Exception as e:
+            self.logger.error(f"Error in _collect_tool_outputs: {str(e)}")
+            raise
+
+    async def _collect_directory_outputs(self, directory: Path) -> Dict[str, Any]:
+        """Recursively collect outputs from a directory."""
+        if not directory.exists():
+            return {'files': [], 'subdirs': {}}
+
+        result = {'files': [], 'subdirs': {}}
+        
+        try:
+            for item in directory.iterdir():
+                if item.name.startswith('.'):
+                    continue
+                    
+                if item.is_file():
+                    result['files'].append(await self._collect_file_content(item))
+                elif item.is_dir():
+                    result['subdirs'][item.name] = await self._collect_directory_outputs(item)
+        except Exception as e:
+            self.logger.error(f"Error collecting outputs from {directory}: {str(e)}")
+            
+        return result
+
+    async def generate_report(self, output_dir: Union[str, Path]) -> Dict[str, Any]:
+        """Generate comprehensive analysis report."""
+        output_dir = Path(output_dir)
+        if not output_dir.exists():
+            return {
+                'success': False,
+                'message': f'Output directory {output_dir} does not exist'
+            }
+        
+        try:
+            # Analyze outputs
+            analysis_results = await self.analyze_tool_outputs(output_dir)
             
             # Save report
-            report_file = self.output_dir / "analysis_report.json"
+            report_file = output_dir / "analysis_report.json"
             with open(report_file, 'w') as f:
-                json.dump(report, f, indent=2)
+                json.dump(analysis_results, f, indent=2)
             
-            return report
+            return analysis_results
             
         except Exception as e:
             self.logger.error(f"Error generating report: {str(e)}")
             return {
-                'error': str(e),
                 'status': 'error',
-                'message': 'Failed to generate analysis report'
+                'message': 'Failed to generate analysis report',
+                'error': str(e)
             }

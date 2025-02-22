@@ -30,7 +30,7 @@ class LLMInterface:
         
         self.logger.info(f"Initialized LLM interface with model: {self.model}")
 
-    def _get_workflow_planning_prompt(self, request: str) -> str:
+    async def _get_workflow_planning_prompt(self, request: str) -> str:
         """Get the prompt for workflow planning."""
         return f"""Plan a bioinformatics workflow based on the following request:
 {request}
@@ -103,7 +103,7 @@ Example workflow plan:
 
 Generate a workflow plan in JSON format:"""
 
-    def _get_error_diagnosis_prompt(self) -> str:
+    async def _get_error_diagnosis_prompt(self) -> str:
         """Get the prompt for error diagnosis."""
         return """You are an expert at diagnosing and fixing bioinformatics workflow errors.
 
@@ -121,7 +121,7 @@ Return a JSON object with the following structure:
     ]
 }"""
 
-    def _get_command_generation_prompt(self) -> str:
+    async def _get_command_generation_prompt(self) -> str:
         """Get the prompt for command generation."""
         return """You are an expert at generating shell commands for bioinformatics tools.
 Your task is to generate the exact command line string for a given tool and action.
@@ -143,17 +143,37 @@ Common tools and their command formats:
 
 Important Rules:
 1. NEVER use shell operators like |, >, <, ;, &&, ||
-2. NEVER use glob patterns (*) - each file must be processed individually
-3. For single-end RNA-seq, always include --single -l 200 -s 20 parameters
-4. Ensure all paths are properly specified
+2. NEVER use glob patterns (*) in file paths
+3. For tools that process individual files (like Kallisto, FastQC):
+   - Create a separate output directory for each input file
+   - Use the input filename (without extension) as part of the output directory
+   Example: For input file 'sample1.fastq.gz', use 'output_dir/sample1' as output
+4. For tools that aggregate results (like MultiQC):
+   - Use the specified output directory as is
+5. Always use explicit paths, never relative paths with ..
+6. Never include explanatory text, only output the exact command to run
+7. For Kallisto quantification:
+   - CHECK THE PARAMETERS CAREFULLY - if "single": true exists, this is SINGLE-END data
+   - For single-end data, you MUST add --single -l <fragment_length> -s <sd>
+   - For paired-end data, DO NOT add the --single flag
+   - Process each file separately with its own output directory
+   - Fragment length and SD are REQUIRED for single-end data
+   - Default fragment_length=200 and sd=20 if not specified
 
-Return ONLY the command string, with no additional text or explanation."""
+Example formats:
+- Kallisto (single-end): kallisto quant -i index.idx -o output_dir/sample1 --single -l 200 -s 20 sample1.fastq.gz
+- Kallisto (paired-end): kallisto quant -i index.idx -o output_dir/sample1 sample1_1.fastq.gz sample1_2.fastq.gz
+- FastQC: fastqc -o output_dir/sample1 sample1.fastq.gz
+- MultiQC: multiqc input_dir -o output_dir
+
+IMPORTANT: Double check if "single": true exists in the parameters. If it does, you MUST use --single flag with -l and -s options.
+"""
 
     async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
         """Generate a workflow plan from a natural language prompt."""
         try:
             messages = [
-                {"role": "system", "content": self._get_workflow_planning_prompt(prompt)},
+                {"role": "system", "content": await self._get_workflow_planning_prompt(prompt)},
                 {"role": "user", "content": f"Create a detailed workflow plan for the following task: {prompt}"}
             ]
             
@@ -287,7 +307,7 @@ Return ONLY the command string, with no additional text or explanation."""
         """Diagnose workflow errors and suggest recovery steps."""
         try:
             messages = [
-                {"role": "system", "content": self._get_error_diagnosis_prompt()},
+                {"role": "system", "content": await self._get_error_diagnosis_prompt()},
                 {"role": "user", "content": f"""
 Diagnose this workflow error and suggest recovery steps:
 Error Type: {error_type}
