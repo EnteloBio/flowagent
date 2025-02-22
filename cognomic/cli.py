@@ -1,6 +1,5 @@
 """Command line interface for Cognomic."""
 
-import argparse
 import asyncio
 import logging
 import sys
@@ -20,7 +19,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-async def run_workflow(prompt: str) -> None:
+async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = False) -> None:
     """Run workflow from prompt."""
     try:
         # Initialize LLM interface
@@ -29,92 +28,45 @@ async def run_workflow(prompt: str) -> None:
         # Initialize workflow manager
         workflow_manager = WorkflowManager(llm=llm)
         
-        # Execute workflow
-        result = await workflow_manager.execute_workflow(prompt)
+        # Set up checkpoint directory
+        checkpoint_path = Path(checkpoint_dir) if checkpoint_dir else Path('workflow_state')
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
         
-        # Process results
-        if result["status"] == "success":
-            logger.info("Workflow completed successfully!")
-            
-            # Log results location
-            if "archive_path" in result:
-                logger.info(f"Results available in: {result['archive_path']}")
-            
-            # Log generated artifacts
-            artifacts = []
-            for step_result in result["results"]:
-                if step_result["status"] == "success" and "result" in step_result:
-                    for output in step_result["result"].get("outputs", []):
-                        if "path" in output:
-                            artifacts.append(output["path"])
-            
-            if artifacts:
-                logger.info("Generated artifacts:")
-                for artifact in artifacts:
-                    logger.info(f"  - {artifact}")
-            
-            # Log any issues
-            if result.get("report", {}).get("issues"):
-                logger.warning("Issues found:")
-                for issue in result["report"]["issues"]:
-                    logger.warning(f"  - {issue}")
-            
-            # Log recommendations
-            if result.get("report", {}).get("recommendations"):
-                logger.info("Recommendations:")
-                for rec in result["report"]["recommendations"]:
-                    logger.info(f"  - {rec}")
-                    
+        if resume:
+            logger.info(f"Resuming workflow from {checkpoint_path}")
+            await workflow_manager.resume_workflow(checkpoint_path)
         else:
-            logger.error(f"Workflow failed: {result.get('error', 'Unknown error')}")
-            if result.get("diagnosis"):
-                logger.error("Error diagnosis:")
-                logger.error(f"  {result['diagnosis'].get('description', 'Unknown error')}")
-                if result["diagnosis"].get("suggestions"):
-                    logger.info("Suggestions:")
-                    for suggestion in result["diagnosis"]["suggestions"]:
-                        logger.info(f"  - {suggestion}")
-    
+            logger.info("Starting new workflow")
+            # Execute workflow and generate DAG
+            await workflow_manager.llm.execute_workflow(prompt)
+            
+            # Save workflow state
+            workflow_manager.llm.tool_tracker.save_state(checkpoint_path)
+            
+            # Generate DAG visualization
+            dag_path = checkpoint_path / 'workflow_dag.png'
+            workflow_manager.llm.tool_tracker.visualize_dag(dag_path)
+            logger.info(f"Workflow DAG saved to: {dag_path}")
+            
+        logger.info("Workflow completed successfully!")
+        
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
+        logger.info(f"You can resume the workflow using:")
+        logger.info(f"cognomic '{prompt}' --resume --checkpoint-dir={checkpoint_dir or 'workflow_state'}")
         raise
 
-@click.group()
-def cli():
-    """Cognomic CLI."""
-    pass
-
-@cli.command()
+@click.command()
 @click.argument('prompt')
-def run(prompt: str):
-    """Run workflow from prompt."""
+@click.option('--checkpoint-dir', type=click.Path(), help='Directory for workflow state and checkpoints')
+@click.option('--resume/--no-resume', default=False, help='Resume workflow from checkpoint')
+def cli(prompt: str, checkpoint_dir: str = None, resume: bool = False):
+    """Run Cognomic workflow from natural language prompt."""
     try:
-        asyncio.run(run_workflow(prompt))
+        asyncio.run(run_workflow(prompt, checkpoint_dir, resume))
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
         sys.exit(1)
-
-@cli.command()
-@click.argument('query', type=str)
-@click.option('--output-dir', type=click.Path(exists=True, file_okay=False, dir_okay=True), help='Directory containing workflow outputs')
-def analyze(query: str, output_dir: str):
-    """Analyze workflow outputs and generate a report."""
-    async def run_analysis():
-        try:
-            from .analysis.report_generator import ReportGenerator
-            generator = ReportGenerator()
-            report = await generator.generate_analysis_report(Path(output_dir), query)
-            
-            click.echo("\nAnalysis Report:")
-            click.echo("-" * 80)
-            click.echo(report)
-            click.echo("-" * 80)
-            
-        except Exception as e:
-            click.echo(f"\nError: {str(e)}", err=True)
-    
-    # Run the async analysis in an event loop
-    asyncio.run(run_analysis())
 
 if __name__ == "__main__":
     cli()

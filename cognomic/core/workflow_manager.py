@@ -1,27 +1,33 @@
-import asyncio
+"""Workflow manager for coordinating LLM-based workflow execution."""
+
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, Optional, List
 import logging
-import os
+import asyncio
+import networkx as nx
 import json
+import os
+
 from .agent_system import PLAN_agent, TASK_agent, DEBUG_agent, WorkflowStep
+from .llm import LLMInterface
+from .tool_tracker import ToolTracker
 
 logger = logging.getLogger(__name__)
 
 class WorkflowManager:
-    """Manager for workflow execution and coordination."""
+    """Manages workflow execution and coordination."""
     
-    def __init__(self, llm=None, logger=None):
+    def __init__(self, llm: Optional[LLMInterface] = None, logger=None):
         """Initialize workflow manager."""
-        self.llm = llm
+        self.llm = llm or LLMInterface()
         self.logger = logger or logging.getLogger(__name__)
         self.cwd = os.getcwd()
         self.logger.info(f"Initial working directory: {self.cwd}")
         
         # Initialize agents
-        self.plan_agent = PLAN_agent(llm=llm)
-        self.task_agent = TASK_agent(llm=llm)
-        self.debug_agent = DEBUG_agent(llm=llm)
+        self.plan_agent = PLAN_agent(llm=self.llm)
+        self.task_agent = TASK_agent(llm=self.llm)
+        self.debug_agent = DEBUG_agent(llm=self.llm)
 
     async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
         """Execute workflow from prompt."""
@@ -40,49 +46,32 @@ class WorkflowManager:
             self.task_agent.cwd = self.cwd
             self.logger.info(f"Set task agent working directory to: {self.cwd}")
             
-            # Execute each step
+            # Build DAG
+            dag = self._build_dag(workflow_steps)
+            
+            # Execute workflow in DAG order
+            execution_plan = self.get_execution_plan(dag)
             results = []
-            for step in workflow_steps:
-                self.logger.info(f"Executing step: {step.name}")
-                try:
-                    result = await self.task_agent.execute_step(step)
-                    results.append({
-                        "step": step.name,
-                        "status": "success",
-                        "result": result
-                    })
-                except Exception as e:
-                    self.logger.error(f"Step execution failed: {str(e)}")
-                    # Try to diagnose the error
+            for batch in execution_plan:
+                batch_results = []
+                for task_id in batch:
+                    node_data = dag.nodes[task_id]
                     try:
-                        diagnosis = await self.debug_agent.diagnose_error(e, {
-                            "step": {
-                                "name": step.name,
-                                "tool": step.tool,
-                                "action": step.action,
-                                "type": step.type,
-                                "parameters": step.parameters
-                            },
-                            "error": str(e),
-                            "context": {
-                                "working_directory": self.cwd,
-                                "step_parameters": step.parameters
-                            }
+                        self.logger.info(f"Executing {task_id}")
+                        result = await self.task_agent.execute_step(node_data['step'])
+                        batch_results.append({
+                            "step": node_data['step'].name,
+                            "status": "success",
+                            "result": result
                         })
-                        results.append({
-                            "step": step.name,
+                    except Exception as e:
+                        self.logger.error(f"Task {task_id} failed: {str(e)}")
+                        batch_results.append({
+                            "step": node_data['step'].name,
                             "status": "failed",
-                            "error": str(e),
-                            "diagnosis": diagnosis
+                            "error": str(e)
                         })
-                    except Exception as diag_error:
-                        self.logger.error(f"Error diagnosis failed: {str(diag_error)}")
-                        results.append({
-                            "step": step.name,
-                            "status": "failed",
-                            "error": str(e),
-                            "diagnosis": None
-                        })
+                results.extend(batch_results)
             
             # Archive results
             self.logger.info("Archiving workflow results...")
@@ -116,6 +105,36 @@ class WorkflowManager:
             except Exception as diag_error:
                 self.logger.error(f"Error diagnosis failed: {str(diag_error)}")
             raise
+
+    def _build_dag(self, workflow_steps: List[WorkflowStep]) -> nx.DiGraph:
+        """Build DAG from workflow steps."""
+        dag = nx.DiGraph()
+        for step in workflow_steps:
+            dag.add_node(step.name, step=step, status='pending')
+            for dep in step.dependencies:
+                dag.add_edge(dep, step.name)
+        return dag
+
+    def get_execution_plan(self, dag: nx.DiGraph) -> list:
+        """Get ordered list of task batches that can be executed in parallel."""
+        execution_plan = []
+        remaining_nodes = set(dag.nodes())
+        
+        while remaining_nodes:
+            # Find nodes with no incomplete dependencies
+            ready_nodes = {
+                node for node in remaining_nodes
+                if not any(pred in remaining_nodes for pred in dag.predecessors(node))
+            }
+            
+            if not ready_nodes:
+                # There are nodes left but none are ready - there must be a cycle
+                raise ValueError("Cycle detected in workflow DAG")
+            
+            execution_plan.append(list(ready_nodes))
+            remaining_nodes -= ready_nodes
+        
+        return execution_plan
 
     async def _generate_analysis_report(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Generate analysis report from workflow results."""

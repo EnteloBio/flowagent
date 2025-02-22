@@ -1,6 +1,6 @@
 """LLM interface for workflow planning and execution."""
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set
 import json
 import os
 from pathlib import Path
@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 
 from ..utils.logging import get_logger
 from ..config.settings import settings
+from .tool_tracker import ToolTracker
 
 logger = get_logger(__name__)
 
@@ -27,6 +28,7 @@ class LLMInterface:
         )
         self.model = settings.OPENAI_MODEL
         self.logger = get_logger(__name__)
+        self.tool_tracker = ToolTracker()
         
         self.logger.info(f"Initialized LLM interface with model: {self.model}")
 
@@ -35,53 +37,53 @@ class LLMInterface:
         return f"""Plan a bioinformatics workflow based on the following request:
 {request}
 
-Follow these rules when planning:
-1. Break down the workflow into logical steps
-2. For each step specify:
-   - Tool name
-   - Action
-   - Required parameters
-   - Expected outputs
-3. For file handling:
-   - Never use glob patterns (*)
-   - Each file must be processed individually
-   - For input files, specify "input_file" and the system will handle each file
-4. Always include quality control steps
-5. Always specify output directories for each step
-6. Consider error handling and data validation
+IMPORTANT: You must return a valid JSON object with ALL required fields. The response MUST be parseable JSON.
 
-Example workflow plan:
+REQUIRED FIELDS:
+1. "workflow_type": Type of workflow (e.g. "rna_seq")
+2. "steps": List of steps, where each step MUST have:
+   - "name": (REQUIRED) Unique identifier for the step
+   - "tool": (REQUIRED) Name of the tool to use
+   - "action": (REQUIRED) Specific action to perform
+   - "parameters": (REQUIRED) Dictionary of parameters
+
+RULES:
+1. Each step MUST have ALL required fields
+2. Step names must be unique (e.g. "fastqc_analysis", "kallisto_index")
+3. Never use glob patterns (*) in file paths
+4. Each file must be processed individually
+5. Always include quality control steps
+6. Always specify output directories
+
+Here is an example of a VALID response:
 {{
     "workflow_type": "rna_seq",
     "steps": [
         {{
-            "name": "quality_control",
+            "name": "fastqc_analysis",
             "tool": "FastQC",
             "action": "analyze",
-            "type": "command",
             "parameters": {{
-                "input_file": "test1.fastq.gz",  # System will handle each file
+                "input_file": "test1.fastq.gz",
                 "output_dir": "results/rna_seq_analysis/fastqc_reports"
             }}
         }},
         {{
-            "name": "build_index",
+            "name": "kallisto_index",
             "tool": "kallisto",
             "action": "index",
-            "type": "command",
             "parameters": {{
                 "reference": "Homo_sapiens.GRCh38.cdna.all.fa",
                 "output": "results/rna_seq_analysis/kallisto_index"
             }}
         }},
         {{
-            "name": "quantify",
+            "name": "kallisto_quant",
             "tool": "kallisto",
             "action": "quant",
-            "type": "command",
             "parameters": {{
                 "index": "results/rna_seq_analysis/kallisto_index",
-                "input_file": "test1.fastq.gz",  # System will handle each file
+                "input_file": "test1.fastq.gz",
                 "output_dir": "results/rna_seq_analysis/kallisto_output",
                 "single": true,
                 "fragment_length": 200,
@@ -89,10 +91,9 @@ Example workflow plan:
             }}
         }},
         {{
-            "name": "generate_report",
+            "name": "multiqc_report",
             "tool": "MultiQC",
             "action": "report",
-            "type": "command",
             "parameters": {{
                 "input_dir": "results/rna_seq_analysis",
                 "output_dir": "results/rna_seq_analysis/multiqc_report"
@@ -100,6 +101,8 @@ Example workflow plan:
         }}
     ]
 }}
+
+REMEMBER: Your response must be a VALID JSON object with ALL required fields.
 
 Generate a workflow plan in JSON format:"""
 
@@ -187,6 +190,8 @@ IMPORTANT: Double check if "single": true exists in the parameters. If it does, 
             
             # Parse the response into a workflow plan
             workflow_text = response.choices[0].message.content
+            self.logger.info(f"LLM Response: {workflow_text}")
+            
             try:
                 workflow_plan = json.loads(workflow_text)
                 
@@ -194,41 +199,37 @@ IMPORTANT: Double check if "single": true exists in the parameters. If it does, 
                 if not isinstance(workflow_plan, dict):
                     raise ValueError("Workflow plan must be a dictionary")
                 if 'workflow_type' not in workflow_plan:
-                    raise ValueError("Workflow plan must specify workflow_type")
+                    workflow_plan['workflow_type'] = 'rna_seq'  # Default to RNA-seq
                 if 'steps' not in workflow_plan:
                     raise ValueError("Workflow plan must contain steps")
-                if not isinstance(workflow_plan['steps'], list):
-                    raise ValueError("Steps must be a list")
                 
-                # Validate each step
-                seen_names = set()
-                for step in workflow_plan['steps']:
-                    # Check required fields
-                    required = ['name', 'tool', 'action', 'parameters']
-                    missing = [key for key in required if key not in step]
-                    if missing:
-                        raise ValueError(f"Step missing required keys: {missing}")
+                # Post-process steps to ensure all required fields
+                processed_steps = []
+                for i, step in enumerate(workflow_plan['steps']):
+                    # Ensure all required fields exist
+                    processed_step = {
+                        'name': step.get('name', f'step_{i + 1}'),  # Generate name if missing
+                        'tool': step.get('tool'),
+                        'action': step.get('action'),
+                        'parameters': step.get('parameters', {})
+                    }
                     
-                    # Validate name uniqueness
-                    if step['name'] in seen_names:
-                        raise ValueError(f"Duplicate step name: {step['name']}")
-                    seen_names.add(step['name'])
+                    # Validate required fields
+                    if not processed_step['tool']:
+                        raise ValueError(f"Step {i + 1} missing required field: tool")
+                    if not processed_step['action']:
+                        raise ValueError(f"Step {i + 1} missing required field: action")
+                    if not isinstance(processed_step['parameters'], dict):
+                        raise ValueError(f"Step {i + 1} parameters must be a dictionary")
                     
-                    # Ensure parameters is a dictionary
-                    if not isinstance(step['parameters'], dict):
-                        raise ValueError(f"Parameters for step {step['name']} must be a dictionary")
-                    
-                    # Add optional fields if missing
-                    if 'type' not in step:
-                        step['type'] = 'command'
-                    if 'description' not in step:
-                        step['description'] = None
+                    processed_steps.append(processed_step)
                 
+                workflow_plan['steps'] = processed_steps
                 return workflow_plan
                 
-            except json.JSONDecodeError:
-                self.logger.error("Failed to parse workflow plan as JSON")
-                raise ValueError("Invalid workflow plan format")
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Invalid JSON in workflow plan: {str(e)}")
+                raise ValueError(f"Invalid JSON in workflow plan: {str(e)}")
             
         except Exception as e:
             self.logger.error(f"Error generating workflow plan: {str(e)}")
@@ -398,3 +399,297 @@ Focus on actionable insights and potential issues that could affect interpretati
         except Exception as e:
             self.logger.error(f"Error generating analysis: {e}")
             return f"Error generating analysis: {str(e)}"
+
+    async def execute_tool(self, tool_name: str, **inputs) -> Any:
+        """Execute a tool and track its inputs/outputs"""
+        # Start tracking this tool call
+        call_id = self.tool_tracker.start_tool_call(tool_name, inputs)
+        
+        try:
+            # Get command from LLM
+            cmd = await self._get_command_from_llm(tool_name, inputs.get('action', ''), inputs)
+            
+            # Execute command
+            from ..utils.command import run_command
+            from pathlib import Path
+            
+            # Create output directory if specified
+            output_dir = inputs.get('output_dir')
+            if output_dir:
+                Path(output_dir).mkdir(parents=True, exist_ok=True)
+            
+            # Run command
+            result = await run_command(cmd)
+            
+            # Detect outputs
+            outputs = self._detect_outputs(tool_name, inputs, result)
+            
+            # Register completion
+            self.tool_tracker.finish_tool_call(call_id, outputs)
+            
+            return result
+            
+        except Exception as e:
+            self.tool_tracker.tool_calls[call_id].status = "failed"
+            raise
+
+    async def _get_command_from_llm(self, tool: str, action: str, parameters: Dict[str, Any]) -> str:
+        """Get command string from LLM based on tool, action and parameters."""
+        try:
+            # Prepare the prompt
+            messages = [
+                {"role": "system", "content": """You are a bioinformatics command generator. Generate shell commands for bioinformatics tools.
+                
+Available tools and their command formats:
+- fastqc: Generate quality control reports for FASTQ files
+  Format: fastqc [input files] --outdir=[output directory]
+
+- kallisto: RNA-seq quantification
+  - index: Build an index
+    Format: kallisto index -i [output index] [reference fasta]
+  - quant: Quantify RNA-seq data
+    Format: kallisto quant -i [index] -o [output dir] [--single] [-l fragment_length] [-s sd] [input files]
+
+- multiqc: Aggregate reports from bioinformatics analyses
+  Format: multiqc [input directory] -o [output directory]
+
+- find_by_name: Find files matching patterns
+  Format: find [directory] -name "[pattern]" -type f
+
+Return ONLY the exact command to run, nothing else."""},
+                {"role": "user", "content": f"""Generate command for:
+Tool: {tool}
+Action: {action}
+Parameters: {json.dumps(parameters, indent=2)}"""}
+            ]
+            
+            # Get LLM response
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.1
+            )
+            
+            # Get command from response
+            cmd = response.choices[0].message.content.strip()
+            self.logger.info(f"Generated command: {cmd}")
+            
+            return cmd
+            
+        except Exception as e:
+            self.logger.error(f"Error generating command: {str(e)}")
+            raise
+
+    async def execute_workflow(self, query: str):
+        """Execute a workflow based on natural language query."""
+        try:
+            # Get workflow plan
+            workflow_plan = await self._get_workflow_plan(query)
+            self.logger.info(f"Generated workflow plan: {workflow_plan}")
+            
+            # Track step outputs for dependency resolution
+            step_outputs = {}
+            
+            # Execute each step
+            for i, step in enumerate(workflow_plan['steps']):
+                step_name = step.get('name', f'step_{i + 1}')
+                
+                try:
+                    # Get step parameters and resolve any dependencies
+                    params = step['parameters'].copy()
+                    
+                    # Resolve file dependencies
+                    for param_name, param_value in params.items():
+                        if isinstance(param_value, list):
+                            resolved_values = []
+                            for item in param_value:
+                                if isinstance(item, str) and '<' in item and '>' in item:
+                                    step_ref = item.strip('<>').split('_')[0]
+                                    if step_ref == 'step':
+                                        step_num = int(item.strip('<>').split('_')[1].split('_')[0])
+                                        if step_num in step_outputs:
+                                            resolved_values.extend(step_outputs[step_num])
+                                else:
+                                    resolved_values.append(item)
+                            params[param_name] = resolved_values
+                        elif isinstance(param_value, str) and '<' in param_value and '>' in param_value:
+                            step_ref = param_value.strip('<>').split('_')[0]
+                            if step_ref == 'step':
+                                step_num = int(param_value.strip('<>').split('_')[1].split('_')[0])
+                                if step_num in step_outputs:
+                                    params[param_name] = step_outputs[step_num][0] if step_outputs[step_num] else None
+                    
+                    # Get command from LLM
+                    cmd = await self._get_command_from_llm(step['tool'], step['action'], params)
+                    
+                    # Execute command
+                    from ..utils.command import run_command
+                    from pathlib import Path
+                    
+                    # Create output directory if specified
+                    output_dir = params.get('output_dir')
+                    if output_dir:
+                        Path(output_dir).mkdir(parents=True, exist_ok=True)
+                    
+                    # Run command
+                    result = await run_command(cmd)
+                    
+                    # Store outputs
+                    if output_dir:
+                        step_outputs[i] = [str(Path(output_dir))]
+                        self.logger.info(f"Step {step_name} outputs: {output_dir}")
+                        
+                except Exception as e:
+                    self.logger.error(f"Step {step_name} failed: {str(e)}")
+                    raise
+                    
+        except Exception as e:
+            self.logger.error(f"Workflow execution failed: {str(e)}")
+            raise
+
+    async def _get_workflow_plan(self, query: str) -> Dict[str, Any]:
+        """Get workflow plan from natural language query."""
+        try:
+            # Prepare the prompt for the LLM to design the workflow
+            messages = [
+                {"role": "system", "content": """You are a bioinformatics workflow planner. Design workflows based on natural language requests.
+                
+For each step, specify:
+- tool: The tool to use (e.g., fastqc, kallisto, multiqc, find_by_name)
+- action: The specific action to perform
+- parameters: Required parameters for the tool
+- dependencies: List of step IDs this step depends on
+
+Available tools and their parameters:
+- find_by_name:
+  - SearchDirectory: Directory to search in
+  - Pattern: File pattern to match (e.g., "*.fastq.gz")
+
+- fastqc:
+  - input_files: List of input files
+  - output_dir: Output directory
+
+- kallisto:
+  - action: index/quant
+  - index parameters:
+    - reference: Reference file
+    - output: Index output file
+  - quant parameters:
+    - index: Index file
+    - input_files: List of input files
+    - output_dir: Output directory
+    - single: Boolean for single-end data
+    - fragment_length: For single-end data (default: 200)
+    - sd: Standard deviation for single-end data (default: 20)
+
+- multiqc:
+  - input_dir: Directory with input reports
+  - output_dir: Output directory for report
+
+Return the workflow as a JSON object with:
+- workflow_type: Type of analysis
+- steps: List of steps with tool, action, parameters, and dependencies"""},
+                {"role": "user", "content": query}
+            ]
+            
+            # Get LLM response
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            
+            # Parse the workflow plan from the LLM response
+            workflow_text = response.choices[0].message.content
+            self.logger.info(f"LLM Response: {workflow_text}")
+            
+            # Parse and validate workflow plan
+            workflow_plan = json.loads(workflow_text)
+            
+            # Validate workflow structure
+            if not isinstance(workflow_plan, dict):
+                raise ValueError("Workflow plan must be a dictionary")
+            if 'workflow_type' not in workflow_plan:
+                workflow_plan['workflow_type'] = 'rna_seq'  # Default to RNA-seq
+            if 'steps' not in workflow_plan:
+                raise ValueError("Workflow plan must contain steps")
+            
+            # Post-process steps to ensure all required fields
+            processed_steps = []
+            for i, step in enumerate(workflow_plan['steps']):
+                # Ensure all required fields exist
+                processed_step = {
+                    'name': step.get('name', f'step_{i + 1}'),  # Generate name if missing
+                    'tool': step.get('tool'),
+                    'action': step.get('action'),
+                    'parameters': step.get('parameters', {})
+                }
+                
+                # Validate required fields
+                if not processed_step['tool']:
+                    raise ValueError(f"Step {i + 1} missing required field: tool")
+                if not processed_step['action']:
+                    raise ValueError(f"Step {i + 1} missing required field: action")
+                if not isinstance(processed_step['parameters'], dict):
+                    raise ValueError(f"Step {i + 1} parameters must be a dictionary")
+                
+                processed_steps.append(processed_step)
+            
+            workflow_plan['steps'] = processed_steps
+            return workflow_plan
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON in workflow plan: {str(e)}")
+            raise ValueError(f"Invalid JSON in workflow plan: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Error generating workflow plan: {str(e)}")
+            raise
+
+    def _predict_outputs(self, tool_name: str, parameters: Dict[str, Any]) -> Set[Path]:
+        """Predict output files/directories that will be created by a tool"""
+        outputs = set()
+        
+        if tool_name == "fastqc":
+            # FastQC creates HTML and ZIP reports
+            for file in parameters.get('input_files', []):
+                base = Path(file).stem
+                output_dir = Path(parameters.get('output_dir', 'fastqc_output'))
+                outputs.add(output_dir / f"{base}_fastqc.html")
+                outputs.add(output_dir / f"{base}_fastqc.zip")
+                
+        elif tool_name == "kallisto":
+            action = parameters.get('action', '')
+            if action == 'index':
+                outputs.add(Path(parameters['output']))
+            elif action == 'quant':
+                outputs.add(Path(parameters['output_dir']))
+                
+        elif tool_name == "multiqc":
+            outputs.add(Path(parameters['output_dir']))
+            
+        return outputs
+
+    def _detect_outputs(self, tool_name: str, inputs: Dict[str, Any], result: Any) -> set:
+        """Detect files/directories created by the tool"""
+        outputs = set()
+        base_output_dir = Path(inputs.get('output_dir', 'results'))
+        
+        if tool_name == "fastqc":
+            # FastQC creates HTML and ZIP reports
+            for file in inputs.get('input_files', []):
+                base = Path(file).stem
+                outputs.add(base_output_dir / f"{base}_fastqc.html")
+                outputs.add(base_output_dir / f"{base}_fastqc.zip")
+                
+        elif tool_name == "kallisto":
+            action = inputs.get('action', '')
+            if action == 'index':
+                outputs.add(Path(inputs['output']))
+            elif action == 'quant':
+                outputs.add(Path(inputs['output_dir']))
+                
+        elif tool_name == "multiqc":
+            outputs.add(Path(inputs['output_dir']))
+            
+        return outputs
