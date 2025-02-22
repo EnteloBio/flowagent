@@ -2,6 +2,10 @@
 
 from typing import Dict, Any, Protocol, runtime_checkable, Optional
 from dataclasses import dataclass
+import shutil
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class WorkflowStep:
@@ -24,6 +28,27 @@ class TASK_agent(Protocol):
     async def execute_command(self, command: str) -> Dict[str, Any]:
         """Execute a shell command."""
         ...
+
+    def _check_disk_space(self, output_dir: str) -> bool:
+        """Check if there is sufficient disk space in the output directory.
+        
+        Args:
+            output_dir: Directory to check disk space for
+            
+        Returns:
+            bool: True if sufficient space available, False otherwise
+        """
+        try:
+            # Get disk usage statistics
+            usage = shutil.disk_usage(output_dir)
+            
+            # Ensure at least 1GB free space
+            min_free_space = 1 * 1024 * 1024 * 1024  # 1GB in bytes
+            return usage.free >= min_free_space
+            
+        except Exception as e:
+            logger.error(f"Error checking disk space: {str(e)}")
+            return False
 
 @runtime_checkable
 class PLAN_agent(Protocol):

@@ -1,80 +1,94 @@
-import asyncio
+"""Command line interface for Cognomic."""
+
 import argparse
+import asyncio
 import logging
+import sys
 from pathlib import Path
+from typing import List, Dict, Any
+
 from .core.workflow_manager import WorkflowManager
-from .core.knowledge import initialize_knowledge_base
-from .utils.logging import setup_logging
+from .core.llm import LLMInterface
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 logger = logging.getLogger(__name__)
 
-async def run_workflow(prompt: str):
-    """Run workflow based on natural language prompt"""
-    # Initialize knowledge base
-    knowledge_db = initialize_knowledge_base()
-    
-    # Create workflow manager
-    output_dir = Path("output")
-    output_dir.mkdir(exist_ok=True)
-    
-    manager = WorkflowManager(knowledge_db, output_dir)
-    
+async def run_workflow(prompt: str) -> None:
+    """Run workflow from prompt."""
     try:
-        logger.info(f"Planning workflow from prompt: {prompt}")
-        results = await manager.execute_from_prompt(prompt)
+        # Initialize LLM interface
+        llm = LLMInterface()
         
-        logger.info("Workflow completed successfully!")
-        logger.info(f"Results available in: {output_dir}")
-        logger.info("Generated artifacts:")
-        for name, path in results['artifacts'].items():
-            logger.info(f"  {name}: {path}")
+        # Initialize workflow manager
+        workflow_manager = WorkflowManager(llm=llm)
+        
+        # Execute workflow
+        result = await workflow_manager.execute_workflow(prompt)
+        
+        # Process results
+        if result["status"] == "success":
+            logger.info("Workflow completed successfully!")
             
-        return results
-        
+            # Log results location
+            if "archive_path" in result:
+                logger.info(f"Results available in: {result['archive_path']}")
+            
+            # Log generated artifacts
+            artifacts = []
+            for step_result in result["results"]:
+                if step_result["status"] == "success" and "result" in step_result:
+                    for output in step_result["result"].get("outputs", []):
+                        if "path" in output:
+                            artifacts.append(output["path"])
+            
+            if artifacts:
+                logger.info("Generated artifacts:")
+                for artifact in artifacts:
+                    logger.info(f"  - {artifact}")
+            
+            # Log any issues
+            if result.get("report", {}).get("issues"):
+                logger.warning("Issues found:")
+                for issue in result["report"]["issues"]:
+                    logger.warning(f"  - {issue}")
+            
+            # Log recommendations
+            if result.get("report", {}).get("recommendations"):
+                logger.info("Recommendations:")
+                for rec in result["report"]["recommendations"]:
+                    logger.info(f"  - {rec}")
+                    
+        else:
+            logger.error(f"Workflow failed: {result.get('error', 'Unknown error')}")
+            if result.get("diagnosis"):
+                logger.error("Error diagnosis:")
+                logger.error(f"  {result['diagnosis'].get('description', 'Unknown error')}")
+                if result["diagnosis"].get("suggestions"):
+                    logger.info("Suggestions:")
+                    for suggestion in result["diagnosis"]["suggestions"]:
+                        logger.info(f"  - {suggestion}")
+    
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
         raise
 
-def main():
-    """Main entry point for the CLI"""
-    parser = argparse.ArgumentParser(
-        description='Run bioinformatics workflows using natural language.'
-    )
-    
-    parser.add_argument(
-        'prompt',
-        type=str,
-        help='Natural language description of the workflow to run'
-    )
-    
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default='output',
-        help='Directory for workflow outputs (default: output)'
-    )
-    
-    parser.add_argument(
-        '--debug',
-        action='store_true',
-        help='Enable debug logging'
-    )
-    
+def main() -> None:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Cognomic: Intelligent RNA-seq Analysis Pipeline")
+    parser.add_argument("prompt", help="Natural language description of the analysis to perform")
     args = parser.parse_args()
     
-    # Setup logging
-    log_level = logging.DEBUG if args.debug else logging.INFO
-    setup_logging(level=log_level)
-    
     try:
-        # Run workflow
         asyncio.run(run_workflow(args.prompt))
-    except KeyboardInterrupt:
-        logger.info("Workflow interrupted by user")
-        exit(1)
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
-        exit(1)
+        sys.exit(1)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

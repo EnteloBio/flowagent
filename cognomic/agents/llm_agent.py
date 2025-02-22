@@ -163,18 +163,47 @@ class LLMAgent:
             self.logger.error(f"Error handling error: {str(e)}")
             raise
         
+    async def generate_command(self, context: Dict[str, Any]) -> str:
+        """Generate a command based on context using LLM.
+        
+        Args:
+            context: Command context including tool, action, and parameters
+            
+        Returns:
+            Generated command string
+        """
+        prompt = self._construct_command_prompt(context)
+        messages = [
+            {"role": "system", "content": self._get_system_prompt()},
+            {"role": "user", "content": prompt}
+        ]
+        try:
+            response = await self._get_chat_completion(messages, temperature=0.1, max_tokens=500)
+            return self._parse_command(response)
+        except Exception as e:
+            self.logger.error(f"Error generating command: {str(e)}")
+            raise
+
     def _get_system_prompt(self) -> str:
         """Get the system prompt for ChatGPT."""
         return """You are an expert bioinformatics assistant specializing in RNA-seq analysis.
-        You are implementing a specific pseudobulk RNA-seq workflow using Kallisto for quantification.
-        The workflow steps are:
-        1. Quality Control (FastQC)
-        2. MultiQC Report Generation
-        3. Kallisto Transcriptome Indexing
-        4. Kallisto Quantification
-        5. Kallisto MultiQC Reporting
+        Your primary role is to generate precise command-line instructions for RNA-seq analysis tools.
         
-        DO NOT suggest or implement any other tools or steps outside of this workflow.
+        Key points:
+        1. Only generate commands for requested tools (FastQC, MultiQC, Kallisto)
+        2. Use exact paths and parameters as provided
+        3. Follow tool-specific syntax and requirements strictly
+        4. Return only the command, no explanations or markdown
+        5. For Kallisto:
+           - Handle single-end and paired-end data appropriately
+           - Include all necessary parameters (e.g., fragment length for single-end)
+           - Follow exact parameter ordering
+        
+        DO NOT:
+        1. Add explanations or comments
+        2. Suggest alternative tools or parameters
+        3. Use placeholder values - use only provided values
+        4. Include markdown formatting
         """
         
     def _construct_analysis_prompt(self, data: Dict[str, Any]) -> str:
@@ -223,6 +252,70 @@ class LLMAgent:
         - Kallisto for transcriptome indexing and quantification
         """
         
+    def _construct_command_prompt(self, context: Dict[str, Any]) -> str:
+        """Construct prompt for command generation."""
+        tool = context.get("tool", "")
+        action = context.get("action", "")
+        input_type = context.get("input_type", "")
+        params = context.get("parameters", {})
+        
+        if tool == "fastqc":
+            return f"""Generate a FastQC command with these specifications:
+            Input Files: {params.get('input_files', [])}
+            Output Directory: {params.get('output_dir', '')}
+            Threads: {params.get('threads', 1)}
+            Extract: {params.get('extract', True)}
+            
+            Requirements:
+            1. Use exact paths as provided
+            2. Include -o for output directory
+            3. Include -t for threads if > 1
+            4. Include --extract if specified
+            5. Format: fastqc [options] input_files
+            6. FastQC can handle .fastq, .fastq.gz, .fq, and .fq.gz files directly
+            
+            Return ONLY the command, no explanations or markdown.
+            """
+        elif tool == "kallisto":
+            if action == "quantification":
+                return f"""Generate a Kallisto quantification command with these specifications:
+                Input Type: {input_type}
+                Input Files: {params.get('input_files', [])}
+                Index File: {params.get('index_file', '')}
+                Output Directory: {params.get('output_dir', '')}
+                Threads: {params.get('threads', 4)}
+                
+                Additional Parameters for Single-End Data:
+                Fragment Length: {params.get('fragment_length', 200)}
+                Fragment SD: {params.get('fragment_sd', 20)}
+                Bootstrap Samples: {params.get('bootstrap_samples', 100)}
+                
+                Requirements:
+                1. Use exact paths as provided
+                2. For single-end data, include --single, -l (fragment length), and -s (sd)
+                3. Include --bootstrap-samples parameter
+                4. Format: kallisto quant [options] -i index -o output input_files
+                
+                Return ONLY the command, no explanations or markdown.
+                """
+            elif action == "index":
+                return f"""Generate a Kallisto index command with these specifications:
+                Reference File: {params.get('reference_file', '')}
+                Index Output: {params.get('index_file', '')}
+                
+                Requirements:
+                1. Use exact paths as provided
+                2. Format: kallisto index -i index_file fasta_file
+                
+                Return ONLY the command, no explanations or markdown.
+                """
+        
+        return f"""Generate a command for {tool} {action} with parameters:
+        {json.dumps(params, indent=2)}
+        
+        Return ONLY the command, no explanations or markdown.
+        """
+
     def _parse_analysis(self, response: str) -> Dict[str, Any]:
         """Parse LLM analysis response."""
         return {
@@ -246,3 +339,11 @@ class LLMAgent:
             "recommendation": response,
             "continue": True
         }
+
+    def _parse_command(self, response: str) -> str:
+        """Parse LLM command response."""
+        # Remove any markdown formatting
+        response = response.strip('`').strip()
+        if response.startswith('bash\n'):
+            response = response[5:]
+        return response.strip()

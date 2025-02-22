@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 import importlib
 import pkg_resources
 from ..utils.logging import get_logger
+from ..core.llm import LLMInterface
 
 logger = get_logger(__name__)
 
@@ -142,101 +143,266 @@ class OutputAnalyzer(ToolAnalyzer):
         
         return results
 
+class FastQCAnalyzer(ToolAnalyzer):
+    """Analyzer for FastQC outputs."""
+    
+    def get_tool_name(self) -> str:
+        return "fastqc"
+    
+    def analyze(self) -> Dict[str, Any]:
+        """Analyze FastQC output."""
+        results = {
+            'status': 'success',
+            'issues': [],
+            'warnings': [],
+            'metrics': {}
+        }
+        
+        # Look in fastqc_reports directory
+        fastqc_dir = self.output_dir / "fastqc_reports"
+        if not fastqc_dir.exists():
+            return {'status': 'error', 'message': 'FastQC output directory not found'}
+            
+        # Find all FastQC data files
+        data_files = list(fastqc_dir.glob("*_fastqc/fastqc_data.txt"))
+        if not data_files:
+            data_files = list(fastqc_dir.glob("*.zip"))  # Try zipped files
+            
+        if not data_files:
+            return {'status': 'error', 'message': 'No FastQC data files found'}
+            
+        for data_file in data_files:
+            sample_name = data_file.parent.name.replace('_fastqc', '')
+            try:
+                metrics = self._parse_fastqc_data(data_file)
+                results['metrics'][sample_name] = metrics
+                
+                # Check for warnings and failures
+                for module, status in metrics.get('module_status', {}).items():
+                    if status == 'FAIL':
+                        results['issues'].append(f"{sample_name}: {module} failed QC")
+                    elif status == 'WARN':
+                        results['warnings'].append(f"{sample_name}: {module} has warnings")
+                        
+            except Exception as e:
+                results['issues'].append(f"Error parsing {sample_name}: {str(e)}")
+                
+        return results
+        
+    def _parse_fastqc_data(self, data_file: Path) -> Dict[str, Any]:
+        """Parse FastQC data file."""
+        metrics = {'module_status': {}}
+        current_module = None
+        
+        try:
+            with open(data_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('>>'):
+                        parts = line.split('\t')
+                        if len(parts) >= 2:
+                            module_name = parts[0][2:]
+                            status = parts[1]
+                            metrics['module_status'][module_name] = status
+                            current_module = module_name
+                            metrics[current_module] = []
+                    elif line and not line.startswith('##') and current_module:
+                        metrics[current_module].append(line.split('\t'))
+        except:
+            # If can't read directly (e.g. zipped), try unzipping first
+            import zipfile
+            import io
+            if data_file.suffix == '.zip':
+                with zipfile.ZipFile(data_file) as zf:
+                    data_name = data_file.stem + '/fastqc_data.txt'
+                    with zf.open(data_name) as f:
+                        content = io.TextIOWrapper(f)
+                        for line in content:
+                            line = line.strip()
+                            if line.startswith('>>'):
+                                parts = line.split('\t')
+                                if len(parts) >= 2:
+                                    module_name = parts[0][2:]
+                                    status = parts[1]
+                                    metrics['module_status'][module_name] = status
+                                    current_module = module_name
+                                    metrics[current_module] = []
+                            elif line and not line.startswith('##') and current_module:
+                                metrics[current_module].append(line.split('\t'))
+                                
+        return metrics
+
+class KallistoAnalyzer(ToolAnalyzer):
+    """Analyzer for Kallisto outputs."""
+    
+    def get_tool_name(self) -> str:
+        return "kallisto"
+    
+    def analyze(self) -> Dict[str, Any]:
+        """Analyze Kallisto output."""
+        results = {
+            'status': 'success',
+            'issues': [],
+            'warnings': [],
+            'metrics': {}
+        }
+        
+        # Look in kallisto_output directory
+        kallisto_dir = self.output_dir / "kallisto_output"
+        if not kallisto_dir.exists():
+            return {'status': 'error', 'message': 'Kallisto output directory not found'}
+            
+        # Find run_info.json files
+        info_files = list(kallisto_dir.glob("*/run_info.json"))
+        if not info_files:
+            return {'status': 'error', 'message': 'No Kallisto run info files found'}
+            
+        for info_file in info_files:
+            sample_name = info_file.parent.name
+            try:
+                # Parse run info
+                with open(info_file) as f:
+                    run_info = json.load(f)
+                results['metrics'][sample_name] = run_info
+                
+                # Check for potential issues
+                if run_info.get('n_processed', 0) == 0:
+                    results['issues'].append(f"{sample_name}: No reads processed")
+                elif run_info.get('n_pseudoaligned', 0) / run_info.get('n_processed', 1) < 0.5:
+                    results['warnings'].append(
+                        f"{sample_name}: Low alignment rate "
+                        f"({run_info.get('n_pseudoaligned', 0) / run_info.get('n_processed', 1) * 100:.1f}%)"
+                    )
+                    
+            except Exception as e:
+                results['issues'].append(f"Error parsing {sample_name}: {str(e)}")
+                
+        return results
+
 class ReportGenerator:
     """Generates comprehensive analysis reports for any workflow."""
     
-    def __init__(self, output_dir: str):
-        """Initialize report generator."""
+    def __init__(self, output_dir: str, workflow_type: str = None):
+        """Initialize report generator.
+        
+        Args:
+            output_dir: Directory containing workflow outputs
+            workflow_type: Optional type of workflow (e.g. 'rna_seq', 'chip_seq', etc.)
+                         If not provided, will be inferred from outputs
+        """
         self.output_dir = Path(output_dir)
+        self.workflow_type = workflow_type
         self.logger = get_logger(__name__)
-        self.analyzers: Dict[str, ToolAnalyzer] = {}
+        self.llm = LLMInterface()
         
-        # Register built-in analyzers
-        self.register_analyzer(MultiQCAnalyzer(self.output_dir))
-        self.register_analyzer(LogAnalyzer(self.output_dir))
-        
-        # Load plugin analyzers
-        self._load_plugins()
-    
-    def register_analyzer(self, analyzer: ToolAnalyzer):
-        """Register a tool analyzer."""
-        self.analyzers[analyzer.get_tool_name()] = analyzer
-    
-    def _load_plugins(self):
-        """Load analyzer plugins."""
-        try:
-            for entry_point in pkg_resources.iter_entry_points('cognomic.analyzers'):
-                analyzer_class = entry_point.load()
-                if issubclass(analyzer_class, ToolAnalyzer):
-                    analyzer = analyzer_class(self.output_dir)
-                    self.register_analyzer(analyzer)
-        except Exception as e:
-            self.logger.warning(f"Error loading analyzer plugins: {str(e)}")
-    
-    def analyze_tool_output(self, tool_name: str) -> Dict[str, Any]:
-        """Analyze output from a specific tool."""
-        if tool_name in self.analyzers:
-            return self.analyzers[tool_name].analyze()
-        else:
-            # Use generic analyzer for unknown tools
-            analyzer = OutputAnalyzer(self.output_dir, tool_name)
-            return analyzer.analyze()
-    
-    def generate_report(self, workflow_tools: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Generate comprehensive analysis report."""
-        report = {
-            'summary': {
-                'status': 'success',
-                'issues': [],
-                'warnings': [],
-                'recommendations': []
-            },
-            'tools': {}
+    def _infer_workflow_type(self, tool_outputs: Dict[str, List]) -> str:
+        """Infer workflow type from available tool outputs."""
+        # Look for characteristic tool outputs
+        tools = set()
+        for dir_name in tool_outputs.keys():
+            tools.add(dir_name.lower())
+            
+        # Common workflow signatures
+        signatures = {
+            'rna_seq': {'kallisto', 'star', 'fastqc', 'multiqc', 'deseq2', 'salmon'},
+            'chip_seq': {'bowtie2', 'macs2', 'fastqc', 'multiqc', 'homer'},
+            'atac_seq': {'bowtie2', 'macs2', 'fastqc', 'multiqc', 'homer'},
+            'wgs': {'bwa', 'samtools', 'gatk', 'fastqc', 'multiqc'},
+            'metagenomics': {'kraken2', 'metaphlan', 'fastqc', 'multiqc'},
+            'variant_calling': {'gatk', 'samtools', 'bcftools', 'fastqc', 'multiqc'}
         }
         
-        try:
-            # If no specific tools provided, analyze all tool outputs in directory
-            if not workflow_tools:
-                workflow_tools = [d.name for d in self.output_dir.iterdir() 
-                                if d.is_dir() and not d.name.startswith('.')]
-            
-            # Analyze each tool's output
-            for tool in workflow_tools:
-                tool_results = self.analyze_tool_output(tool)
-                report['tools'][tool] = tool_results
+        # Find best matching workflow type
+        best_match = None
+        best_score = 0
+        for wf_type, signature in signatures.items():
+            score = len(tools & signature)
+            if score > best_score:
+                best_score = score
+                best_match = wf_type
                 
-                # Check for issues
-                if tool_results.get('status') == 'error':
-                    report['summary']['issues'].append(
-                        f"Error analyzing {tool}: {tool_results.get('message')}"
-                    )
-                if tool_results.get('issues'):
-                    report['summary']['issues'].extend(
-                        f"{tool}: {issue}" for issue in tool_results['issues']
-                    )
-                if tool_results.get('warnings'):
-                    report['summary']['warnings'].extend(
-                        f"{tool}: {warning}" for warning in tool_results['warnings']
-                    )
+        return best_match or 'unknown'
+    
+    async def analyze_tool_outputs(self) -> Dict[str, Any]:
+        """Use LLM to analyze tool outputs."""
+        tool_outputs = {}
+        
+        # Collect all output files from subdirectories
+        for dir_path in self.output_dir.iterdir():
+            if dir_path.is_dir() and not dir_path.name.startswith('.'):
+                tool_outputs[dir_path.name] = []
+                # Collect all file contents
+                for file in dir_path.rglob('*'):
+                    if file.is_file():
+                        try:
+                            if file.suffix in ['.json', '.txt', '.log', '.out', '.tsv', '.csv']:
+                                with open(file) as f:
+                                    content = f.read()
+                                    # Truncate very large files
+                                    if len(content) > 10000:
+                                        content = content[:10000] + "\n... (truncated)"
+                                tool_outputs[dir_path.name].append({
+                                    'file': str(file.relative_to(dir_path)),
+                                    'content': content
+                                })
+                            elif file.suffix in ['.html', '.pdf', '.png', '.jpg']:
+                                tool_outputs[dir_path.name].append({
+                                    'file': str(file.relative_to(dir_path)),
+                                    'type': file.suffix[1:]  # Remove leading dot
+                                })
+                        except Exception as e:
+                            self.logger.warning(f"Error reading {file}: {str(e)}")
+        
+        # Infer workflow type if not provided
+        if not self.workflow_type:
+            self.workflow_type = self._infer_workflow_type(tool_outputs)
+        
+        # Ask LLM to analyze outputs
+        prompt = f"""
+        Analyze the following {self.workflow_type} workflow outputs and provide a comprehensive summary:
+
+        Workflow type: {self.workflow_type}
+        Tool outputs available:
+        {json.dumps(tool_outputs, indent=2)}
+
+        Please provide:
+        1. Overall quality assessment
+        2. Key metrics and findings specific to this type of analysis
+        3. Any potential issues or warnings
+        4. Recommendations for the user
+
+        Focus on the most important information that would be relevant to a bioinformatician.
+        If you see any concerning patterns or unusual results, highlight them.
+        
+        For any metrics, provide context about what values are considered good/bad.
+        
+        If you see output from tools you don't recognize, focus on general quality metrics
+        and any clear error messages or warnings.
+        """
+        
+        try:
+            analysis = await self.llm.generate_analysis(prompt)
+            return analysis
+        except Exception as e:
+            self.logger.error(f"Error generating analysis: {str(e)}")
+            return {
+                'status': 'error',
+                'message': f'Failed to analyze outputs: {str(e)}'
+            }
+    
+    async def generate_report(self) -> Dict[str, Any]:
+        """Generate comprehensive analysis report."""
+        try:
+            # Analyze outputs using LLM
+            analysis = await self.analyze_tool_outputs()
             
-            # Analyze workflow logs
-            log_results = self.analyze_tool_output('logs')
-            if log_results['errors']:
-                report['summary']['issues'].extend(log_results['errors'])
-            if log_results['warnings']:
-                report['summary']['warnings'].extend(log_results['warnings'])
-            
-            # Set overall status
-            if report['summary']['issues']:
-                report['summary']['status'] = 'failed'
-                report['summary']['recommendations'].append(
-                    "Review and address major issues before proceeding"
-                )
-            elif report['summary']['warnings']:
-                report['summary']['status'] = 'warning'
-                report['summary']['recommendations'].append(
-                    "Review warnings and consider their impact"
-                )
+            report = {
+                'summary': {
+                    'status': 'success',
+                    'workflow_type': self.workflow_type,
+                    'analysis': analysis
+                }
+            }
             
             # Save report
             report_file = self.output_dir / "analysis_report.json"

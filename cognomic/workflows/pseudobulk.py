@@ -161,39 +161,79 @@ class FastQCAgent(ExecutionAgent):
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         self.logger.info("Starting FastQC analysis")
-        input_files = params["input_files"]
-        output_dir = os.path.join(params["output_dir"], "fastqc")
-        os.makedirs(output_dir, exist_ok=True)
-        threads = params.get("threads", 1)
         
-        # Get command from LLM
-        command = await self.task_agent.get_tool_command(
-            tool_name="fastqc",
-            action="analyze",
-            parameters={
-                "input_files": input_files,
-                "output_dir": output_dir,
-                "threads": threads
-            }
-        )
-        
-        result = await self.execute_command(command)
-        
-        output = {
-            "input_file": input_files,
-            "output_dir": output_dir,
-            "success": result["returncode"] == 0,
-            "stdout": result["stdout"],
-            "stderr": result["stderr"],
-            "duration": result["duration"]
-        }
-        
-        if not output["success"]:
-            self.logger.error(f"FastQC failed for {input_files}")
-            self.logger.error(f"Error: {output['stderr']}")
-            raise RuntimeError(f"FastQC failed for {input_files}")
+        if not self.has_llm or not self.llm_agent:
+            raise RuntimeError("LLM agent required for command generation")
+            
+        try:
+            # Get input files
+            input_files = params.get("input_files", [])
+            if not input_files:
+                # Find all FASTQ files in directory
+                try:
+                    result = await self.execute_command("find . -maxdepth 1 -type f -name '*.fastq.gz' -o -name '*.fastq' -o -name '*.fq.gz' -o -name '*.fq'")
+                    if result["returncode"] == 0:
+                        input_files = [f.strip() for f in result["stdout"].split("\n") if f.strip()]
+                except Exception as e:
+                    self.logger.error(f"Error finding FASTQ files: {str(e)}")
+                    raise
+            
+            if not input_files:
+                raise RuntimeError("No FASTQ files found")
                 
-        return {"results": [output]}
+            # Create output directory
+            output_dir = os.path.join(params["output_dir"], "fastqc")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Prepare command context for LLM
+            command_context = {
+                "tool": "fastqc",
+                "action": "analyze",
+                "parameters": {
+                    "input_files": input_files,
+                    "output_dir": output_dir,
+                    "threads": params.get("threads", 1),
+                    "extract": True,  # Extract zip files for easier processing
+                    "quiet": True,    # Reduce output noise
+                    "nogroup": True   # Disable grouping of similar sequences
+                }
+            }
+            
+            # Get command from LLM
+            command = await self.llm_agent.generate_command(command_context)
+            
+            self.logger.info(f"Running FastQC on files: {input_files}")
+            self.logger.info(f"Generated command: {command}")
+            
+            # Execute the command
+            result = await self.execute_command(command)
+            
+            if result["returncode"] != 0:
+                error_context = {
+                    "command": command,
+                    "output": result["stdout"],
+                    "error": result["stderr"]
+                }
+                # Get error analysis from LLM
+                error_analysis = await self.llm_agent.handle_error(
+                    Exception(f"Command failed with code {result['returncode']}"),
+                    error_context
+                )
+                if not error_analysis.get("continue", False):
+                    raise RuntimeError(f"FastQC failed: {result['stderr']}")
+            
+            return {
+                "results": [{
+                    "input_files": input_files,
+                    "output_dir": output_dir,
+                    "command": command,
+                    "command_result": result
+                }]
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error running FastQC: {str(e)}")
+            raise
 
     async def validate(self, result: Dict[str, Any]) -> bool:
         """Validate FastQC results."""
@@ -201,13 +241,29 @@ class FastQCAgent(ExecutionAgent):
             return False
             
         for r in result["results"]:
-            if not r.get("success"):
-                return False
-                
             output_dir = r.get("output_dir")
             if not output_dir or not os.path.exists(output_dir):
+                self.logger.error(f"Output directory not found: {output_dir}")
                 return False
                 
+            # Check for HTML reports
+            input_files = r.get("input_files", [])
+            for input_file in input_files:
+                base_name = os.path.basename(input_file)
+                # Remove all possible extensions
+                for ext in ['.gz', '.fastq', '.fq']:
+                    base_name = os.path.splitext(base_name)[0]
+                    
+                html_report = os.path.join(output_dir, f"{base_name}_fastqc.html")
+                if not os.path.exists(html_report):
+                    self.logger.error(f"FastQC report not found: {html_report}")
+                    return False
+                    
+                # Check file size
+                if os.path.getsize(html_report) == 0:
+                    self.logger.error(f"Empty FastQC report: {html_report}")
+                    return False
+                    
         return True
 
 
@@ -394,79 +450,168 @@ class KallistoIndexAgent(ExecutionAgent):
 
 class KallistoQuantAgent(ExecutionAgent):
     """Agent for running Kallisto quantification."""
+    
+    async def _check_kallisto_version(self) -> str:
+        """Get Kallisto version and verify installation."""
+        try:
+            result = await self.execute_command("kallisto version")
+            if result["returncode"] != 0:
+                raise RuntimeError("Failed to get Kallisto version")
+            version = result["stdout"].strip()
+            self.logger.info(f"Kallisto version: {version}")
+            return version
+        except Exception as e:
+            self.logger.error(f"Error checking Kallisto version: {str(e)}")
+            raise
+
+    async def _check_index_version(self, index_path: str) -> str:
+        """Check Kallisto index version."""
+        try:
+            result = await self.execute_command(f"kallisto inspect {index_path}")
+            if result["returncode"] != 0:
+                raise RuntimeError(f"Failed to inspect Kallisto index: {result['stderr']}")
+            
+            # Parse version from inspect output
+            version_line = [line for line in result["stdout"].split("\n") 
+                          if "version" in line.lower()]
+            if not version_line:
+                raise RuntimeError("Could not determine index version")
+                
+            index_version = version_line[0].split(":")[1].strip()
+            self.logger.info(f"Index version: {index_version}")
+            return index_version
+            
+        except Exception as e:
+            self.logger.error(f"Error checking index version: {str(e)}")
+            raise
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        self.logger.info("Starting Kallisto quantification")
-        
-        # Create output directory for quantification
-        quant_dir = os.path.join(params["output_dir"], "quant")
-        os.makedirs(quant_dir, exist_ok=True)
-        
-        # Get input files from params
-        input_files = params.get("input_files", [])
-        if not input_files:
-            raise RuntimeError("No input files provided")
+        """Execute Kallisto quantification."""
+        try:
+            # Check Kallisto version
+            kallisto_version = await self._check_kallisto_version()
             
-        # Sort to ensure consistent order
-        input_files.sort()
-        
-        # Process each file independently
-        results = []
-        for input_file in input_files:
-            # Use filename as sample name, removing all extensions
-            sample_name = os.path.basename(input_file)
-            for ext in ['.gz', '.fastq', '.fq']:
-                sample_name = os.path.splitext(sample_name)[0]
+            # Get input files
+            input_files = params.get("input_files", [])
+            if not input_files:
+                # Find all FASTQ files in directory
+                try:
+                    result = await self.execute_command("find . -maxdepth 1 -type f -name '*.fastq.gz' -o -name '*.fastq' -o -name '*.fq.gz' -o -name '*.fq'")
+                    if result["returncode"] == 0:
+                        input_files = [f.strip() for f in result["stdout"].split("\n") if f.strip()]
+                except Exception as e:
+                    self.logger.error(f"Error finding FASTQ files: {str(e)}")
+                    raise
+            
+            if not input_files:
+                raise RuntimeError("No FASTQ files found")
                 
-            output_dir = os.path.join(quant_dir, sample_name)
+            # Check if index exists
+            index_path = params.get("index")
+            if not os.path.exists(index_path):
+                # Build index
+                reference = params.get("reference")
+                if not reference or not os.path.exists(reference):
+                    raise RuntimeError(f"Reference file not found: {reference}")
+                    
+                index_dir = os.path.dirname(index_path)
+                os.makedirs(index_dir, exist_ok=True)
+                
+                # Build index command
+                index_cmd = f"kallisto index -i {index_path} {reference}"
+                result = await self.execute_command(index_cmd)
+                if result["returncode"] != 0:
+                    raise RuntimeError(f"Failed to build Kallisto index: {result['stderr']}")
+            
+            # Check index version compatibility
+            index_version = await self._check_index_version(index_path)
+            if index_version != kallisto_version:
+                self.logger.warning(f"Index version ({index_version}) does not match Kallisto version ({kallisto_version})")
+                # Rebuild index
+                self.logger.info("Rebuilding index with current Kallisto version")
+                reference = params.get("reference")
+                index_cmd = f"kallisto index -i {index_path} {reference}"
+                result = await self.execute_command(index_cmd)
+                if result["returncode"] != 0:
+                    raise RuntimeError(f"Failed to rebuild Kallisto index: {result['stderr']}")
+            
+            # Create output directory
+            output_dir = params.get("output_dir")
             os.makedirs(output_dir, exist_ok=True)
             
-            # Get index file path
-            index_file = params.get("index")
-            if not os.path.exists(index_file):
-                raise RuntimeError(f"Kallisto index not found: {index_file}")
-            
-            # Get command from LLM for single-end processing
-            command = await self.task_agent.get_tool_command(
-                tool_name="kallisto",
-                action="quant",
-                parameters={
-                    "input_files": [input_file],  # Process single file
-                    "output_dir": output_dir,
-                    "index_file": index_file,
-                    "threads": params.get("threads", 4),
-                    "single_end": True,  # Specify single-end mode
-                    "fragment_length": 200,  # Default fragment length for single-end
-                    "sd": 20  # Default standard deviation for fragment length
-                }
-            )
-            
-            self.logger.info(f"Processing file: {input_file}")
-            result = await self.execute_command(command)
-            
-            if result["returncode"] != 0:
-                raise RuntimeError(f"Kallisto quantification failed for {input_file}: {result['stderr']}")
+            # Process each input file
+            results = []
+            for input_file in input_files:
+                # Create file-specific output directory
+                base_name = os.path.splitext(os.path.basename(input_file))[0]
+                file_output_dir = os.path.join(output_dir, base_name)
+                os.makedirs(file_output_dir, exist_ok=True)
                 
-            results.append({
-                "input_file": input_file,
-                "output_dir": output_dir,
-                "abundance_file": os.path.join(output_dir, "abundance.h5"),
-                "command_result": result
-            })
+                # Build quantification command
+                quant_cmd = [
+                    "kallisto quant",
+                    f"-i {index_path}",
+                    f"-o {file_output_dir}",
+                    "--single" if params.get("single", True) else "",
+                    f"-l {params.get('fragment_length', 200)}",
+                    f"-s {params.get('sd', 20)}",
+                    f"-t {params.get('threads', 1)}",
+                    input_file
+                ]
+                
+                command = " ".join(filter(None, quant_cmd))
+                self.logger.info(f"Running Kallisto quantification for {input_file}")
+                self.logger.info(f"Command: {command}")
+                
+                result = await self.execute_command(command)
+                if result["returncode"] != 0:
+                    raise RuntimeError(f"Kallisto quantification failed: {result['stderr']}")
+                    
+                results.append({
+                    "input_file": input_file,
+                    "output_dir": file_output_dir,
+                    "command": command,
+                    "result": result
+                })
             
-        return {"results": results}
+            return {
+                "results": results,
+                "metadata": {
+                    "kallisto_version": kallisto_version,
+                    "index_version": index_version,
+                    "index_path": index_path,
+                    "output_dir": output_dir
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error running Kallisto quantification: {str(e)}")
+            raise
 
     async def validate(self, result: Dict[str, Any]) -> bool:
         """Validate Kallisto quantification results."""
         if not result.get("results"):
-            self.logger.error("No results found")
             return False
             
         for r in result["results"]:
-            if not os.path.exists(r["abundance_file"]):
-                self.logger.error(f"Abundance file not found for {r['input_file']}")
+            output_dir = r.get("output_dir")
+            if not output_dir or not os.path.exists(output_dir):
+                self.logger.error(f"Output directory not found: {output_dir}")
                 return False
                 
+            # Check for required output files
+            required_files = ["abundance.h5", "abundance.tsv", "run_info.json"]
+            for file in required_files:
+                file_path = os.path.join(output_dir, file)
+                if not os.path.exists(file_path):
+                    self.logger.error(f"Required output file not found: {file_path}")
+                    return False
+                    
+                # Check file size
+                if os.path.getsize(file_path) == 0:
+                    self.logger.error(f"Empty output file: {file_path}")
+                    return False
+                    
         return True
 
 

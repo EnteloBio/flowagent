@@ -42,10 +42,10 @@ Follow these rules when planning:
    - Action
    - Required parameters
    - Expected outputs
-3. For file patterns:
-   - For input files, just use '*' to match all files of appropriate type
-   - The system will automatically handle file extensions (.fastq, .fastq.gz, etc.)
-   - For output files and directories, use full paths with appropriate extensions
+3. For file handling:
+   - Never use glob patterns (*)
+   - Each file must be processed individually
+   - For input files, specify "input_file" and the system will handle each file
 4. Always include quality control steps
 5. Always specify output directories for each step
 6. Consider error handling and data validation
@@ -57,10 +57,10 @@ Example workflow plan:
         {{
             "name": "quality_control",
             "tool": "FastQC",
-            "action": "Perform quality control on the input fastq files",
+            "action": "analyze",
             "type": "command",
             "parameters": {{
-                "input": "*",  # Will match .fastq, .fastq.gz, .fq, .fq.gz
+                "input_file": "test1.fastq.gz",  # System will handle each file
                 "output_dir": "results/rna_seq_analysis/fastqc_reports"
             }}
         }},
@@ -81,7 +81,7 @@ Example workflow plan:
             "type": "command",
             "parameters": {{
                 "index": "results/rna_seq_analysis/kallisto_index",
-                "input": "*",  # Will match .fastq, .fastq.gz, .fq, .fq.gz
+                "input_file": "test1.fastq.gz",  # System will handle each file
                 "output_dir": "results/rna_seq_analysis/kallisto_output",
                 "single": true,
                 "fragment_length": 200,
@@ -91,10 +91,10 @@ Example workflow plan:
         {{
             "name": "generate_report",
             "tool": "MultiQC",
-            "action": "Generate quality control report",
+            "action": "report",
             "type": "command",
             "parameters": {{
-                "input": "results/rna_seq_analysis",
+                "input_dir": "results/rna_seq_analysis",
                 "output_dir": "results/rna_seq_analysis/multiqc_report"
             }}
         }}
@@ -128,30 +128,24 @@ Your task is to generate the exact command line string for a given tool and acti
 
 Common tools and their command formats:
 
-1. Filesystem:
-   - mkdir: mkdir -p <directory>
-   - rm: rm [-r] <path>
-   - cp: cp [-r] <source> <destination>
+1. FastQC:
+   - analyze: fastqc <input_file> -o <output_dir>
+   Note: Process one file at a time, never use globs
 
-2. FastQC:
-   - analyze: fastqc <input_files> -o <output_dir> [options]
-   Note: FastQC can accept file globs (e.g., *.fastq.gz) directly
-
-3. Kallisto:
+2. Kallisto:
    - index: kallisto index -i <index_file> <reference_fasta>
-   - quant (single-end): kallisto quant -i <index> -o <output_dir> --single -l 200 -s 20 <single_input_file>
+   - quant (single-end): kallisto quant -i <index> -o <output_dir> --single -l 200 -s 20 <input_file>
    - quant (paired-end): kallisto quant -i <index> -o <output_dir> <reads1> <reads2>
-   Note: Kallisto quantification MUST process each file separately - never use globs
+   Note: Process one file at a time, never use globs
 
-4. MultiQC:
-   - report: multiqc <input_dir> -o <output_dir> [options]
+3. MultiQC:
+   - report: multiqc <input_dir> -o <output_dir>
 
 Important Rules:
 1. NEVER use shell operators like |, >, <, ;, &&, ||
-2. For Kallisto quantification, if a glob pattern is detected, return the error message: 'ERROR: Kallisto quantification requires individual file processing'
+2. NEVER use glob patterns (*) - each file must be processed individually
 3. For single-end RNA-seq, always include --single -l 200 -s 20 parameters
 4. Ensure all paths are properly specified
-5. FastQC and MultiQC can accept glob patterns directly, but Kallisto quantification cannot
 
 Return ONLY the command string, with no additional text or explanation."""
 
@@ -220,34 +214,63 @@ Return ONLY the command string, with no additional text or explanation."""
             self.logger.error(f"Error generating workflow plan: {str(e)}")
             raise
 
-    async def generate_command(self, tool: str, action: str, parameters: Dict[str, Any]) -> str:
-        """Generate a command string for a given tool and action."""
+    async def generate_command(self, step: Dict[str, Any]) -> str:
+        """Generate a command for a workflow step."""
         try:
-            # Convert parameters to a formatted string
-            params_str = json.dumps(parameters, indent=2)
+            # Create prompt
+            prompt = f"""
+            Generate a command for the following workflow step:
+            Tool: {step['tool']}
+            Action: {step['action']}
+            Parameters: {json.dumps(step['parameters'], indent=2)}
             
-            messages = [
-                {"role": "system", "content": self._get_command_generation_prompt()},
-                {"role": "user", "content": f"Generate the command for:\nTool: {tool}\nAction: {action}\nParameters: {params_str}"}
-            ]
+            Important rules:
+            1. NEVER use glob patterns (*) in file paths
+            2. For tools that process individual files (like Kallisto, FastQC):
+               - Create a separate output directory for each input file
+               - Use the input filename (without extension) as part of the output directory
+               Example: For input file 'sample1.fastq.gz', use 'output_dir/sample1' as output
+            3. For tools that aggregate results (like MultiQC):
+               - Use the specified output directory as is
+            4. Always use explicit paths, never relative paths with ..
+            5. Never include explanatory text, only output the exact command to run
+            6. For Kallisto quantification:
+               - CHECK THE PARAMETERS CAREFULLY - if "single": true exists, this is SINGLE-END data
+               - For single-end data, you MUST add --single -l <fragment_length> -s <sd>
+               - For paired-end data, DO NOT add the --single flag
+               - Process each file separately with its own output directory
+               - Fragment length and SD are REQUIRED for single-end data
+               - Default fragment_length=200 and sd=20 if not specified
             
+            Example formats:
+            - Kallisto (single-end): kallisto quant -i index.idx -o output_dir/sample1 --single -l 200 -s 20 sample1.fastq.gz
+            - Kallisto (paired-end): kallisto quant -i index.idx -o output_dir/sample1 sample1_1.fastq.gz sample1_2.fastq.gz
+            - FastQC: fastqc -o output_dir/sample1 sample1.fastq.gz
+            - MultiQC: multiqc input_dir -o output_dir
+            
+            IMPORTANT: Double check if "single": true exists in the parameters. If it does, you MUST use --single flag with -l and -s options.
+            """
+            
+            # Get command from LLM
             response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=messages,
+                messages=[
+                    {"role": "system", "content": "You are a bioinformatics command generator. Only output the exact command to run, no other text."},
+                    {"role": "user", "content": prompt}
+                ],
                 temperature=0.1,  # Lower temperature for more consistent outputs
-                max_tokens=200  # Commands should be relatively short
+                max_tokens=500,
+                response_format={"type": "text"}
             )
             
             command = response.choices[0].message.content.strip()
-            
-            # Basic validation
             if not command:
-                raise ValueError("Generated empty command")
-            
+                raise ValueError("Empty command generated")
+                
             return command
             
         except Exception as e:
-            self.logger.error(f"Error generating command: {str(e)}")
+            self.logger.error(f"Failed to generate command: {str(e)}")
             raise
 
     async def decompose_workflow(self, prompt: str) -> Dict[str, Any]:
@@ -298,3 +321,67 @@ Context: {json.dumps(context, indent=2)}
         except Exception as e:
             self.logger.error(f"Failed to diagnose error: {str(e)}")
             raise
+
+    async def generate_analysis(self, prompt: str) -> Dict[str, Any]:
+        """Generate analysis from workflow outputs."""
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": """You are an expert bioinformatician analyzing workflow outputs.
+                    For any workflow type, focus on providing clear, actionable insights about:
+                    1. Quality metrics and their interpretation
+                    2. Tool-specific outputs and their meaning
+                    3. Any technical issues that need attention
+                    4. Workflow-specific recommendations
+                    
+                    Format your response as a JSON object with these keys:
+                    {
+                        "overall_quality": "good|warning|poor",
+                        "key_metrics": {
+                            "tool_name": {
+                                "metric_name": "value",
+                                "interpretation": "what this value means"
+                            }
+                        },
+                        "issues": [
+                            {
+                                "severity": "high|medium|low",
+                                "description": "issue description",
+                                "impact": "how this affects results",
+                                "solution": "how to fix it"
+                            }
+                        ],
+                        "warnings": [...],
+                        "recommendations": [
+                            {
+                                "type": "quality|performance|analysis",
+                                "description": "what to do",
+                                "reason": "why this is recommended"
+                            }
+                        ]
+                    }
+                    """},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=2000,
+                response_format={"type": "json_object"}
+            )
+            
+            # Parse JSON response
+            analysis = json.loads(response.choices[0].message.content)
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error generating analysis: {str(e)}")
+            return {
+                "overall_quality": "unknown",
+                "error": str(e),
+                "issues": [{
+                    "severity": "high",
+                    "description": "Failed to analyze tool outputs",
+                    "impact": "Cannot provide quality assessment",
+                    "solution": "Check logs for details"
+                }]
+            }
