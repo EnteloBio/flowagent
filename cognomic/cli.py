@@ -26,7 +26,7 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
         llm = LLMInterface()
         
         # Initialize workflow manager
-        workflow_manager = WorkflowManager(llm=llm)
+        workflow_manager = WorkflowManager()
         
         # Set up checkpoint directory
         checkpoint_path = Path(checkpoint_dir) if checkpoint_dir else Path('workflow_state')

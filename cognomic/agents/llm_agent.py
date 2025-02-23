@@ -20,24 +20,23 @@ logger = get_logger(__name__)
 class LLMAgent:
     """Agent that uses LLM (ChatGPT) for decision making and tool execution."""
     
-    def __init__(self):
+    def __init__(self, settings=None):
         """Initialize the LLM agent."""
-        self.settings = settings
         self.logger = get_logger(__name__)
+        self.settings = settings or settings
         
-        if not self.settings.openai_api_key:
+        if not self.settings.OPENAI_API_KEY:
             raise ValueError("OpenAI API key not found")
             
         # Configure OpenAI client
         self.client = openai.AsyncOpenAI(
-            api_key=self.settings.openai_api_key,
+            api_key=self.settings.OPENAI_API_KEY,
             base_url=self.settings.OPENAI_BASE_URL,
-            timeout=self.settings.TIMEOUT,
-            max_retries=0  # We'll handle retries ourselves
+            timeout=self.settings.TIMEOUT
         )
         
         # Get model to use (with fallback)
-        self.model = self.settings.openai_model_to_use
+        self.model = self.settings.OPENAI_MODEL
         self.logger.info(f"Using OpenAI model: {self.model}")
         
         # Rate limiting state

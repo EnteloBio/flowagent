@@ -1,3 +1,5 @@
+"""Tool tracking and execution for workflow management."""
+
 from typing import Dict, List, Set, Any
 from dataclasses import dataclass
 from pathlib import Path
@@ -5,6 +7,13 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import json
 from datetime import datetime
+import subprocess
+import os
+import logging
+
+from ..utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 @dataclass
 class ToolCall:
@@ -33,7 +42,39 @@ class ToolTracker:
     def __init__(self):
         self.tool_calls: Dict[str, ToolCall] = {}
         self.current_context: List[str] = []  # Stack of tool call IDs
+        self.logger = get_logger(__name__)
     
+    async def execute_tool(self, step: Dict[str, Any], llm) -> Dict[str, Any]:
+        """Execute a tool based on the step configuration using LLM for command generation."""
+        try:
+            # Generate command using LLM
+            command = await llm.generate_command(step)
+            
+            # Execute command
+            process = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd()
+            )
+            
+            if process.returncode != 0:
+                raise RuntimeError(f"Command failed: {process.stderr}")
+                
+            # Return output directory or relevant paths
+            output = {}
+            if "output_dir" in step["parameters"]:
+                output["output_dir"] = step["parameters"]["output_dir"]
+            if "output_index" in step["parameters"]:
+                output["output_index"] = step["parameters"]["output_index"]
+                
+            return output
+            
+        except Exception as e:
+            self.logger.error(f"Error executing {step['tool']}: {str(e)}")
+            raise
+            
     def start_tool_call(self, tool_name: str, inputs: Dict[str, Any]) -> str:
         """Register the start of a tool call and infer dependencies"""
         call_id = f"{tool_name}_{len(self.tool_calls)}"

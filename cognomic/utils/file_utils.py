@@ -3,6 +3,9 @@
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Set
+import logging
+
+logger = logging.getLogger(__name__)
 
 def find_files(directory: str, pattern: str, file_type: str = 'file', max_depth: int = None, 
                extensions: List[str] = None, excludes: List[str] = None, full_path: bool = False) -> List[str]:
@@ -63,3 +66,45 @@ def find_files(directory: str, pattern: str, file_type: str = 'file', max_depth:
     
     walk(directory)
     return sorted(results)  # Sort for consistent ordering
+
+def to_relative_path(abs_path: str, base_dir: str) -> str:
+    """Convert absolute path to relative path based on base directory."""
+    try:
+        return os.path.relpath(abs_path, base_dir)
+    except ValueError:
+        # If paths are on different drives, return original path
+        return abs_path
+
+def find_fastq_files(directory: str) -> List[str]:
+    """Find all FASTQ files in a directory."""
+    fastq_files = []
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.endswith(('.fastq', '.fastq.gz', '.fq', '.fq.gz')):
+                abs_path = os.path.join(root, file)
+                rel_path = to_relative_path(abs_path, directory)
+                fastq_files.append(rel_path)
+    return fastq_files
+
+def ensure_directory(path: str) -> None:
+    """Ensure a directory exists, creating it if necessary.
+    
+    Args:
+        path: Directory path to ensure exists
+    """
+    Path(path).mkdir(parents=True, exist_ok=True)
+    
+def get_file_size(path: str) -> int:
+    """Get size of a file in bytes.
+    
+    Args:
+        path: Path to file
+        
+    Returns:
+        File size in bytes
+    """
+    try:
+        return os.path.getsize(path)
+    except (OSError, FileNotFoundError):
+        logger.error(f"File {path} does not exist")
+        return None
