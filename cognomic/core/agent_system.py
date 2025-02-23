@@ -34,6 +34,7 @@ class WorkflowStep:
     tool: str
     action: str
     parameters: Dict[str, Any]
+    dependencies: List[str] = None  # List of step names this step depends on
     type: str = "command"  # Default to command type
     description: str = ""  # Optional description of what the step does
     
@@ -42,6 +43,10 @@ class WorkflowStep:
         # Ensure parameters is a dict
         if not isinstance(self.parameters, dict):
             self.parameters = {} if self.parameters is None else dict(self.parameters)
+            
+        # Initialize dependencies as empty list if None
+        if self.dependencies is None:
+            self.dependencies = []
             
         # Ensure required fields are present
         if not all([self.name, self.tool, self.action]):
@@ -78,6 +83,17 @@ class WorkflowStep:
                 del self.parameters["input_file"]
             else:
                 raise ValueError(f"No files found matching pattern: {self.parameters['input_file']}")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'name': self.name,
+            'tool': self.tool,
+            'action': self.action,
+            'parameters': self.parameters,
+            'dependencies': self.dependencies,
+            'type': self.type,
+            'description': self.description
+        }
 
 class WorkflowStateManager:
     """Manages workflow state and results."""
@@ -175,212 +191,247 @@ class BaseAgent:
 class PLAN_agent(BaseAgent):
     """Agent for planning workflow steps."""
     
+    def __init__(self, llm=None, logger=None):
+        """Initialize plan agent."""
+        self.llm = llm
+        self.has_llm = llm is not None
+        self.llm_agent = llm if self.has_llm else None
+        self.logger = logger or logging.getLogger(__name__)
+        
     async def decompose_workflow(self, prompt: str) -> List[WorkflowStep]:
         """Decompose workflow from prompt into executable steps."""
         self.logger.info(f"Decomposing workflow from prompt: {prompt}")
         
-        # Create basic workflow steps for RNA-seq analysis
-        steps = []
-        
-        # Find input files
-        input_files = await self._find_fastq_files()
-        
-        # 1. Quality Control
-        steps.append(WorkflowStep(
-            name="quality_control",
-            tool="FastQC",
-            action="analyze",
-            type="command",
-            parameters={
-                "input_files": input_files,
-                "output_dir": "results/rna_seq_analysis/fastqc_reports"
+        # Get workflow plan from LLM
+        if self.has_llm:
+            workflow_plan = await self.llm.generate_workflow_plan_from_context({"prompt": prompt})
+        else:
+            # Default workflow plan for RNA-seq analysis
+            workflow_plan = {
+                "workflow_type": "RNA-seq analysis",
+                "steps": [
+                    {
+                        "name": "find_fastq",
+                        "tool": "find_by_name",
+                        "action": "SearchDirectory",
+                        "parameters": {
+                            "SearchDirectory": ".",
+                            "Pattern": "*.fastq.gz",
+                            "Type": "file"
+                        },
+                        "dependencies": []
+                    },
+                    {
+                        "name": "kallisto_index",
+                        "tool": "kallisto",
+                        "action": "index",
+                        "parameters": {
+                            "reference": "Homo_sapiens.GRCh38.cdna.all.fa",
+                            "output": "index.idx"
+                        },
+                        "dependencies": []
+                    },
+                    {
+                        "name": "kallisto_quant",
+                        "tool": "kallisto",
+                        "action": "quant",
+                        "parameters": {
+                            "index": "index.idx",
+                            "output_dir": "results/rna_seq_analysis",
+                            "single": True,
+                            "fragment_length": 200,
+                            "fragment_sd": 20
+                        },
+                        "dependencies": ["find_fastq", "kallisto_index"]
+                    },
+                    {
+                        "name": "fastqc",
+                        "tool": "fastqc",
+                        "action": "analyze",
+                        "parameters": {
+                            "output_dir": "results/rna_seq_analysis/fastqc_reports"
+                        },
+                        "dependencies": ["find_fastq"]
+                    },
+                    {
+                        "name": "multiqc",
+                        "tool": "multiqc",
+                        "action": "aggregate",
+                        "parameters": {
+                            "input_dir": "results/rna_seq_analysis/fastqc_reports",
+                            "output_dir": "results/rna_seq_analysis/multiqc_report"
+                        },
+                        "dependencies": ["fastqc"]
+                    }
+                ]
             }
-        ))
-        
-        # 2. Build Kallisto Index
-        steps.append(WorkflowStep(
-            name="build_index",
-            tool="kallisto",
-            action="index",
-            type="command",
-            parameters={
-                "reference": "Homo_sapiens.GRCh38.cdna.all.fa",
-                "output": "results/rna_seq_analysis/kallisto_index/transcriptome.idx"
-            }
-        ))
-        
-        # 3. Kallisto Quantification
-        steps.append(WorkflowStep(
-            name="quantify",
-            tool="kallisto",
-            action="quant",
-            type="command",
-            parameters={
-                "index": "results/rna_seq_analysis/kallisto_index/transcriptome.idx",
-                "input_files": input_files,
-                "output_dir": "results/rna_seq_analysis/kallisto_output",
-                "single": True,
-                "fragment_length": 200,
-                "sd": 20
-            }
-        ))
-        
-        # 4. MultiQC Report
-        steps.append(WorkflowStep(
-            name="generate_report",
-            tool="MultiQC",
-            action="report",
-            type="command",
-            parameters={
-                "input_dir": "results/rna_seq_analysis",
-                "output_dir": "results/rna_seq_analysis/multiqc_report"
-            }
-        ))
-        
-        return steps
-        
-    async def _find_fastq_files(self) -> List[str]:
-        """Find all FASTQ files in the current directory."""
-        try:
-            result = await self.execute_command(
-                "find . -maxdepth 1 -type f -name '*.fastq.gz' -o -name '*.fastq' -o -name '*.fq.gz' -o -name '*.fq'"
-            )
-            if result["returncode"] == 0:
-                files = [f.strip() for f in result["stdout"].split("\n") if f.strip()]
-                if not files:
-                    raise RuntimeError("No FASTQ files found in current directory")
-                return files
-        except Exception as e:
-            self.logger.error(f"Error finding FASTQ files: {str(e)}")
-            raise
+            
+        # Convert workflow plan to WorkflowStep objects
+        workflow_steps = []
+        for step_dict in workflow_plan['steps']:
+            try:
+                # Ensure all required fields are present
+                required_fields = ['name', 'tool', 'action', 'parameters']
+                for field in required_fields:
+                    if field not in step_dict:
+                        raise ValueError(f"Missing required field '{field}' in workflow step")
+                
+                # Create WorkflowStep object with proper defaults
+                step = WorkflowStep(
+                    name=step_dict['name'],
+                    tool=step_dict['tool'],
+                    action=step_dict['action'],
+                    parameters=step_dict.get('parameters', {}),
+                    dependencies=step_dict.get('dependencies', []),
+                    type=step_dict.get('type', 'command'),
+                    description=step_dict.get('description', '')
+                )
+                workflow_steps.append(step)
+                self.logger.debug(f"Created workflow step: {step.name}")
+            except Exception as e:
+                self.logger.error(f"Error creating workflow step: {str(e)}")
+                raise
+            
+        return workflow_steps
 
 class TASK_agent(BaseAgent):
     """Agent for executing workflow steps."""
     
     async def execute_step(self, step: WorkflowStep) -> Dict[str, Any]:
         """Execute a workflow step."""
-        self.logger.info(f"Generating command for step: {step.name}")
-        self.logger.info(f"Tool: {step.tool}, Action: {step.action}, Type: {step.type}")
-        self.logger.info(f"Parameters: {json.dumps(step.parameters, indent=2)}")
-        
         try:
-            # Create output directories
-            if "output_dir" in step.parameters:
-                os.makedirs(step.parameters["output_dir"], exist_ok=True)
-                self._check_disk_space(step.parameters["output_dir"])
+            # Create output directory if specified in parameters
+            if 'output_dir' in step.parameters:
+                os.makedirs(step.parameters['output_dir'], exist_ok=True)
+                self.logger.info(f"Created output directory: {step.parameters['output_dir']}")
+
+            # Handle find_by_name step
+            if step.tool == "find_by_name":
+                import glob
+                files = glob.glob(os.path.join(step.parameters["SearchDirectory"], step.parameters["Pattern"]))
+                return {"files": files}
             
-            # For kallisto index, also create index directory
-            if step.tool == "kallisto" and step.action == "index":
-                index_dir = os.path.dirname(step.parameters["output"])
-                os.makedirs(index_dir, exist_ok=True)
-                self._check_disk_space(index_dir)
+            # Handle kallisto quant step
+            if step.tool == "kallisto" and step.action == "quant":
+                if "input_files" not in step.parameters:
+                    raise ValueError("No input files specified for kallisto quant")
                 
-                # Check kallisto version first
-                version_result = await self.execute_command("kallisto version")
-                if version_result["returncode"] != 0:
-                    raise RuntimeError("Failed to get Kallisto version")
-                kallisto_version = version_result["stdout"].strip()
-                self.logger.info(f"Kallisto version: {kallisto_version}")
-            
-            # Check input files
-            if "input_files" in step.parameters:
-                self._check_input_files(step.parameters["input_files"])
-            elif "reference" in step.parameters:
-                if not os.path.exists(step.parameters["reference"]):
-                    raise FileNotFoundError(f"Reference file not found: {step.parameters['reference']}")
-                if not os.access(step.parameters["reference"], os.R_OK):
-                    raise PermissionError(f"Cannot read reference file: {step.parameters['reference']}")
-            
-            # Generate and execute command based on step type
-            if step.type == "command":
-                # Get command from LLM
+                # Ensure input_files is a list
+                if isinstance(step.parameters["input_files"], str):
+                    step.parameters["input_files"] = [step.parameters["input_files"]]
+                
+                # Generate command using LLM
                 command = await self._get_llm_command(step)
-                if not command:
-                    raise ValueError(f"Failed to generate command for step: {step.name}")
-                    
-                self.logger.info(f"Executing command: {command}")
-                result = await self.execute_command(command)
+                self.logger.info(f"Generated command for kallisto quant: {command}")
                 
-                if result["returncode"] != 0:
-                    error_msg = result["stderr"] or result["stdout"]
-                    if step.tool == "kallisto" and step.action == "index":
-                        # Check if error is due to disk space
-                        if "could not write" in error_msg:
-                            df_result = await self.execute_command(f"df -h {index_dir}")
-                            self.logger.error(f"Disk space information:\n{df_result['stdout']}")
-                            raise RuntimeError(f"Failed to write Kallisto index. Check disk space and permissions in {index_dir}")
-                    raise RuntimeError(f"Command failed: {error_msg}")
+                # Execute command
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=self.cwd
+                )
+                stdout, stderr = await process.communicate()
                 
-                # For kallisto index, verify the index after creation
-                if step.tool == "kallisto" and step.action == "index" and os.path.exists(step.parameters["output"]):
-                    inspect_result = await self.execute_command(f"kallisto inspect {step.parameters['output']}")
-                    if inspect_result["returncode"] != 0:
-                        raise RuntimeError(f"Failed to verify Kallisto index: {inspect_result['stderr']}")
-                    
-                    # Parse version from inspect output more safely
-                    version_lines = [line for line in inspect_result["stdout"].split("\n") 
-                                if "version" in line.lower()]
-                    if version_lines:
-                        try:
-                            index_version = version_lines[0].split(":")[1].strip()
-                            self.logger.info(f"Created Kallisto index version: {index_version}")
-                            if index_version != kallisto_version:
-                                self.logger.warning(f"Index version ({index_version}) does not match Kallisto version ({kallisto_version})")
-                        except (IndexError, KeyError) as e:
-                            self.logger.warning(f"Could not parse index version from output: {version_lines[0]}")
-                    else:
-                        self.logger.warning("No version information found in index inspection output")
+                if process.returncode != 0:
+                    raise RuntimeError(f"Kallisto quant failed: {stderr.decode()}")
                 
                 return {
-                    "command": command,
-                    "output": result["stdout"],
-                    "error": result["stderr"],
-                    "returncode": result["returncode"]
+                    "stdout": stdout.decode(),
+                    "stderr": stderr.decode()
                 }
-            else:
-                raise ValueError(f"Unsupported step type: {step.type}")
-                
-        except Exception as e:
-            self.logger.error(f"Error executing step {step.name}: {str(e)}")
-            raise
             
+            # Handle fastqc step
+            if step.tool == "fastqc":
+                if "input_files" not in step.parameters:
+                    raise ValueError("No input files specified for fastqc")
+                
+                # Ensure input_files is a list
+                if isinstance(step.parameters["input_files"], str):
+                    step.parameters["input_files"] = [step.parameters["input_files"]]
+                
+                # Generate command using LLM
+                command = await self._get_llm_command(step)
+                self.logger.info(f"Generated command for fastqc: {command}")
+                
+                # Execute command
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=self.cwd
+                )
+                stdout, stderr = await process.communicate()
+                
+                if process.returncode != 0:
+                    raise RuntimeError(f"FastQC failed: {stderr.decode()}")
+                
+                return {
+                    "stdout": stdout.decode(),
+                    "stderr": stderr.decode()
+                }
+            
+            # For other steps, use LLM to generate command
+            if self.has_llm:
+                command = await self._get_llm_command(step)
+            else:
+                command = self._get_default_command(step)
+                
+            # Execute command
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.cwd
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                raise RuntimeError(f"Command failed: {stderr.decode()}")
+            
+            return {
+                "stdout": stdout.decode(),
+                "stderr": stderr.decode(),
+                "returncode": process.returncode
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Step execution failed: {str(e)}")
+            raise
+
     async def _get_llm_command(self, step: WorkflowStep) -> str:
         """Get command from LLM based on step parameters."""
-        # Convert step to dictionary format expected by LLM
-        step_dict = {
-            "tool": step.tool,
-            "action": step.action,
-            "parameters": step.parameters
-        }
-        
         # For multiple files in kallisto quant, generate separate commands
         if step.tool == "kallisto" and step.action == "quant" and len(step.parameters['input_files']) > 1:
             commands = []
             for input_file in step.parameters['input_files']:
-                # Create sample-specific output directory using full filename
-                sample_name = os.path.basename(input_file)  # Keep full filename including extension
-                if sample_name.endswith('.gz'):  # Remove .gz if present
-                    sample_name = sample_name[:-3]
+                # Create sample-specific output directory
+                sample_name = os.path.basename(input_file).replace('.fastq.gz', '')
                 sample_output_dir = os.path.join(step.parameters['output_dir'], sample_name)
                 os.makedirs(sample_output_dir, exist_ok=True)
                 
-                # Create step dict for this file
-                file_step = {
-                    "tool": step.tool,
-                    "action": step.action,
-                    "parameters": {
+                # Create new WorkflowStep for this file
+                file_step = WorkflowStep(
+                    name=f"{step.name}_{sample_name}",
+                    tool=step.tool,
+                    action=step.action,
+                    parameters={
                         **step.parameters,
-                        "input_files": [input_file],
+                        "input_files": [f"'{input_file}'"],  # Quote the path
                         "output_dir": sample_output_dir
-                    }
-                }
-                command = await self.llm.generate_command(file_step)
+                    },
+                    dependencies=step.dependencies
+                )
+                command = await self.llm.generate_command(file_step.to_dict())
                 if command:
                     commands.append(command)
                     
             return " && ".join(commands) if commands else None
         else:
-            return await self.llm.generate_command(step_dict)
+            # Quote any file paths in parameters
+            if 'input_files' in step.parameters:
+                step.parameters['input_files'] = [f"'{f}'" for f in step.parameters['input_files']]
+            return await self.llm.generate_command(step.to_dict())
 
 class DEBUG_agent(BaseAgent):
     """Agent responsible for error diagnosis and recovery."""
