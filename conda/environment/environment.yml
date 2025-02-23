@@ -1,0 +1,52 @@
+name: cognomic
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  # Python and core dependencies
+  - python=3.10
+  - pip
+  - setuptools
+  - wheel
+  
+  # Bioinformatics tools
+  - kallisto=0.46.1
+  - fastqc=0.11.9
+  - multiqc=1.14
+  - samtools=1.17
+  
+  # SLURM and cluster support
+  - drmaa=0.7.9
+  - cgatcore=0.6.7
+  
+  # Python packages
+  - networkx=3.0
+  - pydantic=2.0.0
+  - python-dotenv=1.0.0
+  - typing-extensions=4.7.1
+  - asyncio=3.4.3
+  - aiohttp=3.8.0
+  - click=8.0.0
+  - pyyaml=6.0.0
+  - rich=13.0.0
+  - pandas=2.0.0
+  - numpy=1.24.0
+  - scipy=1.10.0
+  
+  # Development tools
+  - pytest=7.3.1
+  - black=23.3.0
+  - flake8=6.0.0
+  - mypy=1.3.0
+  
+  # Additional dependencies via pip
+  - pip:
+    - openai>=1.0.0
+    - cgatcore>=0.6.7  # Also install via pip for latest version
+    
+variables:
+  # Environment variables
+  PYTHONPATH: ${CONDA_PREFIX}/lib/python3.10/site-packages
+  PATH: ${CONDA_PREFIX}/bin:${PATH}
+  LD_LIBRARY_PATH: ${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}

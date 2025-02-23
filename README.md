@@ -20,10 +20,14 @@ An advanced multi-agent framework for automating complex bioinformatics workflow
 git clone https://github.com/cribbslab/cognomic.git
 cd cognomic
 
-# Create and activate Conda environment
-conda install mamba 
-mamba env create -f environment.yml
-mamba activate cognomic
+# Create and activate the conda environment:
+conda env create -f conda/environment/environment.yml
+conda activate cognomic
+
+# Verify installation of key components
+kallisto version
+fastqc --version
+multiqc --version
 
 # Add bioinformatics tools
 mamba install -c bioconda fastqc=0.12.1
@@ -51,7 +55,7 @@ cognomic-server
 
 3. Execute a workflow:
 ```bash
-cognomic-run --workflow rnaseq --input data/
+python -m cognomic.cli --workflow rnaseq --input data/
 ```
 
 ## API Key Configuration
@@ -153,6 +157,55 @@ API_KEY_HEADER=X-API-Key                                  # Default header
 ACCESS_TOKEN_EXPIRE_MINUTES=30                            # Token lifetime
 ```
 
+## SLURM Configuration
+
+Cognomic supports SLURM cluster execution. To configure SLURM, create a `.cgat.yml` file in the project root directory:
+
+```yaml
+cluster:
+  queue_manager: slurm
+  queue: your_queue
+  parallel_environment: smp
+
+slurm:
+  account: your_account
+  partition: your_partition
+  mail_user: your.email@example.com
+
+tools:
+  kallisto_index:
+    memory: 16G
+    threads: 8
+    queue: short
+```
+
+### SLURM Integration
+
+Cognomic uses CGATCore for SLURM integration, which provides:
+
+1. **Job Management**
+   - Automatic job submission and dependency tracking
+   - Resource allocation (memory, CPUs, time limits)
+   - Queue selection and prioritization
+
+2. **Resource Configuration**
+   - Tool-specific resource requirements in `.cgat.yml`
+   - Queue-specific limits and settings
+   - Default resource allocations
+
+3. **Error Handling**
+   - Automatic job resubmission on failure
+   - Detailed error logging
+   - Email notifications for job completion/failure
+
+### SLURM Usage
+
+To execute a workflow on a SLURM cluster, use the `--executor cgat` option:
+
+```bash
+python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --workflow rnaseq --input data/ --executor cgat
+```
+
 ## Analysis Reports
 
 The Cognomic analysis report functionality provides comprehensive insights into your workflow outputs. It analyzes quality metrics, alignment statistics, and expression data to generate actionable recommendations.
@@ -161,13 +214,13 @@ The Cognomic analysis report functionality provides comprehensive insights into 
 
 ```bash
 # Basic analysis
-cognomic analyze "analyze the workflow results" --output-dir=/path/to/workflow/output
+python -m cognomic.cli analyze "analyze the workflow results" --output-dir=/path/to/workflow/output
 
 # With detailed logging
-cognomic analyze "analyze the workflow results" --output-dir=/path/to/workflow/output --log-level=DEBUG
+python -m cognomic.cli analyze "analyze the workflow results" --output-dir=/path/to/workflow/output --log-level=DEBUG
 
 # With specific analysis focus
-cognomic analyze "analyze quality metrics and alignment rates" --output-dir=/path/to/workflow/output
+python -m cognomic.cli analyze "analyze quality metrics and alignment rates" --output-dir=/path/to/workflow/output
 ```
 
 ### Running via Python Module
@@ -261,21 +314,21 @@ The report analyzer automatically detects and processes:
 
 ```bash
 # Analyze RNA-seq results
-cognomic analyze "provide a detailed analysis of RNA-seq quality and alignment" \
+python -m cognomic.cli analyze "provide a detailed analysis of RNA-seq quality and alignment" \
   --output-dir=results/rna_seq_analysis/
 
 # Focus on specific aspects
-cognomic analyze "check for quality issues and low alignment rates" \
+python -m cognomic.cli analyze "check for quality issues and low alignment rates" \
   --output-dir=results/rna_seq_analysis/
 
 # Get recommendations for improvement
-cognomic analyze "what can be improved in this workflow run" \
+python -m cognomic.cli analyze "what can be improved in this workflow run" \
   --output-dir=results/rna_seq_analysis/
 ```
 
 The report will be displayed in the terminal and can be redirected to a file if needed:
 ```bash
-cognomic analyze "analyze workflow results" --output-dir=results/ > analysis_report.txt
+python -m cognomic.cli analyze "analyze workflow results" --output-dir=results/ > analysis_report.txt
 ```
 
 ## Architecture
@@ -329,3 +382,62 @@ If you use Cognomic in your research, please cite:
   year={2025},
   url={https://github.com/cribbslab/cognomic}
 }
+
+```
+
+## Version Compatibility
+
+Cognomic automatically handles version compatibility for Kallisto indices:
+
+1. **Version Checking**
+   - Checks Kallisto version before index creation
+   - Validates index compatibility using `kallisto inspect`
+   - Stores version information in workflow metadata
+
+2. **Error Prevention**
+   - Detects version mismatches before execution
+   - Provides detailed error messages for incompatible indices
+   - Suggests resolution steps for version conflicts
+
+3. **Metadata Management**
+   - Tracks index versions across workflows
+   - Maintains compatibility information
+   - Enables reproducible analyses
+
+### Updating the Environment
+
+To update your conda environment with new dependencies:
+
+```bash
+conda env update -f conda/environment/environment.yml
+```
+
+### Managing Multiple Environments
+
+For development or testing, you can create a separate environment:
+
+```bash
+conda env create -f conda/environment/environment.yml -n cognomic-dev
+
+```
+
+### Basic Usage
+
+```bash
+# Local execution
+python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+
+# SLURM cluster execution
+python -m cognomic.cli --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+```
+
+### Advanced Usage
+
+1. Resume a failed workflow:
+```bash
+python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow prompt"
+```
+
+2. Specify custom resource requirements:
+```bash
+python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
