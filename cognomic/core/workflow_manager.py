@@ -8,131 +8,45 @@ import networkx as nx
 import json
 import os
 
-from .agent_system import PLAN_agent, TASK_agent, DEBUG_agent, WorkflowStep
+from ..utils.logging import get_logger
+from ..utils import file_utils
+from .agent_system import AgentSystem
 from .llm import LLMInterface
-from .tool_tracker import ToolTracker
-from .find_fastq import find_fastq
+from .agent_types import WorkflowStep
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class WorkflowManager:
     """Manages workflow execution and coordination."""
     
-    def __init__(self, llm: Optional[LLMInterface] = None, logger=None):
+    def __init__(self):
         """Initialize workflow manager."""
-        self.llm = llm or LLMInterface()
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
+        self.llm = LLMInterface()
+        self.agent_system = AgentSystem(self.llm)
         self.cwd = os.getcwd()
         self.logger.info(f"Initial working directory: {self.cwd}")
-        
-        # Initialize agents
-        self.plan_agent = PLAN_agent(llm=self.llm)
-        self.task_agent = TASK_agent(llm=self.llm)
-        self.debug_agent = DEBUG_agent(llm=self.llm)
 
     async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
         """Execute workflow from prompt."""
         try:
             self.logger.info("Planning workflow steps...")
-            workflow_steps = await self.plan_agent.decompose_workflow(prompt)
+            workflow_plan = await self.llm.generate_workflow_plan(prompt)
             
             # Create output directories
-            for step in workflow_steps:
-                output_dir = step.parameters.get("output_dir")
+            for step in workflow_plan["steps"]:
+                output_dir = step["parameters"].get("output_dir")
                 if output_dir:
-                    os.makedirs(output_dir, exist_ok=True)
+                    file_utils.ensure_directory(output_dir)
                     self.logger.info(f"Created output directory: {output_dir}")
             
-            # Set working directory for task agent
-            self.task_agent.cwd = self.cwd
-            self.logger.info(f"Set task agent working directory to: {self.cwd}")
+            # Execute workflow using agent system
+            results = await self.agent_system.execute_workflow(workflow_plan)
             
-            # Build DAG
-            dag = self._build_dag(workflow_steps)
-            
-            # Execute workflow in DAG order
-            execution_plan = self.get_execution_plan(dag)
-            results = []
-            step_outputs = {}  # Store outputs from each step
-            
-            for batch in execution_plan:
-                batch_results = []
-                for task_id in batch:
-                    node_data = dag.nodes[task_id]
-                    step = node_data['step']
-                    
-                    try:
-                        self.logger.info(f"Executing {task_id}")
-                        
-                        # Handle file dependencies
-                        if step.tool == "find_by_name":
-                            # Store FASTQ files for later use
-                            fastq_files = find_fastq(self.cwd)
-                            step_outputs['fastq_files'] = fastq_files
-                            self.logger.info(f"Found FASTQ files: {fastq_files}")
-                            result = {"files": fastq_files}
-                        elif step.tool == "kallisto" and step.action == "quant":
-                            # Get FASTQ files from find_fastq step
-                            fastq_files = step_outputs.get('fastq_files', [])
-                            step.parameters["input_files"] = fastq_files
-                            result = await self.task_agent.execute_step(step)
-                        elif step.tool == "fastqc":
-                            # Get FASTQ files from find_fastq step
-                            fastq_files = step_outputs.get('fastq_files', [])
-                            if not fastq_files:
-                                raise ValueError("No FASTQ files found for FastQC")
-                            step.parameters["input_files"] = fastq_files
-                            self.logger.info(f"Input files for fastqc: {fastq_files}")
-                            result = await self.task_agent.execute_step(step)
-                        else:
-                            result = await self.task_agent.execute_step(step)
-                        
-                        step_outputs[step.tool] = result
-                        batch_results.append({
-                            "step": step.name,
-                            "status": "success",
-                            "result": result
-                        })
-                    except Exception as e:
-                        self.logger.error(f"Task {task_id} failed: {str(e)}")
-                        batch_results.append({
-                            "step": step.name,
-                            "status": "failed",
-                            "error": str(e)
-                        })
-                results.extend(batch_results)
-            
-            # Archive results
-            self.logger.info("Archiving workflow results...")
-            archive_path = os.path.join("results", "workflow_archive.json")
-            os.makedirs(os.path.dirname(archive_path), exist_ok=True)
-            with open(archive_path, "w") as f:
-                json.dump(results, f, indent=2)
-            
-            # Generate analysis report
-            self.logger.info("Generating analysis report...")
-            report = await self._generate_analysis_report(results)
-            
-            return {
-                "status": "success",
-                "results": results,
-                "report": report,
-                "archive_path": archive_path
-            }
+            return results
             
         except Exception as e:
             self.logger.error(f"Workflow execution failed: {str(e)}")
-            try:
-                diagnosis = await self.debug_agent.diagnose_error(e, {
-                    "error": str(e),
-                    "context": {
-                        "working_directory": self.cwd,
-                        "prompt": prompt
-                    }
-                })
-                self.logger.info(f"Error diagnosis: {diagnosis}")
-            except Exception as diag_error:
-                self.logger.error(f"Error diagnosis failed: {str(diag_error)}")
             raise
 
     async def resume_workflow(self, prompt: str, checkpoint_dir: str) -> Dict[str, Any]:
@@ -154,11 +68,11 @@ class WorkflowManager:
                                if step["status"] == "success")
             
             # Get workflow plan
-            workflow_steps = await self.plan_agent.decompose_workflow(prompt)
+            workflow_plan = await self.llm.generate_workflow_plan(prompt)
             
             # Filter out completed steps
-            remaining_steps = [step for step in workflow_steps 
-                             if step.name not in completed_steps]
+            remaining_steps = [step for step in workflow_plan["steps"] 
+                             if step["name"] not in completed_steps]
             
             if not remaining_steps:
                 self.logger.info("All steps already completed")
@@ -168,64 +82,15 @@ class WorkflowManager:
             
             # Execute remaining steps
             results = checkpoint.get("results", [])
-            step_outputs = {}  # Store outputs from each step
             
-            # Build DAG for remaining steps
-            dag = self._build_dag(remaining_steps)
-            execution_plan = self.get_execution_plan(dag)
+            # Execute remaining steps using agent system
+            remaining_results = await self.agent_system.execute_workflow({"steps": remaining_steps})
+            results.extend(remaining_results)
             
-            for batch in execution_plan:
-                batch_results = []
-                for task_id in batch:
-                    node_data = dag.nodes[task_id]
-                    step = node_data['step']
-                    
-                    try:
-                        self.logger.info(f"Executing {task_id}")
-                        
-                        # Handle file dependencies
-                        if step.tool == "find_by_name":
-                            # Store FASTQ files for later use
-                            fastq_files = find_fastq(self.cwd)
-                            step_outputs['fastq_files'] = fastq_files
-                            self.logger.info(f"Found FASTQ files: {fastq_files}")
-                            result = {"files": fastq_files}
-                        elif step.tool == "kallisto" and step.action == "quant":
-                            # Get FASTQ files from find_fastq step
-                            fastq_files = step_outputs.get('fastq_files', [])
-                            step.parameters["input_files"] = fastq_files
-                            result = await self.task_agent.execute_step(step)
-                        elif step.tool == "fastqc":
-                            # Get FASTQ files from find_fastq step
-                            fastq_files = step_outputs.get('fastq_files', [])
-                            if not fastq_files:
-                                raise ValueError("No FASTQ files found for FastQC")
-                            step.parameters["input_files"] = fastq_files
-                            self.logger.info(f"Input files for fastqc: {fastq_files}")
-                            result = await self.task_agent.execute_step(step)
-                        else:
-                            result = await self.task_agent.execute_step(step)
-                        
-                        step_outputs[step.tool] = result
-                        batch_results.append({
-                            "step": step.name,
-                            "status": "success",
-                            "result": result
-                        })
-                    except Exception as e:
-                        self.logger.error(f"Task {task_id} failed: {str(e)}")
-                        batch_results.append({
-                            "step": step.name,
-                            "status": "failed",
-                            "error": str(e)
-                        })
-                        
-                results.extend(batch_results)
-                
-                # Update checkpoint after each batch
-                checkpoint["results"] = results
-                with open(checkpoint_file, 'w') as f:
-                    json.dump(checkpoint, f, indent=2)
+            # Update checkpoint after each batch
+            checkpoint["results"] = results
+            with open(checkpoint_file, 'w') as f:
+                json.dump(checkpoint, f, indent=2)
             
             # Generate final report
             report = await self._generate_analysis_report(results)
