@@ -1,0 +1,54 @@
+cluster:
+  queue_manager: slurm
+  queue: all.q
+  parallel_environment: smp
+
+# Default job memory and thread requirements
+memory: 4G
+threads: 4
+
+# Queue-specific settings
+queues:
+  short:
+    max_runtime: "4:00:00"
+    max_memory: "16G"
+    max_cores: 8
+  medium:
+    max_runtime: "24:00:00"
+    max_memory: "32G"
+    max_cores: 16
+  long:
+    max_runtime: "72:00:00"
+    max_memory: "64G"
+    max_cores: 32
+
+# Tool-specific resource requirements
+tools:
+  kallisto_index:
+    memory: 16G
+    threads: 8
+    queue: short
+  kallisto_quant:
+    memory: 8G
+    threads: 4
+    queue: short
+  fastqc:
+    memory: 4G
+    threads: 2
+    queue: short
+  multiqc:
+    memory: 4G
+    threads: 1
+    queue: short
+
+# SLURM-specific settings
+slurm:
+  account: your_account
+  partition: your_partition
+  mail_type: END,FAIL
+  mail_user: your.email@example.com
+
+# Logging configuration
+log:
+  level: INFO
+  file: pipeline.log

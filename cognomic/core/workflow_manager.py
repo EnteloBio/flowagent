@@ -20,13 +20,19 @@ logger = get_logger(__name__)
 class WorkflowManager:
     """Manages workflow execution and coordination."""
     
-    def __init__(self):
-        """Initialize workflow manager."""
+    def __init__(self, executor_type: str = "local"):
+        """Initialize workflow manager.
+        
+        Args:
+            executor_type: Type of executor to use ("local" or "cgat")
+        """
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
         self.agent_system = AgentSystem(self.llm)
+        self.executor_type = executor_type
         self.cwd = os.getcwd()
         self.logger.info(f"Initial working directory: {self.cwd}")
+        self.logger.info(f"Using {executor_type} executor")
 
     async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
         """Execute workflow from prompt."""
@@ -41,8 +47,8 @@ class WorkflowManager:
                     file_utils.ensure_directory(output_dir)
                     self.logger.info(f"Created output directory: {output_dir}")
             
-            # Create workflow DAG
-            dag = WorkflowDAG()
+            # Create workflow DAG with specified executor
+            dag = WorkflowDAG(executor_type=self.executor_type)
             
             # Add steps to DAG with dependencies
             for step in workflow_plan["steps"]:
@@ -50,7 +56,7 @@ class WorkflowManager:
                 dag.add_step(step, dependencies)
             
             # Execute workflow using parallel execution
-            results = await dag.execute_parallel(self.agent_system.execute_step)
+            results = await dag.execute_parallel()
             
             return results
             
@@ -74,7 +80,7 @@ class WorkflowManager:
             
             # Get completed steps
             completed_steps = set(step["name"] for step in checkpoint.get("results", []) 
-                               if step["status"] == "success")
+                               if step["status"] == "completed")
             
             # Get workflow plan
             workflow_plan = await self.llm.generate_workflow_plan(prompt)
@@ -89,30 +95,30 @@ class WorkflowManager:
                 
             self.logger.info(f"Resuming with {len(remaining_steps)} remaining steps")
             
+            # Create workflow DAG for remaining steps
+            dag = WorkflowDAG(executor_type=self.executor_type)
+            
+            # Add remaining steps to DAG
+            for step in remaining_steps:
+                dependencies = [dep for dep in step.get("dependencies", [])
+                              if dep not in completed_steps]
+                dag.add_step(step, dependencies)
+            
             # Execute remaining steps
-            results = checkpoint.get("results", [])
+            results = await dag.execute_parallel()
             
-            # Execute remaining steps using agent system
-            remaining_results = await self.agent_system.execute_workflow({"steps": remaining_steps})
-            results.extend(remaining_results)
+            # Merge results with checkpoint
+            checkpoint_results = checkpoint.get("results", [])
+            checkpoint_results.extend(results.get("results", {}).values())
             
-            # Update checkpoint after each batch
-            checkpoint["results"] = results
-            with open(checkpoint_file, 'w') as f:
-                json.dump(checkpoint, f, indent=2)
-            
-            # Generate final report
-            report = await self._generate_analysis_report(results)
-            checkpoint["report"] = report
-            
-            # Save final state
-            with open(checkpoint_file, 'w') as f:
-                json.dump(checkpoint, f, indent=2)
-                
-            return checkpoint
+            return {
+                "status": results["status"],
+                "results": checkpoint_results,
+                "error": results.get("error")
+            }
             
         except Exception as e:
-            self.logger.error(f"Error resuming workflow: {str(e)}")
+            self.logger.error(f"Failed to resume workflow: {str(e)}")
             raise
 
     def _build_dag(self, workflow_steps: List[WorkflowStep]) -> nx.DiGraph:
