@@ -11,8 +11,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'cognomic-server=cognomic.api.server:main',  # Corrected module path
-            'cognomic-run=cognomic.cli:run',  # New entry point for running workflows
+            'cognomic=cognomic.cli:run',  # CLI entry point for running workflows
         ],
     },
 )
