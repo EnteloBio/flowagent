@@ -45,158 +45,106 @@ class ToolTracker:
         self.logger = get_logger(__name__)
     
     async def execute_tool(self, step: Dict[str, Any], llm) -> Dict[str, Any]:
-        """Execute a tool based on the step configuration using LLM for command generation."""
+        """Execute a tool based on the step configuration."""
         try:
-            # Generate command using LLM
-            command = await llm.generate_command(step)
+            # Get or generate command
+            command = step.get("command")
+            if not command:
+                command = await llm.generate_command(step)
             
-            # Execute command
-            process = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                cwd=os.getcwd()
+            # Create tool call record
+            tool_call = ToolCall(
+                tool_name=step["name"],
+                inputs=step.get("parameters", {}),
+                outputs=set(step.get("outputs", [])),
+                dependencies=set(step.get("dependencies", [])),
+                call_id=step["name"]
             )
             
-            if process.returncode != 0:
-                raise RuntimeError(f"Command failed: {process.stderr}")
+            # Record start time and log
+            tool_call.status = "running"
+            tool_call.start_time = datetime.now()
+            self.tool_calls[tool_call.call_id] = tool_call
+            
+            # Log command execution
+            self.logger.info(f"Executing command for step {step['name']}:")
+            self.logger.info(f"  Command: {command}")
+            self.logger.info(f"  Working directory: {os.getcwd()}")
+            
+            # Execute command
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True
+            )
+            
+            # Real-time logging of stdout and stderr
+            stdout_lines = []
+            stderr_lines = []
+            
+            while True:
+                stdout_line = process.stdout.readline()
+                stderr_line = process.stderr.readline()
                 
-            # Return output directory or relevant paths
-            output = {}
-            if "output_dir" in step["parameters"]:
-                output["output_dir"] = step["parameters"]["output_dir"]
-            if "output_index" in step["parameters"]:
-                output["output_index"] = step["parameters"]["output_index"]
+                if stdout_line:
+                    self.logger.info(f"  [stdout] {stdout_line.strip()}")
+                    stdout_lines.append(stdout_line)
                 
-            return output
+                if stderr_line:
+                    self.logger.warning(f"  [stderr] {stderr_line.strip()}")
+                    stderr_lines.append(stderr_line)
+                
+                if not stdout_line and not stderr_line and process.poll() is not None:
+                    break
+            
+            stdout = "".join(stdout_lines)
+            stderr = "".join(stderr_lines)
+            returncode = process.wait()
+            
+            # Record completion and log
+            tool_call.end_time = datetime.now()
+            duration = (tool_call.end_time - tool_call.start_time).total_seconds()
+            
+            if returncode == 0:
+                tool_call.status = "completed"
+                self.logger.info(f"Step {step['name']} completed successfully in {duration:.1f}s")
+                result = {
+                    "status": "success",
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": returncode,
+                    "duration": duration
+                }
+            else:
+                tool_call.status = "failed"
+                self.logger.error(f"Step {step['name']} failed after {duration:.1f}s")
+                self.logger.error(f"Exit code: {returncode}")
+                if stderr:
+                    self.logger.error(f"Error output:\n{stderr}")
+                result = {
+                    "status": "failed",
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": returncode,
+                    "duration": duration
+                }
+                raise Exception(f"Command failed with exit code {returncode}")
+            
+            # Update step with results
+            step.update({
+                "status": tool_call.status,
+                "result": result,
+                "start_time": tool_call.start_time.isoformat(),
+                "end_time": tool_call.end_time.isoformat(),
+                "duration": duration
+            })
+            
+            return step
             
         except Exception as e:
-            self.logger.error(f"Error executing {step['tool']}: {str(e)}")
+            self.logger.error(f"Error executing tool: {str(e)}")
             raise
-            
-    def start_tool_call(self, tool_name: str, inputs: Dict[str, Any]) -> str:
-        """Register the start of a tool call and infer dependencies"""
-        call_id = f"{tool_name}_{len(self.tool_calls)}"
-        
-        # Infer dependencies by checking if any inputs use outputs from previous tools
-        dependencies = set()
-        for value in inputs.values():
-            if isinstance(value, (str, Path)):
-                path = Path(value)
-                for prev_call in self.tool_calls.values():
-                    if any(output_path == path for output_path in prev_call.outputs):
-                        dependencies.add(prev_call.call_id)
-        
-        tool_call = ToolCall(
-            tool_name=tool_name,
-            inputs=inputs,
-            outputs=set(),
-            dependencies=dependencies,
-            call_id=call_id,
-            start_time=datetime.now()
-        )
-        
-        self.tool_calls[call_id] = tool_call
-        self.current_context.append(call_id)
-        return call_id
-    
-    def finish_tool_call(self, call_id: str, outputs: Set[Path]):
-        """Register tool completion and its outputs"""
-        if call_id in self.tool_calls:
-            self.tool_calls[call_id].outputs = outputs
-            self.tool_calls[call_id].status = "completed"
-            self.tool_calls[call_id].end_time = datetime.now()
-            if self.current_context and self.current_context[-1] == call_id:
-                self.current_context.pop()
-    
-    def build_dag(self) -> nx.DiGraph:
-        """Convert the tracked tool calls into a DAG"""
-        dag = nx.DiGraph()
-        
-        # Add nodes for all tool calls
-        for call_id, tool_call in self.tool_calls.items():
-            dag.add_node(call_id, 
-                        tool_name=tool_call.tool_name,
-                        status=tool_call.status,
-                        inputs=tool_call.inputs,
-                        outputs=tool_call.outputs)
-        
-        # Add edges for dependencies
-        for call_id, tool_call in self.tool_calls.items():
-            for dep_id in tool_call.dependencies:
-                dag.add_edge(dep_id, call_id)
-        
-        return dag
-    
-    def visualize_dag(self, output_path: Path):
-        """Generate a visualization of the workflow DAG"""
-        dag = self.build_dag()
-        
-        # Set up the plot
-        plt.figure(figsize=(12, 8))
-        pos = nx.spring_layout(dag)
-        
-        # Draw nodes with different colors based on status
-        colors = {
-            'pending': 'lightblue',
-            'running': 'yellow',
-            'completed': 'lightgreen',
-            'failed': 'red'
-        }
-        
-        for status in colors:
-            nodes = [n for n, d in dag.nodes(data=True) if d.get('status') == status]
-            nx.draw_networkx_nodes(dag, pos, nodelist=nodes, node_color=colors[status])
-        
-        # Draw edges and labels
-        nx.draw_networkx_edges(dag, pos)
-        labels = {n: f"{d['tool_name']}\n{n}" for n, d in dag.nodes(data=True)}
-        nx.draw_networkx_labels(dag, pos, labels)
-        
-        plt.title("Workflow DAG")
-        plt.axis('off')
-        plt.savefig(output_path)
-        plt.close()
-    
-    def save_state(self, checkpoint_dir: Path):
-        """Save the current state of tool tracking"""
-        state = {
-            'tool_calls': {k: v.to_dict() for k, v in self.tool_calls.items()},
-            'current_context': self.current_context
-        }
-        
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        with (checkpoint_dir / 'tool_tracker.json').open('w') as f:
-            json.dump(state, f, indent=2)
-    
-    @classmethod
-    def load_state(cls, checkpoint_dir: Path) -> 'ToolTracker':
-        """Load tool tracking state from checkpoint"""
-        tracker = cls()
-        
-        try:
-            with (checkpoint_dir / 'tool_tracker.json').open('r') as f:
-                state = json.load(f)
-                
-            for call_id, call_data in state['tool_calls'].items():
-                tool_call = ToolCall(
-                    tool_name=call_data['tool_name'],
-                    inputs=call_data['inputs'],
-                    outputs={Path(p) for p in call_data['outputs']},
-                    dependencies=set(call_data['dependencies']),
-                    call_id=call_data['call_id'],
-                    status=call_data['status']
-                )
-                if call_data['start_time']:
-                    tool_call.start_time = datetime.fromisoformat(call_data['start_time'])
-                if call_data['end_time']:
-                    tool_call.end_time = datetime.fromisoformat(call_data['end_time'])
-                tracker.tool_calls[call_id] = tool_call
-                
-            tracker.current_context = state['current_context']
-            
-        except FileNotFoundError:
-            pass
-            
-        return tracker

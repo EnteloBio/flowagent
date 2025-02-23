@@ -35,18 +35,24 @@ class TASK_agent:
     def __init__(self, llm):
         self.llm = llm
         self.logger = get_logger(__name__)
-        self.tool_tracker = ToolTracker(llm)
+        self.tool_tracker = ToolTracker()  # Initialize without llm parameter
     
-    async def execute(self, step: WorkflowStep) -> Dict[str, Any]:
+    async def execute(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single task according to the plan."""
         try:
-            return await self.tool_tracker.execute_tool(
-                step.tool,
-                step.action,
-                step.parameters
-            )
+            # Generate command for the step
+            command = await self.llm.generate_command(step)
+            step["command"] = command
+            
+            # Execute the command using tool tracker
+            result = await self.tool_tracker.execute_tool(step, self.llm)  # Pass llm here instead
+            
+            # Add result to step
+            step["result"] = result
+            return step
+            
         except Exception as e:
-            self.logger.error(f"Error executing step {step.name}: {str(e)}")
+            self.logger.error(f"Error executing step {step.get('name', 'unknown')}: {str(e)}")
             raise
 
 class DEBUG_agent:
@@ -71,40 +77,35 @@ class AgentSystem:
         """Initialize agent system."""
         self.logger = get_logger(__name__)
         self.llm = llm or LLMInterface()
-        self.tool_tracker = ToolTracker()
-        
-    async def execute_workflow(self, workflow_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Execute workflow steps in order."""
+        self.task_agent = TASK_agent(self.llm)
+        self.plan_agent = PLAN_agent(self.llm)
+    
+    async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a single workflow step."""
         try:
-            results = []
+            self.logger.info(f"Executing step: {step['name']}")
+            result = await self.task_agent.execute(step)
+            self.logger.info(f"Completed step: {step['name']}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Failed to execute step {step['name']}: {str(e)}")
+            raise
+    
+    async def execute_workflow(self, workflow_plan: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute workflow steps using DAG-based parallel execution."""
+        try:
+            from .workflow_dag import WorkflowDAG
             
-            # Execute each step
+            # Create workflow DAG
+            dag = WorkflowDAG()
+            
+            # Add steps to DAG with dependencies
             for step in workflow_plan["steps"]:
-                try:
-                    self.logger.info(f"Executing step {step['name']}")
-                    result = await self.tool_tracker.execute_tool(step, self.llm)
-                    results.append({
-                        "step": step["name"],
-                        "status": "success",
-                        "result": result
-                    })
-                except Exception as e:
-                    self.logger.error(f"Error executing step {step['name']}: {str(e)}")
-                    results.append({
-                        "step": step["name"],
-                        "status": "failed",
-                        "error": str(e)
-                    })
-                    
-                    # Try to diagnose the error
-                    try:
-                        diagnosis = await self.llm.analyze_error(str(e), {
-                            "step": step,
-                            "error": str(e)
-                        })
-                        self.logger.info(f"Error diagnosis: {diagnosis}")
-                    except Exception as diag_error:
-                        self.logger.error(f"Error diagnosis failed: {str(diag_error)}")
+                dependencies = step.get("dependencies", [])
+                dag.add_step(step, dependencies)
+            
+            # Execute workflow using parallel execution
+            results = await dag.execute_parallel(self.execute_step)
             
             return results
             

@@ -13,6 +13,7 @@ from ..utils import file_utils
 from .agent_system import AgentSystem
 from .llm import LLMInterface
 from .agent_types import WorkflowStep
+from .workflow_dag import WorkflowDAG
 
 logger = get_logger(__name__)
 
@@ -40,8 +41,16 @@ class WorkflowManager:
                     file_utils.ensure_directory(output_dir)
                     self.logger.info(f"Created output directory: {output_dir}")
             
-            # Execute workflow using agent system
-            results = await self.agent_system.execute_workflow(workflow_plan)
+            # Create workflow DAG
+            dag = WorkflowDAG()
+            
+            # Add steps to DAG with dependencies
+            for step in workflow_plan["steps"]:
+                dependencies = step.get("dependencies", [])
+                dag.add_step(step, dependencies)
+            
+            # Execute workflow using parallel execution
+            results = await dag.execute_parallel(self.agent_system.execute_step)
             
             return results
             
