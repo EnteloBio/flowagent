@@ -34,19 +34,10 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
         
         if resume:
             logger.info(f"Resuming workflow from {checkpoint_path}")
-            await workflow_manager.resume_workflow(checkpoint_path)
+            result = await workflow_manager.resume_workflow(prompt, str(checkpoint_path))
         else:
             logger.info("Starting new workflow")
-            # Execute workflow and generate DAG
-            await workflow_manager.llm.execute_workflow(prompt)
-            
-            # Save workflow state
-            workflow_manager.llm.tool_tracker.save_state(checkpoint_path)
-            
-            # Generate DAG visualization
-            dag_path = checkpoint_path / 'workflow_dag.png'
-            workflow_manager.llm.tool_tracker.visualize_dag(dag_path)
-            logger.info(f"Workflow DAG saved to: {dag_path}")
+            result = await workflow_manager.execute_workflow(prompt)
             
         logger.info("Workflow completed successfully!")
         

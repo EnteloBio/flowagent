@@ -11,6 +11,7 @@ import os
 from .agent_system import PLAN_agent, TASK_agent, DEBUG_agent, WorkflowStep
 from .llm import LLMInterface
 from .tool_tracker import ToolTracker
+from .find_fastq import find_fastq
 
 logger = logging.getLogger(__name__)
 
@@ -52,22 +53,50 @@ class WorkflowManager:
             # Execute workflow in DAG order
             execution_plan = self.get_execution_plan(dag)
             results = []
+            step_outputs = {}  # Store outputs from each step
+            
             for batch in execution_plan:
                 batch_results = []
                 for task_id in batch:
                     node_data = dag.nodes[task_id]
+                    step = node_data['step']
+                    
                     try:
                         self.logger.info(f"Executing {task_id}")
-                        result = await self.task_agent.execute_step(node_data['step'])
+                        
+                        # Handle file dependencies
+                        if step.tool == "find_by_name":
+                            # Store FASTQ files for later use
+                            fastq_files = find_fastq(self.cwd)
+                            step_outputs['fastq_files'] = fastq_files
+                            self.logger.info(f"Found FASTQ files: {fastq_files}")
+                            result = {"files": fastq_files}
+                        elif step.tool == "kallisto" and step.action == "quant":
+                            # Get FASTQ files from find_fastq step
+                            fastq_files = step_outputs.get('fastq_files', [])
+                            step.parameters["input_files"] = fastq_files
+                            result = await self.task_agent.execute_step(step)
+                        elif step.tool == "fastqc":
+                            # Get FASTQ files from find_fastq step
+                            fastq_files = step_outputs.get('fastq_files', [])
+                            if not fastq_files:
+                                raise ValueError("No FASTQ files found for FastQC")
+                            step.parameters["input_files"] = fastq_files
+                            self.logger.info(f"Input files for fastqc: {fastq_files}")
+                            result = await self.task_agent.execute_step(step)
+                        else:
+                            result = await self.task_agent.execute_step(step)
+                        
+                        step_outputs[step.tool] = result
                         batch_results.append({
-                            "step": node_data['step'].name,
+                            "step": step.name,
                             "status": "success",
                             "result": result
                         })
                     except Exception as e:
                         self.logger.error(f"Task {task_id} failed: {str(e)}")
                         batch_results.append({
-                            "step": node_data['step'].name,
+                            "step": step.name,
                             "status": "failed",
                             "error": str(e)
                         })
@@ -104,6 +133,112 @@ class WorkflowManager:
                 self.logger.info(f"Error diagnosis: {diagnosis}")
             except Exception as diag_error:
                 self.logger.error(f"Error diagnosis failed: {str(diag_error)}")
+            raise
+
+    async def resume_workflow(self, prompt: str, checkpoint_dir: str) -> Dict[str, Any]:
+        """Resume workflow execution from checkpoint."""
+        try:
+            # Load checkpoint state
+            checkpoint_file = os.path.join(checkpoint_dir, "workflow_state.json")
+            if not os.path.exists(checkpoint_file):
+                self.logger.warning(f"No checkpoint found at {checkpoint_file}, starting new workflow")
+                return await self.execute_workflow(prompt)
+                
+            with open(checkpoint_file, 'r') as f:
+                checkpoint = json.load(f)
+                
+            self.logger.info(f"Resuming workflow from checkpoint: {checkpoint_file}")
+            
+            # Get completed steps
+            completed_steps = set(step["name"] for step in checkpoint.get("results", []) 
+                               if step["status"] == "success")
+            
+            # Get workflow plan
+            workflow_steps = await self.plan_agent.decompose_workflow(prompt)
+            
+            # Filter out completed steps
+            remaining_steps = [step for step in workflow_steps 
+                             if step.name not in completed_steps]
+            
+            if not remaining_steps:
+                self.logger.info("All steps already completed")
+                return checkpoint
+                
+            self.logger.info(f"Resuming with {len(remaining_steps)} remaining steps")
+            
+            # Execute remaining steps
+            results = checkpoint.get("results", [])
+            step_outputs = {}  # Store outputs from each step
+            
+            # Build DAG for remaining steps
+            dag = self._build_dag(remaining_steps)
+            execution_plan = self.get_execution_plan(dag)
+            
+            for batch in execution_plan:
+                batch_results = []
+                for task_id in batch:
+                    node_data = dag.nodes[task_id]
+                    step = node_data['step']
+                    
+                    try:
+                        self.logger.info(f"Executing {task_id}")
+                        
+                        # Handle file dependencies
+                        if step.tool == "find_by_name":
+                            # Store FASTQ files for later use
+                            fastq_files = find_fastq(self.cwd)
+                            step_outputs['fastq_files'] = fastq_files
+                            self.logger.info(f"Found FASTQ files: {fastq_files}")
+                            result = {"files": fastq_files}
+                        elif step.tool == "kallisto" and step.action == "quant":
+                            # Get FASTQ files from find_fastq step
+                            fastq_files = step_outputs.get('fastq_files', [])
+                            step.parameters["input_files"] = fastq_files
+                            result = await self.task_agent.execute_step(step)
+                        elif step.tool == "fastqc":
+                            # Get FASTQ files from find_fastq step
+                            fastq_files = step_outputs.get('fastq_files', [])
+                            if not fastq_files:
+                                raise ValueError("No FASTQ files found for FastQC")
+                            step.parameters["input_files"] = fastq_files
+                            self.logger.info(f"Input files for fastqc: {fastq_files}")
+                            result = await self.task_agent.execute_step(step)
+                        else:
+                            result = await self.task_agent.execute_step(step)
+                        
+                        step_outputs[step.tool] = result
+                        batch_results.append({
+                            "step": step.name,
+                            "status": "success",
+                            "result": result
+                        })
+                    except Exception as e:
+                        self.logger.error(f"Task {task_id} failed: {str(e)}")
+                        batch_results.append({
+                            "step": step.name,
+                            "status": "failed",
+                            "error": str(e)
+                        })
+                        
+                results.extend(batch_results)
+                
+                # Update checkpoint after each batch
+                checkpoint["results"] = results
+                with open(checkpoint_file, 'w') as f:
+                    json.dump(checkpoint, f, indent=2)
+            
+            # Generate final report
+            report = await self._generate_analysis_report(results)
+            checkpoint["report"] = report
+            
+            # Save final state
+            with open(checkpoint_file, 'w') as f:
+                json.dump(checkpoint, f, indent=2)
+                
+            return checkpoint
+            
+        except Exception as e:
+            self.logger.error(f"Error resuming workflow: {str(e)}")
             raise
 
     def _build_dag(self, workflow_steps: List[WorkflowStep]) -> nx.DiGraph:
