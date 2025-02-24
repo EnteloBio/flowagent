@@ -3,6 +3,7 @@
 from typing import Dict, Any, List, Optional
 import asyncio
 import logging
+import time
 from pathlib import Path
 import subprocess
 from abc import ABC, abstractmethod
@@ -28,26 +29,94 @@ class BaseExecutor(ABC):
 class LocalExecutor(BaseExecutor):
     """Execute workflow steps locally using subprocess."""
     
+    def _check_resources(self, step: Dict[str, Any]) -> None:
+        """Check if local resources are sufficient for the step."""
+        import psutil
+        
+        resources = step.get("resources", {})
+        required_memory_mb = resources.get("memory_mb", 4000)
+        required_cpus = resources.get("cpus", 1)
+        
+        # Get system resources
+        system_memory_mb = psutil.virtual_memory().total / (1024 * 1024)  # Convert bytes to MB
+        system_cpus = psutil.cpu_count()
+        
+        # Log resource requirements and availability
+        logger.info(
+            f"Step {step['name']} resource requirements:\n"
+            f"  - Memory: {required_memory_mb:.0f}MB / {system_memory_mb:.0f}MB available\n"
+            f"  - CPUs: {required_cpus} / {system_cpus} available"
+        )
+        
+        # Warn if resources might be insufficient
+        if required_memory_mb > system_memory_mb * 0.9:  # 90% of total memory
+            logger.warning(
+                f"Step {step['name']} requires {required_memory_mb:.0f}MB memory, "
+                f"which is close to or exceeds system memory ({system_memory_mb:.0f}MB)"
+            )
+        
+        if required_cpus > system_cpus:
+            logger.warning(
+                f"Step {step['name']} requests {required_cpus} CPUs, "
+                f"but only {system_cpus} are available"
+            )
+    
     async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a workflow step locally."""
         try:
+            # Check resource requirements
+            self._check_resources(step)
+            
+            # Log step execution
+            logger.info(f"Executing step: {step['name']}")
+            logger.debug(f"Command: {step['command']}")
+            
+            start_time = time.time()
             process = await asyncio.create_subprocess_shell(
                 step["command"],
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             stdout, stderr = await process.communicate()
+            execution_time = time.time() - start_time
+            
+            # Convert output to string and truncate if too long
+            stdout_str = stdout.decode()
+            stderr_str = stderr.decode()
+            if len(stdout_str) > 1000:
+                stdout_str = stdout_str[:500] + "\n...[truncated]...\n" + stdout_str[-500:]
+            if len(stderr_str) > 1000:
+                stderr_str = stderr_str[:500] + "\n...[truncated]...\n" + stderr_str[-500:]
+            
+            status = "completed" if process.returncode == 0 else "failed"
+            
+            # Log completion status and time
+            logger.info(
+                f"Step {step['name']} {status} in {execution_time:.1f}s "
+                f"(return code: {process.returncode})"
+            )
+            if status == "failed":
+                logger.error(f"Step {step['name']} failed with error:\n{stderr_str}")
             
             return {
                 "step_id": step["name"],
-                "status": "completed" if process.returncode == 0 else "failed",
+                "status": status,
                 "returncode": process.returncode,
-                "stdout": stdout.decode(),
-                "stderr": stderr.decode()
+                "stdout": stdout_str,
+                "stderr": stderr_str,
+                "execution_time": execution_time,
+                "resources": step.get("resources", {}),  # Include resource info in result
+                "command": step["command"]
             }
         except Exception as e:
-            logger.error(f"Error executing step {step['name']}: {str(e)}")
-            raise
+            error_msg = f"Error executing step {step['name']}: {str(e)}"
+            logger.error(error_msg)
+            return {
+                "step_id": step["name"],
+                "status": "failed",
+                "error": error_msg,
+                "resources": step.get("resources", {})
+            }
     
     async def wait_for_completion(self, jobs: Dict[str, Any]) -> Dict[str, Any]:
         """Local execution is synchronous, so just return results."""
