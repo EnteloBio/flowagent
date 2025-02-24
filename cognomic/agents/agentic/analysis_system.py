@@ -1,157 +1,201 @@
-"""Coordinates analysis agents for comprehensive result interpretation."""
+"""Agent-based analysis system for workflow outputs."""
 
 import json
 import logging
-from typing import Dict, Any, List
 from pathlib import Path
+from typing import Dict, Any, List
+from datetime import datetime
+import numpy as np
 
-from .analysis_agents import (
-    QualityAnalysisAgent,
-    QuantificationAnalysisAgent,
-    TechnicalQCAgent
-)
+from .analysis_agents import QualityAnalysisAgent, QuantificationAnalysisAgent, TechnicalQCAgent
 
 logger = logging.getLogger(__name__)
 
 class AgenticAnalysisSystem:
-    """Coordinates analysis agents for comprehensive result interpretation."""
+    """System for analyzing workflow outputs using specialized agents."""
     
     def __init__(self):
-        """Initialize the analysis system."""
-        self.agents = {
-            "quality": QualityAnalysisAgent(),
-            "quantification": QuantificationAnalysisAgent(),
-            "technical": TechnicalQCAgent()
-        }
+        """Initialize analysis agents."""
+        self.quality_agent = QualityAnalysisAgent()
+        self.quantification_agent = QuantificationAnalysisAgent()
+        self.technical_agent = TechnicalQCAgent()
     
-    async def analyze_workflow_results(self, workflow_results: Dict[str, Any]) -> Dict[str, Any]:
+    async def _prepare_analysis_data(self, results_dir: Path) -> Dict[str, Any]:
+        """Prepare data for analysis by organizing files and metrics."""
+        data = {
+            "workflow_type": "rna_seq",  # Default to RNA-seq for now
+            "tools_used": [],
+            "qc_data": {},
+            "quantification_data": {},
+            "technical_data": {
+                "resource_usage": {},
+                "tool_versions": {},
+                "logs": []
+            }
+        }
+        
+        try:
+            # Find RNA-seq Kallisto directory
+            rna_seq_dir = results_dir / "rna_seq_kallisto"
+            if rna_seq_dir.exists():
+                data["tools_used"].append("kallisto")
+                kallisto_data = {
+                    "abundance_files": [],
+                    "run_info": {},
+                    "tool_versions": {},
+                    "index_version": None,
+                    "index_dir": None
+                }
+                
+                # Get Kallisto index info
+                index_dir = rna_seq_dir / "kallisto_index"
+                if index_dir.exists():
+                    kallisto_data["index_dir"] = str(index_dir)
+                    # Try to read index version from metadata
+                    metadata_file = index_dir / "index_metadata.json"
+                    if metadata_file.exists():
+                        try:
+                            with open(metadata_file) as f:
+                                metadata = json.load(f)
+                                kallisto_data["index_version"] = metadata.get("kallisto_version")
+                        except Exception as e:
+                            logger.error(f"Error reading Kallisto index metadata: {str(e)}")
+                
+                # Collect abundance files from kallisto_quant directory
+                quant_dir = rna_seq_dir / "kallisto_quant"
+                if quant_dir.exists():
+                    for abundance_file in quant_dir.glob("*/abundance.h5"):
+                        kallisto_data["abundance_files"].append(str(abundance_file))
+                        sample_name = abundance_file.parent.name
+                        
+                        # Read run info from h5 file
+                        try:
+                            import h5py
+                            with h5py.File(abundance_file, 'r') as f:
+                                if 'aux' in f and 'n_processed' in f['aux']:
+                                    n_processed = f['aux']['n_processed'][()]
+                                    p_pseudoaligned = f['aux']['p_pseudoaligned'][()]
+                                    n_unique = f['aux'].get('n_unique', 0)[()]
+                                    n_expressed = len([x for x in f['est_counts'][()] if x > 0])
+                                    tpm_values = f['abundance'][()] if 'abundance' in f else []
+                                    median_tpm = float(np.median(tpm_values)) if len(tpm_values) > 0 else 0.0
+                                    
+                                    kallisto_data["run_info"][sample_name] = {
+                                        "n_processed": int(n_processed),
+                                        "p_pseudoaligned": float(p_pseudoaligned) * 100,
+                                        "n_unique": int(n_unique),
+                                        "n_expressed": n_expressed,
+                                        "median_tpm": median_tpm
+                                    }
+                        except Exception as e:
+                            logger.error(f"Error reading Kallisto h5 file: {str(e)}")
+                
+                # Get Kallisto version from workflow results
+                workflow_results = results_dir / "workflow_results.json"
+                if workflow_results.exists():
+                    try:
+                        with open(workflow_results) as f:
+                            results_data = json.load(f)
+                            if "tool_versions" in results_data:
+                                kallisto_data["tool_versions"] = results_data["tool_versions"]
+                    except Exception as e:
+                        logger.error(f"Error reading workflow results: {str(e)}")
+                
+                data["quantification_data"]["kallisto"] = kallisto_data
+            
+            # Find FastQC outputs in rna_seq_kallisto/fastqc
+            fastqc_dir = rna_seq_dir / "fastqc" if rna_seq_dir.exists() else None
+            if fastqc_dir and fastqc_dir.exists():
+                fastqc_files = list(fastqc_dir.glob("*_fastqc.html"))
+                data["qc_data"]["fastqc"] = [str(f) for f in fastqc_files]
+            
+            # Find MultiQC output in rna_seq_kallisto/qc
+            qc_dir = rna_seq_dir / "qc" if rna_seq_dir.exists() else None
+            if qc_dir and qc_dir.exists():
+                multiqc_file = qc_dir / "multiqc_report.html"
+                if multiqc_file.exists():
+                    data["qc_data"]["multiqc"] = str(multiqc_file)
+            
+            # Read workflow results for resource usage and tool versions
+            workflow_results = results_dir / "workflow_results.json"
+            if workflow_results.exists():
+                try:
+                    with open(workflow_results) as f:
+                        results_data = json.load(f)
+                        if "resource_usage" in results_data:
+                            data["technical_data"]["resource_usage"] = results_data["resource_usage"]
+                        if "tool_versions" in results_data:
+                            data["technical_data"]["tool_versions"] = results_data["tool_versions"]
+                except Exception as e:
+                    logger.error(f"Error reading workflow results: {str(e)}")
+            
+            # Collect logs from workflow directory
+            workflow_dir = results_dir / "workflow"
+            if workflow_dir.exists():
+                for log_file in workflow_dir.glob("*.log"):
+                    try:
+                        with open(log_file) as f:
+                            data["technical_data"]["logs"].extend(f.readlines())
+                    except Exception as e:
+                        logger.error(f"Error reading log file {log_file}: {str(e)}")
+            
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error preparing analysis data: {str(e)}")
+            return data
+    
+    async def analyze_results(self, results_dir: Path) -> Dict[str, Any]:
         """Analyze workflow results using specialized agents."""
         try:
             # Prepare data for analysis
-            analysis_data = self._prepare_analysis_data(workflow_results)
+            data = await self._prepare_analysis_data(results_dir)
             
-            # Run analyses in parallel
-            analyses = {}
-            for agent_name, agent in self.agents.items():
-                try:
-                    analysis = await agent.analyze(analysis_data)
-                    analyses[agent_name] = analysis
-                except Exception as e:
-                    logger.error(f"Analysis failed for agent {agent_name}: {str(e)}")
-                    analyses[agent_name] = {"error": str(e)}
+            # Run analysis agents
+            quality_results = await self.quality_agent.analyze(data)
+            quantification_results = await self.quantification_agent.analyze(data)
+            technical_results = await self.technical_agent.analyze(data)
             
-            # Generate comprehensive report
-            report = await self._generate_comprehensive_report(analyses)
+            # Combine results
+            all_issues = []
+            all_recommendations = []
             
-            return {
-                "status": "success",
-                "analyses": analyses,
-                "report": report
-            }
-            
-        except Exception as e:
-            logger.error(f"Analysis system failed: {str(e)}")
-            return {
-                "status": "failed",
-                "error": str(e)
-            }
-    
-    def _prepare_analysis_data(self, workflow_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare workflow results data for analysis."""
-        try:
-            # Extract relevant data for each analysis type
-            analysis_data = {
-                # Quality data
-                "fastqc_reports": self._find_fastqc_reports(workflow_results),
-                "multiqc_report": self._find_multiqc_report(workflow_results),
+            if quality_results.get("issues"):
+                all_issues.extend(quality_results["issues"])
+            if quality_results.get("recommendations"):
+                all_recommendations.extend(quality_results["recommendations"])
                 
-                # Quantification data
-                "kallisto_output": self._find_kallisto_output(workflow_results),
+            if quantification_results.get("issues"):
+                all_issues.extend(quantification_results["issues"])
+            if quantification_results.get("recommendations"):
+                all_recommendations.extend(quantification_results["recommendations"])
                 
-                # Technical data
-                "resource_usage": workflow_results.get("resource_usage", {}),
-                "tool_versions": workflow_results.get("tool_versions", {}),
-                "logs": workflow_results.get("logs", [])
+            if technical_results.get("issues"):
+                all_issues.extend(technical_results["issues"])
+            if technical_results.get("recommendations"):
+                all_recommendations.extend(technical_results["recommendations"])
+            
+            # Generate report
+            report = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "directory": str(results_dir),
+                "overall_assessment": {
+                    "quality_summary": quality_results.get("summary", "No quality analysis available"),
+                    "quantification_summary": quantification_results.get("summary", "No quantification analysis available"),
+                    "technical_summary": technical_results.get("summary", "No technical analysis available")
+                },
+                "issues": all_issues,
+                "recommendations": all_recommendations
             }
             
-            return analysis_data
+            return report
             
         except Exception as e:
-            logger.error(f"Failed to prepare analysis data: {str(e)}")
-            raise
-    
-    def _find_fastqc_reports(self, results: Dict[str, Any]) -> List[str]:
-        """Find FastQC report files in workflow results."""
-        # Implementation would find and parse FastQC reports
-        # For now returning empty list
-        return []
-    
-    def _find_multiqc_report(self, results: Dict[str, Any]) -> str:
-        """Find MultiQC report in workflow results."""
-        # Implementation would find and parse MultiQC report
-        # For now returning None
-        return None
-    
-    def _find_kallisto_output(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Find Kallisto output in workflow results."""
-        # Implementation would find and parse Kallisto output
-        # For now returning empty dict
-        return {}
-    
-    async def _generate_comprehensive_report(self, analyses: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate a comprehensive analysis report."""
-        try:
-            # Extract results from each analysis
-            quality_results = analyses.get("quality", {}).get("results", {})
-            quant_results = analyses.get("quantification", {}).get("results", {})
-            tech_results = analyses.get("technical", {}).get("results", {})
-            
-            # Combine analyses into comprehensive assessment
-            assessment = {
-                "quality_summary": quality_results.get("overall_assessment"),
-                "quantification_summary": quant_results.get("mapping_statistics", {}).get("assessment"),
-                "technical_summary": tech_results.get("execution_quality", {})
-            }
-            
-            # Aggregate all issues and recommendations
-            issues = []
-            recommendations = []
-            
-            # Add quality issues and recommendations
-            if "issues" in quality_results:
-                issues.extend(quality_results["issues"])
-            if "recommendations" in quality_results:
-                recommendations.extend(quality_results["recommendations"])
-            
-            # Add quantification issues and recommendations
-            if "quality_flags" in quant_results:
-                issues.extend(quant_results["quality_flags"])
-            if "recommendations" in quant_results:
-                recommendations.extend(quant_results["recommendations"])
-            
-            # Add technical issues and recommendations
-            if "execution_quality" in tech_results:
-                if "failed_steps" in tech_results["execution_quality"]:
-                    issues.extend([
-                        {"severity": "high", "description": f"Failed step: {step}"}
-                        for step in tech_results["execution_quality"]["failed_steps"]
-                    ])
-            if "recommendations" in tech_results:
-                recommendations.extend(tech_results["recommendations"])
-            
+            logger.error(f"Analysis failed: {str(e)}")
             return {
-                "overall_assessment": assessment,
-                "issues": issues,
-                "recommendations": recommendations,
-                "detailed_results": {
-                    "quality_analysis": quality_results,
-                    "quantification_analysis": quant_results,
-                    "technical_analysis": tech_results
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to generate comprehensive report: {str(e)}")
-            return {
-                "error": f"Failed to generate comprehensive report: {str(e)}"
+                "error": str(e),
+                "issues": [{
+                    "severity": "high",
+                    "description": f"Analysis failed: {str(e)}"
+                }]
             }

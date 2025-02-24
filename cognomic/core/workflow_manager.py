@@ -87,32 +87,47 @@ class WorkflowManager:
         try:
             self.logger.info("Starting agentic analysis of workflow results...")
             
+            # Get results directory from workflow results
+            results_dir = Path(workflow_results.get("output_directory", "results"))
+            if not results_dir.exists():
+                return {
+                    "status": "error",
+                    "message": f"Results directory {results_dir} does not exist"
+                }
+            
             # Run comprehensive analysis
-            analysis = await self.analysis_system.analyze_workflow_results(workflow_results)
+            analysis = await self.analysis_system.analyze_results(results_dir)
+            
+            # Format the analysis results
+            report = {
+                "status": "success",
+                "report": {
+                    "overall_assessment": analysis.get("overall_assessment", {}),
+                    "issues": analysis.get("issues", []),
+                    "recommendations": analysis.get("recommendations", [])
+                }
+            }
             
             # Log analysis completion
-            if analysis["status"] == "success":
-                self.logger.info("Agentic analysis completed successfully")
-                
-                # Log any critical issues
-                critical_issues = [
-                    issue for issue in analysis.get("report", {}).get("issues", [])
-                    if issue.get("severity") == "high"
-                ]
-                if critical_issues:
-                    self.logger.warning(f"Found {len(critical_issues)} critical issues in analysis")
-                    for issue in critical_issues:
-                        self.logger.warning(f"Critical issue: {issue.get('description')}")
-            else:
-                self.logger.error(f"Agentic analysis failed: {analysis.get('error')}")
+            self.logger.info("Agentic analysis completed successfully")
             
-            return analysis
+            # Log any critical issues
+            critical_issues = [
+                issue for issue in report["report"]["issues"]
+                if issue.get("severity") == "high"
+            ]
+            if critical_issues:
+                self.logger.warning(f"Found {len(critical_issues)} critical issues")
+                for issue in critical_issues:
+                    self.logger.warning(f"Critical issue: {issue['description']}")
+            
+            return report
             
         except Exception as e:
-            self.logger.error(f"Result analysis failed: {str(e)}")
+            self.logger.error(f"Agentic analysis failed: {str(e)}")
             return {
-                "status": "failed",
-                "error": str(e)
+                "status": "error",
+                "message": f"Analysis failed: {str(e)}"
             }
 
     async def resume_workflow(self, prompt: str, checkpoint_dir: str) -> Dict[str, Any]:
