@@ -1,0 +1,95 @@
+site_name: cognomics
+
+repo_url:
+repo_name: cribbslab/cognomics
+
+use_directory_urls: false
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.code.select
+    - content.tabs.link
+    - content.code.annotate
+    - navigation.tabs
+    - navigation.instant
+    - navigation.expand
+    - navigation.top
+    - navigation.path
+    - navigation.footer
+    # - toc.integrate
+    - content.footnote.tooltips
+
+  icon:
+    repo: fontawesome/brands/git-alt
+
+  palette:
+    # Palette toggle for light mode
+#    - accent: pink
+    - primary: teal
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+
+markdown_extensions:
+  # icons
+  - attr_list
+  - md_in_html
+  - footnotes
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+  - toc:
+      permalink: True
+      baselevel: 2
+      separator: "_"
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+  # Admonitions
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+  # Formatting superscripts
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.tilde
+
+
+extra:
+  consent:
+    actions:
+      - accept
+      - manage
+
+plugins:
+  - tags
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            separate_signature: true
+            show_signature_annotations: true
+            show_docstring_parameters: true
+            docstring_section_style: list
+            line_length: 60
+          paths: ["src/cognomic"]
+
+copyright: Copyright &copy; 2024 Adam Cribbs

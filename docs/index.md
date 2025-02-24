@@ -311,22 +311,6 @@ python -m black .
 python -m isort .
 ```
 
-## Building Documentation
-
-Cognomic uses MkDocs for documentation. To build the documentation locally, follow these steps:
-
-1. Build the documentation:
-```bash
-mkdocs build
-```
-
-2. Serve the documentation locally to view it in your browser:
-```bash
-mkdocs serve
-```
-
-The documentation will be available at `http://127.0.0.1:8000`.
-
 ## Contributing
 
 1. Fork the repository
@@ -409,4 +393,5 @@ python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow p
 2. Specify custom resource requirements:
 ```bash
 python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+
 ```

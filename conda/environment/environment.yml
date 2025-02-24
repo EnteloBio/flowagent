@@ -31,6 +31,10 @@ dependencies:
   - pandas=2.0.0
   - numpy=1.24.0
   - scipy=1.10.0
+  - mkdocs=1.6.0
+  - mkdocstrings=0.28.0
+  - mkdocstrings-python=1.16.0
+  - mkdocs-material=9.5.0
   
   # Development tools
   - pytest=7.3.1
@@ -45,6 +49,6 @@ dependencies:
     
 variables:
   # Environment variables
-  PYTHONPATH: ${CONDA_PREFIX}/lib/python3.10/site-packages
+  PYTHONPATH: ${CONDA_PREFIX}/lib/python3.10/site-packages:${CONDA_PREFIX}/src/cognomic
   PATH: ${CONDA_PREFIX}/bin:${PATH}
   LD_LIBRARY_PATH: ${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}
