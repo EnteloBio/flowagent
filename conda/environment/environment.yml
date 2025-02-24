@@ -2,7 +2,6 @@ name: cognomic
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
   # Python and core dependencies
   - python=3.10
@@ -25,9 +24,8 @@ dependencies:
   - pydantic=2.0.0
   - python-dotenv=1.0.0
   - typing-extensions=4.7.1
-  - asyncio=3.4.3
   - aiohttp=3.8.0
-  - click=8.0.0
+  - click=8.1.0
   - pyyaml=6.0.0
   - rich=13.0.0
   - pandas=2.0.0
