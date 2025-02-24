@@ -10,6 +10,7 @@ import networkx as nx
 import os
 from pathlib import Path
 
+from ..config.settings import settings
 from ..utils import file_utils
 from ..utils.logging import get_logger
 
@@ -272,7 +273,7 @@ class LLMInterface:
         """Call OpenAI API with retry logic."""
         try:
             params = {
-                "model": "gpt-4-turbo-preview",
+                "model": settings.OPENAI_MODEL,  # Use model from settings
                 "messages": messages,
                 "temperature": 0,
                 **kwargs
