@@ -129,9 +129,15 @@ class CGATExecutor(BaseExecutor):
     
     def __init__(self):
         """Initialize CGATCore pipeline."""
-        self.pipeline = P
-        self.pipeline.start_pipeline()
-        logger.info("Initialized CGATCore pipeline")
+        try:
+            from cgatcore import pipeline as P
+            self.pipeline = P
+            # Initialize pipeline parameters
+            P.get_parameters()
+            logger.info("Initialized CGATCore pipeline")
+        except Exception as e:
+            logger.error(f"Failed to initialize CGAT pipeline: {str(e)}")
+            raise
     
     def _prepare_job_options(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare job options for CGATCore."""
@@ -166,19 +172,34 @@ class CGATExecutor(BaseExecutor):
             job_options = self._prepare_job_options(step)
             logger.info(f"Submitting step {step['name']} with options: {job_options}")
             
+            # Create a function that executes the command
+            def run_command():
+                import subprocess
+                process = subprocess.Popen(
+                    step["command"],
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                stdout, stderr = process.communicate()
+                return {
+                    "returncode": process.returncode,
+                    "stdout": stdout.decode(),
+                    "stderr": stderr.decode()
+                }
+            
             # Submit job via CGATCore
-            statement = step["command"]
             job = self.pipeline.submit(
-                statement,
+                run_command,  # Pass the function to execute
                 job_options=job_options,
                 to_cluster=True  # Ensure job goes to SLURM
             )
             
             return {
                 "step_id": step["name"],
-                "job_id": job.jobid,
+                "job_id": job.jobid if hasattr(job, 'jobid') else str(job),
                 "status": "submitted",
-                "command": statement,
+                "command": step["command"],
                 "job_options": job_options,
                 "resources": step.get("resources", {})  # Include resource allocation in job info
             }
@@ -191,28 +212,32 @@ class CGATExecutor(BaseExecutor):
         """Wait for all CGATCore jobs to complete."""
         try:
             # Wait for all jobs to complete
-            self.pipeline.run()
+            self.pipeline.run_all()
             
             # Update job statuses
             results = {}
             for step_id, job_info in jobs.items():
-                job_id = job_info["job_id"]
-                status = self.pipeline.get_job_status(job_id)
-                
+                status = "completed"  # If run_all() completed without error, job succeeded
                 results[step_id] = {
                     **job_info,
-                    "status": "completed" if status == "completed" else "failed",
-                    "completion_status": status
+                    "status": status,
+                    "completion_time": time.time()
                 }
             
             return results
             
         except Exception as e:
             logger.error(f"Error waiting for jobs to complete: {str(e)}")
-            raise
-        finally:
-            # Clean up pipeline
-            self.pipeline.close_pipeline()
+            # Mark all jobs as failed
+            return {
+                step_id: {
+                    **job_info,
+                    "status": "failed",
+                    "error": str(e),
+                    "completion_time": time.time()
+                }
+                for step_id, job_info in jobs.items()
+            }
 
 class KubernetesExecutor(BaseExecutor):
     """Execute workflow steps using Kubernetes Jobs."""

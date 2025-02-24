@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from ..utils.logging import get_logger
-from .executors import BaseExecutor, LocalExecutor, CGATExecutor
+from .executors import BaseExecutor, LocalExecutor, CGATExecutor, KubernetesExecutor
 
 logger = get_logger(__name__)
 
@@ -17,13 +17,21 @@ class WorkflowDAG:
         """Initialize workflow DAG.
         
         Args:
-            executor_type: Type of executor to use ("local" or "cgat")
+            executor_type: Type of executor to use ("local", "cgat", or "kubernetes")
         """
         self.graph = nx.DiGraph()
-        self.executor = (
-            CGATExecutor() if executor_type == "cgat" 
-            else LocalExecutor()
-        )
+        
+        # Map executor types to executor classes
+        executor_map = {
+            "local": LocalExecutor,
+            "cgat": CGATExecutor,
+            "kubernetes": KubernetesExecutor if "KubernetesExecutor" in globals() else LocalExecutor
+        }
+        
+        # Get executor class
+        executor_class = executor_map.get(executor_type, LocalExecutor)
+        self.executor = executor_class()
+        
         logger.info(f"Initialized WorkflowDAG with {executor_type} executor")
     
     def add_step(self, step: Dict[str, Any], dependencies: List[str] = None):

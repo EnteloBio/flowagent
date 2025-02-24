@@ -538,165 +538,123 @@ Return a JSON object in this EXACT format:
                 **environments["local"]
             }
     
-    async def generate_workflow_plan(self, prompt: str, execution_env: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Generate a workflow plan from a prompt.
+    def detect_input_files(self, directory: str = ".") -> Dict[str, List[str]]:
+        """Detect RNA-seq input files in the given directory.
+        
+        Supports common RNA-seq file formats:
+        - FASTQ: .fastq, .fq (gzipped or uncompressed)
+        - FASTA: .fasta, .fa (gzipped or uncompressed)
+        - BAM: .bam
+        - SAM: .sam
         
         Args:
-            prompt: User prompt describing the workflow
-            execution_env: Optional execution environment to use, overrides automatic detection
-        """
-        # Detect workflow type
-        workflow_type, config = self._detect_workflow_type(prompt)
-        
-        # Get execution environment
-        execution = await self._get_execution_environment(prompt, execution_env)
-        
-        # Get available input files
-        fastq_files = glob.glob("*.fastq.gz")
-        if not fastq_files:
-            raise ValueError("No .fastq.gz files found in current directory")
-        
-        # Extract output directory from prompt
-        output_dir = "results"  # Default
-        if "save" in prompt.lower() and "in" in prompt.lower():
-            # Try to extract output directory from prompt
-            parts = prompt.lower().split("save")
-            if len(parts) > 1:
-                after_save = parts[1]
-                if "in" in after_save:
-                    dir_part = after_save.split("in")[1].strip().strip("'\"./")
-                    if dir_part:
-                        output_dir = dir_part
-        
-        # Generate workflow plan using OpenAI
-        messages = [
-            {"role": "system", "content": """You are a bioinformatics workflow expert. Generate workflow plans as JSON objects with this structure:
-{
-    "workflow_type": "fastqc",
-    "steps": [
-        {
-            "name": "step_name",
-            "command": "command_to_execute",
-            "parameters": {
-                "input_file": "input.fastq.gz",
-                "output_dir": "results/",
-                "threads": 1
-            },
-            "dependencies": [],
-            "outputs": ["expected_output1"]
-        }
-    ]
-}
-
-For FastQC analysis:
-1. Include --outdir parameter to specify output directory
-2. Include --threads parameter for parallel processing
-3. Process each FASTQ file in a separate step
-4. Include --noextract to keep files zipped (optional)
-5. Include --quiet for less verbose output (optional)"""},
-            {"role": "user", "content": f"""Generate a workflow plan for: {prompt}
+            directory: Directory to search for input files
             
-Available input files: {fastq_files}
-Output directory: {output_dir}
-Execution environment: {execution['type']}
-Workflow type: {workflow_type}
+        Returns:
+            Dict mapping file types to lists of file paths
+        """
+        # Define file patterns to search for
+        patterns = {
+            "fastq": ["*.fastq", "*.fastq.gz", "*.fq", "*.fq.gz"],
+            "fasta": ["*.fasta", "*.fasta.gz", "*.fa", "*.fa.gz"],
+            "bam": ["*.bam"],
+            "sam": ["*.sam"]
+        }
+        
+        # Find all matching files
+        found_files = {}
+        for file_type, file_patterns in patterns.items():
+            matching_files = []
+            for pattern in file_patterns:
+                matching_files.extend(glob.glob(os.path.join(directory, pattern)))
+            if matching_files:
+                found_files[file_type] = sorted(matching_files)
+                
+        if not found_files:
+            self.logger.warning(
+                "No RNA-seq input files found. Supported formats: "
+                ".fastq[.gz], .fq[.gz], .fasta[.gz], .fa[.gz], .bam, .sam"
+            )
+            
+        return found_files
 
-Rules:
-1. Each step needs a unique name
-2. Process each file individually, no wildcards
-3. Dependencies must form a valid DAG (no cycles)
-4. Return ONLY the JSON object"""}
-        ]
-        
-        response = await self._call_openai(
-            messages,
-            response_format={"type": "json_object"}
-        )
-        
+    async def generate_workflow_plan(self, prompt: str, execution_env: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Generate workflow plan from prompt."""
         try:
+            # Detect available input files
+            input_files = self.detect_input_files()
+            if not input_files:
+                raise ValueError(
+                    "No valid input files found. Please provide files in one of these formats: "
+                    ".fastq[.gz], .fq[.gz], .fasta[.gz], .fa[.gz], .bam, .sam"
+                )
+
+            # Prepare context for LLM
+            workflow_context = {
+                "prompt": prompt,
+                "input_files": input_files,
+                "workflow_types": self.WORKFLOW_TYPES,
+                "execution_env": execution_env or {"type": "local"}
+            }
+
+            # Ask LLM to analyze workflow requirements
+            messages = [
+                {"role": "system", "content": """You are a bioinformatics workflow expert. Analyze the user's request and available files to:
+1. Select the most appropriate workflow type
+2. Generate a complete workflow plan with proper step dependencies
+3. Adapt commands to handle the specific input files and parameters
+
+Follow these rules:
+- Ensure proper step dependencies (e.g., index must complete before quantification)
+- Use sample names from input files in output directories
+- Handle single-end and paired-end data appropriately
+- Include all necessary parameters from the user's request
+- Maintain proper directory structure"""},
+                {"role": "user", "content": f"""Generate a workflow plan based on:
+
+User Request: {prompt}
+
+Available Files:
+{json.dumps(input_files, indent=2)}
+
+Available Workflow Types:
+{json.dumps(self.WORKFLOW_TYPES, indent=2)}
+
+Return a JSON object with:
+1. selected_workflow: The chosen workflow type and reason for selection
+2. steps: List of steps with:
+   - name: Step name
+   - command: Complete command with all parameters
+   - dependencies: List of step names this step depends on"""}
+            ]
+
+            # Get workflow plan from LLM
+            response = await self._call_openai(
+                messages,
+                response_format={"type": "json_object"}
+            )
+
             workflow_plan = json.loads(self._clean_llm_response(response))
             
-            # Log workflow plan
-            self.logger.info("Generated workflow plan:")
-            self.logger.info(f"Workflow type: {workflow_plan['workflow_type']}")
+            # Extract workflow type and steps
+            workflow_type = workflow_plan["selected_workflow"]["type"]
+            steps = workflow_plan["steps"]
             
-            # Convert rules to steps if needed
-            if "rules" in workflow_plan and "steps" not in workflow_plan:
-                workflow_plan["steps"] = workflow_plan.pop("rules")
-            
-            # Update each step with resources and container info
-            updated_steps = []
-            for step in workflow_plan.get("steps", []):
-                # Ensure proper command formatting for FastQC
-                if step["command"].startswith("fastqc"):
-                    params = step.get("parameters", {})
-                    input_file = params.get("input_file", "")
-                    out_dir = params.get("output_dir", output_dir)
-                    threads = params.get("threads", 1)
-                    
-                    # Build complete FastQC command
-                    step["command"] = (
-                        f"fastqc --outdir={out_dir} --threads={threads} "
-                        f"--quiet --noextract {input_file}"
-                    )
-                
-                # Get task resources
-                try:
-                    resources = await self._get_task_resources(step["command"], step.get("parameters", {}))
-                    step["resources"] = resources
-                except Exception as e:
-                    self.logger.warning(f"Failed to get resources for step {step['name']}: {str(e)}")
-                    step["resources"] = {
-                        "memory_mb": 4000,
-                        "cpus": 1,
-                        "time_min": 60,
-                        "profile": "default"
-                    }
-                
-                # Update container config if needed
-                if execution["type"] == "kubernetes":
-                    try:
-                        container = self._get_container_config(step["command"].split()[0])
-                        step["container"] = container
-                    except Exception as e:
-                        self.logger.warning(f"Failed to get container config for step {step['name']}: {str(e)}")
-                
-                # Ensure resources are properly formatted
-                resources = step.get("resources", {})
-                if not isinstance(resources, dict):
-                    resources = {
-                        "memory_mb": 4000,
-                        "cpus": 1,
-                        "time_min": 60,
-                        "profile": "default"
-                    }
-                
-                # Convert numeric values to integers
-                for key in ["memory_mb", "cpus", "time_min"]:
-                    if key in resources:
-                        try:
-                            resources[key] = int(float(resources[key]))
-                        except (ValueError, TypeError):
-                            resources[key] = 4000 if key == "memory_mb" else 1 if key == "cpus" else 60
-                
-                step["resources"] = resources
-                updated_steps.append(step)
-                
-                # Log step details
-                self.logger.info(f"  Step: {step['name']}")
-                self.logger.info(f"    Command: {step['command']}")
-                self.logger.info(f"    Dependencies: {step.get('dependencies', [])}")
-                self.logger.info(f"    Resources: {step['resources']}")
-            
-            workflow_plan["steps"] = updated_steps
-            workflow_plan["execution"] = execution
-            
-            return workflow_plan
-            
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse workflow plan: {str(e)}")
-            self.logger.error(f"Raw response: {response}")
-            raise ValueError("Failed to generate valid workflow plan")
+            # Log the plan
+            self.logger.info(f"Selected workflow type: {workflow_type}")
+            self.logger.info(f"Reason: {workflow_plan['selected_workflow']['reason']}")
+            self.logger.info(f"Generated {len(steps)} steps")
+
+            return {
+                "type": workflow_type,
+                "input_files": input_files,
+                "steps": steps,
+                "execution": workflow_context["execution_env"]
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate workflow plan: {str(e)}")
+            raise
 
     async def generate_command(self, step: Dict[str, Any]) -> str:
         """Generate a command for a workflow step."""

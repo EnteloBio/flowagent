@@ -32,7 +32,6 @@ class WorkflowManager:
         self.executor_type = executor_type
         self.cwd = os.getcwd()
         self.logger.info(f"Initial working directory: {self.cwd}")
-        self.logger.info(f"Using {executor_type} executor")
 
     async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
         """Execute workflow from prompt."""
@@ -40,15 +39,21 @@ class WorkflowManager:
             self.logger.info("Planning workflow steps...")
             workflow_plan = await self.llm.generate_workflow_plan(prompt)
             
-            # Create output directories
-            for step in workflow_plan["steps"]:
-                output_dir = step["parameters"].get("output_dir")
-                if output_dir:
-                    file_utils.ensure_directory(output_dir)
-                    self.logger.info(f"Created output directory: {output_dir}")
+            # Get execution environment from workflow plan
+            execution_env = workflow_plan.get("execution", {})
+            executor_type = execution_env.get("type", "local")
+            
+            # Map execution environment to executor type
+            executor_map = {
+                "local": "local",
+                "slurm": "cgat",
+                "kubernetes": "kubernetes"
+            }
+            actual_executor = executor_map.get(executor_type, "local")
+            self.logger.info(f"Using {executor_type} execution environment with {actual_executor} executor")
             
             # Create workflow DAG with specified executor
-            dag = WorkflowDAG(executor_type=self.executor_type)
+            dag = WorkflowDAG(executor_type=actual_executor)
             
             # Add steps to DAG with dependencies
             for step in workflow_plan["steps"]:
