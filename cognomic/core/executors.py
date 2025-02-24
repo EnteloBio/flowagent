@@ -64,23 +64,27 @@ class CGATExecutor(BaseExecutor):
     
     def _prepare_job_options(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare job options for CGATCore."""
-        params = step.get("parameters", {})
+        # Get resource requirements from step
+        resources = step.get("resources", {})
         
-        # Default resource requirements
-        memory = params.get("memory", "4G")
-        if isinstance(memory, int):
-            memory = f"{memory}G"
-            
+        # Convert memory from MB to GB and format as string
+        memory_gb = resources.get("memory_mb", 4000) / 1024
+        memory = f"{int(memory_gb)}G"
+        
         options = {
             "job_name": step["name"],
             "job_memory": memory,
-            "job_threads": params.get("threads", 1),
-            "job_queue": params.get("queue", "all.q"),
+            "job_threads": resources.get("cpus", 1),
+            "job_time": resources.get("time_min", 60),  # Time limit in minutes
+            "job_queue": step.get("queue", "all.q"),
         }
         
         # Add dependencies if present
         if deps := step.get("dependencies", []):
             options["job_depends"] = deps
+            
+        # Log resource allocation
+        logger.info(f"Resource allocation for {step['name']}: {memory} RAM, {options['job_threads']} cores")
             
         return options
     
@@ -95,7 +99,8 @@ class CGATExecutor(BaseExecutor):
             statement = step["command"]
             job = self.pipeline.submit(
                 statement,
-                job_options=job_options
+                job_options=job_options,
+                to_cluster=True  # Ensure job goes to SLURM
             )
             
             return {
@@ -103,7 +108,8 @@ class CGATExecutor(BaseExecutor):
                 "job_id": job.jobid,
                 "status": "submitted",
                 "command": statement,
-                "job_options": job_options
+                "job_options": job_options,
+                "resources": step.get("resources", {})  # Include resource allocation in job info
             }
             
         except Exception as e:
