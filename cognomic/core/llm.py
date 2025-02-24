@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import openai
 from openai import AsyncOpenAI
 import glob
@@ -21,16 +21,19 @@ class LLMInterface:
         self.logger = get_logger(__name__)
         self.client = AsyncOpenAI()
     
-    async def _call_openai(self, messages: List[Dict[str, Any]], **kwargs) -> str:
+    async def _call_openai(self, messages: List[Dict[str, Any]], response_format: Optional[Dict[str, str]] = None, **kwargs) -> str:
         """Call OpenAI API with retry logic."""
         try:
-            response = await self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=messages,
-                temperature=0,
-                response_format={"type": "json_object"},
+            params = {
+                "model": "gpt-4-turbo-preview",
+                "messages": messages,
+                "temperature": 0,
                 **kwargs
-            )
+            }
+            if response_format:
+                params["response_format"] = response_format
+                
+            response = await self.client.chat.completions.create(**params)
             return response.choices[0].message.content
         except Exception as e:
             self.logger.error(f"OpenAI API call failed: {str(e)}")
@@ -83,7 +86,7 @@ Rules:
                 {"role": "user", "content": enhanced_prompt}
             ]
             
-            response = await self._call_openai(messages)
+            response = await self._call_openai(messages, response_format={"type": "json_object"})
             
             try:
                 workflow_plan = json.loads(response)
@@ -99,8 +102,8 @@ Rules:
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse workflow plan: {str(e)}")
                 self.logger.error(f"Raw response: {response}")
-                raise ValueError("Generated workflow plan is not valid JSON")
-            
+                raise
+                
         except Exception as e:
             self.logger.error(f"Failed to generate workflow plan: {str(e)}")
             raise
@@ -122,4 +125,34 @@ Rules:
             
         except Exception as e:
             self.logger.error(f"Failed to generate command: {str(e)}")
+            raise
+
+    async def generate_analysis(self, outputs: Dict[str, Any], query: str) -> str:
+        """Generate analysis of workflow outputs."""
+        try:
+            # Prepare the prompt for analysis
+            analysis_prompt = f"""
+Analyze the following bioinformatics workflow outputs and provide a detailed report.
+Focus on: {query}
+
+Output Data:
+{json.dumps(outputs, indent=2)}
+
+Provide analysis in this format:
+1. Overall Quality Assessment
+2. Key Metrics and Statistics
+3. Issues Found (if any)
+4. Recommendations
+"""
+            messages = [
+                {"role": "system", "content": "You are a bioinformatics analysis expert. Provide detailed analysis of workflow outputs."},
+                {"role": "user", "content": analysis_prompt}
+            ]
+            
+            # Don't specify response_format for text output
+            response = await self._call_openai(messages)
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate analysis: {str(e)}")
             raise

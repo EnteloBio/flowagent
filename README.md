@@ -44,18 +44,31 @@ mamba install -c bioconda multiqc=1.14
 
 1. Set up your environment:
 ```bash
-cp env.example /path/to/your/.env
-# Edit .env with your configuration
+# Copy the environment template
+cp .env.example .env
+
+# Edit .env with your settings
+# Required:
+# - SECRET_KEY: Generate a secure random key (e.g., using: python -c "import secrets; print(secrets.token_hex(32))")
+# - OPENAI_API_KEY: Your OpenAI API key (if using LLM features)
 ```
 
-2. Run the server:
+2. Run a workflow:
 ```bash
-cognomic-server
+# Basic workflow execution
+cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state
+
+# Resume a failed workflow
+cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
 ```
 
-3. Execute a workflow:
+3. Analyze workflow results:
 ```bash
-python -m cognomic.cli --workflow rnaseq --input data/
+# Generate analysis report
+cognomic "analyze workflow results" --analysis-dir=results
+
+# Generate report without saving to file
+cognomic "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
 ## API Key Configuration
@@ -214,126 +227,65 @@ The Cognomic analysis report functionality provides comprehensive insights into 
 
 ```bash
 # Basic analysis
-python -m cognomic.cli analyze "analyze the workflow results" --output-dir=/path/to/workflow/output
+cognomic "analyze workflow results" --analysis-dir=/path/to/workflow/output
 
-# With detailed logging
-python -m cognomic.cli analyze "analyze the workflow results" --output-dir=/path/to/workflow/output --log-level=DEBUG
-
-# With specific analysis focus
-python -m cognomic.cli analyze "analyze quality metrics and alignment rates" --output-dir=/path/to/workflow/output
+# Focus on specific aspects
+cognomic "analyze quality metrics" --analysis-dir=/path/to/workflow/output
+cognomic "analyze alignment rates" --analysis-dir=/path/to/workflow/output
+cognomic "analyze expression data" --analysis-dir=/path/to/workflow/output
 ```
 
-### Running via Python Module
-
-You can also run the analysis directly using the Python module:
-
-```bash
-# Basic analysis
-python -m cognomic.cli analyze "analyze the workflow results" --output-dir=/path/to/workflow/output
-
-# With debug logging
-python -m cognomic.cli analyze "analyze the workflow results" --output-dir=/path/to/workflow/output --log-level=DEBUG
-
-# Save output to file
-python -m cognomic.cli analyze "analyze the workflow results" --output-dir=/path/to/workflow/output > analysis_report.txt
-```
-
-The analyzer will recursively search for relevant files in the output directory, so you can point it to:
-- The specific workflow output directory (e.g., `results/rna_seq_analysis/`)
-- A parent directory containing multiple workflow outputs (e.g., `results/`)
-
-### Query Examples
-
-You can focus the analysis on specific aspects by customizing your query:
-
-```bash
-# General analysis
-python -m cognomic.cli analyze "analyze this workflow output"
-
-# Quality focus
-python -m cognomic.cli analyze "check the quality metrics and identify any issues"
-
-# Alignment focus
-python -m cognomic.cli analyze "analyze alignment rates and mapping statistics"
-
-# Expression focus
-python -m cognomic.cli analyze "summarize expression levels and gene counts"
-
-# Recommendations
-python -m cognomic.cli analyze "what improvements can be made to this workflow"
-```
-
-The analyzer will adapt its output based on your query while still providing a comprehensive overview of the workflow results.
+The analyzer will recursively search for relevant files in your analysis directory, including:
+- FastQC outputs
+- MultiQC reports
+- Kallisto results
+- Log files
 
 ### Report Components
 
 The analysis report includes:
 
-1. **Workflow Summary & Metadata**
-   - Workflow type and version
-   - Execution date and parameters
-   - Sample information and experimental design
+1. **Summary**
+   - Number of files analyzed
+   - QC metrics processed
+   - Issues found
+   - Recommendations
 
 2. **Quality Control Analysis**
    - FastQC metrics and potential issues
    - Read quality distribution
    - Adapter contamination levels
    - Sequence duplication rates
-   - Overrepresented sequences
 
-3. **Alignment Statistics**
+3. **Alignment Analysis**
    - Overall alignment rates
-   - Uniquely mapped reads
-   - Multi-mapping statistics
-   - Read distribution across genomic features
-   - Insert size metrics
-   - rRNA/mitochondrial content
+   - Unique vs multi-mapped reads
+   - Read distribution statistics
 
-4. **Expression Analysis** (RNA-seq specific)
-   - Number of processed reads
-   - Pseudoalignment rates
-   - Unique read counts
-   - Number of expressed genes
-   - TPM distribution metrics
+4. **Expression Analysis**
+   - Gene expression levels
+   - TPM distributions
+   - Sample correlations
 
-5. **Key Findings and Recommendations**
-   - Major quality concerns
-   - Potential experimental issues
-   - Suggestions for improvement
-   - Next steps and actionable items
+5. **Recommendations**
+   - Quality improvement suggestions
+   - Parameter optimization tips
+   - Technical issue resolutions
 
-### Supported File Types
+### Report Output
 
-The report analyzer automatically detects and processes:
-- FastQC reports (`.zip` or `.html`)
-- MultiQC data (`multiqc_data.json`)
-- Kallisto outputs (`abundance.tsv`, `run_info.json`)
-- Other QC and alignment tool outputs
+By default, the analysis report is:
+1. Displayed in the console
+2. Saved as a markdown file (`analysis_report.md`) in your analysis directory
 
-### Example Usage
-
+To only view the report without saving:
 ```bash
-# Analyze RNA-seq results
-python -m cognomic.cli analyze "provide a detailed analysis of RNA-seq quality and alignment" \
-  --output-dir=results/rna_seq_analysis/
-
-# Focus on specific aspects
-python -m cognomic.cli analyze "check for quality issues and low alignment rates" \
-  --output-dir=results/rna_seq_analysis/
-
-# Get recommendations for improvement
-python -m cognomic.cli analyze "what can be improved in this workflow run" \
-  --output-dir=results/rna_seq_analysis/
-```
-
-The report will be displayed in the terminal and can be redirected to a file if needed:
-```bash
-python -m cognomic.cli analyze "analyze workflow results" --output-dir=results/ > analysis_report.txt
+cognomic "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
 ## Architecture
 
-Cognomic 2.0 implements a modern, distributed architecture:
+Cognomic 1.0 implements a modern, distributed architecture:
 
 - **Core Engine**: Orchestrates workflow execution and agent coordination
 - **Agent System**: Specialized agents for planning, execution, and monitoring
@@ -441,3 +393,5 @@ python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow p
 2. Specify custom resource requirements:
 ```bash
 python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+
+```

@@ -2,3 +2,9 @@ Metadata-Version: 2.2
 Name: cognomic
 Version: 0.1.0
 License-File: LICENSE
+Requires-Dist: click>=8.0.0
+Requires-Dist: aiohttp>=3.8.0
+Requires-Dist: openai>=0.27.0
+Requires-Dist: networkx>=2.8.0
+Requires-Dist: pyyaml>=6.0.0
+Dynamic: requires-dist

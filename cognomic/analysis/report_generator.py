@@ -1042,19 +1042,39 @@ class ReportGenerator:
             # Generate analysis using LLM
             analysis = await self.llm.generate_analysis(outputs, query or "Analyze the workflow outputs and provide key findings")
             
-            # Format report
-            report = f"""
-            # Workflow Analysis Report
-            Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            # Extract sections from analysis
+            sections = {}
+            current_section = None
+            current_content = []
             
-            {analysis}
+            for line in analysis.split('\n'):
+                line = line.strip()
+                if line.startswith('###'):
+                    if current_section:
+                        sections[current_section] = '\n'.join(current_content).strip()
+                    current_section = line.lstrip('#').strip()
+                    current_content = []
+                else:
+                    current_content.append(line)
             
-            ## Files Analyzed
-            - Log files: {len(outputs.get('metadata', {}).get('tool_versions', {}))} tools
-            - QC metrics: {len(outputs.get('quality_control', {}).get('fastqc', {}))} samples
-            - Issues found: {len(outputs.get('issues', []))}
-            - Recommendations: {len(outputs.get('recommendations', []))}
-            """
+            if current_section:
+                sections[current_section] = '\n'.join(current_content).strip()
+            
+            # Format report with clean sections
+            report = f"""# Workflow Analysis Report
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Directory: {workflow_dir}
+
+## Summary
+- Log files analyzed: {len(outputs.get('metadata', {}).get('tool_versions', {}))}
+- QC metrics analyzed: {len(outputs.get('quality_control', {}).get('fastqc', {}))} samples
+- Issues found: {len(outputs.get('issues', []))}
+- Recommendations: {len(outputs.get('recommendations', []))}
+
+"""
+            # Add each section
+            for section, content in sections.items():
+                report += f"## {section}\n{content}\n\n"
             
             return report
             
