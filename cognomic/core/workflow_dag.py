@@ -27,15 +27,57 @@ class WorkflowDAG:
         logger.info(f"Initialized WorkflowDAG with {executor_type} executor")
     
     def add_step(self, step: Dict[str, Any], dependencies: List[str] = None):
-        """Add a step to the workflow graph."""
+        """Add a step to the workflow graph.
+        
+        Args:
+            step: Step configuration dictionary
+            dependencies: List of step names this step depends on
+        """
+        # Ensure step has required fields
+        if "name" not in step:
+            raise ValueError("Step must have a name")
+        if "command" not in step:
+            raise ValueError("Step must have a command")
+            
+        # Ensure resources are properly formatted
+        if "resources" in step:
+            resources = step["resources"]
+            if isinstance(resources, dict):
+                # Convert numeric values to integers
+                for key in ["memory_mb", "cpus", "time_min"]:
+                    if key in resources:
+                        try:
+                            resources[key] = int(resources[key])
+                        except (ValueError, TypeError):
+                            resources[key] = 4000 if key == "memory_mb" else 1 if key == "cpus" else 60
+            else:
+                # Set default resources if not a dict
+                step["resources"] = {
+                    "memory_mb": 4000,
+                    "cpus": 1,
+                    "time_min": 60,
+                    "profile": "default"
+                }
+        else:
+            # Set default resources if not present
+            step["resources"] = {
+                "memory_mb": 4000,
+                "cpus": 1,
+                "time_min": 60,
+                "profile": "default"
+            }
+            
+        # Add step to graph
         self.graph.add_node(step["name"], step=step)
         
+        # Add dependencies
         if dependencies:
             for dep in dependencies:
                 if dep not in self.graph:
                     raise ValueError(f"Dependency {dep} not found in graph")
                 self.graph.add_edge(dep, step["name"])
                 
+        # Verify DAG remains acyclic
         if not nx.is_directed_acyclic_graph(self.graph):
             raise ValueError("Dependencies would create a cycle in the graph")
     

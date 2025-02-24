@@ -33,26 +33,28 @@ class LocalExecutor(BaseExecutor):
         """Check if local resources are sufficient for the step."""
         import psutil
         
+        # Get resource requirements, ensuring numeric values
         resources = step.get("resources", {})
-        required_memory_mb = resources.get("memory_mb", 4000)
-        required_cpus = resources.get("cpus", 1)
+        required_memory_mb = int(resources.get("memory_mb", 4000))
+        required_cpus = int(resources.get("cpus", 1))
         
         # Get system resources
-        system_memory_mb = psutil.virtual_memory().total / (1024 * 1024)  # Convert bytes to MB
+        system_memory_mb = int(psutil.virtual_memory().total / (1024 * 1024))  # Convert bytes to MB
         system_cpus = psutil.cpu_count()
         
         # Log resource requirements and availability
         logger.info(
             f"Step {step['name']} resource requirements:\n"
-            f"  - Memory: {required_memory_mb:.0f}MB / {system_memory_mb:.0f}MB available\n"
-            f"  - CPUs: {required_cpus} / {system_cpus} available"
+            f"  - Memory: {required_memory_mb:,}MB / {system_memory_mb:,}MB available\n"
+            f"  - CPUs: {required_cpus} / {system_cpus} available\n"
+            f"  - Profile: {resources.get('profile', 'default')}"
         )
         
         # Warn if resources might be insufficient
-        if required_memory_mb > system_memory_mb * 0.9:  # 90% of total memory
+        if required_memory_mb >= int(system_memory_mb * 0.9):  # 90% of total memory
             logger.warning(
-                f"Step {step['name']} requires {required_memory_mb:.0f}MB memory, "
-                f"which is close to or exceeds system memory ({system_memory_mb:.0f}MB)"
+                f"Step {step['name']} requires {required_memory_mb:,}MB memory, "
+                f"which is close to or exceeds system memory ({system_memory_mb:,}MB)"
             )
         
         if required_cpus > system_cpus:
@@ -211,3 +213,225 @@ class CGATExecutor(BaseExecutor):
         finally:
             # Clean up pipeline
             self.pipeline.close_pipeline()
+
+class KubernetesExecutor(BaseExecutor):
+    """Execute workflow steps using Kubernetes Jobs."""
+    
+    def __init__(self, 
+                 namespace: str = "default",
+                 image: str = "ubuntu:latest",
+                 pull_policy: str = "IfNotPresent",
+                 service_account: Optional[str] = None):
+        """Initialize Kubernetes executor.
+        
+        Args:
+            namespace: Kubernetes namespace to run jobs in
+            image: Default container image to use
+            pull_policy: Image pull policy
+            service_account: Optional service account for jobs
+        """
+        try:
+            from kubernetes import client, config
+            
+            # Load kube config
+            try:
+                config.load_incluster_config()
+                logger.info("Using in-cluster Kubernetes configuration")
+            except config.ConfigException:
+                config.load_kube_config()
+                logger.info("Using local Kubernetes configuration")
+            
+            self.k8s_batch = client.BatchV1Api()
+            self.k8s_core = client.CoreV1Api()
+            
+        except ImportError:
+            raise ImportError(
+                "kubernetes package not found. Install with: pip install kubernetes"
+            )
+        
+        self.namespace = namespace
+        self.default_image = image
+        self.pull_policy = pull_policy
+        self.service_account = service_account
+        
+        logger.info(
+            f"Initialized KubernetesExecutor:\n"
+            f"  Namespace: {namespace}\n"
+            f"  Default image: {image}\n"
+            f"  Pull policy: {pull_policy}\n"
+            f"  Service account: {service_account or 'default'}"
+        )
+    
+    def _prepare_job_spec(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare Kubernetes job specification."""
+        from kubernetes import client
+        
+        # Get resource requirements
+        resources = step.get("resources", {})
+        memory_mb = resources.get("memory_mb", 4000)
+        cpus = resources.get("cpus", 1)
+        
+        # Convert memory to Kubernetes format (Mi)
+        memory = f"{memory_mb}Mi"
+        
+        # Get container configuration
+        container_config = step.get("container", {})
+        image = container_config.get("image", self.default_image)
+        
+        # Create container spec
+        container = client.V1Container(
+            name=step["name"].lower().replace("_", "-"),
+            image=image,
+            image_pull_policy=self.pull_policy,
+            command=["/bin/sh", "-c", step["command"]],
+            resources=client.V1ResourceRequirements(
+                requests={
+                    "memory": memory,
+                    "cpu": str(cpus)
+                },
+                limits={
+                    "memory": memory,
+                    "cpu": str(cpus)
+                }
+            )
+        )
+        
+        # Create pod spec
+        pod_spec = client.V1PodSpec(
+            restart_policy="Never",
+            containers=[container],
+            service_account_name=self.service_account
+        )
+        
+        # Create job spec
+        job_spec = client.V1JobSpec(
+            template=client.V1PodTemplateSpec(
+                spec=pod_spec
+            ),
+            backoff_limit=0  # Don't retry on failure
+        )
+        
+        # Add job metadata
+        metadata = client.V1ObjectMeta(
+            name=f"{step['name'].lower().replace('_', '-')}-{int(time.time())}",
+            labels={
+                "app": "cognomic",
+                "workflow-step": step["name"]
+            }
+        )
+        
+        return client.V1Job(
+            api_version="batch/v1",
+            kind="Job",
+            metadata=metadata,
+            spec=job_spec
+        )
+    
+    async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a workflow step as a Kubernetes job."""
+        try:
+            # Prepare job specification
+            job = self._prepare_job_spec(step)
+            
+            # Log job creation
+            logger.info(
+                f"Creating Kubernetes job for step {step['name']}:\n"
+                f"  Image: {job.spec.template.spec.containers[0].image}\n"
+                f"  Resources: {job.spec.template.spec.containers[0].resources.requests}"
+            )
+            
+            # Create job
+            api_response = self.k8s_batch.create_namespaced_job(
+                namespace=self.namespace,
+                body=job
+            )
+            
+            return {
+                "step_id": step["name"],
+                "status": "submitted",
+                "job_name": api_response.metadata.name,
+                "resources": step.get("resources", {}),
+                "command": step["command"],
+                "container": step.get("container", {})
+            }
+            
+        except Exception as e:
+            error_msg = f"Error creating Kubernetes job for step {step['name']}: {str(e)}"
+            logger.error(error_msg)
+            return {
+                "step_id": step["name"],
+                "status": "failed",
+                "error": error_msg
+            }
+    
+    async def wait_for_completion(self, jobs: Dict[str, Any]) -> Dict[str, Any]:
+        """Wait for all Kubernetes jobs to complete."""
+        try:
+            results = {}
+            
+            for step_id, job_info in jobs.items():
+                if job_info["status"] == "failed":
+                    results[step_id] = job_info
+                    continue
+                
+                job_name = job_info["job_name"]
+                logger.info(f"Waiting for job {job_name} to complete...")
+                
+                # Wait for job completion
+                while True:
+                    job = self.k8s_batch.read_namespaced_job_status(
+                        name=job_name,
+                        namespace=self.namespace
+                    )
+                    
+                    if job.status.succeeded:
+                        status = "completed"
+                        break
+                    elif job.status.failed:
+                        status = "failed"
+                        break
+                    
+                    await asyncio.sleep(10)  # Check every 10 seconds
+                
+                # Get pod logs if available
+                selector = f"job-name={job_name}"
+                pods = self.k8s_core.list_namespaced_pod(
+                    namespace=self.namespace,
+                    label_selector=selector
+                )
+                
+                logs = ""
+                if pods.items:
+                    try:
+                        logs = self.k8s_core.read_namespaced_pod_log(
+                            name=pods.items[0].metadata.name,
+                            namespace=self.namespace
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not retrieve logs for job {job_name}: {e}")
+                
+                # Store results
+                results[step_id] = {
+                    **job_info,
+                    "status": status,
+                    "completion_time": job.status.completion_time,
+                    "logs": logs
+                }
+                
+                # Clean up job
+                try:
+                    self.k8s_batch.delete_namespaced_job(
+                        name=job_name,
+                        namespace=self.namespace,
+                        body=client.V1DeleteOptions(
+                            propagation_policy="Background"
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error cleaning up job {job_name}: {e}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error waiting for jobs to complete: {str(e)}")
+            return jobs

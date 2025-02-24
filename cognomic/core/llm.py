@@ -129,6 +129,79 @@ class LLMInterface:
     }
     
     WORKFLOW_CONFIG = {
+        "execution": {
+            "environments": {
+                "local": {
+                    "executor": "LocalExecutor",
+                    "description": "Run tasks on local machine"
+                },
+                "slurm": {
+                    "executor": "CGATExecutor",
+                    "description": "Run tasks on SLURM HPC cluster"
+                },
+                "kubernetes": {
+                    "executor": "KubernetesExecutor",
+                    "description": "Run tasks on Kubernetes cluster",
+                    "default_namespace": "cognomic",
+                    "service_account": "workflow-runner"
+                }
+            }
+        },
+        "containers": {
+            # Quality Control
+            "fastqc": {
+                "image": "quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0",
+                "pull_policy": "IfNotPresent"
+            },
+            "multiqc": {
+                "image": "quay.io/biocontainers/multiqc:1.19--pyhdfd78af_0",
+                "pull_policy": "IfNotPresent"
+            },
+            
+            # RNA-seq Tools
+            "kallisto": {
+                "image": "quay.io/biocontainers/kallisto:0.50.1--h05f6578_0",
+                "pull_policy": "IfNotPresent"
+            },
+            "hisat2": {
+                "image": "quay.io/biocontainers/hisat2:2.2.1--h87f3376_4",
+                "pull_policy": "IfNotPresent"
+            },
+            "featureCounts": {
+                "image": "quay.io/biocontainers/subread:2.0.6--he4a0461_0",
+                "pull_policy": "IfNotPresent"
+            },
+            
+            # ChIP-seq Tools
+            "bowtie2": {
+                "image": "quay.io/biocontainers/bowtie2:2.5.3--py310h8d7afc0_0",
+                "pull_policy": "IfNotPresent"
+            },
+            "macs2": {
+                "image": "quay.io/biocontainers/macs2:2.2.9.1--py39hf95cd2a_0",
+                "pull_policy": "IfNotPresent"
+            },
+            
+            # BAM Processing
+            "samtools": {
+                "image": "quay.io/biocontainers/samtools:1.19.2--h50ea8bc_0",
+                "pull_policy": "IfNotPresent"
+            },
+            
+            # Single-cell Tools
+            "cellranger": {
+                "image": "nfcore/cellranger:7.1.0",
+                "pull_policy": "IfNotPresent"
+            },
+            "alevin-fry": {
+                "image": "quay.io/biocontainers/alevin-fry:0.8.2--h4ac6f70_0",
+                "pull_policy": "IfNotPresent"
+            },
+            "kb-python": {
+                "image": "quay.io/biocontainers/kb-python:0.27.3--pyhdfd78af_0",
+                "pull_policy": "IfNotPresent"
+            }
+        },
         "resources": {
             "minimal": {
                 "cpus": 1,
@@ -383,137 +456,247 @@ Return a JSON object in this EXACT format:
             else:
                 return {"profile_name": "default", "reasoning": "Using safe default profile", "suggested_time_min": 60}
 
-    async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
-        """Generate a workflow plan from a prompt."""
+    async def _get_execution_environment(self, prompt: str, default_env: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Determine execution environment from prompt and configuration.
+        
+        Args:
+            prompt: User prompt or workflow description
+            default_env: Optional default environment to use
+            
+        Returns:
+            Dictionary with execution environment configuration
+        """
+        environments = self.WORKFLOW_CONFIG["execution"]["environments"]
+        
+        # If default environment specified, use it
+        if default_env and default_env.get("type") in environments:
+            return {
+                "type": default_env["type"],
+                **environments[default_env["type"]],
+                **default_env  # Allow overriding specific settings
+            }
+            
+        # Use LLM to analyze execution requirements
+        messages = [
+            {"role": "system", "content": """You are an expert at determining computational requirements for bioinformatics workflows.
+            Analyze the prompt and determine the most appropriate execution environment:
+            - local: For small datasets and testing
+            - slurm: For production HPC workloads
+            - kubernetes: For containerized, cloud-native workloads
+            
+            Consider:
+            1. Data size and computational requirements
+            2. Reproducibility needs
+            3. Infrastructure requirements
+            4. Scaling requirements
+            """},
+            {"role": "user", "content": f"""Determine the best execution environment for this workflow:
+            {prompt}
+            
+            Respond with a JSON object containing:
+            - type: The environment type (local, slurm, or kubernetes)
+            - reason: Brief explanation of the choice
+            - requirements: Any specific requirements (e.g. memory, storage)"""}
+        ]
+        
         try:
-            # Get available input files
-            fastq_files = glob.glob("*.fastq.gz")
-            if not fastq_files:
-                raise ValueError("No .fastq.gz files found in current directory")
+            response = await self._call_openai(
+                messages,
+                response_format={"type": "json_object"}
+            )
             
-            self.logger.info(f"Found input files: {fastq_files}")
+            recommendation = json.loads(self._clean_llm_response(response))
+            env_type = recommendation["type"]
             
-            # Detect workflow type
-            workflow_type, workflow_config = self._detect_workflow_type(prompt)
-            self.logger.info(f"Detected workflow type: {workflow_type}")
+            # Log the reasoning
+            self.logger.info(
+                f"Selected {env_type} execution environment:\n"
+                f"Reason: {recommendation['reason']}\n"
+                f"Requirements: {recommendation.get('requirements', {})}"
+            )
             
-            # Create directory structure command
-            dir_structure = " ".join(workflow_config["dir_structure"])
-            mkdir_command = f"mkdir -p {dir_structure}"
+            # Get base environment config
+            env_config = environments[env_type].copy()
             
-            # Prepare workflow-specific instructions
-            if workflow_type == "custom":
-                tool_instructions = """
-You are designing a custom bioinformatics workflow. Please:
-1. Analyze the input files and requirements carefully
-2. Suggest appropriate tools and methods based on the specific needs
-3. Create a logical directory structure that matches the analysis flow
-4. Include necessary quality control and validation steps
-5. Follow best practices for the given analysis type
-6. Document any assumptions or requirements
-
-The base directory structure can be modified to better suit the analysis:
-- raw_data: Store input files
-- processed_data: Store intermediate processing results
-- qc: Quality control reports and metrics
-- analysis: Main analysis outputs
-- output: Final results and reports
-"""
-            else:
-                tool_instructions = f"Use these specific tool commands:\n{json.dumps(workflow_config['rules'], indent=4)}"
+            # Add any specific requirements
+            if "requirements" in recommendation:
+                env_config.update(recommendation["requirements"])
             
-            # Add specific instructions for dependency specification
-            enhanced_prompt = f"""
-You are a bioinformatics workflow expert. Generate a workflow plan as a JSON object with the following structure:
-{{
-    "workflow_type": "{workflow_type}",
+            return {
+                "type": env_type,
+                **env_config,
+                "recommendation_reason": recommendation["reason"]
+            }
+            
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to determine execution environment from prompt: {str(e)}\n"
+                "Defaulting to local execution"
+            )
+            return {
+                "type": "local",
+                **environments["local"]
+            }
+    
+    async def generate_workflow_plan(self, prompt: str, execution_env: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Generate a workflow plan from a prompt.
+        
+        Args:
+            prompt: User prompt describing the workflow
+            execution_env: Optional execution environment to use, overrides automatic detection
+        """
+        # Detect workflow type
+        workflow_type, config = self._detect_workflow_type(prompt)
+        
+        # Get execution environment
+        execution = await self._get_execution_environment(prompt, execution_env)
+        
+        # Get available input files
+        fastq_files = glob.glob("*.fastq.gz")
+        if not fastq_files:
+            raise ValueError("No .fastq.gz files found in current directory")
+        
+        # Extract output directory from prompt
+        output_dir = "results"  # Default
+        if "save" in prompt.lower() and "in" in prompt.lower():
+            # Try to extract output directory from prompt
+            parts = prompt.lower().split("save")
+            if len(parts) > 1:
+                after_save = parts[1]
+                if "in" in after_save:
+                    dir_part = after_save.split("in")[1].strip().strip("'\"./")
+                    if dir_part:
+                        output_dir = dir_part
+        
+        # Generate workflow plan using OpenAI
+        messages = [
+            {"role": "system", "content": """You are a bioinformatics workflow expert. Generate workflow plans as JSON objects with this structure:
+{
+    "workflow_type": "fastqc",
     "steps": [
-        {{
+        {
             "name": "step_name",
             "command": "command_to_execute",
-            "parameters": {{"param1": "value1"}},
-            "dependencies": ["dependent_step_name1"],
+            "parameters": {
+                "input_file": "input.fastq.gz",
+                "output_dir": "results/",
+                "threads": 1
+            },
+            "dependencies": [],
             "outputs": ["expected_output1"]
-        }}
+        }
     ]
-}}
+}
 
+For FastQC analysis:
+1. Include --outdir parameter to specify output directory
+2. Include --threads parameter for parallel processing
+3. Process each FASTQ file in a separate step
+4. Include --noextract to keep files zipped (optional)
+5. Include --quiet for less verbose output (optional)"""},
+            {"role": "user", "content": f"""Generate a workflow plan for: {prompt}
+            
 Available input files: {fastq_files}
-Task: {prompt}
+Output directory: {output_dir}
+Execution environment: {execution['type']}
+Workflow type: {workflow_type}
 
 Rules:
-1. First step MUST be directory creation with this EXACT command:
-   "{mkdir_command}"
-
-2. {tool_instructions}
-
+1. Each step needs a unique name
+2. Process each file individually, no wildcards
 3. Dependencies must form a valid DAG (no cycles)
-4. Each step needs a unique name
-5. Process each file individually, no wildcards
-6. Return ONLY the JSON object, no markdown formatting or other text
-"""
-
-            # Add resource management instructions to the prompt
-            resource_instructions = """
-Resource Management Rules:
-1. Each task must specify resource requirements and include a brief description
-2. Consider input data size for resource scaling
-3. Available resource profiles:
-   - minimal: 1 CPU, 2GB RAM (lightweight tasks)
-   - default: 1 CPU, 4GB RAM (standard preprocessing)
-   - high_memory: 1 CPU, 32GB RAM (genome indexing)
-   - multi_thread: 8 CPUs, 16GB RAM (parallel tasks)
-   - high_memory_parallel: 8 CPUs, 64GB RAM (heavy processing)
-
-4. For unknown tools, provide:
-   - Brief description of the tool's purpose
-   - Expected computational characteristics (CPU, memory, I/O intensive)
-   - Any parallelization capabilities
-   - Typical input data sizes and types
-
-5. Resource scaling:
-   - Large BAM files (>10GB): 1.5x memory, 2x time
-   - Large FASTQ files (>20GB): 1.2x memory, 1.5x time
-"""
+4. Return ONLY the JSON object"""}
+        ]
+        
+        response = await self._call_openai(
+            messages,
+            response_format={"type": "json_object"}
+        )
+        
+        try:
+            workflow_plan = json.loads(self._clean_llm_response(response))
             
-            # Update the enhanced prompt with resource instructions
-            enhanced_prompt = f"""
-{enhanced_prompt}
-
-{resource_instructions}
-
-"""
-            messages = [
-                {"role": "system", "content": "You are a bioinformatics workflow expert. Return only valid JSON."},
-                {"role": "user", "content": enhanced_prompt}
-            ]
+            # Log workflow plan
+            self.logger.info("Generated workflow plan:")
+            self.logger.info(f"Workflow type: {workflow_plan['workflow_type']}")
             
-            response = await self._call_openai(messages, response_format={"type": "json_object"})
+            # Convert rules to steps if needed
+            if "rules" in workflow_plan and "steps" not in workflow_plan:
+                workflow_plan["steps"] = workflow_plan.pop("rules")
             
-            try:
-                workflow_plan = json.loads(self._clean_llm_response(response))
-                # Log workflow plan
-                self.logger.info("Generated workflow plan:")
-                self.logger.info(f"Workflow type: {workflow_plan['workflow_type']}")
-                for step in workflow_plan["steps"]:
-                    self.logger.info(f"  Step: {step['name']}")
-                    self.logger.info(f"    Command: {step['command']}")
-                    self.logger.info(f"    Dependencies: {step['dependencies']}")
+            # Update each step with resources and container info
+            updated_steps = []
+            for step in workflow_plan.get("steps", []):
+                # Ensure proper command formatting for FastQC
+                if step["command"].startswith("fastqc"):
+                    params = step.get("parameters", {})
+                    input_file = params.get("input_file", "")
+                    out_dir = params.get("output_dir", output_dir)
+                    threads = params.get("threads", 1)
+                    
+                    # Build complete FastQC command
+                    step["command"] = (
+                        f"fastqc --outdir={out_dir} --threads={threads} "
+                        f"--quiet --noextract {input_file}"
+                    )
                 
-                # Update resources for each rule
-                for i, step in enumerate(workflow_plan["steps"]):
-                    workflow_plan["steps"][i] = await self._update_rule_resources(step)
+                # Get task resources
+                try:
+                    resources = await self._get_task_resources(step["command"], step.get("parameters", {}))
+                    step["resources"] = resources
+                except Exception as e:
+                    self.logger.warning(f"Failed to get resources for step {step['name']}: {str(e)}")
+                    step["resources"] = {
+                        "memory_mb": 4000,
+                        "cpus": 1,
+                        "time_min": 60,
+                        "profile": "default"
+                    }
                 
-                return workflow_plan
+                # Update container config if needed
+                if execution["type"] == "kubernetes":
+                    try:
+                        container = self._get_container_config(step["command"].split()[0])
+                        step["container"] = container
+                    except Exception as e:
+                        self.logger.warning(f"Failed to get container config for step {step['name']}: {str(e)}")
                 
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse workflow plan: {str(e)}")
-                self.logger.error(f"Raw response: {response}")
-                raise
+                # Ensure resources are properly formatted
+                resources = step.get("resources", {})
+                if not isinstance(resources, dict):
+                    resources = {
+                        "memory_mb": 4000,
+                        "cpus": 1,
+                        "time_min": 60,
+                        "profile": "default"
+                    }
                 
-        except Exception as e:
-            self.logger.error(f"Failed to generate workflow plan: {str(e)}")
-            raise
+                # Convert numeric values to integers
+                for key in ["memory_mb", "cpus", "time_min"]:
+                    if key in resources:
+                        try:
+                            resources[key] = int(float(resources[key]))
+                        except (ValueError, TypeError):
+                            resources[key] = 4000 if key == "memory_mb" else 1 if key == "cpus" else 60
+                
+                step["resources"] = resources
+                updated_steps.append(step)
+                
+                # Log step details
+                self.logger.info(f"  Step: {step['name']}")
+                self.logger.info(f"    Command: {step['command']}")
+                self.logger.info(f"    Dependencies: {step.get('dependencies', [])}")
+                self.logger.info(f"    Resources: {step['resources']}")
+            
+            workflow_plan["steps"] = updated_steps
+            workflow_plan["execution"] = execution
+            
+            return workflow_plan
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse workflow plan: {str(e)}")
+            self.logger.error(f"Raw response: {response}")
+            raise ValueError("Failed to generate valid workflow plan")
 
     async def generate_command(self, step: Dict[str, Any]) -> str:
         """Generate a command for a workflow step."""
@@ -564,25 +747,6 @@ Provide analysis in this format:
             self.logger.error(f"Failed to generate analysis: {str(e)}")
             raise
 
-    async def _update_rule_resources(self, rule: Dict[str, Any]) -> Dict[str, Any]:
-        """Update rule with appropriate resource requirements."""
-        task_name = rule["name"].lower().replace("-", "_")
-        
-        # Get task description from rule if available
-        task_description = rule.get("description", "")
-        
-        # Estimate input size if there are input files
-        input_size = 0
-        if "inputs" in rule:
-            for input_pattern in rule["inputs"]:
-                input_size += self._estimate_input_size(input_pattern)
-        
-        # Get resource requirements with task description
-        resources = await self._get_task_resources(task_name, input_size, task_description)
-        rule["resources"] = resources
-        
-        return rule
-
     def _get_tool_characteristics(self, task_name: str) -> Dict[str, float]:
         """Determine tool characteristics based on task name patterns."""
         weights = {"memory_weight": 1.0, "time_weight": 1.0}
@@ -610,42 +774,66 @@ Provide analysis in this format:
         # If smaller than smallest tier
         return {"memory_multiplier": 1.0, "time_multiplier": 1.0}
 
-    async def _get_task_resources(self, task_name: str, input_size_gb: float = 0, task_description: str = "") -> Dict[str, Any]:
-        """Get resource requirements for a task, scaling based on input size and characteristics."""
-        # Get base resource profile
-        profile_name = self.WORKFLOW_CONFIG["task_resources"].get(task_name)
+    async def _get_task_resources(self, command: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Get resource requirements for a task.
         
-        # If task not in predefined config, get suggestion from LLM
-        if profile_name is None:
-            suggestion = await self._suggest_tool_resources(task_name, task_description)
-            profile_name = suggestion["profile_name"]
+        Args:
+            command: Command to execute
+            parameters: Command parameters
             
-            # Log the suggestion for future reference
-            self.logger.info(f"Resource suggestion for {task_name}: {suggestion['profile_name']} - {suggestion['reasoning']}")
+        Returns:
+            Dictionary with resource requirements
+        """
+        # Get base tool name
+        tool = command.split()[0]
+        
+        # Default resources
+        resources = {
+            "memory_mb": 4096,  # 4GB
+            "cpus": 1,
+            "time_min": 60,
+            "profile": "default"  # Add profile for CGAT compatibility
+        }
+        
+        # Tool-specific resource adjustments
+        if tool == "kallisto":
+            if "index" in command:
+                resources.update({
+                    "memory_mb": 16384,  # 16GB
+                    "cpus": 4,
+                    "time_min": 120,
+                    "profile": "high_memory"
+                })
+            elif "quant" in command:
+                resources.update({
+                    "memory_mb": 8192,  # 8GB
+                    "cpus": 4,
+                    "time_min": 90,
+                    "profile": "multi_thread"
+                })
+        elif tool == "fastqc":
+            # Get threads from command if specified
+            threads = 1
+            if "--threads=" in command:
+                try:
+                    threads_part = [p for p in command.split() if p.startswith("--threads=")][0]
+                    threads = int(threads_part.split("=")[1])
+                except (IndexError, ValueError):
+                    threads = 1
             
-            # Cache the suggestion for future use
-            self.WORKFLOW_CONFIG["task_resources"][task_name] = profile_name
+            resources.update({
+                "memory_mb": max(2048 * threads, 2048),  # 2GB per thread, minimum 2GB
+                "cpus": threads,
+                "time_min": 30,
+                "profile": "minimal" if threads == 1 else "multi_thread"
+            })
         
-        base_resources = self.WORKFLOW_CONFIG["resources"][profile_name].copy()
+        # Convert all numeric values to integers
+        for key in ["memory_mb", "cpus", "time_min"]:
+            if key in resources:
+                resources[key] = int(resources[key])
         
-        # Get tool-specific characteristics
-        tool_weights = self._get_tool_characteristics(task_name)
-        
-        # Get size-based scaling
-        size_multipliers = self._get_size_multipliers(input_size_gb)
-        
-        # Apply both tool-specific and size-based scaling
-        final_memory_multiplier = tool_weights["memory_weight"] * size_multipliers["memory_multiplier"]
-        final_time_multiplier = tool_weights["time_weight"] * size_multipliers["time_multiplier"]
-        
-        # Apply scaling to resources
-        base_resources["memory_mb"] = int(base_resources["memory_mb"] * final_memory_multiplier)
-        base_resources["time_min"] = int(base_resources["time_min"] * final_time_multiplier)
-        
-        # Log scaling decisions
-        self.logger.debug(f"Resource scaling for {task_name}: memory_multiplier={final_memory_multiplier:.2f}, time_multiplier={final_time_multiplier:.2f}")
-        
-        return base_resources
+        return resources
 
     def _estimate_input_size(self, input_pattern: str) -> float:
         """Estimate input size in GB for resource scaling."""
@@ -654,3 +842,26 @@ Provide analysis in this format:
             if os.path.exists(file):
                 total_size += os.path.getsize(file)
         return total_size / (1024 * 1024 * 1024)  # Convert to GB
+
+    def _get_container_config(self, tool_name: str) -> Dict[str, Any]:
+        """Get container configuration for a tool.
+        
+        Args:
+            tool_name: Name of the tool (e.g., 'kallisto', 'fastqc')
+            
+        Returns:
+            Dictionary with container configuration
+        """
+        # Extract base tool name (e.g., 'kallisto_quant' -> 'kallisto')
+        base_tool = tool_name.split('_')[0]
+        
+        # Get container config
+        container_config = self.WORKFLOW_CONFIG["containers"].get(base_tool, {})
+        if not container_config:
+            self.logger.warning(f"No container configuration found for tool: {tool_name}")
+            container_config = {
+                "image": "ubuntu:latest",
+                "pull_policy": "IfNotPresent"
+            }
+        
+        return container_config
