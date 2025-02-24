@@ -1,2 +1,0 @@
-[console_scripts]
-cognomic = cognomic.cli:run
