@@ -81,7 +81,7 @@ def run(prompt: str, analysis_dir: Optional[str] = None, format: str = 'text', d
                 # Combine both analyses into one JSON output
                 combined_report = {
                     "file_analysis": report,
-                    "agent_analysis": agent_analysis["report"] if agent_analysis else None
+                    "agent_analysis": agent_analysis
                 }
                 click.echo(json.dumps(combined_report, indent=2))
             elif format == 'html':
@@ -95,107 +95,76 @@ def run(prompt: str, analysis_dir: Optional[str] = None, format: str = 'text', d
                     
                     # Add agent analysis if available
                     if agent_analysis and agent_analysis["status"] == "success":
-                        agent_html = """
+                        agent_report = agent_analysis["report"]
+                        agent_html = f"""
                         <h2>Agent-Based Analysis</h2>
                         <div class="section">
                             <h3>Overall Assessment</h3>
-                            {assessment}
-                        </div>
-                        <div class="section">
+                            <ul>
+                                <li>Quality: {agent_report["overall_assessment"]["quality_summary"]}</li>
+                                <li>Quantification: {agent_report["overall_assessment"]["quantification_summary"]}</li>
+                                <li>Technical: {agent_report["overall_assessment"]["technical_summary"]}</li>
+                            </ul>
+                            
                             <h3>Issues</h3>
-                            {issues}
-                        </div>
-                        <div class="section">
+                            <ul>
+                                {"".join(f'<li class="severity-{issue["severity"]}">{issue["description"]}</li>' for issue in agent_report["issues"])}
+                            </ul>
+                            
                             <h3>Recommendations</h3>
-                            {recommendations}
+                            <ul>
+                                {"".join(f'<li>{rec}</li>' for rec in agent_report["recommendations"])}
+                            </ul>
                         </div>
-                        """.format(
-                            assessment="".join(
-                                f"<p><strong>{k}:</strong> {v}</p>"
-                                for k, v in agent_analysis["report"]["overall_assessment"].items()
-                            ),
-                            issues="".join(
-                                f'<div class="issue {issue["severity"]}">'
-                                f'<strong>{issue["severity"].upper()}:</strong> {issue["description"]}</div>'
-                                for issue in agent_analysis["report"]["issues"]
-                            ),
-                            recommendations="<ol>" + "".join(
-                                f"<li>{rec}</li>"
-                                for rec in agent_analysis["report"]["recommendations"]
-                            ) + "</ol>"
-                        )
+                        """
                         html_content += agent_html
                     
-                    html_report = f"""
+                    # Add CSS styling
+                    html_content = f"""
                     <html>
-                        <head>
-                            <title>Cognomic Analysis Report</title>
-                            <style>
-                                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                                .section {{ margin: 20px 0; }}
-                                table {{ border-collapse: collapse; width: 100%; }}
-                                th, td {{ border: 1px solid #ddd; padding: 8px; }}
-                                th {{ background-color: #f5f5f5; }}
-                                code {{ background-color: #f5f5f5; padding: 2px 4px; }}
-                                .issue {{ padding: 10px; margin: 5px 0; border-radius: 5px; }}
-                                .high {{ background-color: #ffe6e6; }}
-                                .medium {{ background-color: #fff3e6; }}
-                                .low {{ background-color: #e6ffe6; }}
-                            </style>
-                        </head>
-                        <body>
-                            <h1>Cognomic Analysis Report</h1>
-                            <h2>File-Based Analysis</h2>
-                            {html_content}
-                        </body>
+                    <head>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                            .section {{ margin: 20px 0; }}
+                            .severity-high {{ color: red; }}
+                            .severity-medium {{ color: orange; }}
+                            .severity-low {{ color: blue; }}
+                        </style>
+                    </head>
+                    <body>
+                        {html_content}
+                    </body>
                     </html>
                     """
-                    output_path = Path(analysis_dir) / "analysis_report.html"
-                    with open(output_path, 'w') as f:
-                        f.write(html_report)
-                    click.echo(f"Analysis report saved to: {output_path}")
+                    
+                    click.echo(html_content)
                 except ImportError:
-                    click.echo("Warning: markdown2 not installed. Falling back to text format.")
-                    click.echo(report)
-                    if agent_analysis and agent_analysis["status"] == "success":
-                        click.echo("\nAgent-Based Analysis:")
-                        click.echo("====================")
-                        
-                        click.echo("\nOverall Assessment:")
-                        for k, v in agent_analysis["report"]["overall_assessment"].items():
-                            click.echo(f"- {k}: {v}")
-                        
-                        if agent_analysis["report"]["issues"]:
-                            click.echo("\nIssues:")
-                            for issue in agent_analysis["report"]["issues"]:
-                                click.echo(f"[{issue['severity'].upper()}] {issue['description']}")
-                        
-                        if agent_analysis["report"]["recommendations"]:
-                            click.echo("\nRecommendations:")
-                            for i, rec in enumerate(agent_analysis["report"]["recommendations"], 1):
-                                click.echo(f"{i}. {rec}")
+                    click.echo("markdown2 package required for HTML output")
+                    sys.exit(1)
             else:
-                # Text format - show both reports
-                click.echo("File-Based Analysis:")
+                # Text output - show both analyses
+                click.echo("\nFile-Based Analysis:")
                 click.echo("===================")
                 click.echo(report)
                 
                 if agent_analysis and agent_analysis["status"] == "success":
-                    click.echo("\nAgent-Based Analysis:")
+                    click.echo("\n\nAgent-Based Analysis:")
                     click.echo("====================")
+                    agent_report = agent_analysis["report"]
                     
                     click.echo("\nOverall Assessment:")
-                    for k, v in agent_analysis["report"]["overall_assessment"].items():
-                        click.echo(f"- {k}: {v}")
+                    click.echo(f"- quality_summary: {agent_report['overall_assessment']['quality_summary']}")
+                    click.echo(f"- quantification_summary: {agent_report['overall_assessment']['quantification_summary']}")
+                    click.echo(f"- technical_summary: {agent_report['overall_assessment']['technical_summary']}")
                     
-                    if agent_analysis["report"]["issues"]:
+                    if agent_report["issues"]:
                         click.echo("\nIssues:")
-                        for issue in agent_analysis["report"]["issues"]:
+                        for issue in agent_report["issues"]:
                             click.echo(f"[{issue['severity'].upper()}] {issue['description']}")
                     
-                    if agent_analysis["report"]["recommendations"]:
+                    if agent_report["recommendations"]:
                         click.echo("\nRecommendations:")
-                        for i, rec in enumerate(agent_analysis["report"]["recommendations"], 1):
+                        for i, rec in enumerate(agent_report["recommendations"], 1):
                             click.echo(f"{i}. {rec}")
         else:
             # Run workflow with analysis
