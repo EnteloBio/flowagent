@@ -7,6 +7,7 @@ import asyncio
 import networkx as nx
 import json
 import os
+from cognomic.config.settings import Settings
 
 from ..utils.logging import get_logger
 from ..utils import file_utils
@@ -20,19 +21,29 @@ logger = get_logger(__name__)
 class WorkflowManager:
     """Manages workflow execution and coordination."""
     
-    def __init__(self, executor_type: str = "local"):
+    def __init__(self, executor_type: Optional[str] = None):
         """Initialize workflow manager.
         
         Args:
-            executor_type: Type of executor to use ("local" or "cgat")
+            executor_type: Type of executor to use ("local" or "cgat"). 
+                         If None, uses EXECUTOR_TYPE from settings.
         """
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
         self.agent_system = AgentSystem(self.llm)
-        self.executor_type = executor_type
+        
+        # Get settings
+        self.settings = Settings()
+        
+        # Use provided executor_type or get from settings
+        self.executor_type = executor_type or self.settings.EXECUTOR_TYPE
+        if self.executor_type not in ["local", "cgat"]:
+            self.logger.warning(f"Invalid executor type '{self.executor_type}'. Defaulting to 'local'")
+            self.executor_type = "local"
+            
         self.cwd = os.getcwd()
         self.logger.info(f"Initial working directory: {self.cwd}")
-        self.logger.info(f"Using {executor_type} executor")
+        self.logger.info(f"Using {self.executor_type} executor")
 
     async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
         """Execute workflow from prompt."""

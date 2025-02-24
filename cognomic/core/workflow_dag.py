@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from ..utils.logging import get_logger
-from .executors import BaseExecutor, LocalExecutor, CGATExecutor
+from .executors import BaseExecutor, LocalExecutor, HPCExecutor
 
 logger = get_logger(__name__)
 
@@ -17,11 +17,11 @@ class WorkflowDAG:
         """Initialize workflow DAG.
         
         Args:
-            executor_type: Type of executor to use ("local" or "cgat")
+            executor_type: Type of executor to use ("local" or "hpc")
         """
         self.graph = nx.DiGraph()
         self.executor = (
-            CGATExecutor() if executor_type == "cgat" 
+            HPCExecutor() if executor_type == "hpc" 
             else LocalExecutor()
         )
         logger.info(f"Initialized WorkflowDAG with {executor_type} executor")
