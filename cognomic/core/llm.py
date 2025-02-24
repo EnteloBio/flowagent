@@ -7,6 +7,8 @@ import openai
 from openai import AsyncOpenAI
 import glob
 import networkx as nx
+import os
+from pathlib import Path
 
 from ..utils import file_utils
 from ..utils.logging import get_logger
@@ -126,6 +128,96 @@ class LLMInterface:
         }
     }
     
+    WORKFLOW_CONFIG = {
+        "resources": {
+            "minimal": {
+                "cpus": 1,
+                "memory_mb": 2000,
+                "time_min": 30,
+                "description": "For lightweight tasks like FastQC, MultiQC, and basic file operations"
+            },
+            "default": {
+                "cpus": 1,
+                "memory_mb": 4000,
+                "time_min": 60,
+                "description": "Standard profile for most preprocessing tasks"
+            },
+            "high_memory": {
+                "cpus": 1,
+                "memory_mb": 32000,
+                "time_min": 120,
+                "description": "For memory-intensive tasks like genome indexing"
+            },
+            "multi_thread": {
+                "cpus": 8,
+                "memory_mb": 16000,
+                "time_min": 120,
+                "description": "For CPU-intensive tasks that can be parallelized"
+            },
+            "high_memory_parallel": {
+                "cpus": 8,
+                "memory_mb": 64000,
+                "time_min": 240,
+                "description": "For memory and CPU-intensive tasks like large BAM processing"
+            }
+        },
+        "task_resources": {
+            # Quality Control
+            "fastqc": "minimal",
+            "multiqc": "minimal",
+            
+            # RNA-seq Tasks
+            "kallisto_index": "high_memory",  # Genome indexing needs more memory
+            "kallisto_quant": "multi_thread", # Quantification can be parallelized
+            "hisat2_index": "high_memory",    # Genome indexing
+            "hisat2_align": "multi_thread",   # Alignment benefits from parallelization
+            "featureCounts": "high_memory",   # Counting needs good memory
+            
+            # ChIP-seq Tasks
+            "bowtie2_index": "high_memory",
+            "bowtie2_align": "multi_thread",
+            "macs2_callpeak": "high_memory",  # Peak calling can be memory intensive
+            
+            # BAM Processing
+            "samtools_sort": "high_memory_parallel",  # Sorting large BAMs needs memory and CPU
+            "samtools_index": "default",
+            "samtools_view": "multi_thread",
+            
+            # Single-cell Tasks
+            "cellranger_count": "high_memory_parallel",  # Cell Ranger needs lots of resources
+            "alevin_fry": "high_memory_parallel",
+            "kb_count": "multi_thread"
+        },
+        "scaling_factors": {
+            # File size based scaling
+            "size_tiers": [
+                {"threshold_gb": 5, "memory_multiplier": 1.0, "time_multiplier": 1.0},
+                {"threshold_gb": 10, "memory_multiplier": 1.2, "time_multiplier": 1.3},
+                {"threshold_gb": 20, "memory_multiplier": 1.5, "time_multiplier": 1.5},
+                {"threshold_gb": 50, "memory_multiplier": 2.0, "time_multiplier": 2.0},
+                {"threshold_gb": 100, "memory_multiplier": 3.0, "time_multiplier": 2.5}
+            ],
+            # Tool type scaling characteristics
+            "tool_characteristics": {
+                "memory_intensive": {
+                    "patterns": ["index", "build", "merge", "sort", "assembly", "peak"],
+                    "memory_weight": 1.5,
+                    "time_weight": 1.2
+                },
+                "cpu_intensive": {
+                    "patterns": ["align", "map", "quant", "call", "analyze"],
+                    "memory_weight": 1.2,
+                    "time_weight": 1.5
+                },
+                "io_intensive": {
+                    "patterns": ["compress", "decompress", "convert", "dump"],
+                    "memory_weight": 1.0,
+                    "time_weight": 1.3
+                }
+            }
+        }
+    }
+    
     def __init__(self):
         """Initialize LLM interface."""
         self.logger = get_logger(__name__)
@@ -193,6 +285,103 @@ class LLMInterface:
         except Exception as e:
             self.logger.error(f"OpenAI API call failed: {str(e)}")
             raise
+
+    def _clean_llm_response(self, response: str) -> str:
+        """Clean LLM response by removing markdown formatting."""
+        # Remove markdown code block if present
+        if response.startswith('```'):
+            # Find the first and last ``` and extract content
+            start = response.find('\n', response.find('```')) + 1
+            end = response.rfind('```')
+            if end > start:
+                response = response[start:end].strip()
+            
+        # Remove any "json" language identifier
+        if response.lower().startswith('json'):
+            response = response[4:].strip()
+            
+        return response.strip()
+
+    async def _suggest_tool_resources(self, tool_name: str, tool_description: str = "") -> Dict[str, str]:
+        """Use LLM to suggest appropriate resource profile for unknown tools."""
+        # First check if we have a predefined mapping for common tools
+        common_tools = {
+            "fastqc": {"profile": "minimal", "reason": "FastQC is a lightweight QC tool"},
+            "multiqc": {"profile": "minimal", "reason": "MultiQC aggregates reports with minimal resources"},
+            "kallisto_index": {"profile": "high_memory", "reason": "Indexing requires significant memory"},
+            "kallisto_quant": {"profile": "multi_thread", "reason": "Quantification benefits from parallelization"},
+            "create_directories": {"profile": "minimal", "reason": "Basic file system operations"}
+        }
+        
+        # Check if it's a common tool
+        tool_base = tool_name.split('_')[0] if '_' in tool_name else tool_name
+        if tool_base in common_tools:
+            return {
+                "profile_name": common_tools[tool_base]["profile"],
+                "reasoning": common_tools[tool_base]["reason"],
+                "suggested_time_min": 60
+            }
+
+        # For unknown tools, ask LLM
+        prompt = f"""
+Analyze this bioinformatics tool and suggest computational resources.
+Tool: {tool_name}
+Description: {tool_description}
+
+Choose ONE resource profile from:
+- minimal (1 CPU, 2GB RAM): For lightweight tasks
+- default (1 CPU, 4GB RAM): For standard preprocessing
+- high_memory (1 CPU, 32GB RAM): For memory-intensive tasks
+- multi_thread (8 CPUs, 16GB RAM): For parallel tasks
+- high_memory_parallel (8 CPUs, 64GB RAM): For heavy processing
+
+Return a JSON object in this EXACT format:
+{{
+    "profile_name": "chosen_profile",
+    "reasoning": "brief explanation",
+    "suggested_time_min": estimated_minutes
+}}
+"""
+        try:
+            messages = [
+                {"role": "system", "content": "You are a bioinformatics resource allocation expert. Return ONLY the JSON object, nothing else."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = await self._call_openai(messages)
+            
+            # Clean the response
+            cleaned_response = self._clean_llm_response(response)
+            
+            # Ensure we get valid JSON
+            try:
+                suggestion = json.loads(cleaned_response)
+                # Validate the response
+                required_fields = ["profile_name", "reasoning", "suggested_time_min"]
+                valid_profiles = ["minimal", "default", "high_memory", "multi_thread", "high_memory_parallel"]
+                
+                if not all(field in suggestion for field in required_fields):
+                    raise ValueError("Missing required fields in LLM response")
+                
+                if suggestion["profile_name"] not in valid_profiles:
+                    raise ValueError(f"Invalid profile name: {suggestion['profile_name']}")
+                
+                return suggestion
+                
+            except json.JSONDecodeError:
+                self.logger.warning(f"Invalid JSON response from LLM for {tool_name}. Response: {response}")
+                raise
+                
+        except Exception as e:
+            # Fallback based on tool name patterns
+            if any(x in tool_name.lower() for x in ["index", "build"]):
+                return {"profile_name": "high_memory", "reasoning": "Indexing typically needs more memory", "suggested_time_min": 120}
+            elif any(x in tool_name.lower() for x in ["align", "map", "quant"]):
+                return {"profile_name": "multi_thread", "reasoning": "Alignment/quantification benefits from multiple cores", "suggested_time_min": 90}
+            elif any(x in tool_name.lower() for x in ["qc", "check", "stat"]):
+                return {"profile_name": "minimal", "reasoning": "QC tasks usually need minimal resources", "suggested_time_min": 30}
+            else:
+                return {"profile_name": "default", "reasoning": "Using safe default profile", "suggested_time_min": 60}
 
     async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
         """Generate a workflow plan from a prompt."""
@@ -263,6 +452,37 @@ Rules:
 5. Process each file individually, no wildcards
 6. Return ONLY the JSON object, no markdown formatting or other text
 """
+
+            # Add resource management instructions to the prompt
+            resource_instructions = """
+Resource Management Rules:
+1. Each task must specify resource requirements and include a brief description
+2. Consider input data size for resource scaling
+3. Available resource profiles:
+   - minimal: 1 CPU, 2GB RAM (lightweight tasks)
+   - default: 1 CPU, 4GB RAM (standard preprocessing)
+   - high_memory: 1 CPU, 32GB RAM (genome indexing)
+   - multi_thread: 8 CPUs, 16GB RAM (parallel tasks)
+   - high_memory_parallel: 8 CPUs, 64GB RAM (heavy processing)
+
+4. For unknown tools, provide:
+   - Brief description of the tool's purpose
+   - Expected computational characteristics (CPU, memory, I/O intensive)
+   - Any parallelization capabilities
+   - Typical input data sizes and types
+
+5. Resource scaling:
+   - Large BAM files (>10GB): 1.5x memory, 2x time
+   - Large FASTQ files (>20GB): 1.2x memory, 1.5x time
+"""
+            
+            # Update the enhanced prompt with resource instructions
+            enhanced_prompt = f"""
+{enhanced_prompt}
+
+{resource_instructions}
+
+"""
             messages = [
                 {"role": "system", "content": "You are a bioinformatics workflow expert. Return only valid JSON."},
                 {"role": "user", "content": enhanced_prompt}
@@ -271,7 +491,7 @@ Rules:
             response = await self._call_openai(messages, response_format={"type": "json_object"})
             
             try:
-                workflow_plan = json.loads(response)
+                workflow_plan = json.loads(self._clean_llm_response(response))
                 # Log workflow plan
                 self.logger.info("Generated workflow plan:")
                 self.logger.info(f"Workflow type: {workflow_plan['workflow_type']}")
@@ -279,6 +499,10 @@ Rules:
                     self.logger.info(f"  Step: {step['name']}")
                     self.logger.info(f"    Command: {step['command']}")
                     self.logger.info(f"    Dependencies: {step['dependencies']}")
+                
+                # Update resources for each rule
+                for i, step in enumerate(workflow_plan["steps"]):
+                    workflow_plan["steps"][i] = await self._update_rule_resources(step)
                 
                 return workflow_plan
                 
@@ -339,3 +563,94 @@ Provide analysis in this format:
         except Exception as e:
             self.logger.error(f"Failed to generate analysis: {str(e)}")
             raise
+
+    async def _update_rule_resources(self, rule: Dict[str, Any]) -> Dict[str, Any]:
+        """Update rule with appropriate resource requirements."""
+        task_name = rule["name"].lower().replace("-", "_")
+        
+        # Get task description from rule if available
+        task_description = rule.get("description", "")
+        
+        # Estimate input size if there are input files
+        input_size = 0
+        if "inputs" in rule:
+            for input_pattern in rule["inputs"]:
+                input_size += self._estimate_input_size(input_pattern)
+        
+        # Get resource requirements with task description
+        resources = await self._get_task_resources(task_name, input_size, task_description)
+        rule["resources"] = resources
+        
+        return rule
+
+    def _get_tool_characteristics(self, task_name: str) -> Dict[str, float]:
+        """Determine tool characteristics based on task name patterns."""
+        weights = {"memory_weight": 1.0, "time_weight": 1.0}
+        
+        task_lower = task_name.lower()
+        for char_type, info in self.WORKFLOW_CONFIG["scaling_factors"]["tool_characteristics"].items():
+            if any(pattern in task_lower for pattern in info["patterns"]):
+                weights["memory_weight"] *= info["memory_weight"]
+                weights["time_weight"] *= info["time_weight"]
+        
+        return weights
+
+    def _get_size_multipliers(self, input_size_gb: float) -> Dict[str, float]:
+        """Get scaling multipliers based on input size."""
+        tiers = self.WORKFLOW_CONFIG["scaling_factors"]["size_tiers"]
+        
+        # Find appropriate tier
+        for tier in reversed(tiers):  # Start from largest tier
+            if input_size_gb >= tier["threshold_gb"]:
+                return {
+                    "memory_multiplier": tier["memory_multiplier"],
+                    "time_multiplier": tier["time_multiplier"]
+                }
+        
+        # If smaller than smallest tier
+        return {"memory_multiplier": 1.0, "time_multiplier": 1.0}
+
+    async def _get_task_resources(self, task_name: str, input_size_gb: float = 0, task_description: str = "") -> Dict[str, Any]:
+        """Get resource requirements for a task, scaling based on input size and characteristics."""
+        # Get base resource profile
+        profile_name = self.WORKFLOW_CONFIG["task_resources"].get(task_name)
+        
+        # If task not in predefined config, get suggestion from LLM
+        if profile_name is None:
+            suggestion = await self._suggest_tool_resources(task_name, task_description)
+            profile_name = suggestion["profile_name"]
+            
+            # Log the suggestion for future reference
+            self.logger.info(f"Resource suggestion for {task_name}: {suggestion['profile_name']} - {suggestion['reasoning']}")
+            
+            # Cache the suggestion for future use
+            self.WORKFLOW_CONFIG["task_resources"][task_name] = profile_name
+        
+        base_resources = self.WORKFLOW_CONFIG["resources"][profile_name].copy()
+        
+        # Get tool-specific characteristics
+        tool_weights = self._get_tool_characteristics(task_name)
+        
+        # Get size-based scaling
+        size_multipliers = self._get_size_multipliers(input_size_gb)
+        
+        # Apply both tool-specific and size-based scaling
+        final_memory_multiplier = tool_weights["memory_weight"] * size_multipliers["memory_multiplier"]
+        final_time_multiplier = tool_weights["time_weight"] * size_multipliers["time_multiplier"]
+        
+        # Apply scaling to resources
+        base_resources["memory_mb"] = int(base_resources["memory_mb"] * final_memory_multiplier)
+        base_resources["time_min"] = int(base_resources["time_min"] * final_time_multiplier)
+        
+        # Log scaling decisions
+        self.logger.debug(f"Resource scaling for {task_name}: memory_multiplier={final_memory_multiplier:.2f}, time_multiplier={final_time_multiplier:.2f}")
+        
+        return base_resources
+
+    def _estimate_input_size(self, input_pattern: str) -> float:
+        """Estimate input size in GB for resource scaling."""
+        total_size = 0
+        for file in glob.glob(input_pattern):
+            if os.path.exists(file):
+                total_size += os.path.getsize(file)
+        return total_size / (1024 * 1024 * 1024)  # Convert to GB
