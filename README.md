@@ -56,10 +56,10 @@ cp .env.example .env
 2. Run a workflow:
 ```bash
 # Basic workflow execution
-cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state
+cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." 
 
 # Resume a failed workflow
-cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
+cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --checkpoint-dir=workflow_state --resume
 ```
 
 3. Analyze workflow results:
@@ -117,6 +117,51 @@ OPENAI_MODEL=gpt-4                         # Default LLM model
 4. Keep your API keys secure and never share them in public repositories
 
 The `.env` file is automatically loaded by the application when it starts. All sensitive information is handled securely using Pydantic's `SecretStr` type to prevent accidental exposure in logs or error messages.
+
+## OpenAI Model Configuration
+
+Cognomic uses OpenAI's language models for workflow generation and analysis. Different operations have different model requirements:
+
+1. **Workflow Generation** (`gpt-3.5-turbo` or better)
+   - Basic workflow creation and execution can use `gpt-3.5-turbo`
+   - Set in your `.env` file:
+   ```bash
+   OPENAI_MODEL=gpt-3.5-turbo
+   ```
+
+2. **Report Generation** (`gpt-4-turbo-preview` recommended)
+   - For comprehensive analysis and insights, use `gpt-4-turbo-preview`
+   - This model provides better reasoning and analysis capabilities
+   - Set in your `.env` file:
+   ```bash
+   OPENAI_MODEL=gpt-4-turbo-preview
+   ```
+
+Example configurations:
+
+1. For workflow execution:
+```bash
+# Set model in .env
+OPENAI_MODEL=gpt-3.5-turbo
+
+# Run workflow
+cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis."
+```
+
+2. For report generation:
+```bash
+# Set model in .env
+OPENAI_MODEL=gpt-4-turbo-preview
+
+# Generate comprehensive analysis
+cognomic "analyze workflow results" --analysis-dir=results
+```
+
+You can also set the model temporarily using environment variables:
+```bash
+# For one-time report generation with gpt-4-turbo-preview
+OPENAI_MODEL=gpt-4-turbo-preview cognomic "analyze workflow results" --analysis-dir=results
+```
 
 ## Security Configuration
 
@@ -393,5 +438,3 @@ python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow p
 2. Specify custom resource requirements:
 ```bash
 python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
-
-```
