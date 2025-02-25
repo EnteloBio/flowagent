@@ -238,6 +238,56 @@ To only view the report without saving:
 cognomic "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
+## Workflow State Management
+
+Cognomic includes a robust checkpointing system that helps manage long-running RNA-seq analysis workflows. This system allows you to resume interrupted workflows and avoid repeating expensive computations.
+
+### Using Checkpoints
+
+1. **Basic Usage**:
+   ```bash
+   # Run workflow with checkpointing
+   cognomic prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state
+   ```
+
+2. **Resuming Interrupted Workflows**:
+   ```bash
+   # Resume from last successful checkpoint
+   cognomic prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state --resume
+   ```
+
+### How It Works
+
+The checkpoint directory (e.g., `workflow_state`) stores:
+- Progress tracking for each workflow step
+- Intermediate computation results
+- Error logs and debugging information
+- Workflow configuration and parameters
+
+This allows Cognomic to:
+- Resume workflows from the last successful step
+- Avoid recomputing expensive operations
+- Maintain workflow state across system restarts
+- Track errors and provide detailed debugging information
+
+### Best Practices
+
+1. **Choose Descriptive Directory Names**:
+   ```bash
+   # Use meaningful names for different analyses
+   cognomic prompt "..." --checkpoint-dir rnaseq_liver_samples_20250225
+   ```
+
+2. **Backup Checkpoint Directories**:
+   - Keep checkpoint directories for reproducibility
+   - Back up important checkpoints before rerunning analyses
+   - Use different checkpoint directories for different analyses
+
+3. **Debugging Using Checkpoints**:
+   - Examine checkpoint directory contents for troubleshooting
+   - Use `--resume` to retry failed steps without restarting
+   - Check error logs in checkpoint directory for detailed information
+
 ## Architecture
 
 Cognomic 1.0 implements a modern, distributed architecture:
@@ -364,3 +414,5 @@ cognomic --resume --checkpoint-dir workflow_state "Your workflow prompt"
 2. Specify custom resource requirements:
 ```bash
 python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+
+```
