@@ -5,6 +5,7 @@ This module defines the FastAPI application and its endpoints for handling
 OpenAI chat completions, running workflows, and retrieving model information.
 """
 
+import io
 import json
 import logging
 import os
@@ -29,6 +30,23 @@ settings = Settings()
 
 # Generate a UUID for system_fingerprint
 SYSTEM_FINGERPRINT = str(uuid.uuid4())
+
+
+class StringIOHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.log_capture_string = io.StringIO()
+
+    def emit(self, record):
+        log_entry = self.format(record)
+        self.log_capture_string.write(log_entry + "\n")
+
+    def get_log_contents(self):
+        return self.log_capture_string.getvalue()
+
+    def clear(self):
+        self.log_capture_string.truncate(0)
+        self.log_capture_string.seek(0)
 
 
 class WorkflowRequest(BaseModel):
@@ -170,6 +188,9 @@ async def openai_completions(request: OpenAIChatRequest) -> OpenAIChatResponse:
         OpenAIChatResponse: The chat response.
     """
     logger.info(f"Received request: {request.json()}")
+    log_handler = StringIOHandler()
+    root_logger = logging.getLogger()
+    root_logger.addHandler(log_handler)
     try:
         llm = LLMInterface()
         analysis = await llm.analyze_prompt(request.messages[-1].content)
@@ -181,31 +202,57 @@ async def openai_completions(request: OpenAIChatRequest) -> OpenAIChatResponse:
         analysis["save_report"] = analysis.get("save_report", True)
 
         if analysis["resume"] and not analysis["checkpoint_dir"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Checkpoint directory must be provided if resume is set to True",
-            )
+            message = "```**Error:** Checkpoint directory must be provided if resume is set to True.```"
+            return OpenAIChatResponse.from_basic_message(message)
 
-        if analysis["action"] == "analyze":
-            if not analysis["analysis_dir"]:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Analysis directory is required for analysis.",
+        match analysis["action"]:
+            case "analyze":
+                if not analysis["analysis_dir"]:
+                    log_contents = log_handler.get_log_contents()
+                    root_logger.removeHandler(log_handler)
+
+                    message = (
+                        f"## Log Contents:\n\n```{log_contents}```\n\n"
+                        "```**Error:** Analysis directory is required for analysis.```"
+                    )
+
+                    return OpenAIChatResponse.from_basic_message(message)
+                await analyze_workflow(
+                    analysis["analysis_dir"], analysis["save_report"]
                 )
-            await analyze_workflow(analysis["analysis_dir"], analysis["save_report"])
-            return OpenAIChatResponse.from_basic_message(
-                "Analysis completed successfully!"
-            )
+                log_contents = log_handler.get_log_contents()
+                root_logger.removeHandler(log_handler)
 
-        await run_workflow(
-            analysis["prompt"], analysis["checkpoint_dir"], analysis["resume"]
-        )
-        return OpenAIChatResponse.from_basic_message("Workflow completed successfully!")
-    except Exception as e:
+                message = f"## Analysis Log:\n\n```{log_contents}```"
+
+                return OpenAIChatResponse.from_basic_message(message)
+            case "run":
+                await run_workflow(
+                    analysis["prompt"], analysis["checkpoint_dir"], analysis["resume"]
+                )
+                log_contents = log_handler.get_log_contents()
+                root_logger.removeHandler(log_handler)
+
+                message = f"## Workflow Log:\n\n```{log_contents}```"
+
+                return OpenAIChatResponse.from_basic_message(message)
+            case other:
+                message = (
+                    f"```**Error:** Invalid action extracted from prompt ({other}).```"
+                )
+                return OpenAIChatResponse.from_basic_message(message)
+    except Exception:
         logger.error(f"Operation failed: \n{traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500, detail=f"Operation failed: {traceback.format_exc()}"
-        ) from e
+
+        log_contents = log_handler.get_log_contents()
+        root_logger.removeHandler(log_handler)
+
+        message = (
+            f"## Log Contents:\n\n```{log_contents}```\n\n"
+            f"```**Error:** Operation failed: {traceback.format_exc()}```"
+        )
+
+        return OpenAIChatResponse.from_basic_message(message)
 
 
 @app.post("/run")
@@ -286,6 +333,7 @@ def start_server(host: str = "0.0.0.0", port: int = 8000):
         env["OPENAI_API_BASE_URL"] = f"http://{host}:{port}"
         env["ENABLE_AUTOCOMPLETE_GENERATION"] = "False"
         env["ENABLE_TAGS_GENERATION"] = "False"
+        env["TITLE_GENERATION_PROMPT_TEMPLATE"] = "This should fail"
         subprocess.Popen(["open-webui", "serve"], env=env)
     except FileNotFoundError:
         raise RuntimeError(
