@@ -7,32 +7,43 @@ import asyncio
 import networkx as nx
 import json
 import os
+from cognomic.config.settings import Settings
 
 from ..utils.logging import get_logger
 from ..utils import file_utils
-from .agent_system import AgentSystem
 from .llm import LLMInterface
 from .agent_types import WorkflowStep
 from .workflow_dag import WorkflowDAG
+from ..agents.agentic.analysis_system import AgenticAnalysisSystem
 
 logger = get_logger(__name__)
 
 class WorkflowManager:
     """Manages workflow execution and coordination."""
     
-    def __init__(self, executor_type: str = "local"):
+    def __init__(self, executor_type: Optional[str] = None):
         """Initialize workflow manager.
         
         Args:
-            executor_type: Type of executor to use ("local" or "cgat")
+            executor_type: Type of executor to use ("local" or "cgat"). 
+                         If None, uses EXECUTOR_TYPE from settings.
         """
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
-        self.agent_system = AgentSystem(self.llm)
-        self.executor_type = executor_type
+        self.analysis_system = AgenticAnalysisSystem()
+        
+        # Get settings
+        self.settings = Settings()
+        
+        # Use provided executor_type or get from settings
+        self.executor_type = executor_type or self.settings.EXECUTOR_TYPE
+        if self.executor_type not in ["local", "cgat"]:
+            self.logger.warning(f"Invalid executor type '{self.executor_type}'. Defaulting to 'local'")
+            self.executor_type = "local"
+            
         self.cwd = os.getcwd()
         self.logger.info(f"Initial working directory: {self.cwd}")
-        self.logger.info(f"Using {executor_type} executor")
+        self.logger.info(f"Using {self.executor_type} executor")
 
     async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
         """Execute workflow from prompt."""
@@ -58,11 +69,66 @@ class WorkflowManager:
             # Execute workflow using parallel execution
             results = await dag.execute_parallel()
             
-            return results
+            # Analyze results using agentic system
+            analysis = await self.analyze_results(results)
+            
+            # Combine workflow results with analysis
+            return {
+                "workflow_results": results,
+                "analysis": analysis
+            }
             
         except Exception as e:
             self.logger.error(f"Workflow execution failed: {str(e)}")
             raise
+
+    async def analyze_results(self, workflow_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze workflow results using agentic system."""
+        try:
+            self.logger.info("Starting agentic analysis of workflow results...")
+            
+            # Get results directory from workflow results
+            results_dir = Path(workflow_results.get("output_directory", "results"))
+            if not results_dir.exists():
+                return {
+                    "status": "error",
+                    "message": f"Results directory {results_dir} does not exist"
+                }
+            
+            # Run comprehensive analysis
+            analysis = await self.analysis_system.analyze_results(results_dir)
+            
+            # Format the analysis results
+            report = {
+                "status": "success",
+                "report": {
+                    "overall_assessment": analysis.get("overall_assessment", {}),
+                    "issues": analysis.get("issues", []),
+                    "recommendations": analysis.get("recommendations", [])
+                }
+            }
+            
+            # Log analysis completion
+            self.logger.info("Agentic analysis completed successfully")
+            
+            # Log any critical issues
+            critical_issues = [
+                issue for issue in report["report"]["issues"]
+                if issue.get("severity") == "high"
+            ]
+            if critical_issues:
+                self.logger.warning(f"Found {len(critical_issues)} critical issues")
+                for issue in critical_issues:
+                    self.logger.warning(f"Critical issue: {issue['description']}")
+            
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"Agentic analysis failed: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Analysis failed: {str(e)}"
+            }
 
     async def resume_workflow(self, prompt: str, checkpoint_dir: str) -> Dict[str, Any]:
         """Resume workflow execution from checkpoint."""
@@ -107,14 +173,13 @@ class WorkflowManager:
             # Execute remaining steps
             results = await dag.execute_parallel()
             
-            # Merge results with checkpoint
-            checkpoint_results = checkpoint.get("results", [])
-            checkpoint_results.extend(results.get("results", {}).values())
+            # Analyze results using agentic system
+            analysis = await self.analyze_results(results)
             
+            # Combine workflow results with analysis
             return {
-                "status": results["status"],
-                "results": checkpoint_results,
-                "error": results.get("error")
+                "workflow_results": results,
+                "analysis": analysis
             }
             
         except Exception as e:
