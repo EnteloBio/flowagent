@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     
     # Security
-    SECRET_KEY: SecretStr
+    SECRET_KEY: Optional[SecretStr] = None
     API_KEY_HEADER: str = "X-API-Key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 3000
     
