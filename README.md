@@ -48,9 +48,6 @@ mamba install -c bioconda multiqc=1.14
 cp .env.example .env
 
 # Edit .env with your settings
-# Required:
-# - SECRET_KEY: Generate a secure random key (e.g., using: python -c "import secrets; print(secrets.token_hex(32))")
-# - OPENAI_API_KEY: Your OpenAI API key (if using LLM features)
 ```
 
 2. Run a workflow:
@@ -70,53 +67,6 @@ cognomic "analyze workflow results" --analysis-dir=results
 # Generate report without saving to file
 cognomic "analyze workflow results" --analysis-dir=results --no-save-report
 ```
-
-## API Key Configuration
-
-Cognomic requires several API keys for full functionality. You can configure these using environment variables or a `.env` file in the project root directory.
-
-### Required API Keys
-
-1. **Secret Key** (for JWT token generation):
-```bash
-SECRET_KEY=your-secure-secret-key
-```
-
-2. **OpenAI API Key** (for LLM functionality):
-```bash
-OPENAI_API_KEY=your-openai-api-key
-```
-
-### Setting Up OpenAI API Keys
-
-There are two ways to configure your API keys:
-
-1. **Using Environment Variables**:
-```bash
-export SECRET_KEY=your-secure-secret-key
-export OPENAI_API_KEY=your-openai-api-key
-```
-
-2. **Using a .env File**:
-Create a `.env` file in the project root directory:
-```bash
-# .env
-SECRET_KEY=your-secure-secret-key
-OPENAI_API_KEY=your-openai-api-key
-
-# Optional Settings
-OPENAI_BASE_URL=https://api.openai.com/v1  # Default OpenAI API URL
-OPENAI_MODEL=gpt-4                         # Default LLM model
-```
-
-### Security Best Practices
-
-1. Never commit your `.env` file to version control
-2. Use strong, unique keys for each environment (development, staging, production)
-3. Regularly rotate your API keys
-4. Keep your API keys secure and never share them in public repositories
-
-The `.env` file is automatically loaded by the application when it starts. All sensitive information is handled securely using Pydantic's `SecretStr` type to prevent accidental exposure in logs or error messages.
 
 ## OpenAI Model Configuration
 
@@ -161,58 +111,6 @@ You can also set the model temporarily using environment variables:
 ```bash
 # For one-time report generation with gpt-4-turbo-preview
 OPENAI_MODEL=gpt-4-turbo-preview cognomic "analyze workflow results" --analysis-dir=results
-```
-
-## Security Configuration
-
-### Setting up the Secret Key
-
-The `SECRET_KEY` is a crucial security element in Cognomic used for:
-- Generating and validating JSON Web Tokens (JWTs) for API authentication
-- Securing session data
-- Protecting against cross-site request forgery (CSRF) attacks
-
-To generate a secure random key, run:
-```bash
-# Generate a secure random key using Python
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-Add the generated key to your `.env` file:
-```bash
-# Copy the example environment file
-cp env.example /path/to/your/.env
-
-# Edit .env and update the SECRET_KEY
-SECRET_KEY=your-generated-key-here
-```
-
-### Security Best Practices
-
-1. **Secret Key Management**:
-   - Never commit your `.env` file to version control
-   - Use different secret keys for development and production
-   - Regenerate the secret key if it's ever compromised
-   - Keep your secret key at least 32 characters long
-
-2. **Token Configuration**:
-   - `ACCESS_TOKEN_EXPIRE_MINUTES`: Controls how long API tokens remain valid
-   - Default is 30 minutes
-   - Shorter duration (15 mins) = More secure
-   - Longer duration (60 mins) = More convenient
-   - Adjust based on your security requirements
-
-3. **API Key Header**:
-   - `API_KEY_HEADER`: Default is `X-API-Key`
-   - This header is used for API authentication
-   - Keep the default unless you have specific requirements
-
-Example security configuration in `.env`:
-```bash
-# Security Settings
-SECRET_KEY=r39pR2XJXhRLEt8rb4GlkTA5snI971VO5c2vF2FSzL0  # Generated secure key
-API_KEY_HEADER=X-API-Key                                  # Default header
-ACCESS_TOKEN_EXPIRE_MINUTES=30                            # Token lifetime
 ```
 
 ## SLURM Configuration
@@ -438,3 +336,5 @@ python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow p
 2. Specify custom resource requirements:
 ```bash
 python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+
+```
