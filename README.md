@@ -24,20 +24,13 @@ cd cognomic
 conda env create -f conda/environment/environment.yml
 conda activate cognomic
 
-# Verify installation of key components
+pip install .
+
+# Verify installation of key components, e.g.:
 kallisto version
 fastqc --version
 multiqc --version
-
-# Add bioinformatics tools
-mamba install -c bioconda fastqc=0.12.1
-mamba install -c bioconda trim-galore=0.6.10
-mamba install -c bioconda star=2.7.10b
-mamba install -c bioconda subread=2.0.6
-mamba install -c conda-forge r-base=4.2
-mamba install -c bioconda bioconductor-deseq2
-mamba install -c bioconda samtools=1.17
-mamba install -c bioconda multiqc=1.14
+cognomic --help
 ```
 
 ## Quick Start
@@ -48,9 +41,6 @@ mamba install -c bioconda multiqc=1.14
 cp .env.example .env
 
 # Edit .env with your settings
-# Required:
-# - SECRET_KEY: Generate a secure random key (e.g., using: python -c "import secrets; print(secrets.token_hex(32))")
-# - OPENAI_API_KEY: Your OpenAI API key (if using LLM features)
 ```
 
 2. Run a CLI workflow:
@@ -83,153 +73,106 @@ cognomic serve --host 0.0.0.0 --port 8000
 open http://0.0.0.0:8080
 ```
 
-## API Key Configuration
+## OpenAI Model Configuration
 
-Cognomic requires several API keys for full functionality. You can configure these using environment variables or a `.env` file in the project root directory.
+Cognomic uses OpenAI's language models for workflow generation and analysis. Different operations have different model requirements:
 
-### Required API Keys
+1. **Workflow Generation** (`gpt-3.5-turbo` or better)
+   - Basic workflow creation and execution can use `gpt-3.5-turbo`
+   - Set in your `.env` file:
+   ```bash
+   OPENAI_MODEL=gpt-3.5-turbo
+   ```
 
-1. **Secret Key** (for JWT token generation):
+2. **Report Generation** (`gpt-4-turbo-preview` recommended)
+   - For comprehensive analysis and insights, use `gpt-4-turbo-preview`
+   - This model provides better reasoning and analysis capabilities
+   - Set in your `.env` file:
+   ```bash
+   OPENAI_MODEL=gpt-4-turbo-preview
+   ```
+
+Example configurations:
+
+1. For workflow execution:
 ```bash
-SECRET_KEY=your-secure-secret-key
+# Set model in .env
+OPENAI_MODEL=gpt-3.5-turbo
+
+# Run workflow
+cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis."
 ```
 
-2. **OpenAI API Key** (for LLM functionality):
+2. For report generation:
 ```bash
-OPENAI_API_KEY=your-openai-api-key
+# Set model in .env
+OPENAI_MODEL=gpt-4-turbo-preview
+
+# Generate comprehensive analysis
+cognomic "analyze workflow results" --analysis-dir=results
 ```
 
-### Setting Up OpenAI API Keys
-
-There are two ways to configure your API keys:
-
-1. **Using Environment Variables**:
+You can also set the model temporarily using environment variables:
 ```bash
-export SECRET_KEY=your-secure-secret-key
-export OPENAI_API_KEY=your-openai-api-key
+# For one-time report generation with gpt-4-turbo-preview
+OPENAI_MODEL=gpt-4-turbo-preview cognomic "analyze workflow results" --analysis-dir=results
 ```
 
-2. **Using a .env File**:
-Create a `.env` file in the project root directory:
-```bash
-# .env
-SECRET_KEY=your-secure-secret-key
-OPENAI_API_KEY=your-openai-api-key
+## HPC Configuration
 
-# Optional Settings
-OPENAI_BASE_URL=https://api.openai.com/v1  # Default OpenAI API URL
-OPENAI_MODEL=gpt-4                         # Default LLM model
-```
+Cognomic supports High-Performance Computing (HPC) execution, with built-in support for SLURM, SGE, and TORQUE systems. The HPC settings can be configured through environment variables or in your `.env` file.
 
-### Security Best Practices
-
-1. Never commit your `.env` file to version control
-2. Use strong, unique keys for each environment (development, staging, production)
-3. Regularly rotate your API keys
-4. Keep your API keys secure and never share them in public repositories
-
-The `.env` file is automatically loaded by the application when it starts. All sensitive information is handled securely using Pydantic's `SecretStr` type to prevent accidental exposure in logs or error messages.
-
-## Security Configuration
-
-### Setting up the Secret Key
-
-The `SECRET_KEY` is a crucial security element in Cognomic used for:
-- Generating and validating JSON Web Tokens (JWTs) for API authentication
-- Securing session data
-- Protecting against cross-site request forgery (CSRF) attacks
-
-To generate a secure random key, run:
-```bash
-# Generate a secure random key using Python
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-Add the generated key to your `.env` file:
-```bash
-# Copy the example environment file
-cp env.example /path/to/your/.env
-
-# Edit .env and update the SECRET_KEY
-SECRET_KEY=your-generated-key-here
-```
-
-### Security Best Practices
-
-1. **Secret Key Management**:
-   - Never commit your `.env` file to version control
-   - Use different secret keys for development and production
-   - Regenerate the secret key if it's ever compromised
-   - Keep your secret key at least 32 characters long
-
-2. **Token Configuration**:
-   - `ACCESS_TOKEN_EXPIRE_MINUTES`: Controls how long API tokens remain valid
-   - Default is 30 minutes
-   - Shorter duration (15 mins) = More secure
-   - Longer duration (60 mins) = More convenient
-   - Adjust based on your security requirements
-
-3. **API Key Header**:
-   - `API_KEY_HEADER`: Default is `X-API-Key`
-   - This header is used for API authentication
-   - Keep the default unless you have specific requirements
-
-Example security configuration in `.env`:
-```bash
-# Security Settings
-SECRET_KEY=r39pR2XJXhRLEt8rb4GlkTA5snI971VO5c2vF2FSzL0  # Generated secure key
-API_KEY_HEADER=X-API-Key                                  # Default header
-ACCESS_TOKEN_EXPIRE_MINUTES=30                            # Token lifetime
-```
-
-## SLURM Configuration
-
-Cognomic supports SLURM cluster execution. To configure SLURM, create a `.cgat.yml` file in the project root directory:
-
-```yaml
-cluster:
-  queue_manager: slurm
-  queue: your_queue
-  parallel_environment: smp
-
-slurm:
-  account: your_account
-  partition: your_partition
-  mail_user: your.email@example.com
-
-tools:
-  kallisto_index:
-    memory: 16G
-    threads: 8
-    queue: short
-```
-
-### SLURM Integration
-
-Cognomic uses CGATCore for SLURM integration, which provides:
-
-1. **Job Management**
-   - Automatic job submission and dependency tracking
-   - Resource allocation (memory, CPUs, time limits)
-   - Queue selection and prioritization
-
-2. **Resource Configuration**
-   - Tool-specific resource requirements in `.cgat.yml`
-   - Queue-specific limits and settings
-   - Default resource allocations
-
-3. **Error Handling**
-   - Automatic job resubmission on failure
-   - Detailed error logging
-   - Email notifications for job completion/failure
-
-### SLURM Usage
-
-To execute a workflow on a SLURM cluster, use the `--executor cgat` option:
+### Basic HPC Settings
 
 ```bash
-python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --workflow rnaseq --input data/ --executor cgat
+# HPC Configuration
+EXECUTOR_TYPE=hpc           # Use HPC executor instead of local
+HPC_SYSTEM=slurm           # Options: slurm, sge, torque
+HPC_QUEUE=all.q            # Your HPC queue name
+HPC_DEFAULT_MEMORY=4G      # Default memory allocation
+HPC_DEFAULT_CPUS=1         # Default CPU cores
+HPC_DEFAULT_TIME=60        # Default time limit in minutes
 ```
+
+### Resource Management
+
+Cognomic automatically manages HPC resources with sensible defaults that can be overridden:
+
+1. **Memory Management**
+   - Default: 4GB per job
+   - Override with `HPC_DEFAULT_MEMORY`
+   - Supports standard memory units (G, M, K)
+
+2. **CPU Allocation**
+   - Default: 1 CPU per job
+   - Override with `HPC_DEFAULT_CPUS`
+   - Automatically scales based on task requirements
+
+3. **Queue Selection**
+   - Default queue: "all.q"
+   - Override with `HPC_QUEUE`
+   - Queue-specific resource limits are respected
+
+### Using HPC Execution
+
+To run a workflow on your HPC system:
+
+1. Basic execution:
+```bash
+cognomic "Your workflow description" --executor hpc
+```
+
+2. Specify custom resource requirements:
+```bash
+cognomic "Your workflow description" --executor hpc --memory 32G --threads 16
+```
+
+The system will automatically:
+- Submit jobs to the appropriate queue
+- Handle job dependencies
+- Manage resource allocation
+- Monitor job status
+- Provide detailed logging
 
 ## Analysis Reports
 
@@ -405,20 +348,19 @@ conda env create -f conda/environment/environment.yml -n cognomic-dev
 
 ```bash
 # Local execution
-python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 
 # SLURM cluster execution
-python -m cognomic.cli --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+cognomic --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 ```
 
 ### Advanced Usage
 
 1. Resume a failed workflow:
 ```bash
-python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow prompt"
+cognomic --resume --checkpoint-dir workflow_state "Your workflow prompt"
 ```
 
 2. Specify custom resource requirements:
 ```bash
 python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
-```

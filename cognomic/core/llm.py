@@ -15,10 +15,10 @@ from ..config.settings import Settings
 from ..utils import file_utils
 from ..utils.logging import get_logger
 
-logger = get_logger(__name__)
-
+# Initialize settings
 settings = Settings()
 
+logger = get_logger(__name__)
 
 class LLMInterface:
     """Interface for LLM-based workflow generation."""
@@ -314,7 +314,7 @@ class LLMInterface:
         """Call OpenAI API with retry logic."""
         try:
             params = {
-                "model": "gpt-4-turbo-preview",
+                "model": settings.OPENAI_MODEL,  # Use model from settings
                 "messages": messages,
                 "temperature": 0,
                 **kwargs,
@@ -340,7 +340,7 @@ class LLMInterface:
 
         # Remove any "json" language identifier
         if response.lower().startswith("json"):
-            response = response[4:].trip()
+            response = response[4:].strip()
 
         return response.strip()
 

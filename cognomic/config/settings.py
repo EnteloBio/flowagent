@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     
     # Security
-    SECRET_KEY: SecretStr
+    SECRET_KEY: Optional[SecretStr] = None
     API_KEY_HEADER: str = "X-API-Key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 3000
     
@@ -50,6 +50,14 @@ class Settings(BaseSettings):
         "threads": 4,
         "memory": "16G"
     }
+    
+    # Executor settings
+    EXECUTOR_TYPE: str = Field("local", env='EXECUTOR_TYPE')  # Options: local, hpc
+    HPC_SYSTEM: str = Field("slurm", env='HPC_SYSTEM')  # Options: slurm, sge, torque
+    HPC_QUEUE: str = Field("all.q", env='HPC_QUEUE')
+    HPC_DEFAULT_MEMORY: str = Field("4G", env='HPC_DEFAULT_MEMORY')
+    HPC_DEFAULT_CPUS: int = Field(1, env='HPC_DEFAULT_CPUS')
+    HPC_DEFAULT_TIME: int = Field(60, env='HPC_DEFAULT_TIME')
     
     # Tool Settings
     REQUIRED_TOOLS: List[str] = [
