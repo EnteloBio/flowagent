@@ -26,20 +26,11 @@ conda activate cognomic
 
 pip install .
 
-# Verify installation of key components
+# Verify installation of key components, e.g.:
 kallisto version
 fastqc --version
 multiqc --version
-
-# Add bioinformatics tools
-mamba install -c bioconda fastqc=0.12.1
-mamba install -c bioconda trim-galore=0.6.10
-mamba install -c bioconda star=2.7.10b
-mamba install -c bioconda subread=2.0.6
-mamba install -c conda-forge r-base=4.2
-mamba install -c bioconda bioconductor-deseq2
-mamba install -c bioconda samtools=1.17
-mamba install -c bioconda multiqc=1.14
+cognomic --help
 ```
 
 ## Quick Start
@@ -245,22 +236,6 @@ Cognomic 1.0 implements a modern, distributed architecture:
 - **Security Layer**: Comprehensive security features and access control
 - **API Layer**: RESTful and GraphQL APIs for integration
 - **Monitoring System**: Real-time metrics and alerting
-
-## Development
-
-```bash
-# Run tests
-cognomic test
-
-# Run type checking
-cognomic type-check
-
-# Run linting
-cognomic lint
-
-# Format code
-cognomic format
-```
 
 ## Contributing
 
