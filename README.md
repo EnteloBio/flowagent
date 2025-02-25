@@ -24,6 +24,8 @@ cd cognomic
 conda env create -f conda/environment/environment.yml
 conda activate cognomic
 
+pip install .
+
 # Verify installation of key components
 kallisto version
 fastqc --version
