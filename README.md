@@ -113,54 +113,61 @@ You can also set the model temporarily using environment variables:
 OPENAI_MODEL=gpt-4-turbo-preview cognomic "analyze workflow results" --analysis-dir=results
 ```
 
-## SLURM Configuration
+## HPC Configuration
 
-Cognomic supports SLURM cluster execution. To configure SLURM, create a `.cgat.yml` file in the project root directory:
+Cognomic supports High-Performance Computing (HPC) execution, with built-in support for SLURM, SGE, and TORQUE systems. The HPC settings can be configured through environment variables or in your `.env` file.
 
-```yaml
-cluster:
-  queue_manager: slurm
-  queue: your_queue
-  parallel_environment: smp
-
-slurm:
-  account: your_account
-  partition: your_partition
-  mail_user: your.email@example.com
-
-tools:
-  kallisto_index:
-    memory: 16G
-    threads: 8
-    queue: short
-```
-
-### SLURM Integration
-
-Cognomic uses CGATCore for SLURM integration, which provides:
-
-1. **Job Management**
-   - Automatic job submission and dependency tracking
-   - Resource allocation (memory, CPUs, time limits)
-   - Queue selection and prioritization
-
-2. **Resource Configuration**
-   - Tool-specific resource requirements in `.cgat.yml`
-   - Queue-specific limits and settings
-   - Default resource allocations
-
-3. **Error Handling**
-   - Automatic job resubmission on failure
-   - Detailed error logging
-   - Email notifications for job completion/failure
-
-### SLURM Usage
-
-To execute a workflow on a SLURM cluster, use the `--executor cgat` option:
+### Basic HPC Settings
 
 ```bash
-python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --workflow rnaseq --input data/ --executor cgat
+# HPC Configuration
+EXECUTOR_TYPE=hpc           # Use HPC executor instead of local
+HPC_SYSTEM=slurm           # Options: slurm, sge, torque
+HPC_QUEUE=all.q            # Your HPC queue name
+HPC_DEFAULT_MEMORY=4G      # Default memory allocation
+HPC_DEFAULT_CPUS=1         # Default CPU cores
+HPC_DEFAULT_TIME=60        # Default time limit in minutes
 ```
+
+### Resource Management
+
+Cognomic automatically manages HPC resources with sensible defaults that can be overridden:
+
+1. **Memory Management**
+   - Default: 4GB per job
+   - Override with `HPC_DEFAULT_MEMORY`
+   - Supports standard memory units (G, M, K)
+
+2. **CPU Allocation**
+   - Default: 1 CPU per job
+   - Override with `HPC_DEFAULT_CPUS`
+   - Automatically scales based on task requirements
+
+3. **Queue Selection**
+   - Default queue: "all.q"
+   - Override with `HPC_QUEUE`
+   - Queue-specific resource limits are respected
+
+### Using HPC Execution
+
+To run a workflow on your HPC system:
+
+1. Basic execution:
+```bash
+cognomic "Your workflow description" --executor hpc
+```
+
+2. Specify custom resource requirements:
+```bash
+cognomic "Your workflow description" --executor hpc --memory 32G --threads 16
+```
+
+The system will automatically:
+- Submit jobs to the appropriate queue
+- Handle job dependencies
+- Manage resource allocation
+- Monitor job status
+- Provide detailed logging
 
 ## Analysis Reports
 
@@ -241,17 +248,16 @@ Cognomic 1.0 implements a modern, distributed architecture:
 
 ```bash
 # Run tests
-python -m pytest
+cognomic test
 
 # Run type checking
-python -m mypy .
+cognomic type-check
 
 # Run linting
-python -m ruff check .
+cognomic lint
 
 # Format code
-python -m black .
-python -m isort .
+cognomic format
 ```
 
 ## Contributing
@@ -320,21 +326,19 @@ conda env create -f conda/environment/environment.yml -n cognomic-dev
 
 ```bash
 # Local execution
-python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 
 # SLURM cluster execution
-python -m cognomic.cli --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+cognomic --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 ```
 
 ### Advanced Usage
 
 1. Resume a failed workflow:
 ```bash
-python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow prompt"
+cognomic --resume --checkpoint-dir workflow_state "Your workflow prompt"
 ```
 
 2. Specify custom resource requirements:
 ```bash
-python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
-
-```
+cognomic --executor cgat --memory 32G --threads 16 "Your workflow prompt"
