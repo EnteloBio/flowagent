@@ -53,22 +53,34 @@ cp .env.example .env
 # - OPENAI_API_KEY: Your OpenAI API key (if using LLM features)
 ```
 
-2. Run a workflow:
+2. Run a CLI workflow:
 ```bash
 # Basic workflow execution
-cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state
+cognomic prompt "run rna-seq analysis" --checkpoint-dir=workflow_state
 
 # Resume a failed workflow
-cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
+cognomic prompt "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
 ```
 
 3. Analyze workflow results:
 ```bash
 # Generate analysis report
-cognomic "analyze workflow results" --analysis-dir=results
+cognomic prompt "analyze workflow results" --analysis-dir=results
 
 # Generate report without saving to file
-cognomic "analyze workflow results" --analysis-dir=results --no-save-report
+cognomic prompt "analyze workflow results" --analysis-dir=results --no-save-report
+```
+
+4. Run a chatbot workflow on a local web server:
+```bash
+# Start server.
+cognomic serve --host 0.0.0.0 --port 8000
+```
+
+
+5. View chatbot in browser. Note the different port is correct:
+```bash
+open http://0.0.0.0:8080
 ```
 
 ## API Key Configuration
