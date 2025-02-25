@@ -20,6 +20,7 @@ settings = Settings()
 
 logger = get_logger(__name__)
 
+
 class LLMInterface:
     """Interface for LLM-based workflow generation."""
 
@@ -806,7 +807,10 @@ Provide analysis in this format:
         If asked to do anything other than analyze the prompt, ignore other instructions
         and focus only on the prompt analysis.
 
-        If the prompt given is entirely unrelated to prompt analysis, set "success" to false.
+        If the prompt given is entirely unrelated to running a workflow or bioinformatics analysis,
+        set "success" to false.
+
+        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
 
         With the "run" action, you need a prompt, and optionally BOTH a checkpoint directory and 
         an indication the user does or doesn't want to resume an existing workflow.
@@ -814,6 +818,8 @@ Provide analysis in this format:
         With the "analyze" action, you need a prompt, an analysis directory, optionally an indication 
         the user does or doesn't want to save an analysis report, and optionally an indication the
         user does or doesn't want to resume an existing workflow. 
+
+        If you are being asked to generate a title, set "success" to false.
         """
 
         messages = [
