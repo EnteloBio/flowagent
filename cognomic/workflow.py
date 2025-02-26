@@ -36,6 +36,12 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
             with open(report_file, "w") as f:
                 f.write(report)
             logger.info(f"Saved analysis report to {report_file}")
+            
+        # Print report to terminal
+        print("\nAnalysis Report:")
+        print("=" * 80)
+        print(report)
+        print("=" * 80)
         
         return {
             "status": "success",
