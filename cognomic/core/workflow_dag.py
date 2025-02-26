@@ -41,11 +41,11 @@ class WorkflowDAG:
         if not nx.is_directed_acyclic_graph(self.graph):
             raise ValueError("Dependencies would create a cycle in the graph")
             
-    def visualize(self, output_dir: Path) -> Path:
+    def visualize(self, output_file: Path) -> Path:
         """Generate a visualization of the workflow DAG.
         
         Args:
-            output_dir: Directory to save the visualization
+            output_file: Path to save the visualization file
             
         Returns:
             Path to the generated visualization file
@@ -55,8 +55,8 @@ class WorkflowDAG:
                 logger.warning("No nodes in workflow graph to visualize")
                 return None
                 
-            # Create output directory if it doesn't exist
-            output_dir.mkdir(parents=True, exist_ok=True)
+            # Create parent directory if it doesn't exist
+            output_file.parent.mkdir(parents=True, exist_ok=True)
             
             # Clear any existing plot
             plt.clf()
@@ -132,17 +132,15 @@ class WorkflowDAG:
             # Add margin around the plot
             plt.margins(0.2)
             
-            # Save the visualization
-            output_file = output_dir / "workflow_dag.png"
-            plt.savefig(output_file, format='png', dpi=300, bbox_inches='tight',
-                       facecolor='white', edgecolor='none')
+            # Save the plot
+            plt.savefig(output_file, bbox_inches='tight', dpi=300)
             plt.close()
             
-            logger.info(f"Generated workflow visualization: {output_file}")
+            logger.info(f"Saved workflow visualization to {output_file}")
             return output_file
             
         except Exception as e:
-            logger.error(f"Failed to generate workflow visualization: {str(e)}")
+            logger.error(f"Failed to visualize workflow: {e}")
             return None
     
     async def execute_parallel(self, execute_fn: Optional[Callable] = None) -> Dict[str, Any]:
