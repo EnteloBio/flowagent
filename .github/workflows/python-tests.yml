@@ -25,15 +25,16 @@ jobs:
         channel-priority: strict
         activate-environment: cognomic
         mamba-version: "*"
+        environment-file: conda/environment/environment.yml
         
-    - name: Install dependencies
+    - name: Install package
       shell: bash -l {0}
       run: |
-        conda install mamba -n base -c conda-forge
-        mamba install pytest pytest-asyncio
         pip install -e .
         
     - name: Run tests
       shell: bash -l {0}
       run: |
         pytest tests/ -v
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
