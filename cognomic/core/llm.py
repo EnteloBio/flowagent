@@ -205,26 +205,68 @@ class LLMInterface:
         },
         "task_resources": {
             # Quality Control
-            "fastqc": "minimal",
-            "multiqc": "minimal",
+            "fastqc": {
+                "profile": "minimal",
+                "reason": "FastQC is a lightweight QC tool",
+            },
+            "multiqc": {
+                "profile": "minimal",
+                "reason": "MultiQC aggregates reports with minimal resources",
+            },
             # RNA-seq Tasks
-            "kallisto_index": "high_memory",  # Genome indexing needs more memory
-            "kallisto_quant": "multi_thread",  # Quantification can be parallelized
-            "hisat2_index": "high_memory",  # Genome indexing
-            "hisat2_align": "multi_thread",  # Alignment benefits from parallelization
-            "featureCounts": "high_memory",  # Counting needs good memory
+            "kallisto_index": {
+                "profile": "high_memory",
+                "reason": "Indexing requires significant memory",
+            },
+            "kallisto_quant": {
+                "profile": "multi_thread",
+                "reason": "Quantification benefits from parallelization",
+            },
+            "hisat2_index": {
+                "profile": "high_memory",
+                "reason": "Genome indexing",
+            },
+            "hisat2_align": {
+                "profile": "multi_thread",
+                "reason": "Alignment benefits from parallelization",
+            },
+            "featureCounts": {
+                "profile": "high_memory",
+                "reason": "Counting needs good memory",
+            },
             # ChIP-seq Tasks
-            "bowtie2_index": "high_memory",
-            "bowtie2_align": "multi_thread",
-            "macs2_callpeak": "high_memory",  # Peak calling can be memory intensive
+            "bowtie2_index": {
+                "profile": "high_memory",
+            },
+            "bowtie2_align": {
+                "profile": "multi_thread",
+            },
+            "macs2_callpeak": {
+                "profile": "high_memory",
+                "reason": "Peak calling can be memory intensive",
+            },
             # BAM Processing
-            "samtools_sort": "high_memory_parallel",  # Sorting large BAMs needs memory and CPU
-            "samtools_index": "default",
-            "samtools_view": "multi_thread",
+            "samtools_sort": {
+                "profile": "high_memory_parallel",
+                "reason": "Sorting large BAMs needs memory and CPU",
+            },
+            "samtools_index": {
+                "profile": "default",
+            },
+            "samtools_view": {
+                "profile": "multi_thread",
+            },
             # Single-cell Tasks
-            "cellranger_count": "high_memory_parallel",  # Cell Ranger needs lots of resources
-            "alevin_fry": "high_memory_parallel",
-            "kb_count": "multi_thread",
+            "cellranger_count": {
+                "profile": "high_memory_parallel",
+                "reason": "Cell Ranger needs lots of resources",
+            },
+            "alevin_fry": {
+                "profile": "high_memory_parallel",
+            },
+            "kb_count": {
+                "profile": "multi_thread",
+            },
         },
         "scaling_factors": {
             # File size based scaling
@@ -669,16 +711,17 @@ Provide analysis in this format:
 
     async def _update_rule_resources(self, rule: Dict[str, Any]) -> Dict[str, Any]:
         """Update rule with appropriate resource requirements."""
-        task_name = rule["name"].lower().replace("-", "_")
+        task_name = rule.get("name", "").split("_")[0].lower()
 
         # Get task description from rule if available
         task_description = rule.get("description", "")
 
         # Estimate input size if there are input files
         input_size = 0
-        if "inputs" in rule:
-            for input_pattern in rule["inputs"]:
-                input_size += self._estimate_input_size(input_pattern)
+        if "parameters" in rule:
+            for param in rule["parameters"].values():
+                if isinstance(param, str) and os.path.isfile(param):
+                    input_size += self._estimate_input_size(param)
 
         # Get resource requirements with task description
         resources = await self._get_task_resources(
@@ -687,6 +730,63 @@ Provide analysis in this format:
         rule["resources"] = resources
 
         return rule
+
+    async def _get_task_resources(
+        self, task_name: str, input_size_gb: float = 0, task_description: str = ""
+    ) -> Dict[str, Any]:
+        """Get resource requirements for a task, scaling based on input size and characteristics."""
+        # Get base resource profile
+        resource_info = self.WORKFLOW_CONFIG["task_resources"].get(task_name)
+
+        # If task not in predefined config, get suggestion from LLM
+        if resource_info is None:
+            suggestion = await self._suggest_tool_resources(task_name, task_description)
+            resource_info = {
+                "profile": suggestion["profile_name"],
+                "reason": suggestion["reasoning"],
+            }
+
+            # Log the suggestion for future reference
+            self.logger.info(
+                f"Resource suggestion for {task_name}: {suggestion['profile_name']} - {suggestion['reasoning']}"
+            )
+
+            # Cache the suggestion for future use
+            self.WORKFLOW_CONFIG["task_resources"][task_name] = resource_info
+
+        # Get tool-specific characteristics
+        tool_weights = self._get_tool_characteristics(task_name)
+
+        # Get size-based scaling
+        size_multipliers = self._get_size_multipliers(input_size_gb)
+
+        # Apply both tool-specific and size-based scaling
+        final_memory_multiplier = (
+            tool_weights["memory_weight"] * size_multipliers["memory_multiplier"]
+        )
+        final_time_multiplier = (
+            tool_weights["time_weight"] * size_multipliers["time_multiplier"]
+        )
+
+        # Get base resources
+        base_resources = self.WORKFLOW_CONFIG["resources"][
+            resource_info["profile"]
+        ].copy()
+
+        # Apply scaling to resources
+        base_resources["memory_mb"] = int(
+            base_resources["memory_mb"] * final_memory_multiplier
+        )
+        base_resources["time_min"] = int(
+            base_resources["time_min"] * final_time_multiplier
+        )
+
+        # Log scaling decisions
+        self.logger.debug(
+            f"Resource scaling for {task_name}: memory_multiplier={final_memory_multiplier:.2f}, time_multiplier={final_time_multiplier:.2f}"
+        )
+
+        return base_resources
 
     def _get_tool_characteristics(self, task_name: str) -> Dict[str, float]:
         """Determine tool characteristics based on task name patterns."""
@@ -717,57 +817,6 @@ Provide analysis in this format:
         # If smaller than smallest tier
         return {"memory_multiplier": 1.0, "time_multiplier": 1.0}
 
-    async def _get_task_resources(
-        self, task_name: str, input_size_gb: float = 0, task_description: str = ""
-    ) -> Dict[str, Any]:
-        """Get resource requirements for a task, scaling based on input size and characteristics."""
-        # Get base resource profile
-        profile_name = self.WORKFLOW_CONFIG["task_resources"].get(task_name)
-
-        # If task not in predefined config, get suggestion from LLM
-        if profile_name is None:
-            suggestion = await self._suggest_tool_resources(task_name, task_description)
-            profile_name = suggestion["profile_name"]
-
-            # Log the suggestion for future reference
-            self.logger.info(
-                f"Resource suggestion for {task_name}: {suggestion['profile_name']} - {suggestion['reasoning']}"
-            )
-
-            # Cache the suggestion for future use
-            self.WORKFLOW_CONFIG["task_resources"][task_name] = profile_name
-
-        base_resources = self.WORKFLOW_CONFIG["resources"][profile_name].copy()
-
-        # Get tool-specific characteristics
-        tool_weights = self._get_tool_characteristics(task_name)
-
-        # Get size-based scaling
-        size_multipliers = self._get_size_multipliers(input_size_gb)
-
-        # Apply both tool-specific and size-based scaling
-        final_memory_multiplier = (
-            tool_weights["memory_weight"] * size_multipliers["memory_multiplier"]
-        )
-        final_time_multiplier = (
-            tool_weights["time_weight"] * size_multipliers["time_multiplier"]
-        )
-
-        # Apply scaling to resources
-        base_resources["memory_mb"] = int(
-            base_resources["memory_mb"] * final_memory_multiplier
-        )
-        base_resources["time_min"] = int(
-            base_resources["time_min"] * final_time_multiplier
-        )
-
-        # Log scaling decisions
-        self.logger.debug(
-            f"Resource scaling for {task_name}: memory_multiplier={final_memory_multiplier:.2f}, time_multiplier={final_time_multiplier:.2f}"
-        )
-
-        return base_resources
-
     def _estimate_input_size(self, input_pattern: str) -> float:
         """Estimate input size in GB for resource scaling."""
         total_size = 0
@@ -780,7 +829,15 @@ Provide analysis in this format:
         """Analyze the prompt to determine the action and extract options."""
         # Construct the prompt for the LLM
         analysis_prompt = f"""
-        Analyze the following prompt and determine the action (run or analyze).
+        Analyze the following prompt to determine if it's requesting to run a workflow or generate a report/analysis.
+        The prompt should be considered a report/analysis request if it contains any of these patterns:
+        - Explicit analysis words: "analyze", "analyse", "analysis"
+        - Report generation: "generate report", "create report", "make report", "get report"
+        - Status requests: "show status", "check status", "what's the status", "how did it go"
+        - Result queries: "show results", "what are the results", "output results"
+        - Quality checks: "check quality", "quality report", "how good is"
+        - General inquiries: "tell me about", "describe the results", "what happened"
+        
         Extract the following options if provided:
         - analysis_dir
         - checkpoint_dir

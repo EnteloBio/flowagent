@@ -7,7 +7,7 @@ setup(
     include_package_data=True,
     entry_points={
         "console_scripts": [
-            "cognomic=cognomic.cli:cli",
+            "cognomic=cognomic.cli:run",
         ],
     },
 )

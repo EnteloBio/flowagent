@@ -70,6 +70,12 @@ class WorkflowRequest(BaseModel):
         return v
 
 
+class AnalysisRequest(BaseModel):
+    """Model for analysis request parameters."""
+
+    analysis_dir: str
+
+
 class OpenAIChatMessage(BaseModel):
     """Model for individual chat messages in OpenAI chat request."""
 
@@ -292,6 +298,59 @@ async def run_workflow_endpoint(request: WorkflowRequest):
     except Exception as e:
         logger.error(f"Operation failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Operation failed: {str(e)}")
+
+
+@app.post("/analyze")
+async def analyze_workflow_endpoint(request: AnalysisRequest):
+    """
+    Endpoint to analyze workflow results.
+    """
+    try:
+        # Initialize logging
+        log_handler = StringIOHandler()
+        logger.addHandler(log_handler)
+        logger.setLevel(logging.INFO)
+        
+        try:
+            # Run analysis
+            logger.info(f"Starting analysis on directory: {request.analysis_dir}")
+            results = await analyze_workflow(
+                analysis_dir=request.analysis_dir,
+                save_report=True
+            )
+            
+            # Get logs
+            log_contents = log_handler.get_log_contents()
+            
+            # Format response
+            if results["status"] == "success":
+                logger.info("Analysis completed successfully")
+                return {
+                    "status": "success",
+                    "message": "Analysis completed successfully",
+                    "report": results["report"],
+                    "log_contents": log_contents,
+                    "report_file": results.get("report_file")
+                }
+            else:
+                logger.warning("Analysis failed")
+                return {
+                    "status": "error",
+                    "message": f"Analysis failed: {results.get('error', 'Unknown error')}",
+                    "log_contents": log_contents
+                }
+                
+        finally:
+            # Clean up logging
+            logger.removeHandler(log_handler)
+            
+    except Exception as e:
+        logger.error(f"Analysis failed: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analysis failed: {str(e)}"
+        )
 
 
 @app.get("/models")

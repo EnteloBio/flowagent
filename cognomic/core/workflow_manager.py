@@ -186,6 +186,37 @@ class WorkflowManager:
             self.logger.error(f"Failed to resume workflow: {str(e)}")
             raise
 
+    async def _prepare_step(self, step: Dict[str, Any], workflow_plan: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare a workflow step for execution."""
+        try:
+            # Extract basic step info
+            step_name = step.get("name", "unknown")
+            command = step.get("command", "")
+            dependencies = step.get("dependencies", [])
+            
+            # Get resource requirements
+            resources = step.get("resources", {})
+            profile = resources.get("profile", "default")
+            
+            # Create the step dictionary
+            prepared_step = {
+                "name": step_name,
+                "command": command,
+                "status": "pending",
+                "dependencies": dependencies,
+                "profile": profile,
+                "output": "",
+                "error": None,
+                "start_time": None,
+                "end_time": None
+            }
+            
+            return prepared_step
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing step {step.get('name', 'unknown')}: {str(e)}")
+            raise
+
     def _build_dag(self, workflow_steps: List[WorkflowStep]) -> nx.DiGraph:
         """Build DAG from workflow steps."""
         dag = nx.DiGraph()
