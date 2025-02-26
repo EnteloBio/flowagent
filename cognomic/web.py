@@ -241,17 +241,19 @@ async def on_chat_start():
     🕒 Current time: {c_time}
     📁 Current working directory: {c_wd}
 
-    Available commands:
-    - 💨 /Run: Run a workflow. Tell the chatbot:
+    Example tasks:
+    - 💨 /Run: run a workflow. Tell the chatbot:
+        - That you want to run a workflow,
         - What you workflow you want it to do,
-        - A checkpoint folder if you want to be able to resume a 
-          workflow later,
-        - If you want to resume an existing workflow under 
+        - Optionally, a checkpoint folder if you want to be able to
+          resume a workflow later,
+        - Optionally, if you want to resume an existing workflow under 
           the specified checkpoint folder.
-    - 🔎 /Analyse: Analyse workflow results. Tell the chatbot:
+    - 🔎 /Analyse: analyse workflow results. Tell the chatbot:
+        - That you want to analyse a workflow,
         - The folder where the workflow results to analyse 
           are stored,
-        - If you want to save a report of the analysis.
+        - Optionally, if you want to save a report of the analysis.
     """
 
     await cl.Message(
@@ -266,6 +268,7 @@ async def on_message(message: cl.Message):
     """
     Handle incoming messages and execute the appropriate command.
     """
+
     with RootLogger() as root_logger:
         try:
             match message.command:
