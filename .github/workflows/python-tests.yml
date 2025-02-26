@@ -30,6 +30,7 @@ jobs:
       run: |
         mamba env create -f conda/environment/environment.yml
         conda activate cognomic
+        pip install pytest
         
     - name: Install package
       shell: bash -l {0}
