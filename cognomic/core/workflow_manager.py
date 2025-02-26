@@ -11,6 +11,7 @@ from cognomic.config.settings import Settings
 
 from ..utils.logging import get_logger
 from ..utils import file_utils
+from ..utils.dependency_manager import DependencyManager
 from .llm import LLMInterface
 from .agent_types import WorkflowStep
 from .workflow_dag import WorkflowDAG
@@ -30,6 +31,7 @@ class WorkflowManager:
         """
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
+        self.dependency_manager = DependencyManager()
         self.analysis_system = AgenticAnalysisSystem()
         
         # Get settings
@@ -50,6 +52,11 @@ class WorkflowManager:
         try:
             self.logger.info("Planning workflow steps...")
             workflow_plan = await self.llm.generate_workflow_plan(prompt)
+            
+            # Check and install required dependencies using LLM analysis
+            self.logger.info("Analyzing and installing required dependencies...")
+            if not await self.dependency_manager.ensure_workflow_dependencies(workflow_plan):
+                raise ValueError("Failed to ensure all required workflow dependencies")
             
             # Create output directories
             for step in workflow_plan["steps"]:
