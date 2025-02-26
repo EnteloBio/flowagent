@@ -1,17 +1,97 @@
 import asyncio
 import logging
 import os
+import json
 from pathlib import Path
 from typing import Dict, Any
 from .core.workflow_manager import WorkflowManager
 from .core.llm import LLMInterface
 from .analysis.report_generator import ReportGenerator
+from .agents.agentic.analysis_system import AgenticAnalysisSystem
 
 logger = logging.getLogger(__name__)
 
+def format_agentic_results(results: Dict[str, Any]) -> str:
+    """Format agentic analysis results in a human-readable format."""
+    output = []
+    
+    # Header
+    output.append(f"Agentic Analysis Report")
+    output.append(f"Generated: {results['timestamp']}")
+    output.append(f"Analyzing: {results['directory']}")
+    output.append("")
+    
+    # Workflow Info
+    output.append("1. Workflow Information")
+    output.append(f"Type: {results['workflow_info']['type']}")
+    output.append(f"Tools: {', '.join(results['workflow_info']['tools_used'])}")
+    output.append("")
+    
+    # Quality Analysis
+    output.append("2. Quality Control Analysis")
+    qa = results['quality_analysis']
+    output.append(f"FastQC Reports: {'Available' if qa['fastqc_available'] else 'Not Found'}")
+    output.append(f"MultiQC Report: {'Available' if qa['multiqc_available'] else 'Not Found'}")
+    if qa.get('issues'):
+        output.append("\nQuality Issues:")
+        for issue in qa['issues']:
+            output.append(f"- [{issue['severity'].upper()}] {issue['description']}")
+    output.append("")
+    
+    # Quantification Analysis
+    output.append("3. Quantification Analysis")
+    quant = results['quantification_analysis']
+    
+    # Kallisto metrics
+    kallisto = quant['tools']['kallisto']
+    output.append(f"\nKallisto Analysis ({kallisto['samples']} samples):")
+    for sample, data in kallisto['metrics'].items():
+        metrics = data['metrics']
+        output.append(f"\nSample: {sample}")
+        output.append(f"- Total Transcripts: {metrics['total_transcripts']:,}")
+        output.append(f"- Expressed Transcripts: {metrics['expressed_transcripts']:,}")
+        output.append(f"- Median TPM: {metrics['median_tpm']:.2f}")
+        output.append(f"- Mean TPM: {metrics['mean_tpm']:.2f}")
+    
+    if quant.get('issues'):
+        output.append("\nQuantification Issues:")
+        for issue in quant['issues']:
+            output.append(f"- [{issue['severity'].upper()}] {issue['description']}")
+    output.append("")
+    
+    # Technical Analysis
+    output.append("4. Technical Analysis")
+    tech = results['technical_analysis']
+    if tech['tool_versions']:
+        output.append("\nTool Versions:")
+        for tool, version in tech['tool_versions'].items():
+            output.append(f"- {tool}: {version}")
+    output.append(f"\nLog Files Found: {tech['log_files']}")
+    
+    if tech.get('summary'):
+        output.append(f"Resource Efficiency: {tech['summary']['resource_efficiency']}")
+        output.append(f"Errors Found: {tech['summary']['error_count']}")
+    
+    # Combined Recommendations
+    output.append("\n5. Recommendations")
+    all_recs = []
+    if qa.get('recommendations'):
+        all_recs.extend(qa['recommendations'])
+    if quant.get('recommendations'):
+        all_recs.extend(quant['recommendations'])
+    if tech.get('recommendations'):
+        all_recs.extend(tech['recommendations'])
+    if results.get('recommendations'):
+        all_recs.extend(results['recommendations'])
+    
+    for i, rec in enumerate(all_recs, 1):
+        output.append(f"{i}. {rec}")
+    
+    return "\n".join(output)
+
 async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[str, Any]:
     """
-    Analyze workflow results in the specified directory.
+    Analyze workflow results in the specified directory using both standard and agentic analysis.
     
     Args:
         analysis_dir: Directory containing workflow results
@@ -23,30 +103,50 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
     try:
         logger.info(f"Analyzing workflow results in {analysis_dir}")
         
-        # Create report generator
+        # Initialize analysis systems
         report_gen = ReportGenerator()
+        agentic_system = AgenticAnalysisSystem()
         
-        # Generate analysis report
+        # Run agentic analysis
+        logger.info("Running agentic analysis...")
+        agentic_results = await agentic_system.analyze_results(Path(analysis_dir))
+        
+        # Generate analysis report incorporating agentic results
         report = await report_gen.generate_analysis_report(Path(analysis_dir))
         
-        # Save report if requested
-        report_file = None
+        # Save reports if requested
+        report_files = {}
         if save_report:
+            # Save standard report
             report_file = os.path.join(analysis_dir, "analysis_report.md")
             with open(report_file, "w") as f:
                 f.write(report)
-            logger.info(f"Saved analysis report to {report_file}")
+            report_files["standard"] = report_file
             
-        # Print report to terminal
-        print("\nAnalysis Report:")
+            # Save agentic results
+            agentic_file = os.path.join(analysis_dir, "agentic_analysis.md")
+            with open(agentic_file, "w") as f:
+                f.write(format_agentic_results(agentic_results))
+            report_files["agentic"] = agentic_file
+            
+            logger.info(f"Saved analysis reports to {', '.join(report_files.values())}")
+            
+        # Print reports to terminal
+        print("\nStandard Analysis Report:")
         print("=" * 80)
         print(report)
         print("=" * 80)
         
+        print("\nAgentic Analysis Report:")
+        print("=" * 80)
+        print(format_agentic_results(agentic_results))
+        print("=" * 80)
+        
         return {
             "status": "success",
-            "report": report,
-            "report_file": report_file
+            "standard_report": report,
+            "agentic_results": agentic_results,
+            "report_files": report_files
         }
         
     except Exception as e:
