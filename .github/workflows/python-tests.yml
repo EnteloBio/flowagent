@@ -33,7 +33,23 @@ jobs:
     - name: Create environment and install dependencies
       shell: bash -l {0}
       run: |
-        mamba create -n test python=${{ matrix.python-version }} networkx pytest pytest-asyncio openai pydantic python-dotenv -y
+        mamba create -n test python=${{ matrix.python-version }} \
+          networkx \
+          pytest \
+          pytest-asyncio \
+          openai \
+          pydantic \
+          pydantic-settings \
+          python-dotenv \
+          typing-extensions \
+          rich \
+          click \
+          fastapi \
+          uvicorn \
+          mkdocs \
+          mkdocstrings \
+          mkdocstrings-python \
+          mkdocs-material -y
         conda activate test
         python -m pip install -e .
         
