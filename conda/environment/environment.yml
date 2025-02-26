@@ -9,6 +9,7 @@ dependencies:
   - setuptools
   - wheel
   - h5py
+  - networkx
   
   # Bioinformatics tools
   - kallisto
