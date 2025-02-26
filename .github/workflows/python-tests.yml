@@ -35,6 +35,7 @@ jobs:
       run: |
         mamba create -n test python=${{ matrix.python-version }} \
           networkx \
+          matplotlib \
           pytest \
           pytest-asyncio \
           openai \
@@ -49,7 +50,20 @@ jobs:
           mkdocs \
           mkdocstrings \
           mkdocstrings-python \
-          mkdocs-material -y
+          mkdocs-material \
+          kallisto \
+          fastqc \
+          multiqc \
+          samtools \
+          trim-galore \
+          trimmomatic \
+          subread \
+          hisat2 \
+          pandas \
+          numpy \
+          scipy \
+          drmaa \
+          cgatcore -y 
         conda activate test
         python -m pip install -e .
         
