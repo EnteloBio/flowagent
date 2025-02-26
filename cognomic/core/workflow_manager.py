@@ -58,12 +58,47 @@ class WorkflowManager:
             if not await self.dependency_manager.ensure_workflow_dependencies(workflow_plan):
                 raise ValueError("Failed to ensure all required workflow dependencies")
             
-            # Create output directories
-            for step in workflow_plan["steps"]:
-                output_dir = step["parameters"].get("output_dir")
-                if output_dir:
-                    file_utils.ensure_directory(output_dir)
-                    self.logger.info(f"Created output directory: {output_dir}")
+            # Get output directory from workflow steps
+            output_dir = None
+            steps = workflow_plan.get("steps", [])
+            
+            # Look for create_directories step first
+            for step in steps:
+                if step.get("name", "").lower() == "create_directories":
+                    cmd = step.get("command", "")
+                    if "mkdir" in cmd and "-p" in cmd:
+                        # Extract base output directory from mkdir command
+                        parts = cmd.split()
+                        for part in parts:
+                            if "results/" in part:
+                                dirs = part.split()
+                                output_dir = dirs[0].split("/")[0:2]  # Get base output dir
+                                output_dir = "/".join(output_dir)
+                                break
+            
+            # Fallback: check other steps for output directory pattern
+            if not output_dir:
+                for step in steps:
+                    cmd = step.get("command", "")
+                    if "results/" in cmd:
+                        parts = cmd.split()
+                        for part in parts:
+                            if "results/" in part:
+                                dirs = part.split("/")[0:2]  # Get base output dir
+                                output_dir = "/".join(dirs)
+                                break
+                    if output_dir:
+                        break
+            
+            if not output_dir:
+                raise ValueError("No output directory found in workflow steps")
+                
+            # Resolve output directory path
+            output_dir = str(Path(output_dir).resolve())
+            self.logger.info(f"Using output directory from workflow steps: {output_dir}")
+            
+            # Create output directory
+            file_utils.ensure_directory(output_dir)
             
             # Create workflow DAG with specified executor
             self.dag = WorkflowDAG(executor_type=self.executor_type)
@@ -76,13 +111,18 @@ class WorkflowManager:
             # Execute workflow using parallel execution
             results = await self.dag.execute_parallel()
             
+            # Add output directory to results
+            results["output_directory"] = output_dir
+            
             # Analyze results using agentic system
+            self.logger.info(f"Analyzing results in directory: {output_dir}")
             analysis = await self.analyze_results(results)
             
             # Combine workflow results with analysis
             return {
                 "workflow_results": results,
-                "analysis": analysis
+                "analysis": analysis,
+                "output_directory": output_dir
             }
             
         except Exception as e:
@@ -95,46 +135,53 @@ class WorkflowManager:
             self.logger.info("Starting agentic analysis of workflow results...")
             
             # Get results directory from workflow results
-            results_dir = Path(workflow_results.get("output_directory", "results"))
-            if not results_dir.exists():
+            results_dir = None
+            
+            # Method 1: Try primary output directory
+            if "primary_output_dir" in workflow_results:
+                results_dir = Path(workflow_results["primary_output_dir"])
+            
+            # Method 2: Try output directories list
+            if not results_dir and "output_directories" in workflow_results:
+                output_dirs = workflow_results["output_directories"]
+                if output_dirs:
+                    results_dir = Path(output_dirs[0])
+            
+            # Method 3: Try output_directory field
+            if not results_dir:
+                results_dir = Path(workflow_results.get("output_directory", "results"))
+            
+            # Validate directory exists
+            if not results_dir or not results_dir.exists():
+                self.logger.warning("No valid output directory found for analysis")
                 return {
                     "status": "error",
-                    "message": f"Results directory {results_dir} does not exist"
+                    "error": "No valid output directory found"
                 }
+                
+            self.logger.info(f"Analyzing results in directory: {results_dir}")
+            analysis_data = await self.analysis_system._prepare_analysis_data(results_dir)
             
-            # Run comprehensive analysis
-            analysis = await self.analysis_system.analyze_results(results_dir)
+            # Run analysis agents
+            quality_analysis = await self.analysis_system.quality_agent.analyze(analysis_data)
+            quant_analysis = await self.analysis_system.quantification_agent.analyze(analysis_data)
+            tech_analysis = await self.analysis_system.technical_agent.analyze(analysis_data)
             
-            # Format the analysis results
-            report = {
-                "status": "success",
-                "report": {
-                    "overall_assessment": analysis.get("overall_assessment", {}),
-                    "issues": analysis.get("issues", []),
-                    "recommendations": analysis.get("recommendations", [])
-                }
-            }
-            
-            # Log analysis completion
             self.logger.info("Agentic analysis completed successfully")
             
-            # Log any critical issues
-            critical_issues = [
-                issue for issue in report["report"]["issues"]
-                if issue.get("severity") == "high"
-            ]
-            if critical_issues:
-                self.logger.warning(f"Found {len(critical_issues)} critical issues")
-                for issue in critical_issues:
-                    self.logger.warning(f"Critical issue: {issue['description']}")
-            
-            return report
+            return {
+                "status": "success",
+                "quality": quality_analysis,
+                "quantification": quant_analysis,
+                "technical": tech_analysis,
+                "data": analysis_data
+            }
             
         except Exception as e:
-            self.logger.error(f"Agentic analysis failed: {str(e)}")
+            self.logger.error(f"Analysis failed: {str(e)}")
             return {
                 "status": "error",
-                "message": f"Analysis failed: {str(e)}"
+                "error": str(e)
             }
 
     async def resume_workflow(self, prompt: str, checkpoint_dir: str) -> Dict[str, Any]:

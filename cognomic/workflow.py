@@ -86,18 +86,18 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             output_path = Path(checkpoint_path) / "workflow_dag.png"
             workflow_manager.dag.visualize(output_path)
         
-        # Auto-generate report
-        # First try to get output directory from workflow results
-        output_dir = None
-        workflow_results = result.get('workflow_results', {})
-        
-        # Try to find output directory from workflow results
-        for step in workflow_results.get('results', {}).get('steps', []):
-            if 'output_dir' in step.get('parameters', {}):
-                output_dir = step['parameters']['output_dir']
-                if os.path.exists(output_dir):
-                    break
-
+        # Get output directory from workflow results
+        output_dir = result.get('output_directory')
+        if not output_dir:
+            # Fallback to checkpoint directory if no output directory specified
+            output_dir = str(checkpoint_path)
+            logger.info(f"No output directory found, using checkpoint directory: {output_dir}")
+        else:
+            logger.info(f"Using output directory from workflow: {output_dir}")
+            
+        # Ensure output directory exists
+        if not os.path.exists(output_dir):
+            raise ValueError(f"Output directory does not exist: {output_dir}")
             
         logger.info(f"Generating analysis report from {output_dir}...")
         await analyze_workflow(output_dir)
