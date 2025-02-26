@@ -99,3 +99,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# cognomics custom:
+.webui_secret_key

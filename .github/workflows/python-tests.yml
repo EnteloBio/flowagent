@@ -1,0 +1,77 @@
+name: Python Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Conda
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        auto-update-conda: true
+        python-version: ${{ matrix.python-version }}
+        channels: conda-forge,bioconda
+        channel-priority: strict
+        auto-activate-base: false
+        
+    - name: Install Mamba
+      shell: bash -l {0}
+      run: |
+        conda install -n base -c conda-forge mamba
+        
+    - name: Create environment and install dependencies
+      shell: bash -l {0}
+      run: |
+        mamba create -n test python=${{ matrix.python-version }} \
+          networkx \
+          matplotlib \
+          h5py \
+          pytest \
+          pytest-asyncio \
+          openai \
+          pydantic \
+          pydantic-settings \
+          python-dotenv \
+          typing-extensions \
+          rich \
+          click \
+          fastapi \
+          uvicorn \
+          mkdocs \
+          mkdocstrings \
+          mkdocstrings-python \
+          mkdocs-material \
+          kallisto \
+          fastqc \
+          multiqc \
+          samtools \
+          trim-galore \
+          trimmomatic \
+          subread \
+          hisat2 \
+          pandas \
+          numpy \
+          scipy \
+          drmaa \
+          cgatcore -y 
+        conda activate test
+        python -m pip install -e .
+        
+    - name: Run tests
+      shell: bash -l {0}
+      run: |
+        conda activate test
+        python -m pytest tests/ -v
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
