@@ -40,6 +40,7 @@ jobs:
     - name: Run tests
       shell: bash -l {0}
       run: |
+        cognomic prompt --help
         pytest tests/ -v
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
