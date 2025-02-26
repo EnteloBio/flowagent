@@ -75,6 +75,11 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             
         logger.info("Workflow completed successfully!")
         
+        # Auto-generate report
+        output_dir = result.get('output_directory', str(checkpoint_path))
+        logger.info("Generating analysis report...")
+        await analyze_workflow(output_dir)
+        
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
         logger.info(f"You can resume the workflow using:")
