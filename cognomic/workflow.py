@@ -83,12 +83,23 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
         
         # Generate workflow visualization
         if hasattr(workflow_manager, 'dag'):
-            output_path = Path(checkpoint_path)
+            output_path = Path(checkpoint_path) / "workflow_dag.png"
             workflow_manager.dag.visualize(output_path)
         
         # Auto-generate report
-        output_dir = result.get('output_directory', str(checkpoint_path))
-        logger.info("Generating analysis report...")
+        # First try to get output directory from workflow results
+        output_dir = None
+        workflow_results = result.get('workflow_results', {})
+        
+        # Try to find output directory from workflow results
+        for step in workflow_results.get('results', {}).get('steps', []):
+            if 'output_dir' in step.get('parameters', {}):
+                output_dir = step['parameters']['output_dir']
+                if os.path.exists(output_dir):
+                    break
+
+            
+        logger.info(f"Generating analysis report from {output_dir}...")
         await analyze_workflow(output_dir)
         
     except Exception as e:
