@@ -75,6 +75,11 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             
         logger.info("Workflow completed successfully!")
         
+        # Generate workflow visualization
+        if hasattr(workflow_manager, 'dag'):
+            output_path = Path(checkpoint_path)
+            workflow_manager.dag.visualize(output_path)
+        
         # Auto-generate report
         output_dir = result.get('output_directory', str(checkpoint_path))
         logger.info("Generating analysis report...")
