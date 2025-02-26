@@ -23,9 +23,13 @@ jobs:
         python-version: ${{ matrix.python-version }}
         channels: conda-forge,bioconda
         channel-priority: strict
-        activate-environment: cognomic
         mamba-version: "*"
-        environment-file: conda/environment/environment.yml
+        
+    - name: Create and setup environment
+      shell: bash -l {0}
+      run: |
+        mamba env create -f conda/environment/environment.yml
+        conda activate cognomic
         
     - name: Install package
       shell: bash -l {0}
