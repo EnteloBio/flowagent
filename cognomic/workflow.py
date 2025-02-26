@@ -1,31 +1,54 @@
 import asyncio
 import logging
+import os
 from pathlib import Path
+from typing import Dict, Any
 from .core.workflow_manager import WorkflowManager
 from .core.llm import LLMInterface
 from .analysis.report_generator import ReportGenerator
 
 logger = logging.getLogger(__name__)
 
-async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> None:
-    """Analyze workflow results from a directory."""
+async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[str, Any]:
+    """
+    Analyze workflow results in the specified directory.
+    
+    Args:
+        analysis_dir: Directory containing workflow results
+        save_report: Whether to save the analysis report to a file
+        
+    Returns:
+        Dict containing analysis results and report
+    """
     try:
+        logger.info(f"Analyzing workflow results in {analysis_dir}")
+        
+        # Create report generator
         report_gen = ReportGenerator()
+        
+        # Generate analysis report
         report = await report_gen.generate_analysis_report(Path(analysis_dir))
         
-        # Save report to file if requested
+        # Save report if requested
+        report_file = None
         if save_report:
-            report_file = Path(analysis_dir) / "analysis_report.md"
-            with open(report_file, 'w') as f:
+            report_file = os.path.join(analysis_dir, "analysis_report.md")
+            with open(report_file, "w") as f:
                 f.write(report)
-            logger.info(f"Analysis report saved to: {report_file}")
+            logger.info(f"Saved analysis report to {report_file}")
         
-        # Print report to console
-        print(report)
+        return {
+            "status": "success",
+            "report": report,
+            "report_file": report_file
+        }
         
     except Exception as e:
-        logger.error(f"Analysis failed: {str(e)}")
-        raise
+        logger.error(f"Failed to analyze workflow: {str(e)}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = False) -> None:
     """Run workflow from prompt."""
