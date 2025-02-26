@@ -66,15 +66,15 @@ class WorkflowManager:
                     self.logger.info(f"Created output directory: {output_dir}")
             
             # Create workflow DAG with specified executor
-            dag = WorkflowDAG(executor_type=self.executor_type)
+            self.dag = WorkflowDAG(executor_type=self.executor_type)
             
             # Add steps to DAG with dependencies
             for step in workflow_plan["steps"]:
                 dependencies = step.get("dependencies", [])
-                dag.add_step(step, dependencies)
+                self.dag.add_step(step, dependencies)
             
             # Execute workflow using parallel execution
-            results = await dag.execute_parallel()
+            results = await self.dag.execute_parallel()
             
             # Analyze results using agentic system
             analysis = await self.analyze_results(results)
@@ -169,16 +169,16 @@ class WorkflowManager:
             self.logger.info(f"Resuming with {len(remaining_steps)} remaining steps")
             
             # Create workflow DAG for remaining steps
-            dag = WorkflowDAG(executor_type=self.executor_type)
+            self.dag = WorkflowDAG(executor_type=self.executor_type)
             
             # Add remaining steps to DAG
             for step in remaining_steps:
                 dependencies = [dep for dep in step.get("dependencies", [])
                               if dep not in completed_steps]
-                dag.add_step(step, dependencies)
+                self.dag.add_step(step, dependencies)
             
             # Execute remaining steps
-            results = await dag.execute_parallel()
+            results = await self.dag.execute_parallel()
             
             # Analyze results using agentic system
             analysis = await self.analyze_results(results)
