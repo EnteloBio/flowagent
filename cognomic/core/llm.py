@@ -371,6 +371,15 @@ class LLMInterface:
             self.logger.error(f"OpenAI API call failed: {str(e)}")
             raise
 
+    async def _call_openai_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        response_format: Optional[Dict[str, str]] = None,
+        **kwargs,
+    ) -> str:
+        """Call OpenAI API with streaming completion and retry logic."""
+        return await self._call_openai(messages, response_format, stream=True, **kwargs)
+
     def _clean_llm_response(self, response: str) -> str:
         """Clean LLM response by removing markdown formatting."""
         # Remove markdown code block if present
@@ -917,5 +926,95 @@ Provide analysis in this format:
             raise ValueError(
                 "Checkpoint directory must be provided if resume is set to True"
             )
+
+        return analysis
+
+    async def analyze_run_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Analyze the prompt to extract options for running a workflow."""
+        analysis_prompt = f"""
+        Analyze the following prompt to extract options for running a workflow.
+        Extract the following options if provided:
+        - checkpoint_dir
+        - resume
+
+        Prompt: {prompt}
+
+        Return the result as a JSON object with the following structure:
+        {{
+            "prompt": "original prompt",
+            "checkpoint_dir": "extracted checkpoint directory" or "null",
+            "resume": true or false,
+            "success": true or false
+        }}
+
+        "success" should be true if the prompt is successfully analyzed, false otherwise.
+
+        Do not output any markdown formatting or additional text. Return only JSON.
+
+        If the prompt given is entirely unrelated to running a workflow, set "success" to false.
+
+        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
+        """
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert in analyzing prompts for workflow management.",
+            },
+            {"role": "user", "content": analysis_prompt},
+        ]
+
+        response = await self._call_openai(
+            messages,
+            model=settings.OPENAI_MODEL,
+            response_format={"type": "json_object"},
+        )
+        self.logger.info(f"Analysis response: {response}")
+        analysis = json.loads(response)
+
+        return analysis
+
+    async def analyze_analyze_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Analyze the prompt to extract options for analyzing a workflow."""
+        analysis_prompt = f"""
+        Analyze the following prompt to extract options for analyzing a workflow.
+        Extract the following options if provided:
+        - analysis_dir
+        - save_report
+
+        Prompt: {prompt}
+
+        Return the result as a JSON object with the following structure:
+        {{
+            "prompt": "original prompt",
+            "analysis_dir": "extracted analysis directory" or "null",
+            "save_report": true or false,
+            "success": true or false
+        }}
+
+        "success" should be true if the prompt is successfully analyzed, false otherwise.
+
+        Do not output any markdown formatting or additional text. Return only JSON.
+
+        If the prompt given is entirely unrelated to analyzing a workflow, set "success" to false.
+
+        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
+        """
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert in analyzing prompts for workflow management.",
+            },
+            {"role": "user", "content": analysis_prompt},
+        ]
+
+        response = await self._call_openai(
+            messages,
+            model=settings.OPENAI_MODEL,
+            response_format={"type": "json_object"},
+        )
+        self.logger.info(f"Analysis response: {response}")
+        analysis = json.loads(response)
 
         return analysis

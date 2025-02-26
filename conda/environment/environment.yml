@@ -40,8 +40,6 @@ dependencies:
   - mkdocstrings=0.28.0
   - mkdocstrings-python=1.16.0
   - mkdocs-material=9.5.0
-  - fastapi=0.115.0
-  - uvicorn=0.32.0
   
   # Development tools
   - pytest=7.3.1
@@ -52,8 +50,7 @@ dependencies:
   # Additional dependencies via pip
   - pip:
     - openai>=1.0.0 
-    - cgatcore>=0.6.7  # Also install via pip for latest version
+    - cgatcore>=0.6.14  # Also install via pip for latest version
     - click>=8.1.0
     - aiohttp>=3.11.0
-    - open-webui>=0.5.0
-
+    - chainlit>=2.1.0
