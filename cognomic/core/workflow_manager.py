@@ -11,6 +11,7 @@ from cognomic.config.settings import Settings
 
 from ..utils.logging import get_logger
 from ..utils import file_utils
+from ..utils.dependency_manager import DependencyManager
 from .llm import LLMInterface
 from .agent_types import WorkflowStep
 from .workflow_dag import WorkflowDAG
@@ -30,6 +31,7 @@ class WorkflowManager:
         """
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
+        self.dependency_manager = DependencyManager()
         self.analysis_system = AgenticAnalysisSystem()
         
         # Get settings
@@ -51,6 +53,11 @@ class WorkflowManager:
             self.logger.info("Planning workflow steps...")
             workflow_plan = await self.llm.generate_workflow_plan(prompt)
             
+            # Check and install required dependencies using LLM analysis
+            self.logger.info("Analyzing and installing required dependencies...")
+            if not await self.dependency_manager.ensure_workflow_dependencies(workflow_plan):
+                raise ValueError("Failed to ensure all required workflow dependencies")
+            
             # Create output directories
             for step in workflow_plan["steps"]:
                 output_dir = step["parameters"].get("output_dir")
@@ -59,15 +66,15 @@ class WorkflowManager:
                     self.logger.info(f"Created output directory: {output_dir}")
             
             # Create workflow DAG with specified executor
-            dag = WorkflowDAG(executor_type=self.executor_type)
+            self.dag = WorkflowDAG(executor_type=self.executor_type)
             
             # Add steps to DAG with dependencies
             for step in workflow_plan["steps"]:
                 dependencies = step.get("dependencies", [])
-                dag.add_step(step, dependencies)
+                self.dag.add_step(step, dependencies)
             
             # Execute workflow using parallel execution
-            results = await dag.execute_parallel()
+            results = await self.dag.execute_parallel()
             
             # Analyze results using agentic system
             analysis = await self.analyze_results(results)
@@ -162,16 +169,16 @@ class WorkflowManager:
             self.logger.info(f"Resuming with {len(remaining_steps)} remaining steps")
             
             # Create workflow DAG for remaining steps
-            dag = WorkflowDAG(executor_type=self.executor_type)
+            self.dag = WorkflowDAG(executor_type=self.executor_type)
             
             # Add remaining steps to DAG
             for step in remaining_steps:
                 dependencies = [dep for dep in step.get("dependencies", [])
                               if dep not in completed_steps]
-                dag.add_step(step, dependencies)
+                self.dag.add_step(step, dependencies)
             
             # Execute remaining steps
-            results = await dag.execute_parallel()
+            results = await self.dag.execute_parallel()
             
             # Analyze results using agentic system
             analysis = await self.analyze_results(results)
@@ -184,6 +191,37 @@ class WorkflowManager:
             
         except Exception as e:
             self.logger.error(f"Failed to resume workflow: {str(e)}")
+            raise
+
+    async def _prepare_step(self, step: Dict[str, Any], workflow_plan: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare a workflow step for execution."""
+        try:
+            # Extract basic step info
+            step_name = step.get("name", "unknown")
+            command = step.get("command", "")
+            dependencies = step.get("dependencies", [])
+            
+            # Get resource requirements
+            resources = step.get("resources", {})
+            profile = resources.get("profile", "default")
+            
+            # Create the step dictionary
+            prepared_step = {
+                "name": step_name,
+                "command": command,
+                "status": "pending",
+                "dependencies": dependencies,
+                "profile": profile,
+                "output": "",
+                "error": None,
+                "start_time": None,
+                "end_time": None
+            }
+            
+            return prepared_step
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing step {step.get('name', 'unknown')}: {str(e)}")
             raise
 
     def _build_dag(self, workflow_steps: List[WorkflowStep]) -> nx.DiGraph:

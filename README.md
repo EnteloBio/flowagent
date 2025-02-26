@@ -43,22 +43,34 @@ cp .env.example .env
 # Edit .env with your settings
 ```
 
-2. Run a workflow:
+2. Run a CLI workflow:
 ```bash
 # Basic workflow execution
-cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." 
+cognomic prompt "run rna-seq analysis" --checkpoint-dir=workflow_state
 
 # Resume a failed workflow
-cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --checkpoint-dir=workflow_state --resume
+cognomic prompt "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
 ```
 
 3. Analyze workflow results:
 ```bash
 # Generate analysis report
-cognomic "analyze workflow results" --analysis-dir=results
+cognomic prompt "analyze workflow results" --analysis-dir=results
 
 # Generate report without saving to file
-cognomic "analyze workflow results" --analysis-dir=results --no-save-report
+cognomic prompt "analyze workflow results" --analysis-dir=results --no-save-report
+```
+
+4. Run a chatbot workflow on a local web server:
+```bash
+# Start server.
+cognomic serve --host 0.0.0.0 --port 8000
+```
+
+
+5. View chatbot in browser. Note the different port is correct:
+```bash
+open http://0.0.0.0:8080
 ```
 
 ## OpenAI Model Configuration
@@ -226,6 +238,56 @@ To only view the report without saving:
 cognomic "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
+## Workflow State Management
+
+Cognomic includes a robust checkpointing system that helps manage long-running RNA-seq analysis workflows. This system allows you to resume interrupted workflows and avoid repeating expensive computations.
+
+### Using Checkpoints
+
+1. **Basic Usage**:
+   ```bash
+   # Run workflow with checkpointing
+   cognomic prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state
+   ```
+
+2. **Resuming Interrupted Workflows**:
+   ```bash
+   # Resume from last successful checkpoint
+   cognomic prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state --resume
+   ```
+
+### How It Works
+
+The checkpoint directory (e.g., `workflow_state`) stores:
+- Progress tracking for each workflow step
+- Intermediate computation results
+- Error logs and debugging information
+- Workflow configuration and parameters
+
+This allows Cognomic to:
+- Resume workflows from the last successful step
+- Avoid recomputing expensive operations
+- Maintain workflow state across system restarts
+- Track errors and provide detailed debugging information
+
+### Best Practices
+
+1. **Choose Descriptive Directory Names**:
+   ```bash
+   # Use meaningful names for different analyses
+   cognomic prompt "..." --checkpoint-dir rnaseq_liver_samples_20250225
+   ```
+
+2. **Backup Checkpoint Directories**:
+   - Keep checkpoint directories for reproducibility
+   - Back up important checkpoints before rerunning analyses
+   - Use different checkpoint directories for different analyses
+
+3. **Debugging Using Checkpoints**:
+   - Examine checkpoint directory contents for troubleshooting
+   - Use `--resume` to retry failed steps without restarting
+   - Check error logs in checkpoint directory for detailed information
+
 ## Architecture
 
 Cognomic 1.0 implements a modern, distributed architecture:
@@ -236,6 +298,39 @@ Cognomic 1.0 implements a modern, distributed architecture:
 - **Security Layer**: Comprehensive security features and access control
 - **API Layer**: RESTful and GraphQL APIs for integration
 - **Monitoring System**: Real-time metrics and alerting
+
+## Development
+
+```bash
+# Run tests
+python -m pytest
+
+# Run type checking
+python -m mypy .
+
+# Run linting
+python -m ruff check .
+
+# Format code
+python -m black .
+python -m isort .
+```
+
+## Building Documentation
+
+Cognomic uses MkDocs for documentation. To build the documentation locally, follow these steps:
+
+1. Build the documentation:
+```bash
+mkdocs build
+```
+
+2. Serve the documentation locally to view it in your browser:
+```bash
+mkdocs serve
+```
+
+The documentation will be available at `http://127.0.0.1:8000`.
 
 ## Contributing
 
@@ -318,4 +413,6 @@ cognomic --resume --checkpoint-dir workflow_state "Your workflow prompt"
 
 2. Specify custom resource requirements:
 ```bash
-cognomic --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+
+```
