@@ -36,6 +36,7 @@ jobs:
         mamba create -n test python=${{ matrix.python-version }} \
           networkx \
           matplotlib \
+          h5py \
           pytest \
           pytest-asyncio \
           openai \
