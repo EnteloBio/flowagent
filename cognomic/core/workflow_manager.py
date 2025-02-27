@@ -26,7 +26,7 @@ class WorkflowManager:
         """Initialize workflow manager.
         
         Args:
-            executor_type: Type of executor to use ("local" or "cgat"). 
+            executor_type: Type of executor to use ("local", "cgat", "kubernetes"). 
                          If None, uses EXECUTOR_TYPE from settings.
         """
         self.logger = get_logger(__name__)
@@ -39,8 +39,16 @@ class WorkflowManager:
         
         # Use provided executor_type or get from settings
         self.executor_type = executor_type or self.settings.EXECUTOR_TYPE
-        if self.executor_type not in ["local", "cgat"]:
+        
+        # Validate executor type
+        valid_executors = ["local", "cgat", "kubernetes"]
+        if self.executor_type not in valid_executors:
             self.logger.warning(f"Invalid executor type '{self.executor_type}'. Defaulting to 'local'")
+            self.executor_type = "local"
+        
+        # Special handling for Kubernetes executor
+        if self.executor_type == "kubernetes" and not self.settings.KUBERNETES_ENABLED:
+            self.logger.warning("Kubernetes executor requested but not enabled in settings. Defaulting to 'local'")
             self.executor_type = "local"
             
         self.cwd = os.getcwd()
