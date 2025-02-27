@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     HPC_DEFAULT_CPUS: int = Field(1, env='HPC_DEFAULT_CPUS')
     HPC_DEFAULT_TIME: int = Field(60, env='HPC_DEFAULT_TIME')
     
+    # Kubernetes Settings
+    KUBERNETES_ENABLED: bool = Field(default=False, env="KUBERNETES_ENABLED")
+    KUBERNETES_NAMESPACE: str = Field(default="default", env="KUBERNETES_NAMESPACE")
+    KUBERNETES_SERVICE_ACCOUNT: str = Field(default="default", env="KUBERNETES_SERVICE_ACCOUNT")
+    KUBERNETES_IMAGE: str = Field(default="python:3.9", env="KUBERNETES_IMAGE")
+    KUBERNETES_CPU_REQUEST: str = Field(default="0.5", env="KUBERNETES_CPU_REQUEST")
+    KUBERNETES_CPU_LIMIT: str = Field(default="1.0", env="KUBERNETES_CPU_LIMIT")
+    KUBERNETES_MEMORY_REQUEST: str = Field(default="512Mi", env="KUBERNETES_MEMORY_REQUEST")
+    KUBERNETES_MEMORY_LIMIT: str = Field(default="1Gi", env="KUBERNETES_MEMORY_LIMIT")
+    KUBERNETES_JOB_TTL: int = Field(default=3600, env="KUBERNETES_JOB_TTL")
+    
     # Tool Settings
     REQUIRED_TOOLS: List[str] = [
         "kallisto",
