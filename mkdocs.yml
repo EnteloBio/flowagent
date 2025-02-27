@@ -8,14 +8,19 @@ repo_name: cribbslab/flowagent
 theme:
   name: material
   features:
-    - content.code.copy
+    - navigation.instant
+    - navigation.tracking
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
-    - navigation.top
-    - search.highlight
-    - search.share
+    - navigation.indexes
+    - toc.follow
+    - toc.integrate
     - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
   
   palette:
     - media: "(prefers-color-scheme: light)"
@@ -32,6 +37,13 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cribbslab/flowagent
+  version:
+    provider: mike
 
 plugins:
   - search
@@ -52,14 +64,22 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.superfences
   - attr_list
+  - md_in_html
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.inlinehilite
   - toc:
       permalink: true
+      toc_depth: 3
 
 nav:
   - Home: index.md
