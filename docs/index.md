@@ -1,4 +1,4 @@
-# Cognomic 1.0
+# FlowAgent 1.0
 
 An advanced multi-agent framework for automating complex bioinformatics workflows.
 
@@ -17,12 +17,12 @@ An advanced multi-agent framework for automating complex bioinformatics workflow
 
 ```bash
 # Clone the repository
-git clone https://github.com/cribbslab/cognomic.git
-cd cognomic
+git clone https://github.com/cribbslab/flowagent.git
+cd flowagent
 
 # Create and activate the conda environment:
 conda env create -f conda/environment/environment.yml
-conda activate cognomic
+conda activate flowagent
 
 # Verify installation of key components
 kallisto version
@@ -56,24 +56,24 @@ cp .env.example .env
 2. Run a workflow:
 ```bash
 # Basic workflow execution
-cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state
+flowagent "run rna-seq analysis" --checkpoint-dir=workflow_state
 
 # Resume a failed workflow
-cognomic "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
+flowagent "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
 ```
 
 3. Analyze workflow results:
 ```bash
 # Generate analysis report
-cognomic "analyze workflow results" --analysis-dir=results
+flowagent "analyze workflow results" --analysis-dir=results
 
 # Generate report without saving to file
-cognomic "analyze workflow results" --analysis-dir=results --no-save-report
+flowagent "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
 ## API Key Configuration
 
-Cognomic requires several API keys for full functionality. You can configure these using environment variables or a `.env` file in the project root directory.
+FlowAgent requires several API keys for full functionality. You can configure these using environment variables or a `.env` file in the project root directory.
 
 ### Required API Keys
 
@@ -122,7 +122,7 @@ The `.env` file is automatically loaded by the application when it starts. All s
 
 ### Setting up the Secret Key
 
-The `SECRET_KEY` is a crucial security element in Cognomic used for:
+The `SECRET_KEY` is a crucial security element in FlowAgent used for:
 - Generating and validating JSON Web Tokens (JWTs) for API authentication
 - Securing session data
 - Protecting against cross-site request forgery (CSRF) attacks
@@ -172,7 +172,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30                            # Token lifetime
 
 ## SLURM Configuration
 
-Cognomic supports SLURM cluster execution. To configure SLURM, create a `.cgat.yml` file in the project root directory:
+FlowAgent supports SLURM cluster execution. To configure SLURM, create a `.cgat.yml` file in the project root directory:
 
 ```yaml
 cluster:
@@ -194,7 +194,7 @@ tools:
 
 ### SLURM Integration
 
-Cognomic uses CGATCore for SLURM integration, which provides:
+FlowAgent uses CGATCore for SLURM integration, which provides:
 
 1. **Job Management**
    - Automatic job submission and dependency tracking
@@ -216,23 +216,23 @@ Cognomic uses CGATCore for SLURM integration, which provides:
 To execute a workflow on a SLURM cluster, use the `--executor cgat` option:
 
 ```bash
-python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --workflow rnaseq --input data/ --executor cgat
+python -m flowagent.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --workflow rnaseq --input data/ --executor cgat
 ```
 
 ## Analysis Reports
 
-The Cognomic analysis report functionality provides comprehensive insights into your workflow outputs. It analyzes quality metrics, alignment statistics, and expression data to generate actionable recommendations.
+The FlowAgent analysis report functionality provides comprehensive insights into your workflow outputs. It analyzes quality metrics, alignment statistics, and expression data to generate actionable recommendations.
 
 ### Running Analysis Reports
 
 ```bash
 # Basic analysis
-cognomic "analyze workflow results" --analysis-dir=/path/to/workflow/output
+flowagent "analyze workflow results" --analysis-dir=/path/to/workflow/output
 
 # Focus on specific aspects
-cognomic "analyze quality metrics" --analysis-dir=/path/to/workflow/output
-cognomic "analyze alignment rates" --analysis-dir=/path/to/workflow/output
-cognomic "analyze expression data" --analysis-dir=/path/to/workflow/output
+flowagent "analyze quality metrics" --analysis-dir=/path/to/workflow/output
+flowagent "analyze alignment rates" --analysis-dir=/path/to/workflow/output
+flowagent "analyze expression data" --analysis-dir=/path/to/workflow/output
 ```
 
 The analyzer will recursively search for relevant files in your analysis directory, including:
@@ -280,12 +280,12 @@ By default, the analysis report is:
 
 To only view the report without saving:
 ```bash
-cognomic "analyze workflow results" --analysis-dir=results --no-save-report
+flowagent "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
 ## Architecture
 
-Cognomic 1.0 implements a modern, distributed architecture:
+FlowAgent 1.0 implements a modern, distributed architecture:
 
 - **Core Engine**: Orchestrates workflow execution and agent coordination
 - **Agent System**: Specialized agents for planning, execution, and monitoring
@@ -325,21 +325,21 @@ MIT License - see LICENSE file for details
 
 ## Citation
 
-If you use Cognomic in your research, please cite:
+If you use FlowAgent in your research, please cite:
 
 ```bibtex
-@software{cognomic2025,
-  title={Cognomic: An Advanced Multi-Agent Framework for Bioinformatics Workflows},
+@software{flowagent2025,
+  title={FlowAgent: An Advanced Multi-Agent Framework for Bioinformatics Workflows},
   author={Cribbs Lab},
   year={2025},
-  url={https://github.com/cribbslab/cognomic}
+  url={https://github.com/cribbslab/flowagent}
 }
 
 ```
 
 ## Version Compatibility
 
-Cognomic automatically handles version compatibility for Kallisto indices:
+FlowAgent automatically handles version compatibility for Kallisto indices:
 
 1. **Version Checking**
    - Checks Kallisto version before index creation
@@ -369,7 +369,7 @@ conda env update -f conda/environment/environment.yml
 For development or testing, you can create a separate environment:
 
 ```bash
-conda env create -f conda/environment/environment.yml -n cognomic-dev
+conda env create -f conda/environment/environment.yml -n flowagent-dev
 
 ```
 
@@ -377,21 +377,21 @@ conda env create -f conda/environment/environment.yml -n cognomic-dev
 
 ```bash
 # Local execution
-python -m cognomic.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+python -m flowagent.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 
 # SLURM cluster execution
-python -m cognomic.cli --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+python -m flowagent.cli --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 ```
 
 ### Advanced Usage
 
 1. Resume a failed workflow:
 ```bash
-python -m cognomic.cli --resume --checkpoint-dir workflow_state "Your workflow prompt"
+python -m flowagent.cli --resume --checkpoint-dir workflow_state "Your workflow prompt"
 ```
 
 2. Specify custom resource requirements:
 ```bash
-python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+python -m flowagent.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
 
 ```

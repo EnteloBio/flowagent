@@ -1,7 +1,9 @@
-site_name: cognomics
+site_name: FlowAgent
+site_description: An advanced multi-agent framework for automating complex bioinformatics workflows
+site_author: Cribbs Lab
 
-repo_url:
-repo_name: cribbslab/cognomics
+repo_url: https://github.com/cribbslab/flowagent
+repo_name: cribbslab/flowagent
 
 use_directory_urls: false
 
@@ -18,78 +20,87 @@ theme:
     - navigation.top
     - navigation.path
     - navigation.footer
+    - search.highlight
+    - search.share
+    - search.suggest
     # - toc.integrate
     - content.footnote.tooltips
 
   icon:
-    repo: fontawesome/brands/git-alt
-
+    repo: fontawesome/brands/github
+    
   palette:
     # Palette toggle for light mode
-#    - accent: pink
     - primary: teal
-    - scheme: default
+      scheme: default
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     # Palette toggle for dark mode
     - scheme: slate
+      primary: teal
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
 
-
-markdown_extensions:
-  # icons
-  - attr_list
-  - md_in_html
-  - footnotes
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
-
-  - toc:
-      permalink: True
-      baselevel: 2
-      separator: "_"
-  - pymdownx.superfences
-  - pymdownx.tabbed:
-      alternate_style: true
-
-  # Admonitions
-  - admonition
-  - pymdownx.details
-  - pymdownx.superfences
-
-  - pymdownx.tasklist:
-      custom_checkbox: true
-
-  # Formatting superscripts
-  - pymdownx.critic
-  - pymdownx.caret
-  - pymdownx.keys
-  - pymdownx.mark
-  - pymdownx.tilde
-
-
-extra:
-  consent:
-    actions:
-      - accept
-      - manage
-
 plugins:
-  - tags
   - search
   - mkdocstrings:
       handlers:
         python:
+          paths: [flowagent]  # search packages in the flowagent directory
           options:
-            separate_signature: true
-            show_signature_annotations: true
-            show_docstring_parameters: true
-            docstring_section_style: list
-            line_length: 60
-          paths: ["src/cognomic"]
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            show_bases: true
+            heading_level: 1
 
-copyright: Copyright &copy; 2024 Adam Cribbs
+markdown_extensions:
+  # Python Markdown extensions
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - meta
+  - tables
+  - toc:
+      permalink: true
+      title: On this page
+  
+  # PyMdown Extensions
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cribbslab/flowagent
+      name: FlowAgent on GitHub
+  generator: false
