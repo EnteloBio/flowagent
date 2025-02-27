@@ -7,7 +7,7 @@ import asyncio
 import networkx as nx
 import json
 import os
-from cognomic.config.settings import Settings
+from flowagent.config.settings import Settings
 
 from ..utils.logging import get_logger
 from ..utils import file_utils

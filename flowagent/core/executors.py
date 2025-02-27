@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 
 from cgatcore import pipeline as P
 from ..utils.logging import get_logger
-from cognomic.config.settings import Settings
+from flowagent.config.settings import Settings
 
 logger = get_logger(__name__)
 

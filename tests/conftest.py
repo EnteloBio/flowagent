@@ -9,7 +9,7 @@ def mock_env_vars():
     """Mock environment variables for testing."""
     with patch.dict(os.environ, {
         'OPENAI_API_KEY': 'sk-test-key',
-        'COGNOMIC_DATA_DIR': '/tmp/cognomic_test'
+        'FLOWAGENT_DATA_DIR': '/tmp/flowagent_test'
     }):
         yield
 
@@ -53,10 +53,10 @@ def mock_kallisto_index(test_data_dir):
 def workflow_env(mock_fastq_files, mock_kallisto_index, monkeypatch):
     """Set up workflow environment variables."""
     env_vars = {
-        "COGNOMIC_DATA_DIR": str(mock_fastq_files),
-        "COGNOMIC_KALLISTO_INDEX": str(mock_kallisto_index),
-        "COGNOMIC_OUTPUT_DIR": str(mock_fastq_files / "output"),
-        "COGNOMIC_THREADS": "2"
+        "FLOWAGENT_DATA_DIR": str(mock_fastq_files),
+        "FLOWAGENT_KALLISTO_INDEX": str(mock_kallisto_index),
+        "FLOWAGENT_OUTPUT_DIR": str(mock_fastq_files / "output"),
+        "FLOWAGENT_THREADS": "2"
     }
     
     for key, value in env_vars.items():
@@ -67,7 +67,7 @@ def workflow_env(mock_fastq_files, mock_kallisto_index, monkeypatch):
 @pytest.fixture(scope="function")
 def clean_output_dir(workflow_env):
     """Ensure clean output directory for each test."""
-    output_dir = Path(workflow_env["COGNOMIC_OUTPUT_DIR"])
+    output_dir = Path(workflow_env["FLOWAGENT_OUTPUT_DIR"])
     if output_dir.exists():
         for item in output_dir.iterdir():
             if item.is_file():

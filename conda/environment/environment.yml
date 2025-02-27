@@ -1,4 +1,4 @@
-name: cognomic
+name: flowagent
 channels:
   - conda-forge
   - bioconda
@@ -56,4 +56,3 @@ dependencies:
     - click>=8.1.0
     - aiohttp>=3.11.0
     - open-webui>=0.5.0
-
