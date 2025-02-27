@@ -1,4 +1,4 @@
-"""Command line interface for Cognomic."""
+"""Command line interface for FlowAgent."""
 
 import asyncio
 import logging
@@ -23,18 +23,18 @@ logger = logging.getLogger(__name__)
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Cognomic: A modern framework for RNA-seq analysis.",
+        description="FlowAgent: A modern framework for RNA-seq analysis.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     1. Run a workflow:
-       cognomic prompt "Analyze RNA-seq data using Kallisto..." --checkpoint-dir workflow_state
+       flowagent prompt "Analyze RNA-seq data using Kallisto..." --checkpoint-dir workflow_state
 
     2. Analyze results:
-       cognomic prompt "analyze workflow results" --analysis-dir results
+       flowagent prompt "analyze workflow results" --analysis-dir results
 
     3. Start web interface:
-       cognomic serve --host 0.0.0.0 --port 8000
+       flowagent serve --host 0.0.0.0 --port 8000
     """
     )
     

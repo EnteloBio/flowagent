@@ -1,7 +1,7 @@
 import pytest
 import json
 from unittest.mock import patch, MagicMock, AsyncMock
-from cognomic.core.llm import LLMInterface
+from flowagent.core.llm import LLMInterface
 
 @pytest.fixture
 def llm_interface():

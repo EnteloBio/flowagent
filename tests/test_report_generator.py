@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from cognomic.analysis.report_generator import ReportGenerator
+from flowagent.analysis.report_generator import ReportGenerator
 
 @pytest.fixture
 def report_generator():
@@ -37,7 +37,7 @@ async def test_report_generation(report_generator, tmp_path):
     # Mock LLM analysis response
     mock_response = {"status": "success", "analysis": "Test analysis completed"}
     
-    with patch('cognomic.core.llm.LLMInterface.generate_analysis', return_value=mock_response):
+    with patch('flowagent.core.llm.LLMInterface.generate_analysis', return_value=mock_response):
         # Generate report
         report = await report_generator.generate_report(output_dir)
 

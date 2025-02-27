@@ -1,4 +1,4 @@
-"""Dependency management utilities for Cognomic."""
+"""Dependency management utilities for FlowAgent."""
 
 import subprocess
 import sys
@@ -16,7 +16,7 @@ from ..core.llm import LLMInterface
 logger = logging.getLogger(__name__)
 
 class DependencyManager:
-    """Manages software dependencies for Cognomic."""
+    """Manages software dependencies for FlowAgent."""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
