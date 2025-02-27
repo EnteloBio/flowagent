@@ -10,3 +10,4 @@ aiohttp>=3.8.0
 click>=8.0.0
 PyYAML>=6.0.0
 rich>=13.0.0  # For better logging output
+kubernetes>=28.1.0  # For Kubernetes support

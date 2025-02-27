@@ -295,3 +295,174 @@ class HPCExecutor(BaseExecutor):
         finally:
             if self.hpc_system != "slurm":
                 self.backend.exit()
+
+class KubernetesExecutor(BaseExecutor):
+    """Execute workflow steps using Kubernetes Jobs."""
+    
+    def __init__(self):
+        """Initialize Kubernetes executor."""
+        self.settings = Settings()
+        
+        # Load Kubernetes configuration
+        try:
+            from kubernetes import client, config
+            # Try to load from kube config file first
+            try:
+                config.load_kube_config()
+            except:
+                # If running inside cluster, load service account config
+                config.load_incluster_config()
+            
+            self.k8s_batch = client.BatchV1Api()
+            self.k8s_core = client.CoreV1Api()
+            
+            logger.info(
+                f"Initialized Kubernetes executor with settings:\n"
+                f"  Namespace: {self.settings.KUBERNETES_NAMESPACE}\n"
+                f"  Service Account: {self.settings.KUBERNETES_SERVICE_ACCOUNT}\n"
+                f"  Default Image: {self.settings.KUBERNETES_IMAGE}\n"
+                f"  CPU Request/Limit: {self.settings.KUBERNETES_CPU_REQUEST}/{self.settings.KUBERNETES_CPU_LIMIT}\n"
+                f"  Memory Request/Limit: {self.settings.KUBERNETES_MEMORY_REQUEST}/{self.settings.KUBERNETES_MEMORY_LIMIT}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize Kubernetes client: {str(e)}")
+            raise
+    
+    def _prepare_job_spec(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare Kubernetes Job specification."""
+        from kubernetes import client
+        
+        # Get resource requirements from step
+        resources = step.get("resources", {})
+        
+        # Use settings as defaults if not specified in step
+        container = {
+            "name": step["name"],
+            "image": resources.get("image", self.settings.KUBERNETES_IMAGE),
+            "command": ["sh", "-c", step["command"]],
+            "resources": {
+                "requests": {
+                    "cpu": resources.get("cpu_request", self.settings.KUBERNETES_CPU_REQUEST),
+                    "memory": resources.get("memory_request", self.settings.KUBERNETES_MEMORY_REQUEST)
+                },
+                "limits": {
+                    "cpu": resources.get("cpu_limit", self.settings.KUBERNETES_CPU_LIMIT),
+                    "memory": resources.get("memory_limit", self.settings.KUBERNETES_MEMORY_LIMIT)
+                }
+            }
+        }
+        
+        # Add volume mounts if specified
+        if volumes := step.get("volumes", []):
+            container["volumeMounts"] = volumes
+        
+        # Add environment variables if specified
+        if env := step.get("env", {}):
+            container["env"] = [
+                {"name": k, "value": v} for k, v in env.items()
+            ]
+        
+        # Prepare job spec
+        job_spec = {
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "metadata": {
+                "name": f"flowagent-{step['name'].lower()}",
+                "namespace": self.settings.KUBERNETES_NAMESPACE
+            },
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [container],
+                        "restartPolicy": "Never",
+                        "serviceAccountName": self.settings.KUBERNETES_SERVICE_ACCOUNT
+                    }
+                },
+                "backoffLimit": 0,  # Don't retry on failure
+                "ttlSecondsAfterFinished": self.settings.KUBERNETES_JOB_TTL
+            }
+        }
+        
+        return job_spec
+    
+    async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a workflow step using Kubernetes."""
+        try:
+            # Prepare job specification
+            job_spec = self._prepare_job_spec(step)
+            logger.info(f"Submitting step {step['name']} as Kubernetes Job")
+            
+            # Create the job
+            job = self.k8s_batch.create_namespaced_job(
+                namespace=self.settings.KUBERNETES_NAMESPACE,
+                body=job_spec
+            )
+            
+            return {
+                "step_id": step["name"],
+                "job_name": job.metadata.name,
+                "status": "submitted",
+                "command": step["command"],
+                "job_spec": job_spec
+            }
+            
+        except Exception as e:
+            logger.error(f"Error submitting step {step['name']}: {str(e)}")
+            raise
+    
+    async def wait_for_completion(self, jobs: Dict[str, Any]) -> Dict[str, Any]:
+        """Wait for all Kubernetes jobs to complete."""
+        try:
+            results = {}
+            
+            for step_id, job_info in jobs.items():
+                job_name = job_info["job_name"]
+                
+                # Wait for job completion
+                while True:
+                    job = self.k8s_batch.read_namespaced_job_status(
+                        name=job_name,
+                        namespace=self.settings.KUBERNETES_NAMESPACE
+                    )
+                    
+                    if job.status.succeeded is not None or job.status.failed is not None:
+                        break
+                        
+                    await asyncio.sleep(5)  # Check every 5 seconds
+                
+                # Get job logs
+                pod = self.k8s_core.list_namespaced_pod(
+                    namespace=self.settings.KUBERNETES_NAMESPACE,
+                    label_selector=f"job-name={job_name}"
+                ).items[0]
+                
+                logs = self.k8s_core.read_namespaced_pod_log(
+                    name=pod.metadata.name,
+                    namespace=self.settings.KUBERNETES_NAMESPACE
+                )
+                
+                # Update job status
+                results[step_id] = {
+                    **job_info,
+                    "status": "completed" if job.status.succeeded else "failed",
+                    "completion_status": "succeeded" if job.status.succeeded else "failed",
+                    "logs": logs
+                }
+                
+                # Clean up the job if it's completed
+                try:
+                    self.k8s_batch.delete_namespaced_job(
+                        name=job_name,
+                        namespace=self.settings.KUBERNETES_NAMESPACE,
+                        body=client.V1DeleteOptions(
+                            propagation_policy='Background'
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to delete job {job_name}: {str(e)}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error waiting for jobs to complete: {str(e)}")
+            raise
