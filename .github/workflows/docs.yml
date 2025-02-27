@@ -35,7 +35,9 @@ jobs:
             mkdocstrings[python] \
             mkdocstrings-python \
             mkdocs-autorefs \
-            pymdown-extensions
+            mkdocs-material-extensions \
+            pymdown-extensions \
+            mike
 
       - name: Install Package
         run: |
@@ -46,8 +48,12 @@ jobs:
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
+      - name: Build and Test Documentation
+        run: |
+          mkdocs build --clean --verbose
+
       - name: Deploy Documentation
         run: |
-          mkdocs gh-deploy --force --clean
+          mkdocs gh-deploy --force --clean --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
