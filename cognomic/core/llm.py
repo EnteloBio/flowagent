@@ -899,7 +899,6 @@ Provide analysis in this format:
         response = await self._call_openai(
             messages,
             model=settings.OPENAI_MODEL,
-            response_format={"type": "json_object"},
         )
         self.logger.info(f"Analysis response: {response}")
         analysis = json.loads(response)
@@ -967,7 +966,6 @@ Provide analysis in this format:
         response = await self._call_openai(
             messages,
             model=settings.OPENAI_MODEL,
-            response_format={"type": "json_object"},
         )
         self.logger.info(f"Analysis response: {response}")
         analysis = json.loads(response)
@@ -1012,7 +1010,6 @@ Provide analysis in this format:
         response = await self._call_openai(
             messages,
             model=settings.OPENAI_MODEL,
-            response_format={"type": "json_object"},
         )
         self.logger.info(f"Analysis response: {response}")
         analysis = json.loads(response)

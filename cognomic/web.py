@@ -113,6 +113,8 @@ async def start_run_workflow(message: cl.Message, root_logger: RootLogger):
     extracted_params = await llm.analyze_run_prompt(message.content)
 
     response = cl.Message(content="```")
+
+    # TODO: Set this up as context manager so that we guarantee flush.
     stream_task = asyncio.create_task(stream_log_contents(root_logger, response))
 
     root_logger.info(f"Extracted parameters: {extracted_params}")
