@@ -33,21 +33,37 @@ jobs:
             mkdocs \
             mkdocs-material \
             mkdocstrings[python] \
+            mkdocstrings-python \
             mkdocs-autorefs \
             mkdocs-gen-files \
             mkdocs-literate-nav \
             mkdocs-section-index \
             pymdown-extensions \
-            mkdocs-material[imaging]
-          
-          # Install the package in development mode
-          pip install -e .
+            mkdocs-material[imaging] \
+            mkdocs-material-extensions \
+            mkdocs-git-revision-date-localized-plugin \
+            mkdocs-git-authors-plugin \
+            mkdocs-glightbox
 
-      - name: Build and Deploy MkDocs Site
+      - name: Install Package Dependencies
+        run: |
+          # Install the package and its dependencies in development mode
+          pip install -e ".[dev,docs]"
+
+      - name: Build Documentation
+        run: |
+          # First verify the mkdocs configuration
+          mkdocs build --strict
+          
+          # Show the build output directory contents for debugging
+          echo "Build output contents:"
+          ls -la site/
+
+      - name: Deploy to GitHub Pages
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          mkdocs build
           mkdocs gh-deploy --force --clean
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
