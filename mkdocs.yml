@@ -5,40 +5,30 @@ site_author: Cribbs Lab
 repo_url: https://github.com/cribbslab/flowagent
 repo_name: cribbslab/flowagent
 
-use_directory_urls: false
-
 theme:
   name: material
   features:
     - content.code.copy
-    - content.code.select
-    - content.tabs.link
-    - content.code.annotate
     - navigation.tabs
-    - navigation.instant
+    - navigation.sections
     - navigation.expand
     - navigation.top
-    - navigation.path
-    - navigation.footer
     - search.highlight
     - search.share
     - search.suggest
-    # - toc.integrate
-    - content.footnote.tooltips
-
-  icon:
-    repo: fontawesome/brands/github
-    
+  
   palette:
-    # Palette toggle for light mode
-    - primary: teal
+    - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: teal
+      accent: teal
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    # Palette toggle for dark mode
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       primary: teal
+      accent: teal
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -46,61 +36,34 @@ theme:
 plugins:
   - search
   - mkdocstrings:
+      default_handler: python
       handlers:
         python:
-          paths: [flowagent]  # search packages in the flowagent directory
+          paths: [flowagent]
           options:
             show_source: true
             show_root_heading: true
             show_category_heading: true
             show_bases: true
-            heading_level: 1
+  - autorefs
 
 markdown_extensions:
-  # Python Markdown extensions
   - admonition
-  - attr_list
-  - def_list
-  - footnotes
-  - md_in_html
-  - meta
-  - tables
-  - toc:
-      permalink: true
-      title: On this page
-  
-  # PyMdown Extensions
-  - pymdownx.arithmatex:
-      generic: true
-  - pymdownx.betterem:
-      smart_enable: all
-  - pymdownx.caret
   - pymdownx.details
+  - pymdownx.superfences
+  - attr_list
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - pymdownx.highlight:
-      anchor_linenums: true
-      line_spans: __span
-      pygments_lang_class: true
-  - pymdownx.inlinehilite
-  - pymdownx.keys
-  - pymdownx.mark
-  - pymdownx.smartsymbols
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-  - pymdownx.tabbed:
-      alternate_style: true
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - pymdownx.tilde
 
-extra:
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/cribbslab/flowagent
-      name: FlowAgent on GitHub
-  generator: false
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+  - User Guide:
+    - Concepts: user-guide/concepts.md
+  - API Reference:
+    - Overview: reference/index.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
