@@ -30,7 +30,7 @@ def setup_logging(log_dir: Optional[str] = None, level: int = logging.INFO) -> N
     root_logger.addHandler(console_handler)
     
     # Setup command logger with its own handler for better visibility
-    command_logger = logging.getLogger("cognomic.commands")
+    command_logger = logging.getLogger("flowagent.commands")
     command_logger.setLevel(level)
     command_logger.propagate = False  # Don't propagate to root logger
     
@@ -45,7 +45,7 @@ def setup_logging(log_dir: Optional[str] = None, level: int = logging.INFO) -> N
         
         # File handler for general logs
         file_handler = logging.FileHandler(
-            log_path / "cognomic.log"
+            log_path / "flowagent.log"
         )
         file_handler.setFormatter(detailed_formatter)
         file_handler.setLevel(level)

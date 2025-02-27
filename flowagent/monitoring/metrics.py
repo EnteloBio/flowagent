@@ -1,4 +1,4 @@
-"""Metrics collection and monitoring for Cognomic."""
+"""Metrics collection and monitoring for FlowAgent."""
 import time
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, Optional

@@ -1,4 +1,4 @@
-"""Settings module for Cognomic."""
+"""Settings module for FlowAgent."""
 
 import os
 from pathlib import Path
@@ -7,12 +7,12 @@ from pydantic import SecretStr, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    """Settings class for Cognomic."""
+    """Settings class for FlowAgent."""
     
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
     
     # Application Settings
-    APP_NAME: str = "Cognomic"
+    APP_NAME: str = "FlowAgent"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     
     # Database Settings
     VECTOR_DB_PATH: Path = Field(default=Path("data/vector_store"), env='VECTOR_DB_PATH')
-    SQLITE_DB_PATH: Path = Field(default=Path("data/cognomic.db"), env='SQLITE_DB_PATH')
+    SQLITE_DB_PATH: Path = Field(default=Path("data/flowagent.db"), env='SQLITE_DB_PATH')
     
     # Agent Settings
     MAX_CONCURRENT_WORKFLOWS: int = Field(5, env='MAX_CONCURRENT_WORKFLOWS')

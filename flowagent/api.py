@@ -1,5 +1,5 @@
 """
-API module for Cognomic application.
+API module for FlowAgent application.
 
 This module defines the FastAPI application and its endpoints for handling
 OpenAI chat completions, running workflows, and retrieving model information.
@@ -142,7 +142,7 @@ class OpenAIChatResponse(BaseModel):
             id=str(uuid.uuid4()),
             object="chat.completion",
             created=int(time.time()),
-            model="cognomic-custom-model",
+            model="flowagent-custom-model",
             system_fingerprint=SYSTEM_FINGERPRINT,
             choices=[
                 OpenAIChatResponseChoice(
@@ -365,7 +365,7 @@ async def get_models():
         "object": "list",
         "data": [
             {
-                "id": "cognomic-custom-model",
+                "id": "flowagent-custom-model",
                 "object": "model",
                 "created": SYSTEM_FINGERPRINT,
                 "owned_by": "caeruleus-genomics",

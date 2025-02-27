@@ -205,5 +205,5 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
         logger.info(f"You can resume the workflow using:")
-        logger.info(f"cognomic 'prompt {prompt}' --resume --checkpoint-dir={checkpoint_dir or 'workflow_state'}")
+        logger.info(f"flowagent 'prompt {prompt}' --resume --checkpoint-dir={checkpoint_dir or 'workflow_state'}")
         raise
