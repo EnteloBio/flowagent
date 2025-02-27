@@ -24,12 +24,24 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          pip install mkdocs-material mkdocstrings mkdocstrings-python
+          pip install \
+            mkdocs-material \
+            mkdocstrings \
+            mkdocstrings-python \
+            mkdocs-autorefs \
+            mkdocs-gen-files \
+            mkdocs-literate-nav \
+            mkdocs-section-index \
+            pydantic \
+            pydantic-settings \
+            python-dotenv \
+            networkx
 
       - name: Build and deploy documentation
         run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
           mkdocs gh-deploy --force
