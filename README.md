@@ -1,4 +1,4 @@
-# Cognomic 1.0
+# FlowAgent 1.0
 
 An advanced multi-agent framework for automating complex bioinformatics workflows.
 
@@ -17,12 +17,12 @@ An advanced multi-agent framework for automating complex bioinformatics workflow
 
 ```bash
 # Clone the repository
-git clone https://github.com/cribbslab/cognomic.git
-cd cognomic
+git clone https://github.com/cribbslab/flowagent.git
+cd flowagent
 
 # Create and activate the conda environment:
 conda env create -f conda/environment/environment.yml
-conda activate cognomic
+conda activate flowagent
 
 pip install .
 
@@ -30,7 +30,7 @@ pip install .
 kallisto version
 fastqc --version
 multiqc --version
-cognomic --help
+flowagent --help
 ```
 
 ## Quick Start
@@ -46,25 +46,25 @@ cp .env.example .env
 2. Run a CLI workflow:
 ```bash
 # Basic workflow execution
-cognomic prompt "run rna-seq analysis" --checkpoint-dir=workflow_state
+flowagent prompt "run rna-seq analysis" --checkpoint-dir=workflow_state
 
 # Resume a failed workflow
-cognomic prompt "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
+flowagent prompt "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
 ```
 
 3. Analyze workflow results:
 ```bash
 # Generate analysis report
-cognomic prompt "analyze workflow results" --analysis-dir=results
+flowagent prompt "analyze workflow results" --analysis-dir=results
 
 # Generate report without saving to file
-cognomic prompt "analyze workflow results" --analysis-dir=results --no-save-report
+flowagent prompt "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
 4. Run a chatbot workflow on a local web server:
 ```bash
 # Start server.
-cognomic serve --host 0.0.0.0 --port 8000
+flowagent serve --host 0.0.0.0 --port 8000
 ```
 
 
@@ -75,7 +75,7 @@ open http://0.0.0.0:8080
 
 ## OpenAI Model Configuration
 
-Cognomic uses OpenAI's language models for workflow generation and analysis. Different operations have different model requirements:
+FlowAgent uses OpenAI's language models for workflow generation and analysis. Different operations have different model requirements:
 
 1. **Workflow Generation** (`gpt-3.5-turbo` or better)
    - Basic workflow creation and execution can use `gpt-3.5-turbo`
@@ -100,7 +100,7 @@ Example configurations:
 OPENAI_MODEL=gpt-3.5-turbo
 
 # Run workflow
-cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis."
+flowagent "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis."
 ```
 
 2. For report generation:
@@ -109,18 +109,18 @@ cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq fi
 OPENAI_MODEL=gpt-4-turbo-preview
 
 # Generate comprehensive analysis
-cognomic "analyze workflow results" --analysis-dir=results
+flowagent "analyze workflow results" --analysis-dir=results
 ```
 
 You can also set the model temporarily using environment variables:
 ```bash
 # For one-time report generation with gpt-4-turbo-preview
-OPENAI_MODEL=gpt-4-turbo-preview cognomic "analyze workflow results" --analysis-dir=results
+OPENAI_MODEL=gpt-4-turbo-preview flowagent "analyze workflow results" --analysis-dir=results
 ```
 
 ## HPC Configuration
 
-Cognomic supports High-Performance Computing (HPC) execution, with built-in support for SLURM, SGE, and TORQUE systems. The HPC settings can be configured through environment variables or in your `.env` file.
+FlowAgent supports High-Performance Computing (HPC) execution, with built-in support for SLURM, SGE, and TORQUE systems. The HPC settings can be configured through environment variables or in your `.env` file.
 
 ### Basic HPC Settings
 
@@ -136,7 +136,7 @@ HPC_DEFAULT_TIME=60        # Default time limit in minutes
 
 ### Resource Management
 
-Cognomic automatically manages HPC resources with sensible defaults that can be overridden:
+FlowAgent automatically manages HPC resources with sensible defaults that can be overridden:
 
 1. **Memory Management**
    - Default: 4GB per job
@@ -159,12 +159,12 @@ To run a workflow on your HPC system:
 
 1. Basic execution:
 ```bash
-cognomic "Your workflow description" --executor hpc
+flowagent "Your workflow description" --executor hpc
 ```
 
 2. Specify custom resource requirements:
 ```bash
-cognomic "Your workflow description" --executor hpc --memory 32G --threads 16
+flowagent "Your workflow description" --executor hpc --memory 32G --threads 16
 ```
 
 The system will automatically:
@@ -176,18 +176,18 @@ The system will automatically:
 
 ## Analysis Reports
 
-The Cognomic analysis report functionality provides comprehensive insights into your workflow outputs. It analyzes quality metrics, alignment statistics, and expression data to generate actionable recommendations.
+The FlowAgent analysis report functionality provides comprehensive insights into your workflow outputs. It analyzes quality metrics, alignment statistics, and expression data to generate actionable recommendations.
 
 ### Running Analysis Reports
 
 ```bash
 # Basic analysis
-cognomic "analyze workflow results" --analysis-dir=/path/to/workflow/output
+flowagent "analyze workflow results" --analysis-dir=/path/to/workflow/output
 
 # Focus on specific aspects
-cognomic "analyze quality metrics" --analysis-dir=/path/to/workflow/output
-cognomic "analyze alignment rates" --analysis-dir=/path/to/workflow/output
-cognomic "analyze expression data" --analysis-dir=/path/to/workflow/output
+flowagent "analyze quality metrics" --analysis-dir=/path/to/workflow/output
+flowagent "analyze alignment rates" --analysis-dir=/path/to/workflow/output
+flowagent "analyze expression data" --analysis-dir=/path/to/workflow/output
 ```
 
 The analyzer will recursively search for relevant files in your analysis directory, including:
@@ -235,25 +235,25 @@ By default, the analysis report is:
 
 To only view the report without saving:
 ```bash
-cognomic "analyze workflow results" --analysis-dir=results --no-save-report
+flowagent "analyze workflow results" --analysis-dir=results --no-save-report
 ```
 
 ## Workflow State Management
 
-Cognomic includes a robust checkpointing system that helps manage long-running RNA-seq analysis workflows. This system allows you to resume interrupted workflows and avoid repeating expensive computations.
+FlowAgent includes a robust checkpointing system that helps manage long-running RNA-seq analysis workflows. This system allows you to resume interrupted workflows and avoid repeating expensive computations.
 
 ### Using Checkpoints
 
 1. **Basic Usage**:
    ```bash
    # Run workflow with checkpointing
-   cognomic prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state
+   flowagent prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state
    ```
 
 2. **Resuming Interrupted Workflows**:
    ```bash
    # Resume from last successful checkpoint
-   cognomic prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state --resume
+   flowagent prompt "Analyze RNA-seq data..." --checkpoint-dir workflow_state --resume
    ```
 
 ### How It Works
@@ -264,7 +264,7 @@ The checkpoint directory (e.g., `workflow_state`) stores:
 - Error logs and debugging information
 - Workflow configuration and parameters
 
-This allows Cognomic to:
+This allows FlowAgent to:
 - Resume workflows from the last successful step
 - Avoid recomputing expensive operations
 - Maintain workflow state across system restarts
@@ -275,7 +275,7 @@ This allows Cognomic to:
 1. **Choose Descriptive Directory Names**:
    ```bash
    # Use meaningful names for different analyses
-   cognomic prompt "..." --checkpoint-dir rnaseq_liver_samples_20250225
+   flowagent prompt "..." --checkpoint-dir rnaseq_liver_samples_20250225
    ```
 
 2. **Backup Checkpoint Directories**:
@@ -290,7 +290,7 @@ This allows Cognomic to:
 
 ## Architecture
 
-Cognomic 1.0 implements a modern, distributed architecture:
+FlowAgent 1.0 implements a modern, distributed architecture:
 
 - **Core Engine**: Orchestrates workflow execution and agent coordination
 - **Agent System**: Specialized agents for planning, execution, and monitoring
@@ -318,7 +318,7 @@ python -m isort .
 
 ## Building Documentation
 
-Cognomic uses MkDocs for documentation. To build the documentation locally, follow these steps:
+FlowAgent uses MkDocs for documentation. To build the documentation locally, follow these steps:
 
 1. Build the documentation:
 ```bash
@@ -346,21 +346,21 @@ MIT License - see LICENSE file for details
 
 ## Citation
 
-If you use Cognomic in your research, please cite:
+If you use FlowAgent in your research, please cite:
 
 ```bibtex
-@software{cognomic2025,
-  title={Cognomic: An Advanced Multi-Agent Framework for Bioinformatics Workflows},
+@software{flowagent2025,
+  title={FlowAgent: An Advanced Multi-Agent Framework for Bioinformatics Workflows},
   author={Cribbs Lab},
   year={2025},
-  url={https://github.com/cribbslab/cognomic}
+  url={https://github.com/cribbslab/flowagent}
 }
 
 ```
 
 ## Version Compatibility
 
-Cognomic automatically handles version compatibility for Kallisto indices:
+FlowAgent automatically handles version compatibility for Kallisto indices:
 
 1. **Version Checking**
    - Checks Kallisto version before index creation
@@ -390,7 +390,7 @@ conda env update -f conda/environment/environment.yml
 For development or testing, you can create a separate environment:
 
 ```bash
-conda env create -f conda/environment/environment.yml -n cognomic-dev
+conda env create -f conda/environment/environment.yml -n flowagent-dev
 
 ```
 
@@ -398,21 +398,21 @@ conda env create -f conda/environment/environment.yml -n cognomic-dev
 
 ```bash
 # Local execution
-cognomic "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+flowagent "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 
 # SLURM cluster execution
-cognomic --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
+flowagent --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 ```
 
 ### Advanced Usage
 
 1. Resume a failed workflow:
 ```bash
-cognomic --resume --checkpoint-dir workflow_state "Your workflow prompt"
+flowagent --resume --checkpoint-dir workflow_state "Your workflow prompt"
 ```
 
 2. Specify custom resource requirements:
 ```bash
-python -m cognomic.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
+python -m flowagent.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
 
 ```
