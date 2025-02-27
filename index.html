@@ -793,6 +793,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="getting-started/configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -855,6 +877,94 @@
   
   <span class="md-ellipsis">
     Concepts
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="user-guide/hpc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    HPC Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="user-guide/analysis/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Analysis Reports
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="user-guide/state-management/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    State Management
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="user-guide/version-compatibility/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Version Compatibility
     
   </span>
   
@@ -1304,9 +1414,9 @@
   
 
 
-<h1 id="flowagent-10">FlowAgent 1.0</h1>
+<h1 id="flowagent-10">FlowAgent 1.0<a class="headerlink" href="#flowagent-10" title="Permanent link">&para;</a></h1>
 <p>An advanced multi-agent framework for automating complex bioinformatics workflows.</p>
-<h2 id="features">Features</h2>
+<h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Workflow Automation</strong>: Seamlessly automate RNA-seq, ChIP-seq, single-cell analysis, and Hi-C processing</li>
 <li><strong>Multi-Agent Architecture</strong>: Distributed, fault-tolerant system with specialized agents</li>
@@ -1317,100 +1427,100 @@
 <li><strong>Extensible Design</strong>: Easy integration of new tools and workflows</li>
 <li><strong>Comprehensive Logging</strong>: Detailed audit trails and debugging information</li>
 </ul>
-<h2 id="installation">Installation</h2>
-<div class="highlight"><pre><span></span><code><span class="c1"># Clone the repository</span>
-git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cribbslab/flowagent.git
-<span class="nb">cd</span><span class="w"> </span>flowagent
-
-<span class="c1"># Create and activate the conda environment:</span>
-conda<span class="w"> </span>env<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>conda/environment/environment.yml
-conda<span class="w"> </span>activate<span class="w"> </span>flowagent
-
-<span class="c1"># Verify installation of key components</span>
-kallisto<span class="w"> </span>version
-fastqc<span class="w"> </span>--version
-multiqc<span class="w"> </span>--version
-
-<span class="c1"># Add bioinformatics tools</span>
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">fastqc</span><span class="o">=</span><span class="m">0</span>.12.1
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span>trim-galore<span class="o">=</span><span class="m">0</span>.6.10
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">star</span><span class="o">=</span><span class="m">2</span>.7.10b
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">subread</span><span class="o">=</span><span class="m">2</span>.0.6
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>r-base<span class="o">=</span><span class="m">4</span>.2
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span>bioconductor-deseq2
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">samtools</span><span class="o">=</span><span class="m">1</span>.17
-mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">multiqc</span><span class="o">=</span><span class="m">1</span>.14
+<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Clone the repository</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cribbslab/flowagent.git
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">cd</span><span class="w"> </span>flowagent
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Create and activate the conda environment:</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>conda<span class="w"> </span>env<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>conda/environment/environment.yml
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>conda<span class="w"> </span>activate<span class="w"> </span>flowagent
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># Verify installation of key components</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>kallisto<span class="w"> </span>version
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>fastqc<span class="w"> </span>--version
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>multiqc<span class="w"> </span>--version
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Add bioinformatics tools</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">fastqc</span><span class="o">=</span><span class="m">0</span>.12.1
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span>trim-galore<span class="o">=</span><span class="m">0</span>.6.10
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">star</span><span class="o">=</span><span class="m">2</span>.7.10b
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">subread</span><span class="o">=</span><span class="m">2</span>.0.6
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>r-base<span class="o">=</span><span class="m">4</span>.2
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span>bioconductor-deseq2
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">samtools</span><span class="o">=</span><span class="m">1</span>.17
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>mamba<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>bioconda<span class="w"> </span><span class="nv">multiqc</span><span class="o">=</span><span class="m">1</span>.14
 </code></pre></div>
-<h2 id="quick-start">Quick Start</h2>
+<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <ol>
 <li>
 <p>Set up your environment:
-<div class="highlight"><pre><span></span><code><span class="c1"># Copy the environment template</span>
-cp<span class="w"> </span>.env.example<span class="w"> </span>.env
-
-<span class="c1"># Edit .env with your settings</span>
-<span class="c1"># Required:</span>
-<span class="c1"># - SECRET_KEY: Generate a secure random key (e.g., using: python -c &quot;import secrets; print(secrets.token_hex(32))&quot;)</span>
-<span class="c1"># - OPENAI_API_KEY: Your OpenAI API key (if using LLM features)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Copy the environment template</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Edit .env with your settings</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># Required:</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># - SECRET_KEY: Generate a secure random key (e.g., using: python -c &quot;import secrets; print(secrets.token_hex(32))&quot;)</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># - OPENAI_API_KEY: Your OpenAI API key (if using LLM features)</span>
 </code></pre></div></p>
 </li>
 <li>
 <p>Run a workflow:
-<div class="highlight"><pre><span></span><code><span class="c1"># Basic workflow execution</span>
-flowagent<span class="w"> </span><span class="s2">&quot;run rna-seq analysis&quot;</span><span class="w"> </span>--checkpoint-dir<span class="o">=</span>workflow_state
-
-<span class="c1"># Resume a failed workflow</span>
-flowagent<span class="w"> </span><span class="s2">&quot;run rna-seq analysis&quot;</span><span class="w"> </span>--checkpoint-dir<span class="o">=</span>workflow_state<span class="w"> </span>--resume
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Basic workflow execution</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>flowagent<span class="w"> </span><span class="s2">&quot;run rna-seq analysis&quot;</span><span class="w"> </span>--checkpoint-dir<span class="o">=</span>workflow_state
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Resume a failed workflow</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>flowagent<span class="w"> </span><span class="s2">&quot;run rna-seq analysis&quot;</span><span class="w"> </span>--checkpoint-dir<span class="o">=</span>workflow_state<span class="w"> </span>--resume
 </code></pre></div></p>
 </li>
 <li>
 <p>Analyze workflow results:
-<div class="highlight"><pre><span></span><code><span class="c1"># Generate analysis report</span>
-flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>results
-
-<span class="c1"># Generate report without saving to file</span>
-flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>results<span class="w"> </span>--no-save-report
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Generate analysis report</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>results
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Generate report without saving to file</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>results<span class="w"> </span>--no-save-report
 </code></pre></div></p>
 </li>
 </ol>
-<h2 id="api-key-configuration">API Key Configuration</h2>
+<h2 id="api-key-configuration">API Key Configuration<a class="headerlink" href="#api-key-configuration" title="Permanent link">&para;</a></h2>
 <p>FlowAgent requires several API keys for full functionality. You can configure these using environment variables or a <code>.env</code> file in the project root directory.</p>
-<h3 id="required-api-keys">Required API Keys</h3>
+<h3 id="required-api-keys">Required API Keys<a class="headerlink" href="#required-api-keys" title="Permanent link">&para;</a></h3>
 <ol>
 <li>
 <p><strong>Secret Key</strong> (for JWT token generation):
-<div class="highlight"><pre><span></span><code><span class="nv">SECRET_KEY</span><span class="o">=</span>your-secure-secret-key
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">SECRET_KEY</span><span class="o">=</span>your-secure-secret-key
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>OpenAI API Key</strong> (for LLM functionality):
-<div class="highlight"><pre><span></span><code><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-openai-api-key
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-openai-api-key
 </code></pre></div></p>
 </li>
 </ol>
-<h3 id="setting-up-openai-api-keys">Setting Up OpenAI API Keys</h3>
+<h3 id="setting-up-openai-api-keys">Setting Up OpenAI API Keys<a class="headerlink" href="#setting-up-openai-api-keys" title="Permanent link">&para;</a></h3>
 <p>There are two ways to configure your API keys:</p>
 <ol>
 <li>
 <p><strong>Using Environment Variables</strong>:
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">SECRET_KEY</span><span class="o">=</span>your-secure-secret-key
-<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-openai-api-key
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SECRET_KEY</span><span class="o">=</span>your-secure-secret-key
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-openai-api-key
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Using a .env File</strong>:
 Create a <code>.env</code> file in the project root directory:
-<div class="highlight"><pre><span></span><code><span class="c1"># .env</span>
-<span class="nv">SECRET_KEY</span><span class="o">=</span>your-secure-secret-key
-<span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-openai-api-key
-
-<span class="c1"># Optional Settings</span>
-<span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>https://api.openai.com/v1<span class="w">  </span><span class="c1"># Default OpenAI API URL</span>
-<span class="nv">OPENAI_MODEL</span><span class="o">=</span>gpt-4<span class="w">                         </span><span class="c1"># Default LLM model</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># .env</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nv">SECRET_KEY</span><span class="o">=</span>your-secure-secret-key
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-openai-api-key
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># Optional Settings</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>https://api.openai.com/v1<span class="w">  </span><span class="c1"># Default OpenAI API URL</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="nv">OPENAI_MODEL</span><span class="o">=</span>gpt-4<span class="w">                         </span><span class="c1"># Default LLM model</span>
 </code></pre></div></p>
 </li>
 </ol>
-<h3 id="security-best-practices">Security Best Practices</h3>
+<h3 id="security-best-practices">Security Best Practices<a class="headerlink" href="#security-best-practices" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Never commit your <code>.env</code> file to version control</li>
 <li>Use strong, unique keys for each environment (development, staging, production)</li>
@@ -1418,24 +1528,24 @@ Create a <code>.env</code> file in the project root directory:
 <li>Keep your API keys secure and never share them in public repositories</li>
 </ol>
 <p>The <code>.env</code> file is automatically loaded by the application when it starts. All sensitive information is handled securely using Pydantic's <code>SecretStr</code> type to prevent accidental exposure in logs or error messages.</p>
-<h2 id="security-configuration">Security Configuration</h2>
-<h3 id="setting-up-the-secret-key">Setting up the Secret Key</h3>
+<h2 id="security-configuration">Security Configuration<a class="headerlink" href="#security-configuration" title="Permanent link">&para;</a></h2>
+<h3 id="setting-up-the-secret-key">Setting up the Secret Key<a class="headerlink" href="#setting-up-the-secret-key" title="Permanent link">&para;</a></h3>
 <p>The <code>SECRET_KEY</code> is a crucial security element in FlowAgent used for:
 - Generating and validating JSON Web Tokens (JWTs) for API authentication
 - Securing session data
 - Protecting against cross-site request forgery (CSRF) attacks</p>
 <p>To generate a secure random key, run:
-<div class="highlight"><pre><span></span><code><span class="c1"># Generate a secure random key using Python</span>
-python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import secrets; print(secrets.token_urlsafe(32))&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Generate a secure random key using Python</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import secrets; print(secrets.token_urlsafe(32))&quot;</span>
 </code></pre></div></p>
 <p>Add the generated key to your <code>.env</code> file:
-<div class="highlight"><pre><span></span><code><span class="c1"># Copy the example environment file</span>
-cp<span class="w"> </span>env.example<span class="w"> </span>/path/to/your/.env
-
-<span class="c1"># Edit .env and update the SECRET_KEY</span>
-<span class="nv">SECRET_KEY</span><span class="o">=</span>your-generated-key-here
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Copy the example environment file</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>cp<span class="w"> </span>env.example<span class="w"> </span>/path/to/your/.env
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Edit .env and update the SECRET_KEY</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nv">SECRET_KEY</span><span class="o">=</span>your-generated-key-here
 </code></pre></div></p>
-<h3 id="security-best-practices_1">Security Best Practices</h3>
+<h3 id="security-best-practices_1">Security Best Practices<a class="headerlink" href="#security-best-practices_1" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong>Secret Key Management</strong>:</li>
 <li>Never commit your <code>.env</code> file to version control</li>
@@ -1462,30 +1572,30 @@ cp<span class="w"> </span>env.example<span class="w"> </span>/path/to/your/.env
 <li>Keep the default unless you have specific requirements</li>
 </ol>
 <p>Example security configuration in <code>.env</code>:
-<div class="highlight"><pre><span></span><code><span class="c1"># Security Settings</span>
-<span class="nv">SECRET_KEY</span><span class="o">=</span>r39pR2XJXhRLEt8rb4GlkTA5snI971VO5c2vF2FSzL0<span class="w">  </span><span class="c1"># Generated secure key</span>
-<span class="nv">API_KEY_HEADER</span><span class="o">=</span>X-API-Key<span class="w">                                  </span><span class="c1"># Default header</span>
-<span class="nv">ACCESS_TOKEN_EXPIRE_MINUTES</span><span class="o">=</span><span class="m">30</span><span class="w">                            </span><span class="c1"># Token lifetime</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Security Settings</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nv">SECRET_KEY</span><span class="o">=</span>r39pR2XJXhRLEt8rb4GlkTA5snI971VO5c2vF2FSzL0<span class="w">  </span><span class="c1"># Generated secure key</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nv">API_KEY_HEADER</span><span class="o">=</span>X-API-Key<span class="w">                                  </span><span class="c1"># Default header</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="nv">ACCESS_TOKEN_EXPIRE_MINUTES</span><span class="o">=</span><span class="m">30</span><span class="w">                            </span><span class="c1"># Token lifetime</span>
 </code></pre></div></p>
-<h2 id="slurm-configuration">SLURM Configuration</h2>
+<h2 id="slurm-configuration">SLURM Configuration<a class="headerlink" href="#slurm-configuration" title="Permanent link">&para;</a></h2>
 <p>FlowAgent supports SLURM cluster execution. To configure SLURM, create a <code>.cgat.yml</code> file in the project root directory:</p>
-<div class="highlight"><pre><span></span><code><span class="nt">cluster</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">queue_manager</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">slurm</span>
-<span class="w">  </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_queue</span>
-<span class="w">  </span><span class="nt">parallel_environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">smp</span>
-
-<span class="nt">slurm</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">account</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_account</span>
-<span class="w">  </span><span class="nt">partition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_partition</span>
-<span class="w">  </span><span class="nt">mail_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your.email@example.com</span>
-
-<span class="nt">tools</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">kallisto_index</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16G</span>
-<span class="w">    </span><span class="nt">threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
-<span class="w">    </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">short</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">cluster</span><span class="p">:</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">queue_manager</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">slurm</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_queue</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">parallel_environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">smp</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="nt">slurm</span><span class="p">:</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">account</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_account</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">  </span><span class="nt">partition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_partition</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">  </span><span class="nt">mail_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your.email@example.com</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="nt">tools</span><span class="p">:</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">  </span><span class="nt">kallisto_index</span><span class="p">:</span>
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16G</span>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">    </span><span class="nt">threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">    </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">short</span>
 </code></pre></div>
-<h3 id="slurm-integration">SLURM Integration</h3>
+<h3 id="slurm-integration">SLURM Integration<a class="headerlink" href="#slurm-integration" title="Permanent link">&para;</a></h3>
 <p>FlowAgent uses CGATCore for SLURM integration, which provides:</p>
 <ol>
 <li><strong>Job Management</strong></li>
@@ -1509,27 +1619,27 @@ cp<span class="w"> </span>env.example<span class="w"> </span>/path/to/your/.env
 <li>Detailed error logging</li>
 <li>Email notifications for job completion/failure</li>
 </ol>
-<h3 id="slurm-usage">SLURM Usage</h3>
+<h3 id="slurm-usage">SLURM Usage<a class="headerlink" href="#slurm-usage" title="Permanent link">&para;</a></h3>
 <p>To execute a workflow on a SLURM cluster, use the <code>--executor cgat</code> option:</p>
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span><span class="s2">&quot;Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis.&quot;</span><span class="w"> </span>--workflow<span class="w"> </span>rnaseq<span class="w"> </span>--input<span class="w"> </span>data/<span class="w"> </span>--executor<span class="w"> </span>cgat
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span><span class="s2">&quot;Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis.&quot;</span><span class="w"> </span>--workflow<span class="w"> </span>rnaseq<span class="w"> </span>--input<span class="w"> </span>data/<span class="w"> </span>--executor<span class="w"> </span>cgat
 </code></pre></div>
-<h2 id="analysis-reports">Analysis Reports</h2>
+<h2 id="analysis-reports">Analysis Reports<a class="headerlink" href="#analysis-reports" title="Permanent link">&para;</a></h2>
 <p>The FlowAgent analysis report functionality provides comprehensive insights into your workflow outputs. It analyzes quality metrics, alignment statistics, and expression data to generate actionable recommendations.</p>
-<h3 id="running-analysis-reports">Running Analysis Reports</h3>
-<div class="highlight"><pre><span></span><code><span class="c1"># Basic analysis</span>
-flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
-
-<span class="c1"># Focus on specific aspects</span>
-flowagent<span class="w"> </span><span class="s2">&quot;analyze quality metrics&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
-flowagent<span class="w"> </span><span class="s2">&quot;analyze alignment rates&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
-flowagent<span class="w"> </span><span class="s2">&quot;analyze expression data&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
+<h3 id="running-analysis-reports">Running Analysis Reports<a class="headerlink" href="#running-analysis-reports" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Basic analysis</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Focus on specific aspects</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>flowagent<span class="w"> </span><span class="s2">&quot;analyze quality metrics&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>flowagent<span class="w"> </span><span class="s2">&quot;analyze alignment rates&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>flowagent<span class="w"> </span><span class="s2">&quot;analyze expression data&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>/path/to/workflow/output
 </code></pre></div>
 <p>The analyzer will recursively search for relevant files in your analysis directory, including:
 - FastQC outputs
 - MultiQC reports
 - Kallisto results
 - Log files</p>
-<h3 id="report-components">Report Components</h3>
+<h3 id="report-components">Report Components<a class="headerlink" href="#report-components" title="Permanent link">&para;</a></h3>
 <p>The analysis report includes:</p>
 <ol>
 <li><strong>Summary</strong></li>
@@ -1571,14 +1681,14 @@ flowagent<span class="w"> </span><span class="s2">&quot;analyze expression data&
 <li>Parameter optimization tips</li>
 <li>Technical issue resolutions</li>
 </ol>
-<h3 id="report-output">Report Output</h3>
+<h3 id="report-output">Report Output<a class="headerlink" href="#report-output" title="Permanent link">&para;</a></h3>
 <p>By default, the analysis report is:
 1. Displayed in the console
 2. Saved as a markdown file (<code>analysis_report.md</code>) in your analysis directory</p>
 <p>To only view the report without saving:
-<div class="highlight"><pre><span></span><code>flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>results<span class="w"> </span>--no-save-report
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>flowagent<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>results<span class="w"> </span>--no-save-report
 </code></pre></div></p>
-<h2 id="architecture">Architecture</h2>
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
 <p>FlowAgent 1.0 implements a modern, distributed architecture:</p>
 <ul>
 <li><strong>Core Engine</strong>: Orchestrates workflow execution and agent coordination</li>
@@ -1588,21 +1698,21 @@ flowagent<span class="w"> </span><span class="s2">&quot;analyze expression data&
 <li><strong>API Layer</strong>: RESTful and GraphQL APIs for integration</li>
 <li><strong>Monitoring System</strong>: Real-time metrics and alerting</li>
 </ul>
-<h2 id="development">Development</h2>
-<div class="highlight"><pre><span></span><code><span class="c1"># Run tests</span>
-python<span class="w"> </span>-m<span class="w"> </span>pytest
-
-<span class="c1"># Run type checking</span>
-python<span class="w"> </span>-m<span class="w"> </span>mypy<span class="w"> </span>.
-
-<span class="c1"># Run linting</span>
-python<span class="w"> </span>-m<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.
-
-<span class="c1"># Format code</span>
-python<span class="w"> </span>-m<span class="w"> </span>black<span class="w"> </span>.
-python<span class="w"> </span>-m<span class="w"> </span>isort<span class="w"> </span>.
+<h2 id="development">Development<a class="headerlink" href="#development" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Run tests</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Run type checking</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>python<span class="w"> </span>-m<span class="w"> </span>mypy<span class="w"> </span>.
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># Run linting</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>python<span class="w"> </span>-m<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="c1"># Format code</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>python<span class="w"> </span>-m<span class="w"> </span>black<span class="w"> </span>.
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>python<span class="w"> </span>-m<span class="w"> </span>isort<span class="w"> </span>.
 </code></pre></div>
-<h2 id="contributing">Contributing</h2>
+<h2 id="contributing">Contributing<a class="headerlink" href="#contributing" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Fork the repository</li>
 <li>Create a feature branch</li>
@@ -1610,18 +1720,18 @@ python<span class="w"> </span>-m<span class="w"> </span>isort<span class="w"> </
 <li>Run tests and linting</li>
 <li>Submit a pull request</li>
 </ol>
-<h2 id="license">License</h2>
+<h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
 <p>MIT License - see LICENSE file for details</p>
-<h2 id="citation">Citation</h2>
+<h2 id="citation">Citation<a class="headerlink" href="#citation" title="Permanent link">&para;</a></h2>
 <p>If you use FlowAgent in your research, please cite:</p>
-<div class="highlight"><pre><span></span><code><span class="nc">@software</span><span class="p">{</span><span class="nl">flowagent2025</span><span class="p">,</span>
-<span class="w">  </span><span class="na">title</span><span class="p">=</span><span class="s">{FlowAgent: An Advanced Multi-Agent Framework for Bioinformatics Workflows}</span><span class="p">,</span>
-<span class="w">  </span><span class="na">author</span><span class="p">=</span><span class="s">{Cribbs Lab}</span><span class="p">,</span>
-<span class="w">  </span><span class="na">year</span><span class="p">=</span><span class="s">{2025}</span><span class="p">,</span>
-<span class="w">  </span><span class="na">url</span><span class="p">=</span><span class="s">{https://github.com/cribbslab/flowagent}</span>
-<span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nc">@software</span><span class="p">{</span><span class="nl">flowagent2025</span><span class="p">,</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="na">title</span><span class="p">=</span><span class="s">{FlowAgent: An Advanced Multi-Agent Framework for Bioinformatics Workflows}</span><span class="p">,</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="na">author</span><span class="p">=</span><span class="s">{Cribbs Lab}</span><span class="p">,</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="na">year</span><span class="p">=</span><span class="s">{2025}</span><span class="p">,</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="na">url</span><span class="p">=</span><span class="s">{https://github.com/cribbslab/flowagent}</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="p">}</span>
 </code></pre></div>
-<h2 id="version-compatibility">Version Compatibility</h2>
+<h2 id="version-compatibility">Version Compatibility<a class="headerlink" href="#version-compatibility" title="Permanent link">&para;</a></h2>
 <p>FlowAgent automatically handles version compatibility for Kallisto indices:</p>
 <ol>
 <li><strong>Version Checking</strong></li>
@@ -1645,31 +1755,31 @@ python<span class="w"> </span>-m<span class="w"> </span>isort<span class="w"> </
 <li>Maintains compatibility information</li>
 <li>Enables reproducible analyses</li>
 </ol>
-<h3 id="updating-the-environment">Updating the Environment</h3>
+<h3 id="updating-the-environment">Updating the Environment<a class="headerlink" href="#updating-the-environment" title="Permanent link">&para;</a></h3>
 <p>To update your conda environment with new dependencies:</p>
-<div class="highlight"><pre><span></span><code>conda<span class="w"> </span>env<span class="w"> </span>update<span class="w"> </span>-f<span class="w"> </span>conda/environment/environment.yml
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>conda<span class="w"> </span>env<span class="w"> </span>update<span class="w"> </span>-f<span class="w"> </span>conda/environment/environment.yml
 </code></pre></div>
-<h3 id="managing-multiple-environments">Managing Multiple Environments</h3>
+<h3 id="managing-multiple-environments">Managing Multiple Environments<a class="headerlink" href="#managing-multiple-environments" title="Permanent link">&para;</a></h3>
 <p>For development or testing, you can create a separate environment:</p>
-<div class="highlight"><pre><span></span><code>conda<span class="w"> </span>env<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>conda/environment/environment.yml<span class="w"> </span>-n<span class="w"> </span>flowagent-dev
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>conda<span class="w"> </span>env<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>conda/environment/environment.yml<span class="w"> </span>-n<span class="w"> </span>flowagent-dev
 </code></pre></div>
-<h3 id="basic-usage">Basic Usage</h3>
-<div class="highlight"><pre><span></span><code><span class="c1"># Local execution</span>
-python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span><span class="s2">&quot;Analyze RNA-seq data in my fastq.gz files using Kallisto&quot;</span>
-
-<span class="c1"># SLURM cluster execution</span>
-python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span>--executor<span class="w"> </span>cgat<span class="w"> </span><span class="s2">&quot;Analyze RNA-seq data in my fastq.gz files using Kallisto&quot;</span>
+<h3 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># Local execution</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span><span class="s2">&quot;Analyze RNA-seq data in my fastq.gz files using Kallisto&quot;</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># SLURM cluster execution</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span>--executor<span class="w"> </span>cgat<span class="w"> </span><span class="s2">&quot;Analyze RNA-seq data in my fastq.gz files using Kallisto&quot;</span>
 </code></pre></div>
-<h3 id="advanced-usage">Advanced Usage</h3>
+<h3 id="advanced-usage">Advanced Usage<a class="headerlink" href="#advanced-usage" title="Permanent link">&para;</a></h3>
 <ol>
 <li>
 <p>Resume a failed workflow:
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span>--resume<span class="w"> </span>--checkpoint-dir<span class="w"> </span>workflow_state<span class="w"> </span><span class="s2">&quot;Your workflow prompt&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span>--resume<span class="w"> </span>--checkpoint-dir<span class="w"> </span>workflow_state<span class="w"> </span><span class="s2">&quot;Your workflow prompt&quot;</span>
 </code></pre></div></p>
 </li>
 <li>
 <p>Specify custom resource requirements:
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span>--executor<span class="w"> </span>cgat<span class="w"> </span>--memory<span class="w"> </span>32G<span class="w"> </span>--threads<span class="w"> </span><span class="m">16</span><span class="w"> </span><span class="s2">&quot;Your workflow prompt&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>python<span class="w"> </span>-m<span class="w"> </span>flowagent.cli<span class="w"> </span>--executor<span class="w"> </span>cgat<span class="w"> </span>--memory<span class="w"> </span>32G<span class="w"> </span>--threads<span class="w"> </span><span class="m">16</span><span class="w"> </span><span class="s2">&quot;Your workflow prompt&quot;</span>
 </code></pre></div></p>
 </li>
 </ol>
