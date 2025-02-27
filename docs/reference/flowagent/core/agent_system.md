@@ -4,4 +4,4 @@ title: Agent System
 
 This module coordinates agents and tools for workflow execution.
 
-::: cognomic.core.agent_system
+::: flowagent.core.agent_system
