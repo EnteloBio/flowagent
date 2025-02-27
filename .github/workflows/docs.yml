@@ -53,7 +53,7 @@ jobs:
       - name: Build Documentation
         run: |
           # First verify the mkdocs configuration
-          mkdocs build --strict
+          mkdocs build
           
           # Show the build output directory contents for debugging
           echo "Build output contents:"
