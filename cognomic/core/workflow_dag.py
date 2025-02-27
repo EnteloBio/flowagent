@@ -8,7 +8,7 @@ import asyncio
 import logging
 
 from ..utils.logging import get_logger
-from .executors import BaseExecutor, LocalExecutor, HPCExecutor
+from .executors import BaseExecutor, LocalExecutor, HPCExecutor, KubernetesExecutor
 
 logger = get_logger(__name__)
 
@@ -19,13 +19,18 @@ class WorkflowDAG:
         """Initialize workflow DAG.
         
         Args:
-            executor_type: Type of executor to use ("local" or "hpc")
+            executor_type: Type of executor to use ("local", "hpc", or "kubernetes")
         """
         self.graph = nx.DiGraph()
-        self.executor = (
-            HPCExecutor() if executor_type == "hpc" 
-            else LocalExecutor()
-        )
+        
+        # Initialize appropriate executor
+        if executor_type == "kubernetes":
+            self.executor = KubernetesExecutor()
+        elif executor_type == "hpc":
+            self.executor = HPCExecutor()
+        else:
+            self.executor = LocalExecutor()
+            
         logger.info(f"Initialized WorkflowDAG with {executor_type} executor")
     
     def add_step(self, step: Dict[str, Any], dependencies: List[str] = None):
