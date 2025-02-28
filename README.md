@@ -403,6 +403,24 @@ flowagent "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 # SLURM cluster execution
 flowagent --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
 ```
+### Suggested prompts
+
+1. Bulk paired-end RNA-seq workflow:
+
+```bash
+flowagent prompt "Analyze RNA-seq data I have paired ended data with the read 1 being named with the suffix .fastq.1.gz and the read2 being .fastq.2.gz using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is pair ended. Generate QC reports and save everything in results/." --checkpoint-dir workflow_state
+```
+2. Bulk single-end RNA-seq workflow:
+
+```bash
+flowagent prompt "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --checkpoint-dir workflow_state
+```
+
+3.single-nuclei workflow:
+
+```bash
+flowagent prompt "Analyze single-nuclei RNA-seq data. I have paired ended data with the read 1 being named with the suffix .fastq.1.gz and the read2 being .fastq.2.gz using kb_python. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz as genome fasta and Homo_sapiens.GRCh38.105.gtf.gz as the gtf file. I want the nuclei analysis. Generate QC reports and save everything in results/. The dependancy is kb-python and it can be installed using pip" --checkpoint-dir workflow_state
+```
 
 ### Advanced Usage
 
