@@ -69,7 +69,8 @@ class LLMInterface:
             "rules": [
                 "FastQC: fastqc file.fastq.gz -o results/rna_seq_kallisto/fastqc",
                 "Kallisto index: kallisto index -i results/rna_seq_kallisto/kallisto_index/transcripts.idx reference.fa",
-                "Kallisto quant: kallisto quant -o results/rna_seq_kallisto/kallisto_quant/sample_name --single -l 200 -s 20 -i results/rna_seq_kallisto/kallisto_index/transcripts.idx file.fastq.gz",
+                "Kallisto quant paired: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name read1.fastq.gz read2.fastq.gz",
+                "Kallisto quant single: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name --single -l 200 -s 20 read.fastq.gz",
                 "MultiQC: multiqc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant -o results/rna_seq_kallisto/qc",
             ],
         },
