@@ -34,13 +34,12 @@ class WorkflowAnalyzer:
             self.logger.info(f"Starting multi-agent analysis of {workflow_type} workflow")
             results_path = Path(results_dir)
             
-            # First try to find any output directories recursively
-            output_dirs = []
-            for pattern in ["**/rna_seq*", "**/kallisto*", "**/results*", "**/output*"]:
-                output_dirs.extend(results_path.glob(pattern))
+            # Search in base directory and all subdirectories
+            search_paths = [results_path]
+            for subdir in results_path.rglob("*"):
+                if subdir.is_dir():
+                    search_paths.append(subdir)
             
-            # Add the base directory and any found output directories to search paths
-            search_paths = [results_path] + output_dirs
             self.logger.info(f"Searching in directories: {[str(p) for p in search_paths]}")
             
             # 1. Data Quality & Preprocessing
@@ -84,17 +83,30 @@ class WorkflowAnalyzer:
         """Analyze data quality metrics."""
         try:
             # Look for FastQC and MultiQC reports with flexible naming
-            fastqc_patterns = ["*_fastqc.html", "*fastqc_report.html", "**/fastqc/*"]
-            multiqc_patterns = ["multiqc_report.html", "**/multiqc/*report.html"]
+            fastqc_patterns = ["*_fastqc.html", "*fastqc_report.html", "**/fastqc/*", "*.zip"]
+            multiqc_patterns = ["multiqc_report.html", "**/multiqc/*report.html", "**/multiqc_data/*"]
             
             fastqc_reports = self._find_files_in_paths(search_paths, fastqc_patterns)
             multiqc_reports = self._find_files_in_paths(search_paths, multiqc_patterns)
             
+            # Parse FastQC results if available
+            fastqc_metrics = {}
+            for report in fastqc_reports:
+                if report.suffix == '.zip':
+                    # Extract sample name from FastQC zip
+                    sample_name = report.stem.replace('_fastqc', '')
+                    fastqc_metrics[sample_name] = {
+                        'report': str(report),
+                        'status': 'completed'
+                    }
+            
             return {
                 "fastqc_reports": [str(p) for p in fastqc_reports],
                 "multiqc_reports": [str(p) for p in multiqc_reports],
-                "num_samples": len(fastqc_reports) // 2  # Paired-end data
+                "num_samples": len(fastqc_metrics),
+                "sample_metrics": fastqc_metrics
             }
+            
         except Exception as e:
             self.logger.error(f"Error analyzing data quality: {e}")
             return {"error": str(e)}
@@ -120,12 +132,21 @@ class WorkflowAnalyzer:
                 try:
                     with open(info_file) as f:
                         run_info = json.load(f)
-                    results["samples"].append({
+                    
+                    # Try to find corresponding abundance file
+                    sample_dir = info_file.parent
+                    abundance_file = next((f for f in abundance_files if f.parent == sample_dir), None)
+                    
+                    sample_info = {
                         "sample": info_file.parent.name,
                         "n_processed": run_info.get("n_processed", 0),
                         "n_pseudoaligned": run_info.get("n_pseudoaligned", 0),
-                        "n_unique": run_info.get("n_unique", 0)
-                    })
+                        "n_unique": run_info.get("n_unique", 0),
+                        "abundance_file": str(abundance_file) if abundance_file else None
+                    }
+                    
+                    results["samples"].append(sample_info)
+                    
                 except Exception as e:
                     self.logger.warning(f"Error parsing run info {info_file}: {e}")
                     
@@ -142,17 +163,40 @@ class WorkflowAnalyzer:
                 # RNA-seq specific outputs
                 # 1. Expression Quantification
                 abundance_files = self._find_files_in_paths(search_paths, ["*abundance*", "*.h5", "*.tsv"])
-                quant_metrics = {}
+                kallisto_dir = self._find_files_in_paths(search_paths, ["**/kallisto/*", "**/kallisto_quant/*"])
+                
+                # Parse abundance files for expression metrics
+                expression_metrics = {}
                 for abundance_file in abundance_files:
                     try:
+                        sample_name = abundance_file.parent.name
                         with open(abundance_file) as f:
-                            header = f.readline()
-                            if "tpm" in header.lower():
-                                quant_metrics["has_tpm"] = True
-                            if "counts" in header.lower():
-                                quant_metrics["has_counts"] = True
-                    except:
-                        pass
+                            header = f.readline()  # Skip header
+                            tpm_values = []
+                            count_values = []
+                            for line in f:
+                                parts = line.strip().split("\t")
+                                if len(parts) >= 4:  # Typical Kallisto abundance.tsv format
+                                    try:
+                                        tpm = float(parts[3])
+                                        count = float(parts[2])
+                                        if tpm > 0:
+                                            tpm_values.append(tpm)
+                                        if count > 0:
+                                            count_values.append(count)
+                                    except (ValueError, IndexError):
+                                        continue
+                            
+                            if tpm_values:
+                                expression_metrics[sample_name] = {
+                                    "total_transcripts": len(tpm_values),
+                                    "expressed_transcripts": len([t for t in tpm_values if t > 1.0]),
+                                    "median_tpm": sorted(tpm_values)[len(tpm_values)//2],
+                                    "mean_tpm": sum(tpm_values) / len(tpm_values),
+                                    "total_counts": sum(count_values) if count_values else 0
+                                }
+                    except Exception as e:
+                        self.logger.warning(f"Error parsing abundance file {abundance_file}: {e}")
 
                 # 2. Differential Expression
                 deseq_files = self._find_files_in_paths(search_paths, ["*deseq*", "*differential*", "*DE_results*"])
@@ -160,36 +204,59 @@ class WorkflowAnalyzer:
                 for deseq_file in deseq_files:
                     try:
                         with open(deseq_file) as f:
-                            header = f.readline()
-                            if "padj" in header.lower():
-                                diff_expr_metrics["has_padj"] = True
-                            if "log2foldchange" in header.lower():
-                                diff_expr_metrics["has_fold_change"] = True
-                    except:
-                        pass
+                            header = f.readline().lower()
+                            sig_genes = 0
+                            total_genes = 0
+                            for line in f:
+                                total_genes += 1
+                                parts = line.strip().split("\t")
+                                try:
+                                    if "padj" in header:
+                                        padj_idx = header.split("\t").index("padj")
+                                        if float(parts[padj_idx]) < 0.05:
+                                            sig_genes += 1
+                                except (ValueError, IndexError):
+                                    continue
+                            
+                            diff_expr_metrics[deseq_file.stem] = {
+                                "total_genes": total_genes,
+                                "significant_genes": sig_genes,
+                                "significance_threshold": 0.05
+                            }
+                    except Exception as e:
+                        self.logger.warning(f"Error parsing DE file {deseq_file}: {e}")
 
                 # 3. Clustering & QC
                 clustering_files = self._find_files_in_paths(search_paths, ["*pca*", "*clustering*", "*heatmap*"])
                 qc_files = self._find_files_in_paths(search_paths, ["*qc*", "*quality*", "*metrics*"])
                 
-                # 4. Batch Effect Analysis
-                batch_files = self._find_files_in_paths(search_paths, ["*batch*", "*combat*", "*corrected*"])
-                
-                # 5. Pathway Analysis
-                pathway_files = self._find_files_in_paths(search_paths, ["*pathway*", "*enrichment*", "*gsea*"])
+                # 4. Resource Usage
+                log_files = self._find_files_in_paths(search_paths, ["*.log", "**/logs/*"])
+                resource_metrics = {}
+                for log_file in log_files:
+                    try:
+                        with open(log_file) as f:
+                            content = f.read()
+                            if "kallisto" in content.lower():
+                                resource_metrics["kallisto"] = {
+                                    "found_logs": True,
+                                    "log_file": str(log_file)
+                                }
+                    except Exception as e:
+                        self.logger.warning(f"Error parsing log file {log_file}: {e}")
                 
                 return {
                     "expression_quantification": {
                         "kallisto_output": bool(abundance_files),
                         "num_abundance_files": len(abundance_files),
                         "abundance_files": [str(p) for p in abundance_files],
-                        "metrics": quant_metrics
+                        "sample_metrics": expression_metrics
                     },
                     "differential_expression": {
                         "deseq_output": bool(deseq_files),
                         "num_deseq_files": len(deseq_files),
                         "deseq_files": [str(p) for p in deseq_files],
-                        "metrics": diff_expr_metrics
+                        "analysis_metrics": diff_expr_metrics
                     },
                     "clustering_analysis": {
                         "clustering_output": bool(clustering_files),
@@ -198,18 +265,9 @@ class WorkflowAnalyzer:
                         "qc_files": [str(p) for p in qc_files],
                         "has_qc_metrics": bool(qc_files)
                     },
-                    "batch_correction": {
-                        "batch_output": bool(batch_files),
-                        "num_batch_files": len(batch_files),
-                        "batch_files": [str(p) for p in batch_files]
-                    },
-                    "pathway_analysis": {
-                        "pathway_output": bool(pathway_files),
-                        "num_pathway_files": len(pathway_files),
-                        "pathway_files": [str(p) for p in pathway_files]
-                    }
+                    "resource_usage": resource_metrics
                 }
-                
+            
             elif workflow_type == "chip_seq":
                 # ChIP-seq specific outputs
                 peak_files = self._find_files_in_paths(search_paths, ["*peaks.bed", "*peaks.narrowPeak", "*peaks.broadPeak"])
@@ -342,15 +400,13 @@ class WorkflowAnalyzer:
                     sections.append("#### Expression Quantification")
                     sections.append(f"- Kallisto Output Present: {expr['kallisto_output']}")
                     sections.append(f"- Number of Abundance Files: {expr['num_abundance_files']}")
-                    sections.append(f"- TPM Metrics: {expr['metrics'].get('has_tpm', False)}")
-                    sections.append(f"- Counts Metrics: {expr['metrics'].get('has_counts', False)}")
+                    sections.append(f"- TPM Metrics: {expr['sample_metrics']}")
                     
                     diff = workflow["differential_expression"]
                     sections.append("\n#### Differential Expression")
                     sections.append(f"- DESeq Output Present: {diff['deseq_output']}")
                     sections.append(f"- Number of DE Results: {diff['num_deseq_files']}")
-                    sections.append(f"- Adjusted P-Value Metrics: {diff['metrics'].get('has_padj', False)}")
-                    sections.append(f"- Fold Change Metrics: {diff['metrics'].get('has_fold_change', False)}")
+                    sections.append(f"- Analysis Metrics: {diff['analysis_metrics']}")
                     
                     clust = workflow["clustering_analysis"]
                     sections.append("\n#### Clustering Analysis")
@@ -358,15 +414,15 @@ class WorkflowAnalyzer:
                     sections.append(f"- Number of Clustering Files: {clust['num_clustering_files']}")
                     sections.append(f"- QC Metrics Present: {clust['has_qc_metrics']}")
                     
-                    batch = workflow["batch_correction"]
+                    batch = workflow.get("batch_correction", {})
                     sections.append("\n#### Batch Effect Analysis")
-                    sections.append(f"- Batch Output Present: {batch['batch_output']}")
-                    sections.append(f"- Number of Batch Files: {batch['num_batch_files']}")
+                    sections.append(f"- Batch Output Present: {batch.get('batch_output', False)}")
+                    sections.append(f"- Number of Batch Files: {batch.get('num_batch_files', 0)}")
                     
-                    pathway = workflow["pathway_analysis"]
+                    pathway = workflow.get("pathway_analysis", {})
                     sections.append("\n#### Pathway Analysis")
-                    sections.append(f"- Pathway Output Present: {pathway['pathway_output']}")
-                    sections.append(f"- Number of Pathway Files: {pathway['num_pathway_files']}")
+                    sections.append(f"- Pathway Output Present: {pathway.get('pathway_output', False)}")
+                    sections.append(f"- Number of Pathway Files: {pathway.get('num_pathway_files', 0)}")
                 
                 # ChIP-seq specific metrics
                 elif "peak_calling" in workflow:
