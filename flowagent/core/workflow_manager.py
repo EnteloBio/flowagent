@@ -78,24 +78,36 @@ class WorkflowManager:
             output_dir = None
             steps = workflow_plan.get("steps", [])
             
-            # Look for create_directories step first
+            # Look for create_directories step first to get base output directory
             for step in steps:
                 if step.get("name", "").lower() == "create_directories":
                     cmd = step.get("command", "")
-                    if "mkdir" in cmd and "-p" in cmd:
-                        # Extract base output directory from mkdir command
-                        parts = cmd.split()
-                        for part in parts:
-                            if "results/" in part:
-                                dirs = part.split()
-                                if dirs:
-                                    output_dir = Path(dirs[0])
-                                    break
+                    if "mkdir" in cmd and "results/" in cmd:
+                        # Extract the base output directory (first results/* directory)
+                        parts = cmd.split("results/")
+                        if len(parts) > 1:
+                            # Get the first directory path without subdirectories
+                            base_dir = parts[1].split()[0].split("/")[0]
+                            output_dir = f"results/{base_dir}"
+                            break
+            
+            if not output_dir:
+                # Fallback: look for any results/* pattern in commands
+                for step in steps:
+                    cmd = step.get("command", "")
+                    if "results/" in cmd:
+                        parts = cmd.split("results/")
+                        if len(parts) > 1:
+                            # Get the first directory path without subdirectories
+                            base_dir = parts[1].split()[0].split("/")[0]
+                            output_dir = f"results/{base_dir}"
+                            break
             
             if not output_dir:
                 self.logger.warning("No output directory found in workflow steps")
-            else:
-                self.logger.info(f"Using output directory from workflow steps: {output_dir}")
+                output_dir = "results"  # Default to results directory
+            
+            self.logger.info(f"Using output directory: {output_dir}")
             
             # Initialize workflow DAG
             dag = WorkflowDAG(self.executor_type)
@@ -108,7 +120,6 @@ class WorkflowManager:
                 except ValueError as e:
                     self.logger.error(f"Error adding step {step.get('name', 'unknown')} to workflow:")
                     self.logger.error(f"Command: {step.get('command', 'N/A')}")
-                    self.logger.error(f"Dependencies: {dependencies}")
                     self.logger.error(f"Error: {str(e)}")
                     raise
             
@@ -122,21 +133,22 @@ class WorkflowManager:
                 
                 # Save visualization of failed workflow
                 if output_dir:
-                    viz_file = output_dir / "failed_workflow.png"
+                    viz_file = Path(output_dir) / "failed_workflow.png"
                     dag.visualize(viz_file)
                 
                 raise ValueError(f"Workflow execution failed: {results.get('error', 'unknown error')}")
             
             return {
                 "status": "success",
-                "output_dir": output_dir,
+                "output_directory": output_dir,
+                "steps": steps,
                 "results": results
             }
             
         except Exception as e:
             self.logger.error(f"Workflow execution failed: {str(e)}")
             return {
-                "status": "failed",
+                "status": "error",
                 "error": str(e)
             }
 
