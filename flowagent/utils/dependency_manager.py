@@ -51,6 +51,10 @@ For each command in the workflow steps, identify:
 2. Required Python packages (available via conda-forge or pip)
 3. Required R packages (from CRAN or Bioconductor)
 
+Special Cases:
+- If you see 'kb' commands being used, this requires the 'kb-python' package which must be installed via pip
+- Some tools may have Python package equivalents that are preferred (e.g., kb-python instead of kb)
+
 Return a JSON object with this structure:
 {{
     "tools": [
@@ -80,6 +84,7 @@ Return a JSON object with this structure:
 }}
 
 Focus on identifying dependencies that are actually used in the commands or are essential for the workflow type.
+For Python packages that must be installed via pip, make sure to specify "channel": "pip".
 """
             
             # Get LLM response
@@ -218,7 +223,19 @@ Example format:
             dependencies = await self.analyze_workflow_dependencies(workflow_plan)
             all_installed = True
             
-            # Check and install tools
+            # Check for kb-python special case
+            if any(tool["name"] == "kb" for tool in dependencies.get("tools", [])):
+                self.logger.info("Detected kb tool requirement, installing kb-python via pip")
+                result = subprocess.run("pip install kb-python", shell=True, capture_output=True, text=True)
+                if result.returncode != 0:
+                    self.logger.error(f"Failed to install kb-python: {result.stderr}")
+                    all_installed = False
+                else:
+                    self.logger.info("Successfully installed kb-python")
+                    # Remove kb from tools list since we've handled it
+                    dependencies["tools"] = [t for t in dependencies["tools"] if t["name"] != "kb"]
+            
+            # Check and install remaining tools
             for tool in dependencies.get("tools", []):
                 if not self.check_tool(tool["name"]):
                     self.logger.info(f"Installing tool: {tool['name']} ({tool['reason']})")
