@@ -63,8 +63,16 @@ class WorkflowManager:
             
             # Check and install required dependencies using LLM analysis
             self.logger.info("Analyzing and installing required dependencies...")
-            if not await self.dependency_manager.ensure_workflow_dependencies(workflow_plan):
-                raise ValueError("Failed to ensure all required workflow dependencies")
+            try:
+                if not await self.dependency_manager.ensure_workflow_dependencies(workflow_plan):
+                    raise ValueError("Failed to ensure all required workflow dependencies")
+            except Exception as dep_error:
+                self.logger.error("Dependency installation failed:")
+                self.logger.error(f"Error: {str(dep_error)}")
+                self.logger.error("Required dependencies:")
+                for dep in workflow_plan.get("dependencies", {}).get("tools", []):
+                    self.logger.error(f"  - {dep.get('name', 'unknown')}: {dep.get('reason', 'N/A')}")
+                raise ValueError(f"Dependency installation failed: {str(dep_error)}")
             
             # Get output directory from workflow steps
             output_dir = None
@@ -80,62 +88,57 @@ class WorkflowManager:
                         for part in parts:
                             if "results/" in part:
                                 dirs = part.split()
-                                output_dir = dirs[0].split("/")[0:2]  # Get base output dir
-                                output_dir = "/".join(output_dir)
-                                break
-            
-            # Fallback: check other steps for output directory pattern
-            if not output_dir:
-                for step in steps:
-                    cmd = step.get("command", "")
-                    if "results/" in cmd:
-                        parts = cmd.split()
-                        for part in parts:
-                            if "results/" in part:
-                                dirs = part.split("/")[0:2]  # Get base output dir
-                                output_dir = "/".join(dirs)
-                                break
-                    if output_dir:
-                        break
+                                if dirs:
+                                    output_dir = Path(dirs[0])
+                                    break
             
             if not output_dir:
-                raise ValueError("No output directory found in workflow steps")
+                self.logger.warning("No output directory found in workflow steps")
+            else:
+                self.logger.info(f"Using output directory from workflow steps: {output_dir}")
+            
+            # Initialize workflow DAG
+            dag = WorkflowDAG(self.executor_type)
+            
+            # Add steps to DAG
+            for step in steps:
+                try:
+                    dependencies = [dep for dep in step.get("dependencies", [])]
+                    dag.add_step(step, dependencies)
+                except ValueError as e:
+                    self.logger.error(f"Error adding step {step.get('name', 'unknown')} to workflow:")
+                    self.logger.error(f"Command: {step.get('command', 'N/A')}")
+                    self.logger.error(f"Dependencies: {dependencies}")
+                    self.logger.error(f"Error: {str(e)}")
+                    raise
+            
+            # Execute workflow
+            results = await dag.execute_parallel()
+            
+            if results["status"] == "failed":
+                self.logger.error("Workflow execution failed:")
+                self.logger.error(f"Failed step: {results.get('failed_step', 'unknown')}")
+                self.logger.error(f"Error: {results.get('error', 'unknown error')}")
                 
-            # Resolve output directory path
-            output_dir = str(Path(output_dir).resolve())
-            self.logger.info(f"Using output directory from workflow steps: {output_dir}")
+                # Save visualization of failed workflow
+                if output_dir:
+                    viz_file = output_dir / "failed_workflow.png"
+                    dag.visualize(viz_file)
+                
+                raise ValueError(f"Workflow execution failed: {results.get('error', 'unknown error')}")
             
-            # Create output directory
-            file_utils.ensure_directory(output_dir)
-            
-            # Create workflow DAG with specified executor
-            self.dag = WorkflowDAG(executor_type=self.executor_type)
-            
-            # Add steps to DAG with dependencies
-            for step in workflow_plan["steps"]:
-                dependencies = step.get("dependencies", [])
-                self.dag.add_step(step, dependencies)
-            
-            # Execute workflow using parallel execution
-            results = await self.dag.execute_parallel()
-            
-            # Add output directory to results
-            results["output_directory"] = output_dir
-            
-            # Analyze results using agentic system
-            self.logger.info(f"Analyzing results in directory: {output_dir}")
-            analysis = await self.analyze_results(results)
-            
-            # Combine workflow results with analysis
             return {
-                "workflow_results": results,
-                "analysis": analysis,
-                "output_directory": output_dir
+                "status": "success",
+                "output_dir": output_dir,
+                "results": results
             }
             
         except Exception as e:
             self.logger.error(f"Workflow execution failed: {str(e)}")
-            raise
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
 
     async def analyze_results(self, workflow_results: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze workflow results using agentic system."""
