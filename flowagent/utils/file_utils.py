@@ -76,15 +76,55 @@ def to_relative_path(abs_path: str, base_dir: str) -> str:
         return abs_path
 
 def find_fastq_files(directory: str) -> List[str]:
-    """Find all FASTQ files in a directory."""
+    """Find all FASTQ files in a directory.
+    
+    Supports all common FASTQ naming conventions:
+    - Standard: .fastq, .fastq.gz, .fq, .fq.gz
+    - Paired-end suffixes:
+        - .fastq.1.gz, .fastq.2.gz
+        - .fq.1.gz, .fq.2.gz
+        - _1.fastq.gz, _2.fastq.gz
+        - _R1.fastq.gz, _R2.fastq.gz
+        - .R1.fastq.gz, .R2.fastq.gz
+        - Same patterns without .gz compression
+    
+    Args:
+        directory: Directory to search for FASTQ files
+        
+    Returns:
+        List of relative paths to FASTQ files found
+    """
     fastq_files = []
+    # Define base extensions
+    base_exts = ('.fastq', '.fq')
+    # Define paired-end patterns
+    pair_patterns = (
+        '.1', '.2',  # .fastq.1.gz
+        '_1', '_2',  # _1.fastq.gz
+        '_R1', '_R2',  # _R1.fastq.gz
+        '.R1', '.R2'  # .R1.fastq.gz
+    )
+    
+    # Build full list of extensions with all combinations
+    fastq_extensions = []
+    for base in base_exts:
+        # Add basic extensions
+        fastq_extensions.append(base)
+        fastq_extensions.append(f"{base}.gz")
+        # Add paired-end patterns
+        for pattern in pair_patterns:
+            fastq_extensions.append(f"{pattern}{base}")
+            fastq_extensions.append(f"{pattern}{base}.gz")
+            fastq_extensions.append(f"{base}{pattern}")
+            fastq_extensions.append(f"{base}{pattern}.gz")
+    
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(('.fastq', '.fastq.gz', '.fq', '.fq.gz')):
+            if any(file.endswith(ext) for ext in fastq_extensions):
                 abs_path = os.path.join(root, file)
                 rel_path = to_relative_path(abs_path, directory)
                 fastq_files.append(rel_path)
-    return fastq_files
+    return sorted(fastq_files)  # Sort for consistent ordering
 
 def ensure_directory(path: str) -> None:
     """Ensure a directory exists, creating it if necessary.

@@ -175,14 +175,32 @@ class WorkflowDAG:
                 
                 # Execute step
                 logger.info(f"Executing step: {step_name}")
-                result = await execute(step)
-                jobs[step_name] = result
-                
-                # Update step status in graph
-                self.graph.nodes[step_name]["step"]["status"] = result.get("status", "pending")
-                
-                if result.get("status") == "failed":
-                    raise Exception(f"Step {step_name} failed: {result.get('stderr', '')}")
+                try:
+                    result = await execute(step)
+                    jobs[step_name] = result
+                    
+                    # Update step status in graph
+                    self.graph.nodes[step_name]["step"]["status"] = result.get("status", "pending")
+                    
+                    if result.get("status") == "failed":
+                        error_msg = result.get("stderr", "")
+                        cmd = step.get("command", "")
+                        logger.error(f"Step {step_name} failed:\nCommand: {cmd}\nError: {error_msg}")
+                        
+                        # Check for common error patterns
+                        if "command not found" in error_msg:
+                            logger.error(f"Tool '{cmd.split()[0]}' not found. Please ensure it is installed and in your PATH")
+                        elif "permission denied" in error_msg.lower():
+                            logger.error("Permission denied. Check file/directory permissions")
+                        elif "no such file" in error_msg.lower():
+                            logger.error("Required input file not found. Check file paths and names")
+                            
+                        raise Exception(f"Step {step_name} failed: {error_msg}")
+                        
+                except Exception as step_error:
+                    logger.error(f"Error executing step {step_name}: {str(step_error)}")
+                    self.graph.nodes[step_name]["step"]["status"] = "failed"
+                    raise
             
             # Wait for all jobs to complete
             results = await self.executor.wait_for_completion(jobs)
@@ -197,14 +215,28 @@ class WorkflowDAG:
             }
             
         except Exception as e:
-            # Mark remaining steps as failed
+            # Mark remaining steps as failed and log detailed error
+            failed_step = None
             for step_name in self.graph.nodes:
-                if step_name not in jobs:
-                    self.graph.nodes[step_name]["step"]["status"] = "failed"
-                    
-            logger.error(f"Step execution failed: {str(e)}")
+                status = self.graph.nodes[step_name]["step"].get("status", "")
+                if status == "failed":
+                    failed_step = step_name
+                    break
+                elif status != "completed":
+                    self.graph.nodes[step_name]["step"]["status"] = "cancelled"
+            
+            if failed_step:
+                step = self.graph.nodes[failed_step]["step"]
+                logger.error(f"Workflow failed at step '{failed_step}':")
+                logger.error(f"Command: {step.get('command', 'N/A')}")
+                logger.error(f"Error: {str(e)}")
+                logger.error("Dependencies:")
+                for dep in self.graph.predecessors(failed_step):
+                    dep_status = self.graph.nodes[dep]["step"].get("status", "unknown")
+                    logger.error(f"  - {dep}: {dep_status}")
+            
             return {
                 "status": "failed",
                 "error": str(e),
-                "results": jobs
+                "failed_step": failed_step
             }
