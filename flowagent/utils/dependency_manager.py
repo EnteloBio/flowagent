@@ -26,17 +26,18 @@ class DependencyManager:
         """Use LLM to analyze workflow dependencies from the workflow plan."""
         try:
             # Extract workflow information for LLM
+            steps = []
+            for step in workflow_plan.get("steps", []):
+                steps.append({
+                    "name": step.get("name", ""),
+                    "command": step.get("command", ""),
+                    "description": step.get("description", "")
+                })
+            
             workflow_info = {
-                "workflow_type": workflow_plan.get("workflow_type", "unknown"),
+                "workflow_type": workflow_plan.get("type", "custom"),
                 "description": workflow_plan.get("description", ""),
-                "steps": [
-                    {
-                        "name": step.get("name", ""),
-                        "command": step.get("command", ""),
-                        "description": step.get("description", "")
-                    }
-                    for step in workflow_plan.get("steps", [])
-                ]
+                "steps": steps
             }
             
             # Create prompt for LLM
@@ -49,6 +50,10 @@ For each command in the workflow steps, identify:
 1. Required command-line tools (available via conda-forge or bioconda)
 2. Required Python packages (available via conda-forge or pip)
 3. Required R packages (from CRAN or Bioconductor)
+
+Special Cases:
+- If you see 'kb' commands being used, this requires the 'kb-python' package which must be installed via pip
+- Some tools may have Python package equivalents that are preferred (e.g., kb-python instead of kb)
 
 Return a JSON object with this structure:
 {{
@@ -79,22 +84,48 @@ Return a JSON object with this structure:
 }}
 
 Focus on identifying dependencies that are actually used in the commands or are essential for the workflow type.
+For Python packages that must be installed via pip, make sure to specify "channel": "pip".
 """
             
             # Get LLM response
             response = await self.llm._call_openai(
                 messages=[
-                    {"role": "system", "content": "You are an expert in bioinformatics workflows and software dependencies."},
+                    {
+                        "role": "system", 
+                        "content": """You are an expert in bioinformatics workflows and software dependencies.
+You must respond with valid JSON only, no other text.
+Example format:
+{
+    "tools": [{"name": "tool_name", "channel": "conda-forge", "min_version": "1.0.0", "reason": "explanation"}],
+    "python_packages": [{"name": "package", "channel": "pip", "min_version": "2.0.0", "reason": "explanation"}],
+    "r_packages": [{"name": "package", "channel": "cran", "min_version": "0.1.0", "reason": "explanation"}]
+}"""
+                    },
                     {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"}
+                ]
             )
             
-            # Parse dependencies
-            dependencies = json.loads(response)
-            self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
-            
-            return dependencies
+            try:
+                # Clean the response to ensure it's valid JSON
+                response = response.strip()
+                if response.startswith("```json"):
+                    response = response[7:]
+                if response.startswith("```"):
+                    response = response[3:]
+                if response.endswith("```"):
+                    response = response[:-3]
+                response = response.strip()
+                
+                # Parse dependencies
+                dependencies = json.loads(response)
+                self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
+                
+                return dependencies
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
+                self.logger.error(f"Raw response: {response}")
+                raise
             
         except Exception as e:
             self.logger.error(f"Failed to analyze workflow dependencies: {str(e)}")
@@ -192,7 +223,19 @@ Focus on identifying dependencies that are actually used in the commands or are 
             dependencies = await self.analyze_workflow_dependencies(workflow_plan)
             all_installed = True
             
-            # Check and install tools
+            # Check for kb-python special case
+            if any(tool["name"] == "kb" for tool in dependencies.get("tools", [])):
+                self.logger.info("Detected kb tool requirement, installing kb-python via pip")
+                result = subprocess.run("pip install kb-python", shell=True, capture_output=True, text=True)
+                if result.returncode != 0:
+                    self.logger.error(f"Failed to install kb-python: {result.stderr}")
+                    all_installed = False
+                else:
+                    self.logger.info("Successfully installed kb-python")
+                    # Remove kb from tools list since we've handled it
+                    dependencies["tools"] = [t for t in dependencies["tools"] if t["name"] != "kb"]
+            
+            # Check and install remaining tools
             for tool in dependencies.get("tools", []):
                 if not self.check_tool(tool["name"]):
                     self.logger.info(f"Installing tool: {tool['name']} ({tool['reason']})")
