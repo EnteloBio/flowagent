@@ -200,6 +200,54 @@ class LLMInterface:
                 "MultiQC: multiqc results/single_cell_salmon/fastqc results/single_cell_salmon/alevin_map results/single_cell_salmon/alevin_quant -o results/single_cell_salmon/qc",
             ],
         },
+        "hic": {
+            "keywords": [
+                "hi-c",
+                "hic",
+                "hi c",
+                "chromosome conformation",
+                "3d genome",
+                "chromatin interaction",
+                "nuclear organization",
+                "contact map",
+            ],
+            "tools": [
+                "fastqc",
+                "multiqc",
+                "bowtie2",
+                "samtools",
+                "cooler",
+                "pairix",
+                "hicexplorer",
+                "juicer",
+            ],
+            "dir_structure": [
+                "results/hic/fastqc",
+                "results/hic/mapped",
+                "results/hic/pairs",
+                "results/hic/matrices",
+                "results/hic/mcool",
+                "results/hic/tads",
+                "results/hic/plots",
+                "results/hic/qc",
+            ],
+            "rules": [
+                "FastQC: fastqc {read1} {read2} -o results/hic/fastqc",
+                "Bowtie2 (read1): bowtie2 -x {reference_index} -U {read1} --very-sensitive -p 8 | samtools view -Shb - > results/hic/mapped/read1.bam",
+                "Bowtie2 (read2): bowtie2 -x {reference_index} -U {read2} --very-sensitive -p 8 | samtools view -Shb - > results/hic/mapped/read2.bam",
+                "Sort BAMs: samtools sort -@ 8 results/hic/mapped/read1.bam -o results/hic/mapped/read1.sorted.bam && samtools sort -@ 8 results/hic/mapped/read2.bam -o results/hic/mapped/read2.sorted.bam",
+                "Index BAMs: samtools index results/hic/mapped/read1.sorted.bam && samtools index results/hic/mapped/read2.sorted.bam",
+                "Merge Pairs: pairtools parse --min-mapq 40 --walks-policy 5unique --max-inter-align-gap 30 --nproc-in 8 --nproc-out 8 --chroms-path {chrom_sizes} results/hic/mapped/read1.sorted.bam results/hic/mapped/read2.sorted.bam > results/hic/pairs/merged.pairs",
+                "Sort Pairs: pairtools sort --nproc 8 results/hic/pairs/merged.pairs > results/hic/pairs/merged.sorted.pairs",
+                "Deduplicate: pairtools dedup --nproc-in 8 --nproc-out 8 --mark-dups --output results/hic/pairs/merged.sorted.dedup.pairs results/hic/pairs/merged.sorted.pairs",
+                "Convert to Cool: cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 {chrom_sizes}:1000 results/hic/pairs/merged.sorted.dedup.pairs results/hic/matrices/contact_matrix.cool",
+                "Balance Matrix: cooler balance -p 8 results/hic/matrices/contact_matrix.cool",
+                "Create Multi-res: cooler zoomify --balance -p 8 results/hic/matrices/contact_matrix.cool -o results/hic/mcool/contact_matrix.mcool",
+                "Call TADs: hicFindTADs -m results/hic/matrices/contact_matrix.cool --outPrefix results/hic/tads/domains --correctForMultipleTesting fdr",
+                "Plot Contact Map: hicPlotMatrix -m results/hic/matrices/contact_matrix.cool -o results/hic/plots/contact_map.pdf --log1p --dpi 300",
+                "MultiQC: multiqc results/hic/fastqc results/hic/mapped results/hic/pairs -o results/hic/qc",
+            ],
+        },
     }
 
     WORKFLOW_CONFIG = {
@@ -670,11 +718,11 @@ Resource Management Rules:
 1. Each task must specify resource requirements and include a brief description
 2. Consider input data size for resource scaling
 3. Available resource profiles:
-   - minimal: 1 CPU, 2GB RAM (lightweight tasks)
-   - default: 1 CPU, 4GB RAM (standard preprocessing)
-   - high_memory: 1 CPU, 32GB RAM (genome indexing)
-   - multi_thread: 8 CPUs, 16GB RAM (parallel tasks)
-   - high_memory_parallel: 8 CPUs, 64GB RAM (heavy processing)
+   - minimal (1 CPU, 2GB RAM): For lightweight tasks
+   - default (1 CPU, 4GB RAM): For standard preprocessing
+   - high_memory (1 CPU, 32GB RAM): For memory-intensive tasks
+   - multi_thread (8 CPUs, 16GB RAM): For parallel tasks
+   - high_memory_parallel (8 CPUs, 64GB RAM): For heavy processing
 
 4. For unknown tools, provide:
    - Brief description of the tool's purpose
