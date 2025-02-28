@@ -1,10 +1,14 @@
 """Settings module for FlowAgent."""
 
 import os
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from pydantic import SecretStr, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     """Settings class for FlowAgent."""
@@ -27,6 +31,25 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = Field('gpt-4', env='OPENAI_MODEL')
     OPENAI_FALLBACK_MODEL: str = Field('gpt-3.5-turbo', env='OPENAI_FALLBACK_MODEL')
+    
+    @field_validator('OPENAI_API_KEY')
+    def validate_openai_key(cls, v):
+        if not v:
+            env_path = Path('.env')
+            if not env_path.exists():
+                logger.warning(
+                    "\n⚠️  No .env file found in the current directory."
+                    "\n   Please create a .env file with your OpenAI API key:"
+                    "\n   OPENAI_API_KEY=your-api-key-here"
+                    "\n   OPENAI_MODEL=gpt-4 (optional)"
+                )
+            else:
+                logger.warning(
+                    "\n⚠️  OPENAI_API_KEY not found in environment variables or .env file."
+                    "\n   Please add your OpenAI API key to the .env file:"
+                    "\n   OPENAI_API_KEY=your-api-key-here"
+                )
+        return v
     
     # Rate Limiting Settings
     MAX_RETRIES: int = Field(5, env='MAX_RETRIES')
