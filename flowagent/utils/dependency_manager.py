@@ -26,17 +26,18 @@ class DependencyManager:
         """Use LLM to analyze workflow dependencies from the workflow plan."""
         try:
             # Extract workflow information for LLM
+            steps = []
+            for step in workflow_plan.get("steps", []):
+                steps.append({
+                    "name": step.get("name", ""),
+                    "command": step.get("command", ""),
+                    "description": step.get("description", "")
+                })
+            
             workflow_info = {
-                "workflow_type": workflow_plan.get("workflow_type", "unknown"),
+                "workflow_type": workflow_plan.get("type", "custom"),
                 "description": workflow_plan.get("description", ""),
-                "steps": [
-                    {
-                        "name": step.get("name", ""),
-                        "command": step.get("command", ""),
-                        "description": step.get("description", "")
-                    }
-                    for step in workflow_plan.get("steps", [])
-                ]
+                "steps": steps
             }
             
             # Create prompt for LLM
@@ -84,17 +85,42 @@ Focus on identifying dependencies that are actually used in the commands or are 
             # Get LLM response
             response = await self.llm._call_openai(
                 messages=[
-                    {"role": "system", "content": "You are an expert in bioinformatics workflows and software dependencies."},
+                    {
+                        "role": "system", 
+                        "content": """You are an expert in bioinformatics workflows and software dependencies.
+You must respond with valid JSON only, no other text.
+Example format:
+{
+    "tools": [{"name": "tool_name", "channel": "conda-forge", "min_version": "1.0.0", "reason": "explanation"}],
+    "python_packages": [{"name": "package", "channel": "pip", "min_version": "2.0.0", "reason": "explanation"}],
+    "r_packages": [{"name": "package", "channel": "cran", "min_version": "0.1.0", "reason": "explanation"}]
+}"""
+                    },
                     {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"}
+                ]
             )
             
-            # Parse dependencies
-            dependencies = json.loads(response)
-            self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
-            
-            return dependencies
+            try:
+                # Clean the response to ensure it's valid JSON
+                response = response.strip()
+                if response.startswith("```json"):
+                    response = response[7:]
+                if response.startswith("```"):
+                    response = response[3:]
+                if response.endswith("```"):
+                    response = response[:-3]
+                response = response.strip()
+                
+                # Parse dependencies
+                dependencies = json.loads(response)
+                self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
+                
+                return dependencies
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
+                self.logger.error(f"Raw response: {response}")
+                raise
             
         except Exception as e:
             self.logger.error(f"Failed to analyze workflow dependencies: {str(e)}")

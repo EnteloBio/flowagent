@@ -6,13 +6,9 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
-import networkx as nx
-import openai
 from openai import AsyncOpenAI
 
 from ..config.settings import Settings
-from ..utils import file_utils
 from ..utils.logging import get_logger
 
 # Initialize settings
@@ -20,9 +16,38 @@ settings = Settings()
 
 logger = get_logger(__name__)
 
-
 class LLMInterface:
     """Interface for LLM-based workflow generation."""
+    
+    def __init__(self):
+        """Initialize LLM interface."""
+        self.logger = get_logger(__name__)
+        
+        # Check for OpenAI API key and .env file
+        env_path = Path('.env')
+        if not env_path.exists():
+            self.logger.error(
+                "\n⚠️  No .env file found in the current directory."
+                "\n   Please create a .env file with your OpenAI API key:"
+                "\n   OPENAI_API_KEY=your-api-key-here"
+                "\n   OPENAI_MODEL=gpt-4 (optional)"
+                "\n   OPENAI_FALLBACK_MODEL=gpt-3.5-turbo (optional)"
+            )
+            raise ValueError("Missing .env file with OpenAI API key")
+        
+        if not settings.OPENAI_API_KEY:
+            self.logger.error(
+                "\n⚠️  OPENAI_API_KEY not found in environment variables or .env file."
+                "\n   Please add your OpenAI API key to the .env file:"
+                "\n   OPENAI_API_KEY=your-api-key-here"
+            )
+            raise ValueError("Missing OpenAI API key")
+            
+        # Initialize OpenAI client with API key from settings
+        self.client = AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_BASE_URL
+        )
 
     WORKFLOW_TYPES = {
         "rna_seq_kallisto": {
@@ -298,31 +323,6 @@ class LLMInterface:
         },
     }
 
-    def __init__(self):
-        """Initialize LLM interface."""
-        self.logger = get_logger(__name__)
-        
-        # Check for OpenAI API key and .env file
-        env_path = Path('.env')
-        if not env_path.exists():
-            self.logger.error(
-                "\n⚠️  No .env file found in the current directory."
-                "\n   Please create a .env file with your OpenAI API key:"
-                "\n   OPENAI_API_KEY=your-api-key-here"
-                "\n   OPENAI_MODEL=gpt-4 (optional)"
-            )
-            raise ValueError("Missing .env file with OpenAI API key")
-        
-        if not settings.OPENAI_API_KEY:
-            self.logger.error(
-                "\n⚠️  OPENAI_API_KEY not found in environment variables or .env file."
-                "\n   Please add your OpenAI API key to the .env file:"
-                "\n   OPENAI_API_KEY=your-api-key-here"
-            )
-            raise ValueError("Missing OpenAI API key")
-            
-        self.client = AsyncOpenAI()
-
     def _detect_workflow_type(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
         """Detect workflow type from prompt.
 
@@ -368,28 +368,62 @@ class LLMInterface:
 
         return best_match[0], self.WORKFLOW_TYPES[best_match[0]]
 
-    async def _call_openai(
-        self,
-        messages: List[Dict[str, Any]],
-        response_format: Optional[Dict[str, str]] = None,
-        **kwargs,
-    ) -> str:
-        """Call OpenAI API with retry logic."""
+    async def _call_openai(self, messages: List[Dict[str, str]], model: Optional[str] = None) -> str:
+        """Call OpenAI API with retry logic and error handling."""
         try:
-            params = {
-                "model": settings.OPENAI_MODEL,  # Use model from settings
-                "messages": messages,
-                "temperature": 0,
-                **kwargs,
-            }
-            # Only add response_format if using a model that supports it (e.g. gpt-4-1106-preview)
-            if response_format and "gpt-4-1106" in settings.OPENAI_MODEL:
-                params["response_format"] = response_format
-
-            response = await self.client.chat.completions.create(**params)
-            return response.choices[0].message.content
+            # Try preferred model first
+            try_models = [
+                model,  # User-specified model
+                settings.OPENAI_MODEL,  # Default model from settings
+                settings.OPENAI_FALLBACK_MODEL,  # Fallback model
+                "gpt-3.5-turbo"  # Last resort
+            ]
+            
+            last_error = None
+            for try_model in try_models:
+                if not try_model:
+                    continue
+                    
+                try:
+                    self.logger.info(f"Attempting to use model: {try_model}")
+                    completion = await self.client.chat.completions.create(
+                        model=try_model,
+                        messages=messages,
+                        temperature=0.2,
+                    )
+                    self.logger.info(f"Successfully used model: {try_model}")
+                    return completion.choices[0].message.content
+                except Exception as e:
+                    last_error = e
+                    if "model_not_found" not in str(e):
+                        # If error is not about model availability, don't try other models
+                        raise
+                    self.logger.warning(f"Model {try_model} not available, trying next model...")
+                    
+            # If we get here, none of the models worked
+            raise last_error or ValueError("No valid model found")
+            
         except Exception as e:
-            self.logger.error(f"OpenAI API call failed: {str(e)}")
+            error_msg = str(e)
+            if "insufficient_quota" in error_msg:
+                self.logger.error(
+                    "\n⚠️  OpenAI API quota exceeded. Please:"
+                    "\n   1. Check your billing status at https://platform.openai.com/account/billing"
+                    "\n   2. Add credits to your account or wait for quota reset"
+                    "\n   3. Or use a different API key with available quota"
+                    "\n\nError details: %s", error_msg
+                )
+            elif "model_not_found" in error_msg:
+                self.logger.error(
+                    "\n⚠️  No available OpenAI models found. Tried:"
+                    "\n   - User specified model"
+                    "\n   - Default model from settings"
+                    "\n   - Fallback model"
+                    "\n   - Last resort (gpt-3.5-turbo)"
+                    "\n\nError details: %s", error_msg
+                )
+            else:
+                self.logger.error("OpenAI API call failed: %s", error_msg)
             raise
 
     def _clean_llm_response(self, response: str) -> str:
@@ -662,9 +696,7 @@ Resource Management Rules:
                 {"role": "user", "content": enhanced_prompt},
             ]
 
-            response = await self._call_openai(
-                messages, response_format={"type": "json_object"}
-            )
+            response = await self._call_openai(messages)
 
             try:
                 workflow_plan = json.loads(self._clean_llm_response(response))
@@ -930,7 +962,6 @@ Provide analysis in this format:
         response = await self._call_openai(
             messages,
             model=settings.OPENAI_MODEL,
-            response_format={"type": "json_object"},
         )
         self.logger.info(f"Analysis response: {response}")
         analysis = json.loads(response)
