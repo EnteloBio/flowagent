@@ -301,6 +301,26 @@ class LLMInterface:
     def __init__(self):
         """Initialize LLM interface."""
         self.logger = get_logger(__name__)
+        
+        # Check for OpenAI API key and .env file
+        env_path = Path('.env')
+        if not env_path.exists():
+            self.logger.error(
+                "\n⚠️  No .env file found in the current directory."
+                "\n   Please create a .env file with your OpenAI API key:"
+                "\n   OPENAI_API_KEY=your-api-key-here"
+                "\n   OPENAI_MODEL=gpt-4 (optional)"
+            )
+            raise ValueError("Missing .env file with OpenAI API key")
+        
+        if not settings.OPENAI_API_KEY:
+            self.logger.error(
+                "\n⚠️  OPENAI_API_KEY not found in environment variables or .env file."
+                "\n   Please add your OpenAI API key to the .env file:"
+                "\n   OPENAI_API_KEY=your-api-key-here"
+            )
+            raise ValueError("Missing OpenAI API key")
+            
         self.client = AsyncOpenAI()
 
     def _detect_workflow_type(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
@@ -362,7 +382,8 @@ class LLMInterface:
                 "temperature": 0,
                 **kwargs,
             }
-            if response_format:
+            # Only add response_format if using a model that supports it (e.g. gpt-4-1106-preview)
+            if response_format and "gpt-4-1106" in settings.OPENAI_MODEL:
                 params["response_format"] = response_format
 
             response = await self.client.chat.completions.create(**params)
@@ -517,10 +538,29 @@ Return a JSON object in this EXACT format:
     async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
         """Generate a workflow plan from a prompt."""
         try:
-            # Get available input files
-            fastq_files = glob.glob("*.fastq.gz")
+            # Get available input files using more flexible patterns
+            fastq_patterns = [
+                "*.fastq.gz", "*.fq.gz",  # Basic patterns
+                "*_1.fastq.gz", "*_2.fastq.gz",  # _1/_2 pattern
+                "*_R1.fastq.gz", "*_R2.fastq.gz",  # _R1/R2 pattern
+                "*.R1.fastq.gz", "*.R2.fastq.gz",  # .R1/R2 pattern
+                "*.fastq.1.gz", "*.fastq.2.gz",  # .1/.2 pattern
+                "*.fq.1.gz", "*.fq.2.gz",  # .1/.2 pattern for .fq
+                # Uncompressed versions
+                "*.fastq", "*.fq",
+                "*_1.fastq", "*_2.fastq",
+                "*_R1.fastq", "*_R2.fastq",
+                "*.R1.fastq", "*.R2.fastq",
+                "*.fastq.1", "*.fastq.2",
+                "*.fq.1", "*.fq.2"
+            ]
+            
+            fastq_files = []
+            for pattern in fastq_patterns:
+                fastq_files.extend(glob.glob(pattern))
+                
             if not fastq_files:
-                raise ValueError("No .fastq.gz files found in current directory")
+                raise ValueError("No FASTQ files found in current directory. Supported patterns: .fastq.gz, .fq.gz, _1/_2, _R1/R2, .R1/R2, .1/.2 suffixes (with or without .gz)")
 
             self.logger.info(f"Found input files: {fastq_files}")
 
