@@ -82,9 +82,20 @@ async def main(prompt: str, resume: bool = False, checkpoint_dir: str = None, an
             results = await analyze_workflow(analysis_dir)
             
             if results["status"] == "success":
+                # Print standard report
+                print("\nStandard Analysis Report:")
+                print("=" * 80)
                 print(results["report"])
-                if results.get("report_file"):
-                    print(f"\nAnalysis report saved to: {results['report_file']}")
+                print("=" * 80)
+                
+                # Print agentic report
+                print("\nAgentic Analysis Report:")
+                print("=" * 80)
+                print(results["agentic_report"])
+                print("=" * 80)
+                
+                if results.get("report_files"):
+                    print(f"\nAnalysis reports saved to: {', '.join(results['report_files'].values())}")
             else:
                 print(f"Analysis failed: {results.get('error', 'Unknown error')}")
                 

@@ -43,20 +43,27 @@ def format_agentic_results(results: Dict[str, Any]) -> str:
     quant = results['quantification_analysis']
     
     # Kallisto metrics
-    kallisto = quant['tools']['kallisto']
-    output.append(f"\nKallisto Analysis ({kallisto['samples']} samples):")
-    for sample, data in kallisto['metrics'].items():
-        metrics = data['metrics']
-        output.append(f"\nSample: {sample}")
-        output.append(f"- Total Transcripts: {metrics['total_transcripts']:,}")
-        output.append(f"- Expressed Transcripts: {metrics['expressed_transcripts']:,}")
-        output.append(f"- Median TPM: {metrics['median_tpm']:.2f}")
-        output.append(f"- Mean TPM: {metrics['mean_tpm']:.2f}")
+    kallisto = quant['tools'].get('kallisto', {})
+    if kallisto and kallisto.get('samples'):
+        sample_count = kallisto.get('sample_count', 0)
+        output.append(f"\nKallisto Analysis ({sample_count} sample{'s' if sample_count != 1 else ''}):")
+        for sample, data in sorted(kallisto['samples'].items()):  # Sort samples for consistent output
+            metrics = data.get('metrics', {})
+            if metrics:
+                output.append(f"\nSample: {sample}")
+                output.append(f"- Total Transcripts: {metrics.get('total_transcripts', 0):,}")
+                output.append(f"- Expressed Transcripts: {metrics.get('expressed_transcripts', 0):,}")
+                output.append(f"- Median TPM: {metrics.get('median_tpm', 0):.2f}")
+                output.append(f"- Mean TPM: {metrics.get('mean_tpm', 0):.2f}")
     
     if quant.get('issues'):
         output.append("\nQuantification Issues:")
+        seen_issues = set()  # Track unique issues
         for issue in quant['issues']:
-            output.append(f"- [{issue['severity'].upper()}] {issue['description']}")
+            issue_text = f"[{issue['severity'].upper()}] {issue['description']}"
+            if issue_text not in seen_issues:  # Only add unique issues
+                output.append(f"- {issue_text}")
+                seen_issues.add(issue_text)
     output.append("")
     
     # Technical Analysis
@@ -84,7 +91,15 @@ def format_agentic_results(results: Dict[str, Any]) -> str:
     if results.get('recommendations'):
         all_recs.extend(results['recommendations'])
     
-    for i, rec in enumerate(all_recs, 1):
+    # Deduplicate recommendations
+    seen_recs = set()
+    unique_recs = []
+    for rec in all_recs:
+        if rec not in seen_recs:
+            unique_recs.append(rec)
+            seen_recs.add(rec)
+    
+    for i, rec in enumerate(unique_recs, 1):
         output.append(f"{i}. {rec}")
     
     return "\n".join(output)
@@ -130,17 +145,6 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
             
             logger.info(f"Saved analysis reports to {', '.join(report_files.values())}")
             
-        # Print reports to terminal
-        print("\nStandard Analysis Report:")
-        print("=" * 80)
-        print(report)
-        print("=" * 80)
-        
-        print("\nAgentic Analysis Report:")
-        print("=" * 80)
-        print(format_agentic_results(agentic_results))
-        print("=" * 80)
-        
         return {
             "status": "success",
             "report": report,
@@ -207,7 +211,18 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             return
             
         logger.info(f"Generating analysis report from {output_dir}...")
-        await analyze_workflow(output_dir)
+        result = await analyze_workflow(output_dir)
+        
+        # Print reports to terminal
+        print("\nStandard Analysis Report:")
+        print("=" * 80)
+        print(result["report"])
+        print("=" * 80)
+        
+        print("\nAgentic Analysis Report:")
+        print("=" * 80)
+        print(result["agentic_report"])
+        print("=" * 80)
         
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")

@@ -55,6 +55,18 @@ class AgenticAnalysisSystem:
             logger.error(f"Error preparing analysis data: {str(e)}")
             return data
     
+    def _normalize_sample_name(self, name: str) -> str:
+        """Normalize sample name by removing common suffixes and standardizing separators."""
+        # Remove common suffixes
+        name = name.replace('.fastq', '')
+        name = name.replace('.fq', '')
+        name = name.replace('.gz', '')
+        name = name.replace('.1', '')
+        name = name.replace('.2', '')
+        # Standardize separators
+        name = name.replace('-', '_')
+        return name
+
     def _find_kallisto_outputs(self, directory: Path) -> Dict[str, Any]:
         """Recursively find Kallisto output files in any directory structure."""
         kallisto_data = {
@@ -66,26 +78,49 @@ class AgenticAnalysisSystem:
         # Find all abundance.h5 files recursively
         for abundance_file in directory.rglob("abundance.h5"):
             # Get sample name from parent directory
-            sample_name = abundance_file.parent.name
-            if sample_name == "kallisto" or sample_name == "output":  # Skip generic directory names
-                sample_name = abundance_file.parent.parent.name
+            sample_name = None
+            parent_dir = abundance_file.parent
+            
+            # Try to find a valid sample name by walking up the directory tree
+            while parent_dir != directory:
+                if parent_dir.name not in ["kallisto", "output", "kallisto_quant"]:
+                    sample_name = parent_dir.name
+                    break
+                parent_dir = parent_dir.parent
+            
+            # Skip if we couldn't determine a valid sample name
+            if not sample_name:
+                logger.warning(f"Could not determine sample name for {abundance_file}")
+                continue
+                
+            # Normalize sample name
+            sample_name = self._normalize_sample_name(sample_name)
             
             kallisto_data["abundance_files"].append(str(abundance_file))
             
             # Look for run_info.json in the same directory
             run_info_file = abundance_file.parent / "run_info.json"
             if run_info_file.exists():
-                with open(run_info_file) as f:
-                    run_info = json.load(f)
-                    kallisto_data["run_info"][sample_name] = run_info
+                try:
+                    with open(run_info_file) as f:
+                        run_info = json.load(f)
+                        kallisto_data["run_info"][sample_name] = run_info
+                except Exception as e:
+                    logger.error(f"Error reading run info for {sample_name}: {str(e)}")
+                    continue
             
             # Look for abundance.tsv for easier parsing
             abundance_tsv = abundance_file.parent / "abundance.tsv"
             if abundance_tsv.exists():
-                kallisto_data["samples"][sample_name] = {
-                    "abundance_file": str(abundance_tsv),
-                    "metrics": self._parse_abundance_file(abundance_tsv)
-                }
+                try:
+                    metrics = self._parse_abundance_file(abundance_tsv)
+                    kallisto_data["samples"][sample_name] = {
+                        "abundance_file": str(abundance_tsv),
+                        "metrics": metrics
+                    }
+                except Exception as e:
+                    logger.error(f"Error parsing abundance file for {sample_name}: {str(e)}")
+                    continue
         
         return kallisto_data if kallisto_data["abundance_files"] else None
     
@@ -156,23 +191,28 @@ class AgenticAnalysisSystem:
             with open(abundance_file) as f:
                 # Skip header
                 next(f)
+                metrics["total_transcripts"] = sum(1 for _ in f)  # Count total lines first
+                
+            # Now read the actual values
+            with open(abundance_file) as f:
+                next(f)  # Skip header again
                 for line in f:
                     fields = line.strip().split("\t")
-                    if len(fields) >= 4:  # Expect target_id, length, eff_length, est_counts, tpm
+                    if len(fields) >= 5:  # Expect target_id, length, eff_length, est_counts, tpm
                         tpm = float(fields[4])
                         tpm_values.append(tpm)
                         if tpm > 0:
                             metrics["expressed_transcripts"] += 1
-                            
+            
             if tpm_values:
-                metrics["total_transcripts"] = len(tpm_values)
                 metrics["median_tpm"] = float(np.median(tpm_values))
                 metrics["mean_tpm"] = float(np.mean(tpm_values))
-                
+            
+            return metrics
+            
         except Exception as e:
             logger.error(f"Error parsing abundance file {abundance_file}: {str(e)}")
-            
-        return metrics
+            return metrics
     
     async def analyze_results(self, results_dir: Path) -> Dict[str, Any]:
         """Analyze workflow results using specialized agents."""
@@ -201,8 +241,8 @@ class AgenticAnalysisSystem:
                 "quantification_analysis": {
                     "tools": {
                         "kallisto": {
-                            "samples": len(data["quantification_data"].get("kallisto", {}).get("samples", {})),
-                            "metrics": data["quantification_data"].get("kallisto", {}).get("samples", {})
+                            "sample_count": len(data["quantification_data"].get("kallisto", {}).get("samples", {})),
+                            "samples": data["quantification_data"].get("kallisto", {}).get("samples", {})
                         }
                     },
                     **quant_results
