@@ -62,6 +62,8 @@ flowagent prompt "analyze workflow results" --analysis-dir=results --no-save-rep
 ```
 
 4. Run a chatbot workflow on a local web server:
+**Note that this is a work in progress, with significant further development planned for the future.**
+
 ```bash
 # Start server.
 flowagent serve --host 0.0.0.0 --port 8000
