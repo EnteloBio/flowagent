@@ -290,6 +290,225 @@ This allows FlowAgent to:
    - Use `--resume` to retry failed steps without restarting
    - Check error logs in checkpoint directory for detailed information
 
+## Custom Scripts System
+
+The FlowAgent custom scripts system allows you to integrate your own analysis scripts written in any programming language (R, Python, Bash, etc.) into the workflow. Scripts are automatically discovered and integrated into the workflow based on their metadata.
+
+### Directory Structure
+```
+flowagent/
+├── custom_scripts/
+│   ├── rna_seq/           # RNA-seq specific scripts
+│   │   └── normalization/
+│   │       ├── custom_normalize.R
+│   │       └── metadata.json
+│   ├── chip_seq/          # ChIP-seq specific scripts
+│   │   └── peak_analysis/
+│   │       ├── custom_peaks.py
+│   │       └── metadata.json
+│   └── common/            # Scripts usable across workflows
+       └── utils/
+           ├── data_cleanup.sh
+           └── metadata.json
+```
+
+### Adding Custom Scripts
+
+1. **Create Script Directory**
+   - Choose the appropriate workflow type directory (`rna_seq`, `chip_seq`, `common`)
+   - Create a new directory for your script with a descriptive name
+
+2. **Write Your Script**
+   - Scripts can be written in any language (R, Python, Bash, etc.)
+   - Must accept input parameters as command-line arguments
+   - Must output results as JSON to stdout
+
+3. **Create metadata.json**
+   - Describes script purpose, inputs, outputs, and workflow integration
+   - Specifies when the script should run in the workflow
+
+### Metadata Structure
+
+Each script requires a `metadata.json` file:
+
+```json
+{
+    "name": "script_name",
+    "description": "What the script does",
+    "script_file": "script_name.ext",
+    "language": "language_name",
+    "input_requirements": [
+        {
+            "name": "input_name",
+            "type": "file_type",
+            "description": "Description of input"
+        }
+    ],
+    "output_types": [
+        {
+            "name": "output_name",
+            "type": "file_type",
+            "description": "Description of output"
+        }
+    ],
+    "workflow_types": ["workflow_type"],
+    "execution_order": {
+        "before": ["step_names"],
+        "after": ["step_names"]
+    },
+    "requirements": {
+        "r_packages": [],
+        "python_packages": [],
+        "system_dependencies": []
+    }
+}
+```
+
+### Example Scripts
+
+1. **RNA-seq Normalization (R)**
+```R
+#!/usr/bin/env Rscript
+# custom_normalize.R
+
+# Parse command line arguments
+args <- commandArgs(trailingOnly = TRUE)
+args_dict <- list()
+for (i in seq(1, length(args), 2)) {
+    args_dict[[sub("^--", "", args[i])]] <- args[i + 1]
+}
+
+# Load required packages
+library(DESeq2)
+library(jsonlite)
+
+# Read input data
+counts <- read.csv(args_dict$counts_matrix, row.names=1)
+
+# Perform normalization
+dds <- DESeqDataSetFromMatrix(
+    countData = counts,
+    colData = data.frame(condition=factor(colnames(counts))),
+    design = ~ 1
+)
+dds <- estimateSizeFactors(dds)
+normalized_counts <- counts(dds, normalized=TRUE)
+
+# Write output
+output_file <- "normalized_counts.csv"
+write.csv(normalized_counts, output_file)
+
+# Return output paths as JSON
+output <- list(
+    normalized_counts = output_file
+)
+cat(toJSON(output))
+```
+
+2. **ChIP-seq Peak Analysis (Python)**
+```python
+#!/usr/bin/env python
+# custom_peaks.py
+
+import argparse
+import json
+import pandas as pd
+from scipy import signal
+
+def analyze_peaks(signal_file):
+    # Read signal data
+    signal_data = pd.read_csv(signal_file)
+    
+    # Find peaks
+    peaks = signal.find_peaks(signal_data['intensity'])
+    
+    # Save results
+    output_file = "peak_analysis.csv"
+    pd.DataFrame({
+        'position': peaks[0],
+        'properties': peaks[1]
+    }).to_csv(output_file)
+    
+    return {"peak_results": output_file}
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--signal_data', required=True)
+    args = parser.parse_args()
+    
+    # Run analysis and output results as JSON
+    results = analyze_peaks(args.signal_data)
+    print(json.dumps(results))
+```
+
+3. **Data Cleanup (Bash)**
+```bash
+#!/bin/bash
+# data_cleanup.sh
+
+# Parse named arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --input_file)
+            INPUT_FILE="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# Clean data
+OUTPUT_FILE="cleaned_data.txt"
+cat "$INPUT_FILE" | \
+    grep -v '^#' | \
+    awk 'NF > 0' | \
+    sort | uniq > "$OUTPUT_FILE"
+
+# Output results as JSON
+echo "{\"cleaned_file\": \"$OUTPUT_FILE\"}"
+```
+
+### Integration with Workflows
+
+The script manager automatically:
+1. Discovers custom scripts by scanning the custom_scripts directory
+2. Validates required packages and dependencies
+3. Integrates scripts into the workflow based on execution order
+4. Handles input/output management between workflow steps
+
+### Script Requirements
+
+1. **Input/Output**
+   - Accept inputs as command-line arguments (e.g., `--input_name input_path`)
+   - Output results as JSON to stdout
+   - JSON should map output names to file paths
+
+2. **Error Handling**
+   - Exit with non-zero status on error
+   - Write error messages to stderr
+
+3. **Dependencies**
+   - List required packages in metadata.json
+   - System will validate requirements before execution
+
+### Standard Workflow Steps
+
+Scripts can be positioned relative to these standard steps:
+
+**RNA-seq Workflow:**
+- fastqc
+- alignment
+- feature_counts
+- differential_expression
+
+**ChIP-seq Workflow:**
+- fastqc
+- alignment
+- peak_calling
+- motif_analysis
+
 ## Architecture
 
 FlowAgent 1.0 implements a modern, distributed architecture:
