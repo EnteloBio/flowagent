@@ -1,0 +1,40 @@
+{
+    "name": "data_cleanup",
+    "description": "Cleans genomics data files by filtering low quality entries and removing duplicates",
+    "script_file": "data_cleanup.sh",
+    "language": "bash",
+    "input_requirements": [
+        {
+            "name": "input_file",
+            "type": "txt",
+            "description": "Tab-separated data file with quality scores in field 5"
+        },
+        {
+            "name": "min_quality",
+            "type": "float",
+            "description": "Minimum quality score threshold (optional, default: 20)"
+        }
+    ],
+    "output_types": [
+        {
+            "name": "cleaned_file",
+            "type": "txt",
+            "description": "Cleaned and deduplicated data file"
+        },
+        {
+            "name": "stats_file",
+            "type": "json",
+            "description": "Statistics about the cleaning process"
+        }
+    ],
+    "workflow_types": ["rna_seq", "chip_seq"],
+    "execution_order": {
+        "before": ["alignment"],
+        "after": ["fastqc"]
+    },
+    "requirements": {
+        "r_packages": [],
+        "python_packages": [],
+        "system_dependencies": ["bc", "sort"]
+    }
+}
