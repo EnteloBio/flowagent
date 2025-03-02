@@ -13,21 +13,25 @@
       
       
       
+        <link rel="prev" href="../">
       
       
-      <link rel="icon" href="../../../../assets/images/favicon.png">
+        <link rel="next" href="../chip-seq/">
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.6">
     
     
       
-        <title>Command Utilities - FlowAgent Documentation</title>
+        <title>RNA-seq - FlowAgent Documentation</title>
       
     
     
-      <link rel="stylesheet" href="../../../../assets/stylesheets/main.8608ea7d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.8608ea7d.min.css">
       
         
-        <link rel="stylesheet" href="../../../../assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -46,9 +50,9 @@
       
     
     
-      <link rel="stylesheet" href="../../../../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -74,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#flowagent.utils.command" class="md-skip">
+        <a href="#rna-seq-workflow" class="md-skip">
           Skip to content
         </a>
       
@@ -92,7 +96,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../../.." title="FlowAgent Documentation" class="md-header__button md-logo" aria-label="FlowAgent Documentation" data-md-component="logo">
+    <a href="../.." title="FlowAgent Documentation" class="md-header__button md-logo" aria-label="FlowAgent Documentation" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -112,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Command Utilities
+              RNA-seq
             
           </span>
         </div>
@@ -219,7 +223,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../../.." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
     
@@ -238,7 +242,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../getting-started/installation/" class="md-tabs__link">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
   Getting Started
@@ -252,11 +256,13 @@
         
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../../../workflows/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   Workflows
@@ -274,7 +280,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../custom_scripts/" class="md-tabs__link">
+        <a href="../../custom_scripts/" class="md-tabs__link">
           
   
   Custom Scripts
@@ -292,7 +298,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../user-guide/concepts/" class="md-tabs__link">
+        <a href="../../user-guide/concepts/" class="md-tabs__link">
           
   
   User Guide
@@ -310,7 +316,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../" class="md-tabs__link">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   API Reference
@@ -326,7 +332,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../../../contributing/" class="md-tabs__link">
+      <a href="../../contributing/" class="md-tabs__link">
         
   
     
@@ -343,7 +349,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../../../changelog/" class="md-tabs__link">
+      <a href="../../changelog/" class="md-tabs__link">
         
   
     
@@ -379,7 +385,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../../.." title="FlowAgent Documentation" class="md-nav__button md-logo" aria-label="FlowAgent Documentation" data-md-component="logo">
+    <a href="../.." title="FlowAgent Documentation" class="md-nav__button md-logo" aria-label="FlowAgent Documentation" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -409,7 +415,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -473,7 +479,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -495,7 +501,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -517,7 +523,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../getting-started/configuration/" class="md-nav__link">
+      <a href="../../getting-started/configuration/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -543,27 +549,30 @@
       
   
   
+    
   
   
+  
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -575,7 +584,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             Workflows
@@ -589,7 +598,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../workflows/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -608,10 +617,31 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../../workflows/rna-seq/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    RNA-seq
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -621,6 +651,131 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      Workflow Steps
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-script-integration-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      Custom Script Integration Points
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom Script Integration Points">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pre-alignment
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Post-alignment
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      Analysis
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-custom-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example: Custom Normalization
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Usage
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      Output Structure
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quality-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quality Metrics
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resource-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Resource Requirements
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      Best Practices
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -633,7 +788,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../workflows/chip-seq/" class="md-nav__link">
+      <a href="../chip-seq/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -655,7 +810,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../workflows/hi-c/" class="md-nav__link">
+      <a href="../hi-c/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -677,7 +832,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../workflows/atac-seq/" class="md-nav__link">
+      <a href="../atac-seq/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -699,7 +854,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../workflows/bisulfite-seq.md" class="md-nav__link">
+      <a href="../bisulfite-seq.md" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -721,7 +876,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../workflows/sc-multiomics.md" class="md-nav__link">
+      <a href="../sc-multiomics.md" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -743,7 +898,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../workflows/example-prompts/" class="md-nav__link">
+      <a href="../example-prompts/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -815,7 +970,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../custom_scripts/" class="md-nav__link">
+      <a href="../../custom_scripts/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -837,7 +992,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../custom_scripts/adding-scripts/" class="md-nav__link">
+      <a href="../../custom_scripts/adding-scripts/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -859,7 +1014,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../custom_scripts/requirements/" class="md-nav__link">
+      <a href="../../custom_scripts/requirements/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -924,7 +1079,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../custom_scripts/examples/rna-seq-norm/" class="md-nav__link">
+      <a href="../../custom_scripts/examples/rna-seq-norm/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -946,7 +1101,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../custom_scripts/examples/chip-seq-peaks/" class="md-nav__link">
+      <a href="../../custom_scripts/examples/chip-seq-peaks/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -968,7 +1123,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../custom_scripts/examples/data-cleanup/" class="md-nav__link">
+      <a href="../../custom_scripts/examples/data-cleanup/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1048,7 +1203,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../user-guide/concepts/" class="md-nav__link">
+      <a href="../../user-guide/concepts/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1070,7 +1225,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../user-guide/hpc/" class="md-nav__link">
+      <a href="../../user-guide/hpc/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1092,7 +1247,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../user-guide/analysis/" class="md-nav__link">
+      <a href="../../user-guide/analysis/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1114,7 +1269,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../user-guide/state-management/" class="md-nav__link">
+      <a href="../../user-guide/state-management/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1136,7 +1291,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../user-guide/version-compatibility/" class="md-nav__link">
+      <a href="../../user-guide/version-compatibility/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1208,7 +1363,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../" class="md-nav__link">
+      <a href="../../reference/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1230,7 +1385,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../api/script-manager/" class="md-nav__link">
+      <a href="../../api/script-manager/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1252,7 +1407,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../api/workflow-executor/" class="md-nav__link">
+      <a href="../../api/workflow-executor/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1281,7 +1436,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../contributing/" class="md-nav__link">
+      <a href="../../contributing/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1302,7 +1457,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../changelog/" class="md-nav__link">
+      <a href="../../changelog/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1335,312 +1490,187 @@
   
 
 
-  <h1>Command Utilities</h1>
+<h1 id="rna-seq-workflow">RNA-seq Workflow<a class="headerlink" href="#rna-seq-workflow" title="Permanent link">&para;</a></h1>
+<p>The RNA-seq workflow in FlowAgent follows best practices for RNA sequencing analysis.</p>
+<h2 id="workflow-steps">Workflow Steps<a class="headerlink" href="#workflow-steps" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Quality Control</strong></li>
+<li>FastQC analysis of raw reads</li>
+<li>Adapter identification</li>
+<li>Quality score distribution</li>
+<li>
+<p>Sequence duplication levels</p>
+</li>
+<li>
+<p><strong>Alignment</strong></p>
+</li>
+<li>STAR/Bowtie2 alignment</li>
+<li>Mapping statistics</li>
+<li>Duplicate marking</li>
+<li>
+<p>Quality filtering</p>
+</li>
+<li>
+<p><strong>Feature Quantification</strong></p>
+</li>
+<li>Gene/transcript counting</li>
+<li>UMI deduplication (if applicable)</li>
+<li>Multi-mapping handling</li>
+<li>
+<p>Feature assignment stats</p>
+</li>
+<li>
+<p><strong>Differential Expression</strong></p>
+</li>
+<li>Count normalization</li>
+<li>Statistical testing</li>
+<li>Multiple testing correction</li>
+<li>Results visualization</li>
+</ol>
+<h2 id="custom-script-integration-points">Custom Script Integration Points<a class="headerlink" href="#custom-script-integration-points" title="Permanent link">&para;</a></h2>
+<p>The RNA-seq workflow supports custom scripts at various stages:</p>
+<h3 id="pre-alignment">Pre-alignment<a class="headerlink" href="#pre-alignment" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Quality filtering</li>
+<li>Adapter trimming</li>
+<li>Read preprocessing</li>
+</ul>
+<h3 id="post-alignment">Post-alignment<a class="headerlink" href="#post-alignment" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Alignment filtering</li>
+<li>BAM processing</li>
+<li>Quality metrics</li>
+</ul>
+<h3 id="analysis">Analysis<a class="headerlink" href="#analysis" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Custom normalization</li>
+<li>Alternative statistical tests</li>
+<li>Specialized visualizations</li>
+</ul>
+<h2 id="example-custom-normalization">Example: Custom Normalization<a class="headerlink" href="#example-custom-normalization" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># custom_normalize.R</span>
+<span class="nf">library</span><span class="p">(</span><span class="n">DESeq2</span><span class="p">)</span>
+<span class="nf">library</span><span class="p">(</span><span class="n">jsonlite</span><span class="p">)</span>
 
-<p>This module provides utility functions for running shell commands.</p>
+<span class="c1"># Read counts</span>
+<span class="n">counts</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="nf">read.csv</span><span class="p">(</span><span class="n">args_dict</span><span class="o">$</span><span class="n">counts_matrix</span><span class="p">,</span><span class="w"> </span><span class="n">row.names</span><span class="o">=</span><span class="m">1</span><span class="p">)</span>
 
+<span class="c1"># Normalize</span>
+<span class="n">dds</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="nf">DESeqDataSetFromMatrix</span><span class="p">(</span>
+<span class="w">    </span><span class="n">countData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">counts</span><span class="p">,</span>
+<span class="w">    </span><span class="n">colData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nf">data.frame</span><span class="p">(</span><span class="n">condition</span><span class="o">=</span><span class="nf">factor</span><span class="p">(</span><span class="nf">colnames</span><span class="p">(</span><span class="n">counts</span><span class="p">))),</span>
+<span class="w">    </span><span class="n">design</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">~</span><span class="w"> </span><span class="m">1</span>
+<span class="p">)</span>
+<span class="n">dds</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="nf">estimateSizeFactors</span><span class="p">(</span><span class="n">dds</span><span class="p">)</span>
+<span class="n">normalized_counts</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="nf">counts</span><span class="p">(</span><span class="n">dds</span><span class="p">,</span><span class="w"> </span><span class="n">normalized</span><span class="o">=</span><span class="kc">TRUE</span><span class="p">)</span>
 
-<div class="doc doc-object doc-module">
+<span class="c1"># Output results</span>
+<span class="nf">write.csv</span><span class="p">(</span><span class="n">normalized_counts</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;normalized_counts.csv&quot;</span><span class="p">)</span>
+<span class="nf">cat</span><span class="p">(</span><span class="nf">toJSON</span><span class="p">(</span><span class="nf">list</span><span class="p">(</span><span class="n">normalized_counts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;normalized_counts.csv&quot;</span><span class="p">)))</span>
+</code></pre></div>
+<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">flowagent.core.workflow_executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorkflowExecutor</span>
 
+<span class="c1"># Initialize workflow</span>
+<span class="n">executor</span> <span class="o">=</span> <span class="n">WorkflowExecutor</span><span class="p">(</span><span class="n">llm_interface</span><span class="p">)</span>
 
-
-<h2 id="flowagent.utils.command" class="doc doc-heading">
-            <code>flowagent.utils.command</code>
-
-
-<a href="#flowagent.utils.command" class="headerlink" title="Permanent link">&para;</a></h2>
-
-    <div class="doc doc-contents first">
-
-        <p>Utility functions for running shell commands.</p>
-
-
-
-
-
-
-
-
-  <div class="doc doc-children">
-
-
-
-
-
-
-
-<h3 id="flowagent.utils.command-functions">Functions<a href="#flowagent.utils.command-functions" class="headerlink" title="Permanent link">&para;</a></h3>
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="flowagent.utils.command.run_command" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">run_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-async"><code>async</code></small>
-  </span>
-
-<a href="#flowagent.utils.command.run_command" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Run a shell command asynchronously.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>cmd</code>
-            </td>
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Command to run</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>cwd</code>
-            </td>
-            <td>
-                  <code><span title="typing.Optional">Optional</span>[<span title="typing.Union">Union</span>[<span title="str">str</span>, <span title="pathlib.Path">Path</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Working directory for command</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>env</code>
-            </td>
-            <td>
-                  <code><span title="typing.Optional">Optional</span>[<span title="dict">dict</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Environment variables</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>check</code>
-            </td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Whether to raise exception on non-zero return code</p>
-              </div>
-            </td>
-            <td>
-                  <code>True</code>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="subprocess.CompletedProcess">CompletedProcess</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>CompletedProcess instance</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-            <details class="quote">
-              <summary>Source code in <code>flowagent/utils/command.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">12</span>
-<span class="normal">13</span>
-<span class="normal">14</span>
-<span class="normal">15</span>
-<span class="normal">16</span>
-<span class="normal">17</span>
-<span class="normal">18</span>
-<span class="normal">19</span>
-<span class="normal">20</span>
-<span class="normal">21</span>
-<span class="normal">22</span>
-<span class="normal">23</span>
-<span class="normal">24</span>
-<span class="normal">25</span>
-<span class="normal">26</span>
-<span class="normal">27</span>
-<span class="normal">28</span>
-<span class="normal">29</span>
-<span class="normal">30</span>
-<span class="normal">31</span>
-<span class="normal">32</span>
-<span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
-<span class="normal">44</span>
-<span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span>
-<span class="normal">49</span>
-<span class="normal">50</span>
-<span class="normal">51</span>
-<span class="normal">52</span>
-<span class="normal">53</span>
-<span class="normal">54</span>
-<span class="normal">55</span>
-<span class="normal">56</span>
-<span class="normal">57</span>
-<span class="normal">58</span>
-<span class="normal">59</span>
-<span class="normal">60</span>
-<span class="normal">61</span>
-<span class="normal">62</span>
-<span class="normal">63</span>
-<span class="normal">64</span>
-<span class="normal">65</span>
-<span class="normal">66</span>
-<span class="normal">67</span>
-<span class="normal">68</span>
-<span class="normal">69</span>
-<span class="normal">70</span>
-<span class="normal">71</span>
-<span class="normal">72</span>
-<span class="normal">73</span>
-<span class="normal">74</span>
-<span class="normal">75</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">cwd</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> 
-                     <span class="n">env</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">check</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CompletedProcess</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Run a shell command asynchronously.</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        cmd: Command to run</span>
-<span class="sd">        cwd: Working directory for command</span>
-<span class="sd">        env: Environment variables</span>
-<span class="sd">        check: Whether to raise exception on non-zero return code</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        CompletedProcess instance</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Ensure we have a clean environment</span>
-    <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">env</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-
-    <span class="c1"># Convert working directory to string if it&#39;s a Path</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cwd</span><span class="p">,</span> <span class="n">Path</span><span class="p">):</span>
-        <span class="n">cwd</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cwd</span><span class="p">)</span>
-
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Running command: </span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">cwd</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Working directory: </span><span class="si">{</span><span class="n">cwd</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="k">try</span><span class="p">:</span>
-        <span class="c1"># Run command and capture output</span>
-        <span class="n">process</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_subprocess_shell</span><span class="p">(</span>
-            <span class="n">cmd</span><span class="p">,</span>
-            <span class="n">stdout</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
-            <span class="n">stderr</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
-            <span class="n">cwd</span><span class="o">=</span><span class="n">cwd</span><span class="p">,</span>
-            <span class="n">env</span><span class="o">=</span><span class="n">env</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Wait for command to complete and get output</span>
-        <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span> <span class="o">=</span> <span class="k">await</span> <span class="n">process</span><span class="o">.</span><span class="n">communicate</span><span class="p">()</span>
-
-        <span class="c1"># Convert bytes to string</span>
-        <span class="n">stdout</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span> <span class="k">if</span> <span class="n">stdout</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-        <span class="n">stderr</span> <span class="o">=</span> <span class="n">stderr</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span> <span class="k">if</span> <span class="n">stderr</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-
-        <span class="c1"># Log output</span>
-        <span class="k">if</span> <span class="n">stdout</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Command stdout:</span><span class="se">\n</span><span class="si">{</span><span class="n">stdout</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">stderr</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Command stderr:</span><span class="se">\n</span><span class="si">{</span><span class="n">stderr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-        <span class="c1"># Check return code</span>
-        <span class="k">if</span> <span class="n">check</span> <span class="ow">and</span> <span class="n">process</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span>
-                <span class="n">process</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span>
-            <span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CompletedProcess</span><span class="p">(</span>
-            <span class="n">args</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span>
-            <span class="n">returncode</span><span class="o">=</span><span class="n">process</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span>
-            <span class="n">stdout</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span>
-            <span class="n">stderr</span><span class="o">=</span><span class="n">stderr</span>
-        <span class="p">)</span>
-
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Command failed: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">raise</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-
-
-  </div>
-
-    </div>
-
-</div>
+<span class="c1"># Execute RNA-seq workflow with custom normalization</span>
+<span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">executor</span><span class="o">.</span><span class="n">execute_workflow</span><span class="p">(</span>
+    <span class="n">input_data</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;fastq&quot;</span><span class="p">:</span> <span class="s2">&quot;input.fastq&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;annotation&quot;</span><span class="p">:</span> <span class="s2">&quot;genes.gtf&quot;</span>
+    <span class="p">},</span>
+    <span class="n">workflow_type</span><span class="o">=</span><span class="s2">&quot;rna_seq&quot;</span><span class="p">,</span>
+    <span class="n">custom_script_requests</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;deseq2_normalize&quot;</span><span class="p">]</span>
+<span class="p">)</span>
+</code></pre></div>
+<h2 id="output-structure">Output Structure<a class="headerlink" href="#output-structure" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>results/
+├── fastqc/
+│   ├── fastqc_report.html
+│   └── fastqc_data.txt
+├── alignment/
+│   ├── aligned.bam
+│   └── alignment_stats.txt
+├── counts/
+│   ├── raw_counts.csv
+│   └── normalized_counts.csv
+└── differential_expression/
+    ├── deseq2_results.csv
+    └── ma_plot.pdf
+</code></pre></div>
+<h2 id="quality-metrics">Quality Metrics<a class="headerlink" href="#quality-metrics" title="Permanent link">&para;</a></h2>
+<p>The workflow tracks various quality metrics:</p>
+<ol>
+<li><strong>Raw Data Quality</strong></li>
+<li>Base quality scores</li>
+<li>GC content</li>
+<li>Sequence complexity</li>
+<li>
+<p>Adapter content</p>
+</li>
+<li>
+<p><strong>Alignment Quality</strong></p>
+</li>
+<li>Mapping rate</li>
+<li>Unique vs. multi-mapped reads</li>
+<li>Insert size distribution</li>
+<li>
+<p>Coverage uniformity</p>
+</li>
+<li>
+<p><strong>Expression Quality</strong></p>
+</li>
+<li>Count distribution</li>
+<li>Sample correlations</li>
+<li>Batch effects</li>
+<li>Technical artifacts</li>
+</ol>
+<h2 id="resource-requirements">Resource Requirements<a class="headerlink" href="#resource-requirements" title="Permanent link">&para;</a></h2>
+<p>Typical resource requirements for a standard RNA-seq analysis:</p>
+<ul>
+<li><strong>CPU</strong>: 8-16 cores</li>
+<li><strong>Memory</strong>: 32-64GB RAM</li>
+<li><strong>Storage</strong>: 50-100GB per sample</li>
+<li><strong>Time</strong>: 4-8 hours per sample</li>
+</ul>
+<h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Quality Control</strong></li>
+<li>Filter low-quality reads (Q &lt; 20)</li>
+<li>Remove adapter sequences</li>
+<li>
+<p>Check for sample contamination</p>
+</li>
+<li>
+<p><strong>Alignment</strong></p>
+</li>
+<li>Use splice-aware aligners</li>
+<li>Set appropriate multi-mapping parameters</li>
+<li>
+<p>Monitor alignment rates</p>
+</li>
+<li>
+<p><strong>Quantification</strong></p>
+</li>
+<li>Consider gene vs. transcript level</li>
+<li>Handle multi-mapped reads</li>
+<li>
+<p>Use appropriate normalization</p>
+</li>
+<li>
+<p><strong>Analysis</strong></p>
+</li>
+<li>Account for batch effects</li>
+<li>Use appropriate statistical models</li>
+<li>Control for multiple testing</li>
+</ol>
 
 
 
 
 
 
-
-  
-  
 
 
 
@@ -1696,10 +1726,10 @@
     </div>
     
     
-    <script id="__config" type="application/json">{"base": "../../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "search.highlight", "navigation.instant", "navigation.tracking", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate"], "search": "../../../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "search.highlight", "navigation.instant", "navigation.tracking", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../../../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
       
     
   </body>
