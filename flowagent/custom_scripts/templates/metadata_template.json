@@ -1,0 +1,30 @@
+{
+    "name": "script_name",
+    "description": "Description of what the script does",
+    "script_file": "script_name.ext",
+    "language": "language_name",
+    "input_requirements": [
+        {
+            "name": "input_name",
+            "type": "file_type",
+            "description": "Description of input"
+        }
+    ],
+    "output_types": [
+        {
+            "name": "output_name",
+            "type": "file_type",
+            "description": "Description of output"
+        }
+    ],
+    "workflow_types": ["workflow_type"],
+    "execution_order": {
+        "before": ["step_names"],
+        "after": ["step_names"]
+    },
+    "requirements": {
+        "r_packages": [],
+        "python_packages": [],
+        "system_dependencies": []
+    }
+}
