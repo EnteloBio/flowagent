@@ -24,7 +24,7 @@
     
     
       
-        <title>HPC Configuration - FlowAgent Documentation</title>
+        <title>HPC Configuration - FlowAgent</title>
       
     
     
@@ -69,7 +69,7 @@
     
     
     
-    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
   
     
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
@@ -94,9 +94,11 @@
     
       
 
-<header class="md-header" data-md-component="header">
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="FlowAgent Documentation" class="md-header__button md-logo" aria-label="FlowAgent Documentation" data-md-component="logo">
+    <a href="../.." title="FlowAgent" class="md-header__button md-logo" aria-label="FlowAgent" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -110,7 +112,7 @@
       <div class="md-header__ellipsis">
         <div class="md-header__topic">
           <span class="md-ellipsis">
-            FlowAgent Documentation
+            FlowAgent
           </span>
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
@@ -129,7 +131,7 @@
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
     
       <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
@@ -139,7 +141,7 @@
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
     
       <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
@@ -177,6 +179,8 @@
         </button>
       </nav>
       
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
     </form>
     <div class="md-search__output">
       <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
@@ -206,14 +210,8 @@
     
   </nav>
   
-</header>
     
-    <div class="md-container" data-md-component="container">
       
-      
-        
-          
-            
 <nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
   <div class="md-grid">
     <ul class="md-tabs__list">
@@ -245,43 +243,9 @@
         <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
+    
+  
   Getting Started
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../workflows/" class="md-tabs__link">
-          
-  
-  Workflows
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../custom_scripts/" class="md-tabs__link">
-          
-  
-  Custom Scripts
 
         </a>
       </li>
@@ -301,6 +265,8 @@
         <a href="../concepts/" class="md-tabs__link">
           
   
+    
+  
   User Guide
 
         </a>
@@ -318,6 +284,8 @@
       <li class="md-tabs__item">
         <a href="../../reference/" class="md-tabs__link">
           
+  
+    
   
   API Reference
 
@@ -364,7 +332,13 @@
     </ul>
   </div>
 </nav>
-          
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
         
       
       <main class="md-main" data-md-component="main">
@@ -385,13 +359,13 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="FlowAgent Documentation" class="md-nav__button md-logo" aria-label="FlowAgent Documentation" data-md-component="logo">
+    <a href="../.." title="FlowAgent" class="md-nav__button md-logo" aria-label="FlowAgent" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
 
     </a>
-    FlowAgent Documentation
+    FlowAgent
   </label>
   
     <div class="md-nav__source">
@@ -436,6 +410,14 @@
   
   
     
+    
+      
+        
+      
+        
+      
+        
+      
     
     
       
@@ -549,470 +531,23 @@
       
   
   
-  
-  
     
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
-            
   
-  <span class="md-ellipsis">
-    Workflows
-    
-  </span>
   
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            Workflows
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
   
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/rna-seq/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    RNA-seq
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/chip-seq/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    ChIP-seq
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/hi-c/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Hi-C
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/atac-seq/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    ATAC-seq
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/bisulfite-seq.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Bisulfite-seq
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/sc-multiomics.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Single-cell Multi-omics
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/example-prompts/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Example Prompts
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
-            
-  
-  <span class="md-ellipsis">
-    Custom Scripts
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            Custom Scripts
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../custom_scripts/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../custom_scripts/adding-scripts/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Adding Scripts
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../custom_scripts/requirements/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Script Requirements
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    
     
     
       
+        
+      
+        
       
         
       
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
+        
       
         
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
-            
-  
-  <span class="md-ellipsis">
-    Examples
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4_4">
-            <span class="md-nav__icon md-icon"></span>
-            Examples
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../custom_scripts/examples/rna-seq-norm/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    RNA-seq Normalization
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../custom_scripts/examples/chip-seq-peaks/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    ChIP-seq Peak Analysis
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../custom_scripts/examples/data-cleanup/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Data Cleanup
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
       
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    
     
     
       
@@ -1028,10 +563,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1043,8 +578,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             User Guide
           </label>
@@ -1127,6 +662,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#llm-driven-hpc-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      LLM-Driven HPC Execution
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#basic-hpc-settings" class="md-nav__link">
     <span class="md-ellipsis">
       Basic HPC Settings
@@ -1181,6 +725,24 @@
   <a href="#using-hpc-execution" class="md-nav__link">
     <span class="md-ellipsis">
       Using HPC Execution
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slurm-specific-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      SLURM-Specific Features
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-hpc-systems" class="md-nav__link">
+    <span class="md-ellipsis">
+      Supported HPC Systems
     </span>
   </a>
   
@@ -1276,6 +838,12 @@
   
     
     
+      
+        
+          
+        
+      
+    
     
       
       
@@ -1289,11 +857,13 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
-            
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     API Reference
@@ -1301,80 +871,17 @@
   </span>
   
 
-            <span class="md-nav__icon md-icon"></span>
-          </label>
+            </a>
+            
+          </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             API Reference
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../api/script-manager/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Script Manager
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../api/workflow-executor/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Workflow Executor
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
               
             
           </ul>
@@ -1447,15 +954,27 @@
 
 <h1 id="hpc-configuration">HPC Configuration<a class="headerlink" href="#hpc-configuration" title="Permanent link">&para;</a></h1>
 <p>FlowAgent supports High-Performance Computing (HPC) execution, with built-in support for SLURM, SGE, and TORQUE systems. The HPC settings can be configured through environment variables or in your <code>.env</code> file.</p>
+<h2 id="llm-driven-hpc-execution">LLM-Driven HPC Execution<a class="headerlink" href="#llm-driven-hpc-execution" title="Permanent link">&para;</a></h2>
+<p>FlowAgent uses its LLM capabilities to automatically generate and manage workflows on HPC systems. Instead of writing scripts, you can simply describe your analysis requirements in natural language, and the LLM will:</p>
+<ol>
+<li>Design an appropriate workflow</li>
+<li>Allocate suitable computational resources</li>
+<li>Submit jobs to your HPC system</li>
+<li>Monitor execution and handle errors</li>
+<li>Collect and present results</li>
+</ol>
+<p>For detailed information on the LLM-driven SLURM integration, see:
+- <a href="../../hpc/slurm_configuration/">SLURM Configuration</a>
+- <a href="../../hpc/llm_slurm_integration/">LLM-Driven SLURM Integration</a></p>
 <h2 id="basic-hpc-settings">Basic HPC Settings<a class="headerlink" href="#basic-hpc-settings" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="c1"># HPC Configuration</span>
-<span class="nv">EXECUTOR_TYPE</span><span class="o">=</span>hpc<span class="w">           </span><span class="c1"># Use HPC executor instead of local</span>
-<span class="nv">HPC_SYSTEM</span><span class="o">=</span>slurm<span class="w">           </span><span class="c1"># Options: slurm, sge, torque</span>
-<span class="nv">HPC_QUEUE</span><span class="o">=</span>all.q<span class="w">            </span><span class="c1"># Your HPC queue name</span>
-<span class="nv">HPC_DEFAULT_MEMORY</span><span class="o">=</span>4G<span class="w">      </span><span class="c1"># Default memory allocation</span>
-<span class="nv">HPC_DEFAULT_CPUS</span><span class="o">=</span><span class="m">1</span><span class="w">         </span><span class="c1"># Default CPU cores</span>
-<span class="nv">HPC_DEFAULT_TIME</span><span class="o">=</span><span class="m">60</span><span class="w">        </span><span class="c1"># Default time limit in minutes</span>
-</code></pre></div>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># HPC Configuration</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nv">EXECUTOR_TYPE</span><span class="o">=</span>hpc<span class="w">           </span><span class="c1"># Use HPC executor instead of local</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nv">HPC_SYSTEM</span><span class="o">=</span>slurm<span class="w">           </span><span class="c1"># Options: slurm, sge, torque</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nv">HPC_QUEUE</span><span class="o">=</span>all.q<span class="w">            </span><span class="c1"># Your HPC queue name</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nv">HPC_DEFAULT_MEMORY</span><span class="o">=</span>4G<span class="w">      </span><span class="c1"># Default memory allocation</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nv">HPC_DEFAULT_CPUS</span><span class="o">=</span><span class="m">1</span><span class="w">         </span><span class="c1"># Default CPU cores</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nv">HPC_DEFAULT_TIME</span><span class="o">=</span><span class="m">60</span><span class="w">        </span><span class="c1"># Default time limit in minutes</span>
+</span></code></pre></div>
 <h2 id="resource-management">Resource Management<a class="headerlink" href="#resource-management" title="Permanent link">&para;</a></h2>
 <p>FlowAgent automatically manages HPC resources with sensible defaults that can be overridden:</p>
 <h3 id="memory-management">Memory Management<a class="headerlink" href="#memory-management" title="Permanent link">&para;</a></h3>
@@ -1477,19 +996,31 @@
 <li>Queue-specific resource limits are respected</li>
 </ul>
 <h2 id="using-hpc-execution">Using HPC Execution<a class="headerlink" href="#using-hpc-execution" title="Permanent link">&para;</a></h2>
-<p>To run a workflow on your HPC system:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Basic execution</span>
-flowagent<span class="w"> </span><span class="s2">&quot;Your workflow description&quot;</span><span class="w"> </span>--executor<span class="w"> </span>hpc
-
-<span class="c1"># Specify custom resource requirements</span>
-flowagent<span class="w"> </span><span class="s2">&quot;Your workflow description&quot;</span><span class="w"> </span>--executor<span class="w"> </span>hpc<span class="w"> </span>--memory<span class="w"> </span>32G<span class="w"> </span>--threads<span class="w"> </span><span class="m">16</span>
-</code></pre></div>
-<p>The system will automatically:
-- Submit jobs to the appropriate queue
-- Handle job dependencies
-- Manage resource allocation
-- Monitor job status
-- Provide detailed logging</p>
+<p>To use FlowAgent with your HPC system, simply describe your analysis requirements:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>User: &quot;I need to analyze RNA-seq data from 10 samples using the SLURM cluster.&quot;
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>FlowAgent: &quot;I&#39;ll set up an RNA-seq analysis workflow on your SLURM cluster. 
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>Can you provide more details about your samples and analysis goals?&quot;
+</span></code></pre></div>
+<p>The LLM will handle all the technical details of configuring and submitting HPC jobs.</p>
+<h2 id="slurm-specific-features">SLURM-Specific Features<a class="headerlink" href="#slurm-specific-features" title="Permanent link">&para;</a></h2>
+<p>For SLURM clusters, FlowAgent provides additional features:</p>
+<ul>
+<li>Automatic <code>.cgat.yml</code> configuration file generation</li>
+<li>Tool-specific resource allocation</li>
+<li>Detailed job monitoring and statistics</li>
+<li>Intelligent error handling and recovery</li>
+<li>Email notifications for job status</li>
+</ul>
+<p>See the <a href="../../hpc/slurm_configuration/">SLURM Configuration</a> guide for more details.</p>
+<h2 id="supported-hpc-systems">Supported HPC Systems<a class="headerlink" href="#supported-hpc-systems" title="Permanent link">&para;</a></h2>
+<p>FlowAgent currently supports these HPC systems:</p>
+<ol>
+<li><strong>SLURM</strong> (Recommended) - Full support with advanced features</li>
+<li><strong>SGE</strong> (Sun Grid Engine) - Basic support</li>
+<li><strong>TORQUE/PBS</strong> - Basic support</li>
+</ol>
+<p>Additional HPC systems may be supported in future releases.</p>
 
 
 
@@ -1551,7 +1082,7 @@ flowagent<span class="w"> </span><span class="s2">&quot;Your workflow descriptio
     </div>
     
     
-    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "search.highlight", "navigation.instant", "navigation.tracking", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.indexes", "toc.follow", "toc.integrate", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>

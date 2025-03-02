@@ -13,10 +13,6 @@
       
       
       
-        <link rel="prev" href="../..">
-      
-      
-        <link rel="next" href="../quickstart/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -24,7 +20,7 @@
     
     
       
-        <title>Installation - FlowAgent</title>
+        <title>SLURM Configuration for FlowAgent - FlowAgent</title>
       
     
     
@@ -78,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#slurm-configuration-for-flowagent" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              SLURM Configuration for FlowAgent
             
           </span>
         </div>
@@ -236,13 +232,11 @@
         
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
     
@@ -407,10 +401,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -423,22 +415,21 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -450,7 +441,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             Getting Started
@@ -461,31 +452,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    Installation
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -495,44 +465,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#development-installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Development Installation
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
-    <span class="md-ellipsis">
-      Requirements
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -545,7 +477,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -567,7 +499,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../configuration/" class="md-nav__link">
+      <a href="../../getting-started/configuration/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -883,18 +815,210 @@
   
 
 
-<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<p>FlowAgent can be installed using pip:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>flowagent
+<h1 id="slurm-configuration-for-flowagent">SLURM Configuration for FlowAgent<a class="headerlink" href="#slurm-configuration-for-flowagent" title="Permanent link">&para;</a></h1>
+<p>This guide explains how to configure FlowAgent to work with SLURM-based High-Performance Computing (HPC) environments.</p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>FlowAgent supports executing workflows on SLURM clusters through the <code>CGATExecutor</code>. This integration leverages the CGATCore pipeline system to manage job submission, monitoring, and resource allocation.</p>
+<h2 id="configuration-options">Configuration Options<a class="headerlink" href="#configuration-options" title="Permanent link">&para;</a></h2>
+<h3 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h3>
+<p>FlowAgent uses the following environment variables for SLURM configuration:</p>
+<table>
+<thead>
+<tr>
+<th>Environment Variable</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SLURM_QUEUE</code></td>
+<td>Default SLURM queue/partition</td>
+<td><code>short</code></td>
+</tr>
+<tr>
+<td><code>SLURM_DEFAULT_MEMORY</code></td>
+<td>Default memory allocation per job</td>
+<td><code>4G</code></td>
+</tr>
+<tr>
+<td><code>SLURM_DEFAULT_CPUS</code></td>
+<td>Default CPU cores per job</td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>SLURM_ACCOUNT</code></td>
+<td>SLURM account name</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>SLURM_PARTITION</code></td>
+<td>SLURM partition name</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>SLURM_QOS</code></td>
+<td>Quality of Service level</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>SLURM_MAIL_USER</code></td>
+<td>Email for job notifications</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>SLURM_MAIL_TYPE</code></td>
+<td>When to send email notifications</td>
+<td><code>ALL</code></td>
+</tr>
+</tbody>
+</table>
+<p>You can set these in your <code>.env</code> file or directly in your environment.</p>
+<h3 id="cgat-configuration-file">CGAT Configuration File<a class="headerlink" href="#cgat-configuration-file" title="Permanent link">&para;</a></h3>
+<p>FlowAgent uses a <code>.cgat.yml</code> configuration file for more detailed SLURM settings. This file should be placed in your project's root directory.</p>
+<p>Here's a sample configuration:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># FlowAgent CGAT/SLURM Configuration</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">cluster</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">queue_manager</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">slurm</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">parallel_environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">smp</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nt">slurm</span><span class="p">:</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">account</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my_lab_account</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">partition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compute</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="nt">mail_user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">user@example.com</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="nt">mail_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ALL</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="nt">qos</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">normal</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="c1"># Tool-specific resource requirements</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="nt">tools</span><span class="p">:</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="nt">kallisto_index</span><span class="p">:</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16G</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="nt">threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">    </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">short</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span><span class="nt">star_align</span><span class="p">:</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32G</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="nt">threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">    </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">long</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span><span class="nt">samtools_sort</span><span class="p">:</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8G</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">    </span><span class="nt">threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">    </span><span class="nt">queue</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
 </span></code></pre></div>
-<h2 id="development-installation">Development Installation<a class="headerlink" href="#development-installation" title="Permanent link">&para;</a></h2>
-<p>For development, clone the repository and install in editable mode:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cribbslab/flowagent.git
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>flowagent
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
+<p>If this file doesn't exist, FlowAgent will create a default one based on your environment variables.</p>
+<h2 id="llm-driven-workflow-generation">LLM-Driven Workflow Generation<a class="headerlink" href="#llm-driven-workflow-generation" title="Permanent link">&para;</a></h2>
+<p>FlowAgent uses its LLM capabilities to automatically generate workflows based on user requirements. The LLM:</p>
+<ol>
+<li><strong>Analyzes user input</strong> to determine the appropriate analysis steps</li>
+<li><strong>Designs an optimal workflow</strong> with appropriate dependencies</li>
+<li><strong>Allocates resources</strong> based on tool requirements and data characteristics</li>
+<li><strong>Submits jobs</strong> to the SLURM cluster with appropriate parameters</li>
+<li><strong>Monitors execution</strong> and handles errors intelligently</li>
+</ol>
+<p>For more details on how the LLM generates and manages workflows, see <a href="../llm_slurm_integration/">LLM-Driven SLURM Integration</a>.</p>
+<h2 id="workflow-structure">Workflow Structure<a class="headerlink" href="#workflow-structure" title="Permanent link">&para;</a></h2>
+<p>The LLM generates workflows with this structure:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;step_name&quot;</span><span class="p">,</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;command_to_execute&quot;</span><span class="p">,</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="nt">&quot;resources&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">        </span><span class="nt">&quot;memory&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;32G&quot;</span><span class="p">,</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">        </span><span class="nt">&quot;cpus&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">        </span><span class="nt">&quot;time_min&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="nt">&quot;queue&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;long&quot;</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="p">},</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">&quot;dependencies&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="p">}</span>
 </span></code></pre></div>
-<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
-<p>FlowAgent requires Python 3.8 or later.</p>
+<p>Each step includes:</p>
+<ul>
+<li><strong>name</strong>: Unique identifier for the step</li>
+<li><strong>command</strong>: The command to execute</li>
+<li><strong>resources</strong>: Resource requirements (memory, CPUs, time limit, queue)</li>
+<li><strong>dependencies</strong>: List of steps that must complete before this step runs</li>
+</ul>
+<h2 id="job-monitoring-and-error-handling">Job Monitoring and Error Handling<a class="headerlink" href="#job-monitoring-and-error-handling" title="Permanent link">&para;</a></h2>
+<p>FlowAgent provides robust job monitoring and error handling for SLURM jobs:</p>
+<ol>
+<li><strong>Job Scripts</strong>: All commands are written to script files in <code>logs/slurm_scripts/</code> for reproducibility</li>
+<li><strong>Job Information</strong>: Detailed job information is stored in <code>logs/job_info/</code> as JSON files</li>
+<li><strong>Error Parsing</strong>: Common SLURM errors are parsed and translated into user-friendly messages</li>
+<li><strong>Resource Usage</strong>: Job statistics are collected using <code>sacct</code> for performance analysis</li>
+</ol>
+<h2 id="common-slurm-errors-and-solutions">Common SLURM Errors and Solutions<a class="headerlink" href="#common-slurm-errors-and-solutions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Possible Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Job exceeded memory limit</td>
+<td>Increase the memory allocation in your workflow step</td>
+</tr>
+<tr>
+<td>Job exceeded time limit</td>
+<td>Increase the time allocation or optimize your code</td>
+</tr>
+<tr>
+<td>Invalid account/partition</td>
+<td>Check your SLURM account and partition settings</td>
+</tr>
+<tr>
+<td>Permission denied</td>
+<td>Ensure you have the correct permissions for the SLURM account/partition</td>
+</tr>
+<tr>
+<td>Requested node configuration not available</td>
+<td>Reduce resource requirements or use a different partition</td>
+</tr>
+<tr>
+<td>Unable to allocate resources</td>
+<td>The cluster may be busy; try reducing resource requirements</td>
+</tr>
+<tr>
+<td>Invalid QoS</td>
+<td>Check your SLURM_QOS setting</td>
+</tr>
+</tbody>
+</table>
+<h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Resource Estimation</strong>: Start with conservative resource estimates and adjust based on job statistics</li>
+<li><strong>Dependencies</strong>: Use the dependencies list to create efficient workflow DAGs</li>
+<li><strong>Error Handling</strong>: Check job output and error files for troubleshooting</li>
+<li><strong>Module Loading</strong>: Use the script template to load required environment modules</li>
+<li><strong>Partition Selection</strong>: Choose appropriate partitions based on job requirements</li>
+</ol>
+<h2 id="interacting-with-flowagent-for-slurm-execution">Interacting with FlowAgent for SLURM Execution<a class="headerlink" href="#interacting-with-flowagent-for-slurm-execution" title="Permanent link">&para;</a></h2>
+<p>Instead of writing code, you interact with FlowAgent using natural language:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>User: &quot;I need to analyze RNA-seq data from tumor and control samples using STAR and DESeq2.&quot;
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>FlowAgent: &quot;I&#39;ll create a workflow for RNA-seq analysis using STAR and DESeq2. 
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>I&#39;ll configure it to run on your SLURM cluster with appropriate resource allocations.
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>Can you provide the location of your FASTQ files and reference genome?&quot;
+</span></code></pre></div>
+<p>The LLM will handle all the technical details of configuring and submitting SLURM jobs.</p>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<p>If you encounter issues with SLURM job submission:</p>
+<ol>
+<li>Check if the <code>.cgat.yml</code> file is correctly configured</li>
+<li>Verify that your SLURM account and partition are valid</li>
+<li>Examine the job script files in <code>logs/slurm_scripts/</code></li>
+<li>Look at the job information files in <code>logs/job_info/</code></li>
+<li>Check SLURM output files (<code>slurm-*.out</code> and <code>slurm-*.err</code>)</li>
+<li>Run <code>squeue -u $USER</code> to see if your jobs are in the queue</li>
+<li>Run <code>sacct -u $USER</code> to see the status of completed jobs</li>
+</ol>
+<h2 id="advanced-configuration">Advanced Configuration<a class="headerlink" href="#advanced-configuration" title="Permanent link">&para;</a></h2>
+<p>For more advanced SLURM configurations, you can modify the <code>.cgat.yml</code> file or set additional environment variables. The LLM will automatically incorporate these settings when generating workflows.</p>
 
 
 
