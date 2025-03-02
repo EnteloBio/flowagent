@@ -83,12 +83,24 @@ class Settings(BaseSettings):
     }
     
     # Executor settings
-    EXECUTOR_TYPE: str = Field("local", env='EXECUTOR_TYPE')  # Options: local, hpc
+    EXECUTOR_TYPE: str = Field("local", env='EXECUTOR_TYPE')  # Options: local, cgat, kubernetes
+    
+    # HPC Settings
     HPC_SYSTEM: str = Field("slurm", env='HPC_SYSTEM')  # Options: slurm, sge, torque
     HPC_QUEUE: str = Field("all.q", env='HPC_QUEUE')
     HPC_DEFAULT_MEMORY: str = Field("4G", env='HPC_DEFAULT_MEMORY')
     HPC_DEFAULT_CPUS: int = Field(1, env='HPC_DEFAULT_CPUS')
     HPC_DEFAULT_TIME: int = Field(60, env='HPC_DEFAULT_TIME')
+    
+    # SLURM-specific settings (for CGATExecutor)
+    SLURM_QUEUE: str = Field("all.q", env='SLURM_QUEUE', description="Default SLURM queue")
+    SLURM_DEFAULT_MEMORY: str = Field("4G", env='SLURM_DEFAULT_MEMORY', description="Default memory allocation for SLURM jobs")
+    SLURM_DEFAULT_CPUS: int = Field(1, env='SLURM_DEFAULT_CPUS', description="Default CPU count for SLURM jobs")
+    SLURM_ACCOUNT: str = Field("", env='SLURM_ACCOUNT', description="SLURM account to charge resources to")
+    SLURM_PARTITION: str = Field("", env='SLURM_PARTITION', description="SLURM partition to submit jobs to")
+    SLURM_QOS: str = Field("", env='SLURM_QOS', description="Quality of Service for SLURM jobs")
+    SLURM_MAIL_USER: str = Field("", env='SLURM_MAIL_USER', description="Email for SLURM job notifications")
+    SLURM_MAIL_TYPE: str = Field("FAIL", env='SLURM_MAIL_TYPE', description="When to send email notifications (ALL, NONE, BEGIN, END, FAIL)")
     
     # Kubernetes Settings
     KUBERNETES_ENABLED: bool = Field(default=False, env="KUBERNETES_ENABLED")

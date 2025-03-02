@@ -55,19 +55,77 @@ class LocalExecutor(BaseExecutor):
         return jobs
 
 class CGATExecutor(BaseExecutor):
-    """Execute workflow steps using CGATCore pipeline."""
+    """Execute workflow steps using CGATCore pipeline for SLURM integration."""
     
     def __init__(self):
         """Initialize CGATCore pipeline."""
+        # Check if cgatcore is installed
+        if P is None:
+            raise ImportError(
+                "CGATCore is not installed. Please install it with: "
+                "pip install cgatcore>=0.6.7"
+            )
+            
         self.pipeline = P
         self.pipeline.start_pipeline()
         self.settings = Settings()
+        
+        # Load .cgat.yml configuration if it exists
+        self.cgat_config_path = Path('.cgat.yml')
+        if not self.cgat_config_path.exists():
+            logger.warning(
+                "\n⚠️  No .cgat.yml file found in the current directory."
+                "\n   This file is recommended for configuring SLURM settings."
+                "\n   Creating a default configuration file."
+            )
+            self._create_default_cgat_config()
+        
+        # Log SLURM settings
         logger.info(
-            f"Initialized CGATCore pipeline with settings:\n"
+            f"Initialized CGATCore pipeline with SLURM settings:\n"
             f"  Queue: {self.settings.SLURM_QUEUE}\n"
+            f"  Partition: {self.settings.SLURM_PARTITION or 'default'}\n"
+            f"  Account: {self.settings.SLURM_ACCOUNT or 'default'}\n"
             f"  Default Memory: {self.settings.SLURM_DEFAULT_MEMORY}\n"
-            f"  Default CPUs: {self.settings.SLURM_DEFAULT_CPUS}"
+            f"  Default CPUs: {self.settings.SLURM_DEFAULT_CPUS}\n"
+            f"  Email Notifications: {self.settings.SLURM_MAIL_USER or 'disabled'}"
         )
+    
+    def _create_default_cgat_config(self):
+        """Create a default .cgat.yml configuration file."""
+        default_config = f"""# FlowAgent CGAT/SLURM Configuration
+# Created automatically on {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+cluster:
+  queue_manager: slurm
+  queue: {self.settings.SLURM_QUEUE}
+  parallel_environment: smp
+
+slurm:
+  account: {self.settings.SLURM_ACCOUNT}
+  partition: {self.settings.SLURM_PARTITION}
+  mail_user: {self.settings.SLURM_MAIL_USER}
+  mail_type: {self.settings.SLURM_MAIL_TYPE}
+  qos: {self.settings.SLURM_QOS}
+
+# Tool-specific resource requirements
+# Uncomment and modify as needed
+tools:
+  # kallisto_index:
+  #   memory: 16G
+  #   threads: 8
+  #   queue: short
+  # star_align:
+  #   memory: 32G
+  #   threads: 16
+  #   queue: long
+"""
+        try:
+            with open(self.cgat_config_path, 'w') as f:
+                f.write(default_config)
+            logger.info(f"Created default .cgat.yml configuration file at {self.cgat_config_path}")
+        except Exception as e:
+            logger.error(f"Failed to create default .cgat.yml file: {str(e)}")
     
     def _prepare_job_options(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare job options for CGATCore."""
@@ -79,6 +137,7 @@ class CGATExecutor(BaseExecutor):
         cpus = resources.get("cpus", self.settings.SLURM_DEFAULT_CPUS)
         queue = resources.get("queue", self.settings.SLURM_QUEUE)
         
+        # Add SLURM-specific options
         options = {
             "job_name": step["name"],
             "job_memory": memory,
@@ -87,6 +146,23 @@ class CGATExecutor(BaseExecutor):
             "job_queue": queue,
         }
         
+        # Add SLURM account if specified
+        if self.settings.SLURM_ACCOUNT:
+            options["slurm_account"] = self.settings.SLURM_ACCOUNT
+            
+        # Add SLURM partition if specified
+        if self.settings.SLURM_PARTITION:
+            options["slurm_partition"] = self.settings.SLURM_PARTITION
+            
+        # Add SLURM QoS if specified
+        if self.settings.SLURM_QOS:
+            options["slurm_qos"] = self.settings.SLURM_QOS
+            
+        # Add email notifications if specified
+        if self.settings.SLURM_MAIL_USER:
+            options["slurm_mail_user"] = self.settings.SLURM_MAIL_USER
+            options["slurm_mail_type"] = self.settings.SLURM_MAIL_TYPE
+            
         # Add dependencies if present
         if deps := step.get("dependencies", []):
             options["job_depends"] = deps
@@ -96,6 +172,35 @@ class CGATExecutor(BaseExecutor):
             
         return options
     
+    def _parse_slurm_error(self, error_msg: str) -> str:
+        """Parse SLURM error messages to provide more helpful information."""
+        if not error_msg:
+            return "Unknown SLURM error"
+            
+        # Common SLURM error patterns
+        patterns = {
+            r"slurmstepd: error:.+?exceeded memory limit": 
+                "Job exceeded memory limit. Try increasing the memory allocation.",
+            r"time limit exceeded": 
+                "Job exceeded time limit. Try increasing the time allocation.",
+            r"Invalid account or account/partition combination": 
+                "Invalid SLURM account or partition specified. Check your .cgat.yml configuration.",
+            r"Permission denied": 
+                "Permission denied. Ensure you have the correct permissions for the SLURM account/partition.",
+            r"Requested node configuration is not available": 
+                "Requested resources are not available. Try reducing memory/CPU requirements or use a different partition.",
+            r"Unable to allocate resources": 
+                "Unable to allocate resources. The cluster may be busy or your resource request is too large.",
+            r"Batch job submission failed: Invalid qos": 
+                "Invalid QoS specified. Check your SLURM_QOS setting.",
+        }
+        
+        for pattern, explanation in patterns.items():
+            if re.search(pattern, error_msg, re.IGNORECASE):
+                return f"{explanation}\nOriginal error: {error_msg}"
+                
+        return error_msg
+    
     async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a workflow step using CGATCore."""
         try:
@@ -103,26 +208,101 @@ class CGATExecutor(BaseExecutor):
             job_options = self._prepare_job_options(step)
             logger.info(f"Submitting step {step['name']} with options: {job_options}")
             
+            # Create a script file for the command
+            script_dir = Path("logs/slurm_scripts")
+            script_dir.mkdir(parents=True, exist_ok=True)
+            script_path = script_dir / f"{step['name']}_{int(time.time())}.sh"
+            
+            with open(script_path, 'w') as f:
+                f.write("#!/bin/bash\n")
+                f.write(f"# FlowAgent SLURM job: {step['name']}\n")
+                f.write(f"# Created: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write("# Load any required modules\n")
+                f.write("# module load python/3.9\n\n")
+                f.write("# Execute command\n")
+                f.write(f"{step['command']}\n")
+                
+            # Make script executable
+            script_path.chmod(0o755)
+            
             # Submit job via CGATCore
-            statement = step["command"]
+            statement = f"bash {script_path}"
             job = self.pipeline.submit(
                 statement,
                 job_options=job_options,
                 to_cluster=True  # Ensure job goes to SLURM
             )
             
-            return {
+            # Create job info file for monitoring
+            job_info = {
                 "step_id": step["name"],
                 "job_id": job.jobid,
                 "status": "submitted",
-                "command": statement,
+                "command": step["command"],
+                "script_path": str(script_path),
                 "job_options": job_options,
-                "resources": step.get("resources", {})  # Include resource allocation in job info
+                "resources": step.get("resources", {}),
+                "submit_time": time.time(),
+                "dependencies": step.get("dependencies", [])
             }
+            
+            # Save job info to file for monitoring
+            job_info_dir = Path("logs/job_info")
+            job_info_dir.mkdir(parents=True, exist_ok=True)
+            job_info_path = job_info_dir / f"{step['name']}_{job.jobid}.json"
+            
+            with open(job_info_path, 'w') as f:
+                json.dump(job_info, f, indent=2)
+            
+            return job_info
             
         except Exception as e:
             logger.error(f"Error submitting step {step['name']}: {str(e)}")
-            raise
+            error_msg = self._parse_slurm_error(str(e))
+            return {
+                "step_id": step["name"],
+                "status": "failed",
+                "error": error_msg,
+                "command": step.get("command", "")
+            }
+    
+    async def _monitor_job(self, job_id: str) -> Dict[str, Any]:
+        """Monitor a SLURM job and return status information."""
+        try:
+            # Use squeue to get job status
+            import subprocess
+            
+            cmd = f"squeue -j {job_id} -o '%T|%M|%L|%C|%m' -h"
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0 or not stdout.strip():
+                # Job not found in queue, might be completed or failed
+                return {"status": "unknown"}
+                
+            # Parse squeue output
+            parts = stdout.strip().split('|')
+            if len(parts) >= 5:
+                status, runtime, timeleft, cpus, mem = parts
+                return {
+                    "status": status,
+                    "runtime": runtime,
+                    "time_left": timeleft,
+                    "cpus": cpus,
+                    "memory": mem
+                }
+            
+            return {"status": "running"}
+            
+        except Exception as e:
+            logger.error(f"Error monitoring job {job_id}: {str(e)}")
+            return {"status": "unknown", "error": str(e)}
     
     async def wait_for_completion(self, jobs: Dict[str, Any]) -> Dict[str, Any]:
         """Wait for all CGATCore jobs to complete."""
@@ -134,12 +314,29 @@ class CGATExecutor(BaseExecutor):
             results = {}
             for step_id, job_info in jobs.items():
                 job_id = job_info["job_id"]
+                
+                # Get final status from CGATCore
                 status = self.pipeline.get_job_status(job_id)
+                
+                # Get detailed job information from SLURM accounting
+                job_stats = await self._get_job_stats(job_id)
+                
+                # Parse SLURM output/error files
+                stdout, stderr = await self._get_job_output(job_id)
+                
+                # Check for common error patterns in stderr
+                error_msg = ""
+                if status != "completed" and stderr:
+                    error_msg = self._parse_slurm_error(stderr)
                 
                 results[step_id] = {
                     **job_info,
                     "status": "completed" if status == "completed" else "failed",
-                    "completion_status": status
+                    "completion_status": status,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "error_message": error_msg,
+                    "stats": job_stats
                 }
             
             return results
@@ -150,6 +347,69 @@ class CGATExecutor(BaseExecutor):
         finally:
             # Clean up pipeline
             self.pipeline.close_pipeline()
+    
+    async def _get_job_stats(self, job_id: str) -> Dict[str, Any]:
+        """Get detailed job statistics from SLURM accounting."""
+        try:
+            import subprocess
+            
+            cmd = f"sacct -j {job_id} -o JobID,State,Elapsed,TotalCPU,MaxRSS,NodeList,ExitCode -P"
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0 or not stdout.strip():
+                return {}
+                
+            # Parse sacct output
+            lines = stdout.strip().split('\n')
+            if len(lines) < 2:
+                return {}
+                
+            # Get header and data
+            header = lines[0].split('|')
+            data = lines[1].split('|')
+            
+            # Create stats dictionary
+            stats = {}
+            for i, key in enumerate(header):
+                if i < len(data):
+                    stats[key] = data[i]
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error getting job stats for {job_id}: {str(e)}")
+            return {}
+    
+    async def _get_job_output(self, job_id: str) -> tuple:
+        """Get job stdout and stderr from SLURM output files."""
+        try:
+            # SLURM output files are typically named slurm-{job_id}.out
+            stdout_file = Path(f"slurm-{job_id}.out")
+            stderr_file = Path(f"slurm-{job_id}.err")
+            
+            stdout = ""
+            stderr = ""
+            
+            if stdout_file.exists():
+                with open(stdout_file, 'r') as f:
+                    stdout = f.read()
+            
+            if stderr_file.exists():
+                with open(stderr_file, 'r') as f:
+                    stderr = f.read()
+            
+            return stdout, stderr
+            
+        except Exception as e:
+            logger.error(f"Error reading job output for {job_id}: {str(e)}")
+            return "", f"Error reading job output: {str(e)}"
 
 class HPCExecutor(BaseExecutor):
     """Execute workflow steps using various HPC systems (SLURM, SGE, TORQUE)."""
