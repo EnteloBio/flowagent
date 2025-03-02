@@ -1,0 +1,30 @@
+{
+    "name": "deseq2_normalize",
+    "description": "Performs DESeq2 normalization on RNA-seq count data",
+    "script_file": "custom_normalize.R",
+    "language": "R",
+    "input_requirements": [
+        {
+            "name": "counts_matrix",
+            "type": "csv",
+            "description": "Raw counts matrix with genes as rows and samples as columns"
+        }
+    ],
+    "output_types": [
+        {
+            "name": "normalized_counts",
+            "type": "csv",
+            "description": "DESeq2 normalized count matrix"
+        }
+    ],
+    "workflow_types": ["rna_seq"],
+    "execution_order": {
+        "before": ["differential_expression"],
+        "after": ["alignment", "feature_counts"]
+    },
+    "requirements": {
+        "r_packages": ["DESeq2", "jsonlite"],
+        "python_packages": [],
+        "system_dependencies": []
+    }
+}

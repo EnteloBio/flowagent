@@ -1,4 +1,4 @@
-site_name: FlowAgent
+site_name: FlowAgent Documentation
 site_description: An advanced multi-agent framework for automating complex bioinformatics workflows
 site_author: Cribbs Lab
 
@@ -8,32 +8,29 @@ repo_name: cribbslab/flowagent
 theme:
   name: material
   features:
-    - navigation.instant
-    - navigation.tracking
     - navigation.tabs
-    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
-    - navigation.indexes
+    - search.highlight
+    - navigation.instant
+    - navigation.tracking
     - toc.follow
     - toc.integrate
-    - search.suggest
-    - search.highlight
     - content.code.copy
     - content.code.annotate
   
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: teal
-      accent: teal
+      primary: indigo
+      accent: indigo
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: teal
-      accent: teal
+      primary: indigo
+      accent: indigo
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -60,26 +57,23 @@ plugins:
   - autorefs
 
 markdown_extensions:
-  - admonition
-  - pymdownx.details
+  - pymdownx.highlight
   - pymdownx.superfences
+  - pymdownx.tabbed
+  - admonition
+  - footnotes
   - attr_list
-  - md_in_html
-  - def_list
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - pymdownx.highlight:
-      anchor_linenums: true
-      line_spans: __span
-      pygments_lang_class: true
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
   - toc:
       permalink: true
       toc_depth: 3
+  - pymdownx.tasklist:
+      custom_checkbox: true
 
 nav:
   - Home: index.md
@@ -87,6 +81,23 @@ nav:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
     - Configuration: getting-started/configuration.md
+  - Workflows:
+    - Overview: workflows/index.md
+    - RNA-seq: workflows/rna-seq.md
+    - ChIP-seq: workflows/chip-seq.md
+    - Hi-C: workflows/hi-c.md
+    - ATAC-seq: workflows/atac-seq.md
+    - Bisulfite-seq: workflows/bisulfite-seq.md
+    - Single-cell Multi-omics: workflows/sc-multiomics.md
+    - Example Prompts: workflows/example-prompts.md
+  - Custom Scripts:
+    - Overview: custom_scripts/index.md
+    - Adding Scripts: custom_scripts/adding-scripts.md
+    - Script Requirements: custom_scripts/requirements.md
+    - Examples:
+      - RNA-seq Normalization: custom_scripts/examples/rna-seq-norm.md
+      - ChIP-seq Peak Analysis: custom_scripts/examples/chip-seq-peaks.md
+      - Data Cleanup: custom_scripts/examples/data-cleanup.md
   - User Guide:
     - Concepts: user-guide/concepts.md
     - HPC Configuration: user-guide/hpc.md
@@ -95,5 +106,7 @@ nav:
     - Version Compatibility: user-guide/version-compatibility.md
   - API Reference:
     - Overview: reference/index.md
+    - Script Manager: api/script-manager.md
+    - Workflow Executor: api/workflow-executor.md
   - Contributing: contributing.md
   - Changelog: changelog.md

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from .llm import LLMInterface
+from .script_manager import ScriptManager
 from ..utils.logging import get_logger
 from datetime import datetime
 
@@ -19,6 +20,9 @@ class WorkflowAnalyzer:
         """
         self.llm = llm_interface
         self.logger = get_logger(__name__)
+        self.script_manager = ScriptManager(
+            os.path.join(os.path.dirname(__file__), "..", "custom_scripts")
+        )
         
     async def analyze_workflow(self, results_dir: str, workflow_type: str) -> Dict[str, Any]:
         """Analyze workflow results using multi-agent approach.
@@ -34,51 +38,87 @@ class WorkflowAnalyzer:
             self.logger.info(f"Starting multi-agent analysis of {workflow_type} workflow")
             results_path = Path(results_dir)
             
-            # Search in base directory and all subdirectories
-            search_paths = [results_path]
-            for subdir in results_path.rglob("*"):
-                if subdir.is_dir():
-                    search_paths.append(subdir)
+            # Get available custom scripts for this workflow
+            custom_scripts = self.script_manager.get_scripts_for_workflow(workflow_type)
+            self.logger.info(f"Found {len(custom_scripts)} custom scripts for {workflow_type}")
             
-            self.logger.info(f"Searching in directories: {[str(p) for p in search_paths]}")
+            # Build DAG including custom scripts
+            dag = await self._build_workflow_dag(workflow_type, custom_scripts)
             
-            # 1. Data Quality & Preprocessing
-            quality_results = await self._analyze_data_quality(search_paths)
+            # Execute workflow steps in order
+            results = {}
+            for step in dag:
+                if step in self.script_manager.scripts:
+                    # Execute custom script
+                    script = self.script_manager.get_script(step)
+                    if script and self.script_manager.validate_script_requirements(script):
+                        try:
+                            step_results = await self.script_manager.execute_script(
+                                script,
+                                self._get_script_inputs(script, results)
+                            )
+                            results.update(step_results)
+                        except Exception as e:
+                            self.logger.error(f"Error executing custom script {step}: {str(e)}")
+                else:
+                    # Execute standard workflow step
+                    step_results = await self._execute_standard_step(step, results_path)
+                    results.update(step_results)
             
-            # 2. Alignment & Quantification
-            alignment_results = await self._analyze_alignment(search_paths)
-            
-            # 3. Analysis-Specific Metrics
-            analysis_results = await self._analyze_workflow_specific(search_paths, workflow_type)
-            
-            # 4. Resource Usage & Performance
-            resource_results = await self._analyze_resource_usage(search_paths)
-            
-            # 5. Visualization & Results
-            viz_results = await self._analyze_visualizations(search_paths)
-            
-            # Combine all results
-            return {
-                "data_quality": quality_results,
-                "alignment": alignment_results,
-                "analysis": analysis_results,
-                "resources": resource_results,
-                "visualization": viz_results,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+            return results
             
         except Exception as e:
-            self.logger.error(f"Failed to analyze workflow: {e}")
+            self.logger.error(f"Error in workflow analysis: {str(e)}")
             raise
             
-    def _find_files_in_paths(self, search_paths: List[Path], patterns: List[str]) -> List[Path]:
-        """Find files matching any of the patterns in any of the search paths."""
-        found_files = []
-        for path in search_paths:
-            for pattern in patterns:
-                found_files.extend(path.rglob(pattern))
-        return found_files
+    async def _build_workflow_dag(self, workflow_type: str, custom_scripts: List[ScriptInfo]) -> List[str]:
+        """Build workflow DAG incorporating custom scripts."""
+        # Get standard workflow steps
+        standard_steps = self._get_standard_workflow_steps(workflow_type)
+        
+        # Add custom scripts based on their execution order
+        dag = standard_steps.copy()
+        for script in custom_scripts:
+            # Find position based on before/after requirements
+            pos = 0
+            for after_step in script.execution_order['after']:
+                if after_step in dag:
+                    pos = max(pos, dag.index(after_step) + 1)
             
+            for before_step in script.execution_order['before']:
+                if before_step in dag:
+                    pos = min(pos, dag.index(before_step))
+            
+            # Insert script at calculated position
+            dag.insert(pos, script.name)
+        
+        return dag
+    
+    def _get_script_inputs(self, script: ScriptInfo, results: Dict[str, Any]) -> Dict[str, str]:
+        """Get input files for a custom script from previous results."""
+        inputs = {}
+        for req in script.input_requirements:
+            if req['name'] in results:
+                inputs[req['name']] = results[req['name']]
+            else:
+                raise ValueError(f"Missing required input {req['name']} for script {script.name}")
+        return inputs
+    
+    def _get_standard_workflow_steps(self, workflow_type: str) -> List[str]:
+        """Get standard steps for a workflow type."""
+        if workflow_type == "rna_seq":
+            return ["fastqc", "alignment", "feature_counts", "differential_expression"]
+        elif workflow_type == "chip_seq":
+            return ["fastqc", "alignment", "peak_calling", "motif_analysis"]
+        else:
+            raise ValueError(f"Unsupported workflow type: {workflow_type}")
+            
+    async def _execute_standard_step(self, step: str, results_path: Path) -> Dict[str, Any]:
+        """Execute a standard workflow step."""
+        # Implementation of standard workflow steps
+        # This would be replaced with actual implementation
+        return {}
+    
     async def _analyze_data_quality(self, search_paths: List[Path]) -> Dict[str, Any]:
         """Analyze data quality metrics."""
         try:
