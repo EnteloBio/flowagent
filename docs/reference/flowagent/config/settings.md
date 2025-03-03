@@ -2,6 +2,6 @@
 title: Settings
 ---
 
-This module defines the settings for Cognomic.
+This module defines the settings for flowagent.
 
 ::: flowagent.config.settings

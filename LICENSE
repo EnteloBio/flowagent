@@ -672,3 +672,30 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
+
+EXCEPTION NOTICE:
+The logo found in this repository, located at [logo/entelo.png] (the "Logo"), 
+is not covered under the GNU General Public License v3.0 (GPL-3.0). 
+Instead, it is subject to the following terms:
+
+Copyright and Ownership:
+The Logo remains the intellectual property of its original creator(s) 
+and copyright holder(s). All rights are reserved.
+
+Permitted Use:
+The Logo may not be modified, redistributed, or used in any derivative 
+works without explicit written permission from the copyright holder(s). 
+It may only be used for official representation of the project.
+
+Exclusion from GPL-3.0:
+The presence of the Logo within this repository does not imply that 
+it is licensed under GPL-3.0. The GPL-3.0 terms apply solely to the 
+code and other content explicitly stated to be under GPL-3.0.
+
+Trademark Rights:
+The Logo is also subject to trademark laws. 
+Any unauthorised use, including modification or distribution, may 
+violate trademark rights.
+
+For any questions regarding usage rights for the Logo, please 
+contact adam@entelo.bio.

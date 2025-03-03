@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
 from openai import AsyncOpenAI
 
 from ..config.settings import Settings
@@ -16,25 +17,42 @@ settings = Settings()
 
 logger = get_logger(__name__)
 
+
 class LLMInterface:
     """Interface for LLM-based workflow generation."""
-    
+
     def __init__(self):
         """Initialize LLM interface."""
         self.logger = get_logger(__name__)
-        
+
         # Check for OpenAI API key and .env file
-        env_path = Path('.env')
-        if not env_path.exists():
+        env_found = False
+        
+        # Check current directory first
+        current_env_path = Path(".env")
+        if current_env_path.exists():
+            env_found = True
+            
+        # If not found, check USER_EXECUTION_DIR if it exists
+        if not env_found and "USER_EXECUTION_DIR" in os.environ:
+            user_dir_env_path = Path(os.environ["USER_EXECUTION_DIR"]) / ".env"
+            if user_dir_env_path.exists():
+                # Load the .env file from USER_EXECUTION_DIR
+                from dotenv import load_dotenv
+                load_dotenv(dotenv_path=user_dir_env_path)
+                env_found = True
+                self.logger.info(f"Loaded .env file from USER_EXECUTION_DIR: {user_dir_env_path}")
+        
+        if not env_found:
             self.logger.error(
-                "\n⚠️  No .env file found in the current directory."
+                "\n⚠️  No .env file found in the current directory or USER_EXECUTION_DIR."
                 "\n   Please create a .env file with your OpenAI API key:"
                 "\n   OPENAI_API_KEY=your-api-key-here"
                 "\n   OPENAI_MODEL=gpt-4 (optional)"
                 "\n   OPENAI_FALLBACK_MODEL=gpt-3.5-turbo (optional)"
             )
             raise ValueError("Missing .env file with OpenAI API key")
-        
+
         if not settings.OPENAI_API_KEY:
             self.logger.error(
                 "\n⚠️  OPENAI_API_KEY not found in environment variables or .env file."
@@ -42,11 +60,10 @@ class LLMInterface:
                 "\n   OPENAI_API_KEY=your-api-key-here"
             )
             raise ValueError("Missing OpenAI API key")
-            
+
         # Initialize OpenAI client with API key from settings
         self.client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL
+            api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL
         )
 
     WORKFLOW_TYPES = {
@@ -262,7 +279,7 @@ class LLMInterface:
             ],
             "rules": [
                 "FastQC: Use exact input filenames for FastQC analysis",
-                "Kallisto index: Use exact reference filename for index creation", 
+                "Kallisto index: Use exact reference filename for index creation",
                 "Kallisto quant paired: Use exact sample name from input files for output directory",
                 "Kallisto quant single: Use exact sample name from input files for output directory",
                 "MultiQC: Analyze all QC and quantification results",
@@ -280,7 +297,7 @@ The workflow should:
 5. Generate MultiQC report
 
 Use the exact sample name '{sample_name}' for output directories.""",
-            "sample_suffixes": ['.fastq.1.gz', '.fastq.2.gz', '.fq.1.gz', '.fq.2.gz']
+            "sample_suffixes": [".fastq.1.gz", ".fastq.2.gz", ".fq.1.gz", ".fq.2.gz"],
         },
     }
 
@@ -457,7 +474,9 @@ Use the exact sample name '{sample_name}' for output directories.""",
 
         return best_match[0], self.WORKFLOW_TYPES[best_match[0]]
 
-    async def _call_openai(self, messages: List[Dict[str, str]], model: Optional[str] = None) -> str:
+    async def _call_openai(
+        self, messages: List[Dict[str, str]], model: Optional[str] = None
+    ) -> str:
         """Call OpenAI API with retry logic and error handling."""
         try:
             # Try preferred model first
@@ -465,14 +484,14 @@ Use the exact sample name '{sample_name}' for output directories.""",
                 model,  # User-specified model
                 settings.OPENAI_MODEL,  # Default model from settings
                 settings.OPENAI_FALLBACK_MODEL,  # Fallback model
-                "gpt-3.5-turbo"  # Last resort
+                "gpt-3.5-turbo",  # Last resort
             ]
-            
+
             last_error = None
             for try_model in try_models:
                 if not try_model:
                     continue
-                    
+
                 try:
                     self.logger.info(f"Attempting to use model: {try_model}")
                     completion = await self.client.chat.completions.create(
@@ -487,11 +506,13 @@ Use the exact sample name '{sample_name}' for output directories.""",
                     if "model_not_found" not in str(e):
                         # If error is not about model availability, don't try other models
                         raise
-                    self.logger.warning(f"Model {try_model} not available, trying next model...")
-                    
+                    self.logger.warning(
+                        f"Model {try_model} not available, trying next model..."
+                    )
+
             # If we get here, none of the models worked
             raise last_error or ValueError("No valid model found")
-            
+
         except Exception as e:
             error_msg = str(e)
             if "insufficient_quota" in error_msg:
@@ -500,7 +521,8 @@ Use the exact sample name '{sample_name}' for output directories.""",
                     "\n   1. Check your billing status at https://platform.openai.com/account/billing"
                     "\n   2. Add credits to your account or wait for quota reset"
                     "\n   3. Or use a different API key with available quota"
-                    "\n\nError details: %s", error_msg
+                    "\n\nError details: %s",
+                    error_msg,
                 )
             elif "model_not_found" in error_msg:
                 self.logger.error(
@@ -509,11 +531,21 @@ Use the exact sample name '{sample_name}' for output directories.""",
                     "\n   - Default model from settings"
                     "\n   - Fallback model"
                     "\n   - Last resort (gpt-3.5-turbo)"
-                    "\n\nError details: %s", error_msg
+                    "\n\nError details: %s",
+                    error_msg,
                 )
             else:
                 self.logger.error("OpenAI API call failed: %s", error_msg)
             raise
+
+    async def _call_openai_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        response_format: Optional[Dict[str, str]] = None,
+        **kwargs,
+    ) -> str:
+        """Call OpenAI API with streaming completion and retry logic."""
+        return await self._call_openai(messages, response_format, stream=True, **kwargs)
 
     def _clean_llm_response(self, response: str) -> str:
         """Clean LLM response by removing markdown formatting."""
@@ -663,24 +695,31 @@ Return a JSON object in this EXACT format:
         try:
             # Extract file patterns and relationships using LLM
             file_info = await self._extract_file_patterns(prompt)
-            
+
             # Find files matching the patterns
             matched_files = []
             for pattern in file_info["patterns"]:
                 matched_files.extend(glob.glob(pattern))
-                
+
             if not matched_files:
                 patterns_str = ", ".join(file_info["patterns"])
                 raise ValueError(f"No files found matching patterns: {patterns_str}")
 
             # Group files according to relationships
             organized_files = {}
-            if "relationships" in file_info and file_info["relationships"]["type"] == "paired":
+            if (
+                "relationships" in file_info
+                and file_info["relationships"]["type"] == "paired"
+            ):
                 pairs = {}
                 for group in file_info["relationships"]["pattern_groups"]:
-                    group_files = [f for f in matched_files if glob.fnmatch.fnmatch(f, group["pattern"])]
+                    group_files = [
+                        f
+                        for f in matched_files
+                        if glob.fnmatch.fnmatch(f, group["pattern"])
+                    ]
                     organized_files[group["group"]] = group_files
-                    
+
                 # Remove duplicates while preserving order
                 matched_files = list(dict.fromkeys(matched_files))
 
@@ -997,29 +1036,36 @@ Provide analysis in this format:
         try:
             # Extract file patterns and relationships using LLM
             file_info = await self._extract_file_patterns(prompt)
-            
+
             # Find files matching the patterns
             matched_files = []
             for pattern in file_info["patterns"]:
                 matched_files.extend(glob.glob(pattern))
-                
+
             if not matched_files:
                 patterns_str = ", ".join(file_info["patterns"])
                 raise ValueError(f"No files found matching patterns: {patterns_str}")
 
             # Group files according to relationships
             organized_files = {}
-            if "relationships" in file_info and file_info["relationships"]["type"] == "paired":
+            if (
+                "relationships" in file_info
+                and file_info["relationships"]["type"] == "paired"
+            ):
                 pairs = {}
                 for group in file_info["relationships"]["pattern_groups"]:
-                    group_files = [f for f in matched_files if glob.fnmatch.fnmatch(f, group["pattern"])]
+                    group_files = [
+                        f
+                        for f in matched_files
+                        if glob.fnmatch.fnmatch(f, group["pattern"])
+                    ]
                     organized_files[group["group"]] = group_files
-                    
+
                 # Remove duplicates while preserving order
                 matched_files = list(dict.fromkeys(matched_files))
 
             self.logger.info(f"Found input files: {matched_files}")
-            
+
             # Construct the prompt for the LLM
             analysis_prompt = f"""
 Analyze the following prompt to determine if it's requesting to run a workflow or generate a report/analysis.
@@ -1101,7 +1147,10 @@ If you are being asked to generate a title, set "success" to false.
                 raise ValueError(
                     f"Checkpoint directory does not exist: {analysis['checkpoint_dir']}"
                 )
-            if analysis.get("analysis_dir") and not Path(analysis["analysis_dir"]).exists():
+            if (
+                analysis.get("analysis_dir")
+                and not Path(analysis["analysis_dir"]).exists()
+            ):
                 raise ValueError(
                     f"Analysis directory does not exist: {analysis['analysis_dir']}"
                 )
@@ -1117,10 +1166,10 @@ If you are being asked to generate a title, set "success" to false.
 
     async def _extract_file_patterns(self, prompt: str) -> Dict[str, Any]:
         """Use LLM to extract file patterns and relationships from the prompt.
-        
+
         Args:
             prompt: User prompt describing the analysis and files
-            
+
         Returns:
             Dict containing:
             - patterns: List of glob patterns to find files
@@ -1152,12 +1201,9 @@ If you are being asked to generate a title, set "success" to false.
                         ]
                     },
                     "file_type": "fastq"
-                }"""
+                }""",
             },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "user", "content": prompt},
         ]
 
         try:
@@ -1168,16 +1214,18 @@ If you are being asked to generate a title, set "success" to false.
             self.logger.error(f"Error extracting file patterns: {e}")
             raise
 
-    def _get_workflow_prompt(self, workflow_type: str, input_files: List[str], reference: str) -> str:
+    def _get_workflow_prompt(
+        self, workflow_type: str, input_files: List[str], reference: str
+    ) -> str:
         """Get workflow-specific prompt."""
         if not input_files:
             return ""
 
         # Extract base sample name from first file
         sample_name = input_files[0]
-        for suffix in ['.fastq.1.gz', '.fastq.2.gz', '.fq.1.gz', '.fq.2.gz']:
+        for suffix in [".fastq.1.gz", ".fastq.2.gz", ".fq.1.gz", ".fq.2.gz"]:
             if sample_name.endswith(suffix):
-                sample_name = sample_name[:-len(suffix)]
+                sample_name = sample_name[: -len(suffix)]
                 break
 
         if workflow_type == "rna_seq_kallisto":
@@ -1196,3 +1244,91 @@ The workflow should:
 Use the exact sample name '{sample_name}' for output directories."""
         else:
             return ""
+
+    async def analyze_run_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Analyze the prompt to extract options for running a workflow."""
+        analysis_prompt = f"""
+        Analyze the following prompt to extract options for running a workflow.
+        Extract the following options if provided:
+        - checkpoint_dir
+        - resume
+
+        Prompt: {prompt}
+
+        Return the result as a JSON object with the following structure:
+        {{
+            "prompt": "original prompt",
+            "checkpoint_dir": "extracted checkpoint directory" or null,
+            "resume": true or false,
+            "success": true or false
+        }}
+
+        "success" should be true if the prompt is successfully analyzed, false otherwise.
+
+        Do not output any markdown formatting or additional text. Return only JSON.
+
+        If the prompt given is entirely unrelated to running a workflow, set "success" to false.
+
+        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
+        """
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert in analyzing prompts for workflow management.",
+            },
+            {"role": "user", "content": analysis_prompt},
+        ]
+
+        response = await self._call_openai(
+            messages,
+            model=settings.OPENAI_MODEL,
+        )
+        self.logger.info(f"Analysis response: {response}")
+        analysis = json.loads(response)
+
+        return analysis
+
+    async def analyze_analyze_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Analyze the prompt to extract options for analyzing a workflow."""
+        analysis_prompt = f"""
+        Analyze the following prompt to extract options for analyzing a workflow.
+        Extract the following options if provided:
+        - analysis_dir
+        - save_report
+
+        Prompt: {prompt}
+
+        Return the result as a JSON object with the following structure:
+        {{
+            "prompt": "original prompt",
+            "analysis_dir": "extracted analysis directory" or null,
+            "save_report": true or false,
+            "success": true or false
+        }}
+
+        "success" should be true if the prompt is successfully analyzed, false otherwise.
+
+        Do not output any markdown formatting or additional text. Return only JSON.
+
+        If the prompt given is entirely unrelated to analyzing a workflow, set "success" to false.
+
+        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
+        """
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert in analyzing prompts for workflow management.",
+            },
+            {"role": "user", "content": analysis_prompt},
+        ]
+
+        response = await self._call_openai(
+            messages,
+            model=settings.OPENAI_MODEL,
+        )
+        self.logger.info(f"Analysis response: {response}")
+        analysis = json.loads(response)
+
+        return analysis
