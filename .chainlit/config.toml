@@ -33,7 +33,7 @@ edit_message = true
 
 # Authorize users to spontaneously upload files with messages
 [features.spontaneous_file_upload]
-enabled = true
+enabled = false
 # Define accepted file types using MIME types
 # Examples:
 # 1. For specific file types:
@@ -73,7 +73,7 @@ custom_css = "/public/custom.css"
 
 # Specify a Javascript file that can be used to customize the user interface.
 # The Javascript file can be served from the public directory.
-# custom_js = "/public/test.js"
+custom_js = "/public/custom.js"
 
 # Specify a custom meta image url.
 # custom_meta_image_url = "https://chainlit-cloud.s3.eu-west-3.amazonaws.com/logo/chainlit_banner.png"
