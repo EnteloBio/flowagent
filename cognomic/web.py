@@ -1,6 +1,7 @@
 """
 This module provides the web interface for the cognomic chatbot using Chainlit.
-It includes functionality to run and analyze workflows, stream log contents, and handle user commands.
+It includes functionality to run and analyze workflows, stream log contents,
+and handle user commands.
 """
 
 import asyncio
@@ -20,6 +21,78 @@ commands = [
     {"id": "Run", "icon": "chart-no-axes-gantt", "description": "Run a workflow"},
     {"id": "Analyse", "icon": "search", "description": "Analyse a workflow"},
 ]
+
+
+class OutputMessage:
+    """
+    A class to manage the output messages and log streaming for the Chainlit chatbot.
+    """
+
+    def __init__(self):
+        """
+        Initialize the OutputMessage instance, set up the root logger,
+        and start the async log streaming task.
+        """
+        self.root_logger = RootLogger()
+        self.root_logger.__enter__()
+
+        self.response = cl.Message(content="```\n")
+
+        self.async_task = asyncio.create_task(self._async_stream())
+
+    async def __aenter__(self):
+        """
+        Enter the async context manager, returning the instance itself.
+        """
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the async context manager, cancel the async task, flush the logs,
+        and clean up the root logger.
+        """
+        self.async_task.cancel()
+
+        try:
+            await self.async_task
+        except asyncio.CancelledError:
+            pass
+
+        await self.flush()
+
+        self.root_logger.__exit__(exc_type, exc_val, exc_tb)
+
+    async def flush(self):
+        """
+        Flush the log contents to the Chainlit message stream.
+        """
+        log_contents = self.root_logger.get_log_contents()
+
+        if log_contents:
+            await self.response.stream_token(log_contents)
+
+        self.root_logger.log_handler.clear()
+
+    async def _async_stream(self):
+        """
+        Continuously stream log contents to a Chainlit message.
+        """
+        while True:
+            log_contents = self.root_logger.get_log_contents()
+
+            if log_contents:
+                await self.response.stream_token(log_contents)
+
+            self.root_logger.log_handler.clear()
+
+            # Sleep for a short time to avoid idling.
+            await asyncio.sleep(0.05)
+
+    def __getattr__(self, name):
+        """
+        Delegate attribute access to the root logger.
+        """
+        return getattr(self.root_logger, name)
 
 
 class RootLogger:
@@ -80,22 +153,14 @@ class StringIOHandler(logging.Handler):
         self.log_capture_string.seek(0)
 
 
-async def stream_log_contents(root_logger: RootLogger, message: cl.Message):
-    """
-    Continuously stream log contents to a Chainlit message.
-    """
-    while True:
-        log_contents = root_logger.get_log_contents()
-        if log_contents:
-            await message.stream_token(log_contents)
-        root_logger.log_handler.clear()
-        # Sleep for a short time to avoid idling.
-        await asyncio.sleep(0.02)
-
-
 async def raise_error(msg, root_logger: Optional[RootLogger] = None):
     """
     Send an error message to the user, including log contents if available.
+
+    Effectively deprecated in favor of `OutputMessage`. If you have an instance
+    of `OutputMessage`, use `OutputMessage.root_logger.error()` instead. Messages,
+    are streamed to the web interface in real-time. This function is retained for
+    if you don't have an instance of `OutputMessage` available.
     """
     if root_logger:
         log_contents = root_logger.get_log_contents()
@@ -105,22 +170,17 @@ async def raise_error(msg, root_logger: Optional[RootLogger] = None):
         await cl.Message(content=f"```🚨 Error: {msg}```").send()
 
 
-async def start_run_workflow(message: cl.Message, root_logger: RootLogger):
+async def start_run_workflow(message: cl.Message, output: OutputMessage):
     """
     Start and run a workflow based on the user's message content.
     """
     llm = LLMInterface()
     extracted_params = await llm.analyze_run_prompt(message.content)
 
-    response = cl.Message(content="```")
-
-    # TODO: Set this up as context manager so that we guarantee flush.
-    stream_task = asyncio.create_task(stream_log_contents(root_logger, response))
-
-    root_logger.info(f"Extracted parameters: {extracted_params}")
+    output.root_logger.info(f"Extracted parameters: {extracted_params}")
 
     if not extracted_params["success"]:
-        await raise_error("Failed to parse input prompt!", root_logger)
+        output.root_logger.critical("🚨 Failed to parse input prompt!")
         return
 
     if (
@@ -128,18 +188,18 @@ async def start_run_workflow(message: cl.Message, root_logger: RootLogger):
         and not Path(extracted_params["checkpoint_dir"]).exists()
         and not Path(extracted_params["checkpoint_dir"]).is_dir()
     ):
-        await raise_error(
-            "Checkpoint folder does not exist or is not a folder!", root_logger
+        output.root_logger.critical(
+            "🚨 Checkpoint folder does not exist or is not a folder!"
         )
         return
 
     if extracted_params["resume"] and not extracted_params["checkpoint_dir"]:
-        await raise_error(
-            "Cannot resume workflow without checkpoint folder!", root_logger
+        output.root_logger.critical(
+            "🚨 Cannot resume workflow without checkpoint folder!"
         )
         return
 
-    root_logger.info("Starting workflow...")
+    output.root_logger.info("Starting workflow...")
 
     await run_workflow(
         extracted_params["prompt"],
@@ -147,77 +207,42 @@ async def start_run_workflow(message: cl.Message, root_logger: RootLogger):
         extracted_params["resume"],
     )
 
-    root_logger.info("Workflow completed!")
-
-    stream_task.cancel()
-
-    try:
-        await stream_task
-    except asyncio.CancelledError:
-        pass
-
-    # Final flush of the buffer
-    final_log_contents = root_logger.get_log_contents()
-    if final_log_contents:
-        await response.stream_token(final_log_contents)
-        root_logger.log_handler.clear()
-
-    # Complete the code block.
-    await response.stream_token("```")
+    output.root_logger.info("Workflow completed!")
 
 
-async def start_analyse_workflow(message: cl.Message, root_logger: RootLogger):
+async def start_analyse_workflow(message: cl.Message, output: OutputMessage):
     """
     Start and analyze a workflow based on the user's message content.
     """
     llm = LLMInterface()
     extracted_params = await llm.analyze_analyze_prompt(message.content)
 
-    response = cl.Message(content="```")
-    stream_task = asyncio.create_task(stream_log_contents(root_logger, response))
-
-    root_logger.info(f"Extracted parameters: {extracted_params}")
+    output.root_logger.info(f"Extracted parameters: {extracted_params}")
 
     if not extracted_params["success"]:
-        await raise_error("Failed to parse input prompt!", root_logger)
+        output.root_logger.critical("🚨 Failed to parse input prompt!")
         return
 
     if not extracted_params["analysis_dir"]:
-        await raise_error("No results directory specified!", root_logger)
+        output.root_logger.critical("🚨 No results directory specified!")
         return
 
     if (
         not Path(extracted_params["analysis_dir"]).exists()
         or not Path(extracted_params["analysis_dir"]).is_dir()
     ):
-        await raise_error(
-            "Analysis folder does not exist or is not a folder!", root_logger
+        output.root_logger.critical(
+            "🚨 Analysis folder does not exist or is not a folder!"
         )
         return
 
-    root_logger.info("Starting analysis...")
+    output.root_logger.info("Starting analysis...")
 
     await analyze_workflow(
         extracted_params["analysis_dir"], extracted_params["save_report"]
     )
 
-    root_logger.info("Analysis completed!")
-
-    stream_task.cancel()
-
-    try:
-        await stream_task
-    except asyncio.CancelledError:
-        pass
-
-    # Final flush of the buffer
-    final_log_contents = root_logger.get_log_contents()
-    if final_log_contents:
-        await response.stream_token(final_log_contents)
-        root_logger.log_handler.clear()
-
-    # Complete the code block.
-    await response.stream_token("```")
+    output.root_logger.info("Analysis completed!")
 
 
 @cl.on_chat_start
@@ -230,7 +255,7 @@ async def on_chat_start():
         os.chdir(user_execution_dir)
     except KeyError:
         await raise_error(
-            "Warning: USER_EXECUTION_DIR environment variable not set! "
+            "🚨 Warning: USER_EXECUTION_DIR environment variable not set! "
             "Are you serving the web app correctly?"
         )
 
@@ -271,16 +296,21 @@ async def on_message(message: cl.Message):
     Handle incoming messages and execute the appropriate command.
     """
 
-    with RootLogger() as root_logger:
+    async with OutputMessage() as output:
         try:
             match message.command:
                 case "Run":
-                    await start_run_workflow(message, root_logger)
+                    await start_run_workflow(message, output)
                 case "Analyse":
-                    await start_analyse_workflow(message, root_logger)
+                    await start_analyse_workflow(message, output)
+                case None:
+                    output.root_logger.critical(
+                        "🚨 No command provided! Start typing with / to see available commands."
+                    )
+                    return
                 case other:
-                    await raise_error(f"Unknown command: {other}", root_logger)
+                    output.root_logger.critical(f"🚨 Unknown command: {other}")
                     return
         except Exception as e:
-            await raise_error(f"Error while processing request: {e}", root_logger)
+            output.root_logger.critical(f"🚨 Error while processing request: {e}")
             return
