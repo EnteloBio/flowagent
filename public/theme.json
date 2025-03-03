@@ -1,0 +1,10 @@
+{
+  "variables": {
+    "light": {
+      "--accent": "0 0% 95%"
+    },
+    "dark": {
+      "--accent": "0 0% 10%"
+    }
+  }
+}

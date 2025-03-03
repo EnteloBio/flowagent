@@ -1,15 +1,15 @@
 """Command line interface for FlowAgent."""
 
+import argparse
 import asyncio
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-import argparse
+from typing import Any, Dict, List
 
-from .workflow import run_workflow, analyze_workflow
-from .api import start_server
+from .workflow import analyze_workflow, run_workflow
 
 # Configure logging
 logging.basicConfig(
@@ -19,6 +19,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -35,13 +36,15 @@ Examples:
 
     3. Start web interface:
        flowagent serve --host 0.0.0.0 --port 8000
-    """
+    """,
     )
-    
+
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
-    
+
     # Prompt command
-    prompt_parser = subparsers.add_parser("prompt", help="Execute a workflow or analyze results")
+    prompt_parser = subparsers.add_parser(
+        "prompt", help="Execute a workflow or analyze results"
+    )
     prompt_parser.add_argument("prompt", help="Workflow prompt")
     prompt_parser.add_argument(
         "--resume",
@@ -56,7 +59,7 @@ Examples:
         "--analysis-dir",
         help="Directory containing workflow results to analyze",
     )
-    
+
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start the web interface")
     serve_parser.add_argument(
@@ -70,51 +73,76 @@ Examples:
         default=8000,
         help="Port to bind the server to",
     )
-    
-    return parser.parse_args()
 
-async def main(prompt: str, resume: bool = False, checkpoint_dir: str = None, analysis_dir: str = None):
+    # Serve2 command
+    serve2_parser = subparsers.add_parser("serve2", help="Start the new web interface")
+    serve2_parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host to bind the server to",
+    )
+    serve2_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind the server to",
+    )
+
+    return parser, parser.parse_args()
+
+
+async def main(
+    prompt: str,
+    resume: bool = False,
+    checkpoint_dir: str = None,
+    analysis_dir: str = None,
+):
     """Main entry point for the CLI."""
     try:
         if analysis_dir:
             # This is an analysis request
             logger.info(f"Analyzing workflow results in {analysis_dir}")
             results = await analyze_workflow(analysis_dir)
-            
+
             if results["status"] == "success":
                 # Print standard report
                 print("\nStandard Analysis Report:")
                 print("=" * 80)
                 print(results["report"])
                 print("=" * 80)
-                
+
                 # Print agentic report
                 print("\nAgentic Analysis Report:")
                 print("=" * 80)
                 print(results["agentic_report"])
                 print("=" * 80)
-                
+
                 if results.get("report_files"):
-                    print(f"\nAnalysis reports saved to: {', '.join(results['report_files'].values())}")
+                    print(
+                        f"\nAnalysis reports saved to: {', '.join(results['report_files'].values())}"
+                    )
             else:
                 print(f"Analysis failed: {results.get('error', 'Unknown error')}")
-                
+
         else:
             # This is a workflow execution request
             if resume and not checkpoint_dir:
-                raise ValueError("Checkpoint directory must be provided if resume is set to True")
-                
+                raise ValueError(
+                    "Checkpoint directory must be provided if resume is set to True"
+                )
+
             logger.info("Starting new workflow")
             await run_workflow(prompt, checkpoint_dir, resume)
-            
+
     except Exception as e:
         logger.error(f"Operation failed: {str(e)}")
         raise
 
+
 def run():
     """Run the CLI."""
-    args = parse_args()
-    
+    parser, args = parse_args()
+
     try:
         if args.command == "prompt":
             # Run workflow or analysis
@@ -127,16 +155,39 @@ def run():
                 )
             )
         elif args.command == "serve":
-            # Start web interface
-            start_server(args.host, args.port)
+            # Start new web interface
+            web_path = Path(__file__).parent / "web.py"
+
+            env = os.environ.copy()
+            env["USER_EXECUTION_DIR"] = os.getcwd()
+
+            project_dir = Path(__file__).parent.parent
+            os.chdir(project_dir)
+
+            try:
+                subprocess.run(
+                    [
+                        "chainlit",
+                        "run",
+                        web_path.absolute(),
+                        "--host",
+                        str(args.host),
+                        "--port",
+                        str(args.port),
+                    ],
+                    env=env,
+                )
+            except KeyboardInterrupt:
+                logger.info("Shutting down web interface...")
         else:
             # Show help if no command specified
-            parse_args().print_help()
+            parser.print_help()
             sys.exit(1)
-            
+
     except Exception as e:
         logger.error(f"Operation failed: {str(e)}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     run()

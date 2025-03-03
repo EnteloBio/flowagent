@@ -9,7 +9,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+# First try the current directory
+env_path = Path(".env")
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+    logger = logging.getLogger(__name__)
+    logger.info(f"Loaded .env file from current directory: {env_path.absolute()}")
+# If USER_EXECUTION_DIR is set, also try that directory
+elif "USER_EXECUTION_DIR" in os.environ:
+    user_env_path = Path(os.environ["USER_EXECUTION_DIR"]) / ".env"
+    if user_env_path.exists():
+        load_dotenv(dotenv_path=user_env_path)
+        logger = logging.getLogger(__name__)
+        logger.info(f"Loaded .env file from USER_EXECUTION_DIR: {user_env_path.absolute()}")
+else:
+    # Default behavior if no specific path is found
+    load_dotenv()
 
 # Configure logging
 logger = logging.getLogger(__name__)
