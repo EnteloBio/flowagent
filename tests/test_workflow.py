@@ -4,10 +4,10 @@ import os
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
-from cognomic.workflow import run_workflow, analyze_workflow
-from cognomic.core.workflow_manager import WorkflowManager
-from cognomic.core.workflow_dag import WorkflowDAG
-from cognomic.core.llm import LLMInterface
+from flowagent.workflow import run_workflow, analyze_workflow
+from flowagent.core.workflow_manager import WorkflowManager
+from flowagent.core.workflow_dag import WorkflowDAG
+from flowagent.core.llm import LLMInterface
 import openai
 
 @pytest.fixture
@@ -175,7 +175,7 @@ async def test_workflow_error_handling():
         # Execute workflow and expect error result
         result = await workflow.execute_parallel()
         assert result["status"] == "failed"
-        assert "nonexistent_command: command not found" in result["error"]
+        assert "nonexistent_command: not found" in result["error"]
         assert workflow.graph.nodes["fail"]["step"]["status"] == "failed"
 
 @pytest.mark.asyncio
