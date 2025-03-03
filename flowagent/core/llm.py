@@ -26,10 +26,26 @@ class LLMInterface:
         self.logger = get_logger(__name__)
 
         # Check for OpenAI API key and .env file
-        env_path = Path(".env")
-        if not env_path.exists():
+        env_found = False
+        
+        # Check current directory first
+        current_env_path = Path(".env")
+        if current_env_path.exists():
+            env_found = True
+            
+        # If not found, check USER_EXECUTION_DIR if it exists
+        if not env_found and "USER_EXECUTION_DIR" in os.environ:
+            user_dir_env_path = Path(os.environ["USER_EXECUTION_DIR"]) / ".env"
+            if user_dir_env_path.exists():
+                # Load the .env file from USER_EXECUTION_DIR
+                from dotenv import load_dotenv
+                load_dotenv(dotenv_path=user_dir_env_path)
+                env_found = True
+                self.logger.info(f"Loaded .env file from USER_EXECUTION_DIR: {user_dir_env_path}")
+        
+        if not env_found:
             self.logger.error(
-                "\n⚠️  No .env file found in the current directory."
+                "\n⚠️  No .env file found in the current directory or USER_EXECUTION_DIR."
                 "\n   Please create a .env file with your OpenAI API key:"
                 "\n   OPENAI_API_KEY=your-api-key-here"
                 "\n   OPENAI_MODEL=gpt-4 (optional)"
