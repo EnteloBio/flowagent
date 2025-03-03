@@ -1,4 +1,4 @@
-name: cognomic
+name: flowagent
 channels:
   - conda-forge
   - bioconda

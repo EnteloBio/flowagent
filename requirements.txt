@@ -1,7 +1,9 @@
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
 openai>=1.0.0
 networkx>=3.0
-pydantic>=2.0.0
-python-dotenv>=1.0.0
+rich>=13.0.0
 cgatcore>=0.6.7
 drmaa>=0.7.9  # For SLURM support
 typing-extensions>=4.0.0
@@ -10,3 +12,4 @@ aiohttp>=3.8.0
 click>=8.0.0
 PyYAML>=6.0.0
 rich>=13.0.0  # For better logging output
+kubernetes>=28.1.0  # For Kubernetes support

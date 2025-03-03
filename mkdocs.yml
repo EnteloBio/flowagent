@@ -1,95 +1,112 @@
-site_name: cognomics
+site_name: FlowAgent Documentation
+site_description: An advanced multi-agent framework for automating complex bioinformatics workflows
+site_author: Cribbs Lab
 
-repo_url:
-repo_name: cribbslab/cognomics
-
-use_directory_urls: false
+repo_url: https://github.com/cribbslab/flowagent
+repo_name: cribbslab/flowagent
 
 theme:
   name: material
   features:
-    - content.code.copy
-    - content.code.select
-    - content.tabs.link
-    - content.code.annotate
     - navigation.tabs
-    - navigation.instant
+    - navigation.sections
     - navigation.expand
-    - navigation.top
-    - navigation.path
-    - navigation.footer
-    # - toc.integrate
-    - content.footnote.tooltips
-
-  icon:
-    repo: fontawesome/brands/git-alt
-
+    - search.highlight
+    - navigation.instant
+    - navigation.tracking
+    - toc.follow
+    - toc.integrate
+    - content.code.copy
+    - content.code.annotate
+  
   palette:
-    # Palette toggle for light mode
-#    - accent: pink
-    - primary: teal
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    # Palette toggle for dark mode
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
 
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cribbslab/flowagent
+  version:
+    provider: mike
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [flowagent]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            show_bases: true
+  - autorefs
 
 markdown_extensions:
-  # icons
-  - attr_list
-  - md_in_html
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - admonition
   - footnotes
+  - attr_list
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
-
-  - toc:
-      permalink: True
-      baselevel: 2
-      separator: "_"
-  - pymdownx.superfences
-  - pymdownx.tabbed:
-      alternate_style: true
-
-  # Admonitions
-  - admonition
   - pymdownx.details
-  - pymdownx.superfences
-
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - toc:
+      permalink: true
+      toc_depth: 3
   - pymdownx.tasklist:
       custom_checkbox: true
 
-  # Formatting superscripts
-  - pymdownx.critic
-  - pymdownx.caret
-  - pymdownx.keys
-  - pymdownx.mark
-  - pymdownx.tilde
-
-
-extra:
-  consent:
-    actions:
-      - accept
-      - manage
-
-plugins:
-  - tags
-  - search
-  - mkdocstrings:
-      handlers:
-        python:
-          options:
-            separate_signature: true
-            show_signature_annotations: true
-            show_docstring_parameters: true
-            docstring_section_style: list
-            line_length: 60
-          paths: ["src/cognomic"]
-
-copyright: Copyright &copy; 2024 Adam Cribbs
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Configuration: getting-started/configuration.md
+  - Workflows:
+    - Overview: workflows/index.md
+    - RNA-seq: workflows/rna-seq.md
+    - ChIP-seq: workflows/chip-seq.md
+    - Hi-C: workflows/hi-c.md
+    - ATAC-seq: workflows/atac-seq.md
+    - Bisulfite-seq: workflows/bisulfite-seq.md
+    - Single-cell Multi-omics: workflows/sc-multiomics.md
+    - Example Prompts: workflows/example-prompts.md
+  - Custom Scripts:
+    - Overview: custom_scripts/index.md
+    - Adding Scripts: custom_scripts/adding-scripts.md
+    - Script Requirements: custom_scripts/requirements.md
+    - Examples:
+      - RNA-seq Normalization: custom_scripts/examples/rna-seq-norm.md
+      - ChIP-seq Peak Analysis: custom_scripts/examples/chip-seq-peaks.md
+      - Data Cleanup: custom_scripts/examples/data-cleanup.md
+  - User Guide:
+    - Concepts: user-guide/concepts.md
+    - HPC Configuration: user-guide/hpc.md
+    - Analysis Reports: user-guide/analysis.md
+    - State Management: user-guide/state-management.md
+    - Version Compatibility: user-guide/version-compatibility.md
+  - API Reference:
+    - Overview: reference/index.md
+    - Script Manager: api/script-manager.md
+    - Workflow Executor: api/workflow-executor.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md

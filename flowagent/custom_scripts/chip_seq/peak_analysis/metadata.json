@@ -1,0 +1,35 @@
+{
+    "name": "custom_peak_analysis",
+    "description": "Advanced peak analysis for ChIP-seq data with detailed metrics",
+    "script_file": "custom_peaks.py",
+    "language": "python",
+    "input_requirements": [
+        {
+            "name": "signal_data",
+            "type": "csv",
+            "description": "Signal intensity data with columns for position and intensity"
+        }
+    ],
+    "output_types": [
+        {
+            "name": "peak_results",
+            "type": "csv",
+            "description": "Detailed peak analysis results including position, height, prominence, and width"
+        },
+        {
+            "name": "peak_summary",
+            "type": "json",
+            "description": "Summary statistics of peak analysis"
+        }
+    ],
+    "workflow_types": ["chip_seq"],
+    "execution_order": {
+        "before": ["motif_analysis"],
+        "after": ["peak_calling"]
+    },
+    "requirements": {
+        "r_packages": [],
+        "python_packages": ["pandas", "numpy", "scipy"],
+        "system_dependencies": []
+    }
+}

@@ -53,7 +53,7 @@ sample_rate = 24000
 
 [UI]
 # Name of the assistant.
-name = "Cognomic Chatbot"
+name = "Flowagent Chatbot"
 
 hide_footer = true
 
