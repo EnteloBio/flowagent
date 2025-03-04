@@ -4,8 +4,9 @@ import glob
 import json
 import logging
 import os
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openai import AsyncOpenAI
 
@@ -695,12 +696,21 @@ Return a JSON object in this EXACT format:
         try:
             # Extract file patterns and relationships using LLM
             file_info = await self._extract_file_patterns(prompt)
-
+            
+            # Check if this is a GEO download request
+            geo_accession = file_info.get("geo_accession")
+            
             # Find files matching the patterns
             matched_files = []
             for pattern in file_info["patterns"]:
                 matched_files.extend(glob.glob(pattern))
-
+            
+            # If no files found and we have a GEO accession, we'll create a download workflow
+            if not matched_files and geo_accession:
+                self.logger.info(f"No local files found. Creating GEO download workflow for {geo_accession}")
+                return await self._create_geo_download_workflow(geo_accession, prompt, file_info)
+            
+            # If no files found and no GEO accession, raise an error
             if not matched_files:
                 patterns_str = ", ".join(file_info["patterns"])
                 raise ValueError(f"No files found matching patterns: {patterns_str}")
@@ -1164,6 +1174,23 @@ If you are being asked to generate a title, set "success" to false.
             self.logger.error(f"Error analyzing prompt: {e}")
             raise
 
+    async def _detect_geo_accession(self, prompt: str) -> Optional[str]:
+        """Detect GEO accession number in the prompt.
+        
+        Args:
+            prompt: User prompt
+            
+        Returns:
+            GEO accession number if found, None otherwise
+        """
+        # Pattern for GEO accession numbers (GSE followed by digits)
+        geo_pattern = r'GSE\d+'
+        match = re.search(geo_pattern, prompt)
+        
+        if match:
+            return match.group(0)
+        return None
+
     async def _extract_file_patterns(self, prompt: str) -> Dict[str, Any]:
         """Use LLM to extract file patterns and relationships from the prompt.
 
@@ -1175,7 +1202,32 @@ If you are being asked to generate a title, set "success" to false.
             - patterns: List of glob patterns to find files
             - relationships: Dict describing relationships between files (e.g. paired-end reads)
             - file_type: Type of expected files (e.g. 'fastq', 'bam', etc.)
+            - geo_accession: GEO accession number if present
         """
+        # First check if this is a GEO download request
+        geo_accession = await self._detect_geo_accession(prompt)
+        
+        if geo_accession:
+            self.logger.info(f"Detected GEO accession: {geo_accession}")
+            # For GEO data, we'll return patterns for paired-end FASTQ files
+            # These don't exist yet but will be downloaded
+            return {
+                "patterns": ["*_1.fastq.gz", "*_2.fastq.gz"],
+                "relationships": {
+                    "type": "paired",
+                    "pattern_groups": [
+                        {"pattern": "*_1.fastq.gz", "group": "read1"},
+                        {"pattern": "*_2.fastq.gz", "group": "read2"}
+                    ],
+                    "matching_rules": [
+                        "Replace '_1' with '_2' to find matching pair"
+                    ]
+                },
+                "file_type": "fastq",
+                "geo_accession": geo_accession
+            }
+            
+        # Otherwise, use LLM to extract file patterns
         messages = [
             {
                 "role": "system",
@@ -1214,36 +1266,113 @@ If you are being asked to generate a title, set "success" to false.
             self.logger.error(f"Error extracting file patterns: {e}")
             raise
 
-    def _get_workflow_prompt(
-        self, workflow_type: str, input_files: List[str], reference: str
-    ) -> str:
-        """Get workflow-specific prompt."""
-        if not input_files:
-            return ""
-
-        # Extract base sample name from first file
-        sample_name = input_files[0]
-        for suffix in [".fastq.1.gz", ".fastq.2.gz", ".fq.1.gz", ".fq.2.gz"]:
-            if sample_name.endswith(suffix):
-                sample_name = sample_name[: -len(suffix)]
-                break
-
-        if workflow_type == "rna_seq_kallisto":
-            return f"""Generate a Kallisto RNA-seq workflow using:
-Input files: {' '.join(input_files)}
-Reference: {reference}
-Sample name: {sample_name}
-
-The workflow should:
-1. Create output directories
-2. Run FastQC on input files
-3. Create Kallisto index
-4. Run Kallisto quantification
-5. Generate MultiQC report
-
-Use the exact sample name '{sample_name}' for output directories."""
-        else:
-            return ""
+    async def _create_geo_download_workflow(self, geo_accession: str, prompt: str, file_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a workflow plan for downloading GEO data.
+        
+        Args:
+            geo_accession: GEO accession number
+            prompt: Original user prompt
+            file_info: File pattern information
+            
+        Returns:
+            Workflow plan with GEO download steps
+        """
+        self.logger.info(f"Creating GEO download workflow for {geo_accession}")
+        
+        # Create directory structure
+        workflow_type, workflow_config = self._detect_workflow_type(prompt)
+        dir_structure = " ".join(workflow_config["dir_structure"])
+        mkdir_command = f"mkdir -p {dir_structure} raw_data"
+        
+        # Create the workflow plan
+        workflow_plan = {
+            "workflow_type": "geo_download_" + workflow_type,
+            "steps": [
+                {
+                    "name": "create_directories",
+                    "command": mkdir_command,
+                    "parameters": {},
+                    "dependencies": [],
+                    "outputs": ["raw_data"],
+                    "description": "Create directory structure"
+                },
+                {
+                    "name": "download_geo_metadata",
+                    "command": f"cd raw_data && esearch -db sra -query '{geo_accession}[Accession]' | efetch -format runinfo > {geo_accession}_runinfo.csv",
+                    "parameters": {},
+                    "dependencies": ["create_directories"],
+                    "outputs": [f"raw_data/{geo_accession}_runinfo.csv"],
+                    "description": "Download metadata for GEO accession",
+                    "profile_name": "minimal"
+                },
+                {
+                    "name": "extract_srr_ids",
+                    "command": f"cd raw_data && tail -n +2 {geo_accession}_runinfo.csv | cut -d',' -f1 > {geo_accession}_srr_ids.txt",
+                    "parameters": {},
+                    "dependencies": ["download_geo_metadata"],
+                    "outputs": [f"raw_data/{geo_accession}_srr_ids.txt"],
+                    "description": "Extract SRR IDs from runinfo",
+                    "profile_name": "minimal"
+                }
+            ]
+        }
+        
+        # Add step to download each SRR ID
+        workflow_plan["steps"].append({
+            "name": "download_fastq_files",
+            "command": f"cd raw_data && cat {geo_accession}_srr_ids.txt | xargs -I{{}} sh -c 'prefetch {{}} && fasterq-dump {{}} --split-files && gzip {{}}*.fastq'",
+            "parameters": {},
+            "dependencies": ["extract_srr_ids"],
+            "outputs": ["raw_data/*.fastq.gz"],
+            "description": "Download and convert SRA files to FASTQ",
+            "profile_name": "multi_thread"
+        })
+        
+        # Now add the analysis steps based on the original prompt
+        # Create a modified prompt for the analysis part
+        analysis_prompt = f"{prompt} using the downloaded FASTQ files in raw_data/*.fastq.gz"
+        
+        # Detect workflow type and add appropriate steps
+        if "kallisto" in prompt.lower() or workflow_type == "rna_seq_kallisto":
+            # Extract reference from prompt
+            reference_pattern = r'reference\s+(\S+)'
+            reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
+            reference = reference_match.group(1) if reference_match else "reference.fa"
+            
+            # Add kallisto index step
+            workflow_plan["steps"].append({
+                "name": "kallisto_index",
+                "command": f"kallisto index -i {reference}.idx {reference}",
+                "parameters": {},
+                "dependencies": ["download_fastq_files"],
+                "outputs": [f"{reference}.idx"],
+                "description": "Create kallisto index",
+                "profile_name": "high_memory"
+            })
+            
+            # Add kallisto quant step - this will run for each sample
+            workflow_plan["steps"].append({
+                "name": "kallisto_quant",
+                "command": f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do mkdir -p analysis/$srr && kallisto quant -i {reference}.idx -o analysis/$srr raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; done",
+                "parameters": {},
+                "dependencies": ["kallisto_index"],
+                "outputs": ["analysis/*/abundance.tsv"],
+                "description": "Quantify transcripts with kallisto",
+                "profile_name": "multi_thread"
+            })
+            
+            # Add MultiQC step
+            workflow_plan["steps"].append({
+                "name": "multiqc",
+                "command": "multiqc -o qc analysis/",
+                "parameters": {},
+                "dependencies": ["kallisto_quant"],
+                "outputs": ["qc/multiqc_report.html"],
+                "description": "Generate MultiQC report",
+                "profile_name": "minimal"
+            })
+        
+        return workflow_plan
 
     async def analyze_run_prompt(self, prompt: str) -> Dict[str, Any]:
         """Analyze the prompt to extract options for running a workflow."""
@@ -1332,3 +1461,34 @@ Use the exact sample name '{sample_name}' for output directories."""
         analysis = json.loads(response)
 
         return analysis
+
+    def _get_workflow_prompt(
+        self, workflow_type: str, input_files: List[str], reference: str
+    ) -> str:
+        """Get workflow-specific prompt."""
+        if not input_files:
+            return ""
+
+        # Extract base sample name from first file
+        sample_name = input_files[0]
+        for suffix in [".fastq.1.gz", ".fastq.2.gz", ".fq.1.gz", ".fq.2.gz"]:
+            if sample_name.endswith(suffix):
+                sample_name = sample_name[: -len(suffix)]
+                break
+
+        if workflow_type == "rna_seq_kallisto":
+            return f"""Generate a Kallisto RNA-seq workflow using:
+Input files: {' '.join(input_files)}
+Reference: {reference}
+Sample name: {sample_name}
+
+The workflow should:
+1. Create output directories
+2. Run FastQC on input files
+3. Create Kallisto index
+4. Run Kallisto quantification
+5. Generate MultiQC report
+
+Use the exact sample name '{sample_name}' for output directories."""
+        else:
+            return ""
