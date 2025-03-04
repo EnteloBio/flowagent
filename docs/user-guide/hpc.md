@@ -2,6 +2,20 @@
 
 FlowAgent supports High-Performance Computing (HPC) execution, with built-in support for SLURM, SGE, and TORQUE systems. The HPC settings can be configured through environment variables or in your `.env` file.
 
+## LLM-Driven HPC Execution
+
+FlowAgent uses its LLM capabilities to automatically generate and manage workflows on HPC systems. Instead of writing scripts, you can simply describe your analysis requirements in natural language, and the LLM will:
+
+1. Design an appropriate workflow
+2. Allocate suitable computational resources
+3. Submit jobs to your HPC system
+4. Monitor execution and handle errors
+5. Collect and present results
+
+For detailed information on the LLM-driven SLURM integration, see:
+- [SLURM Configuration](../hpc/slurm_configuration.md)
+- [LLM-Driven SLURM Integration](../hpc/llm_slurm_integration.md)
+
 ## Basic HPC Settings
 
 ```bash
@@ -35,19 +49,35 @@ FlowAgent automatically manages HPC resources with sensible defaults that can be
 
 ## Using HPC Execution
 
-To run a workflow on your HPC system:
+To use FlowAgent with your HPC system, simply describe your analysis requirements:
 
-```bash
-# Basic execution
-flowagent "Your workflow description" --executor hpc
+```
+User: "I need to analyze RNA-seq data from 10 samples using the SLURM cluster."
 
-# Specify custom resource requirements
-flowagent "Your workflow description" --executor hpc --memory 32G --threads 16
+FlowAgent: "I'll set up an RNA-seq analysis workflow on your SLURM cluster. 
+Can you provide more details about your samples and analysis goals?"
 ```
 
-The system will automatically:
-- Submit jobs to the appropriate queue
-- Handle job dependencies
-- Manage resource allocation
-- Monitor job status
-- Provide detailed logging
+The LLM will handle all the technical details of configuring and submitting HPC jobs.
+
+## SLURM-Specific Features
+
+For SLURM clusters, FlowAgent provides additional features:
+
+- Automatic `.cgat.yml` configuration file generation
+- Tool-specific resource allocation
+- Detailed job monitoring and statistics
+- Intelligent error handling and recovery
+- Email notifications for job status
+
+See the [SLURM Configuration](../hpc/slurm_configuration.md) guide for more details.
+
+## Supported HPC Systems
+
+FlowAgent currently supports these HPC systems:
+
+1. **SLURM** (Recommended) - Full support with advanced features
+2. **SGE** (Sun Grid Engine) - Basic support
+3. **TORQUE/PBS** - Basic support
+
+Additional HPC systems may be supported in future releases.
