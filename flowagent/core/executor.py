@@ -88,12 +88,23 @@ class Executor:
         
         try:
             # Execute the command
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd
-            )
+            # Use a list form for the command to avoid shell parsing issues with special characters
+            if sys.platform == 'darwin' or sys.platform.startswith('linux'):
+                # For macOS and Linux, use bash directly to avoid shell parsing issues
+                process = await asyncio.create_subprocess_exec(
+                    'bash', '-c', command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd
+                )
+            else:
+                # For Windows, use the shell form (but this might still have issues with special chars)
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd
+                )
             
             # Wait for the command to complete
             stdout, stderr = await process.communicate()
@@ -152,7 +163,7 @@ class Executor:
             }
     
     async def _execute_slurm(self, step: Dict[str, Any], command: str, output_dir: str, cwd: str) -> Dict[str, Any]:
-        """Execute a command using SLURM.
+        """Execute a command on a SLURM cluster.
         
         Args:
             step: Step to execute
@@ -170,43 +181,49 @@ class Executor:
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, f"{step_name.replace(' ', '_')}.log")
         
-        # Create a SLURM script for this step
-        slurm_dir = os.path.join(output_dir, "slurm")
-        os.makedirs(slurm_dir, exist_ok=True)
-        slurm_script = os.path.join(slurm_dir, f"{step_name.replace(' ', '_')}.sh")
+        # Get resource requirements
+        resource_requirements = step.get("resource_requirements", {})
         
-        # Get SLURM parameters
-        slurm_params = step.get("slurm", {})
-        partition = slurm_params.get("partition", "normal")
-        nodes = slurm_params.get("nodes", 1)
-        ntasks = slurm_params.get("ntasks", 1)
-        cpus_per_task = slurm_params.get("cpus_per_task", 1)
-        mem = slurm_params.get("mem", "4G")
-        time = slurm_params.get("time", "01:00:00")
+        # Create a SLURM job script
+        job_script = os.path.join(log_dir, f"{step_name.replace(' ', '_')}.sh")
         
-        # Write SLURM script
-        with open(slurm_script, "w") as f:
+        # Write the job script
+        with open(job_script, "w") as f:
             f.write("#!/bin/bash\n")
             f.write(f"#SBATCH --job-name={step_name}\n")
             f.write(f"#SBATCH --output={log_file}\n")
-            f.write(f"#SBATCH --partition={partition}\n")
-            f.write(f"#SBATCH --nodes={nodes}\n")
-            f.write(f"#SBATCH --ntasks={ntasks}\n")
-            f.write(f"#SBATCH --cpus-per-task={cpus_per_task}\n")
-            f.write(f"#SBATCH --mem={mem}\n")
-            f.write(f"#SBATCH --time={time}\n")
-            f.write("\n")
+            f.write(f"#SBATCH --error={log_file}\n")
+            
+            # Add resource requirements
+            if "memory" in resource_requirements:
+                f.write(f"#SBATCH --mem={resource_requirements['memory']}\n")
+            if "cpus" in resource_requirements:
+                f.write(f"#SBATCH --cpus-per-task={resource_requirements['cpus']}\n")
+            if "time" in resource_requirements:
+                f.write(f"#SBATCH --time={resource_requirements['time']}\n")
+            
+            # Add the command
             f.write(f"cd {cwd}\n")
             f.write(f"{command}\n")
         
         try:
-            # Submit the SLURM job
-            process = await asyncio.create_subprocess_exec(
-                "sbatch", slurm_script,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=output_dir
-            )
+            # Submit the job
+            if sys.platform == 'darwin' or sys.platform.startswith('linux'):
+                # For macOS and Linux, use bash directly to avoid shell parsing issues
+                process = await asyncio.create_subprocess_exec(
+                    'bash', '-c', f"sbatch {job_script}",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd
+                )
+            else:
+                # For Windows, use the shell form
+                process = await asyncio.create_subprocess_shell(
+                    f"sbatch {job_script}",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd
+                )
             
             # Wait for the submission to complete
             stdout, stderr = await process.communicate()

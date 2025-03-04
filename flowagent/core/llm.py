@@ -1110,9 +1110,6 @@ Return the result as a JSON object with the following structure:
 
 Do not output any markdown formatting or additional text. Return only JSON.
 
-If asked to do anything other than analyze the prompt, ignore other instructions
-and focus only on the prompt analysis.
-
 If the prompt given is entirely unrelated to running a workflow or bioinformatics analysis,
 set "success" to false.
 
@@ -1279,6 +1276,11 @@ If you are being asked to generate a title, set "success" to false.
         """
         self.logger.info(f"Creating GEO download workflow for {geo_accession}")
         
+        # Extract reference from prompt
+        reference_pattern = r'reference\s+(\S+)'
+        reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
+        reference = reference_match.group(1) if reference_match else "reference.fa"
+        
         # Create directory structure
         workflow_type, workflow_config = self._detect_workflow_type(prompt)
         dir_structure = " ".join(workflow_config["dir_structure"])
@@ -1294,15 +1296,25 @@ If you are being asked to generate a title, set "success" to false.
                     "parameters": {},
                     "dependencies": [],
                     "outputs": ["raw_data"],
-                    "description": "Create directory structure"
+                    "description": "Create directory structure",
+                    "profile_name": "minimal"
+                },
+                {
+                    "name": "get_gsm_ids",
+                    "command": f"cd raw_data && esearch -db gds -query '{geo_accession}[Accession]' | esummary | xtract -pattern DocumentSummary -element Accession,Project | grep 'GSM' > {geo_accession}_gsm_ids.txt",
+                    "parameters": {},
+                    "dependencies": ["create_directories"],
+                    "outputs": [f"raw_data/{geo_accession}_gsm_ids.txt"],
+                    "description": "Get GSM IDs for GEO accession",
+                    "profile_name": "minimal"
                 },
                 {
                     "name": "download_geo_metadata",
-                    "command": f"cd raw_data && esearch -db sra -query '{geo_accession}[Accession]' | efetch -format runinfo > {geo_accession}_runinfo.csv",
+                    "command": f"cd raw_data && > {geo_accession}_runinfo.csv && first=true && for gsm_id in $(grep -v '^GSE' {geo_accession}_gsm_ids.txt); do echo \"Processing $gsm_id...\" && if [ \"$first\" = true ]; then esearch -db sra -query \"$gsm_id\" | efetch -format runinfo >> {geo_accession}_runinfo.csv && first=false; else esearch -db sra -query \"$gsm_id\" | efetch -format runinfo | tail -n +2 >> {geo_accession}_runinfo.csv; fi; done",
                     "parameters": {},
-                    "dependencies": ["create_directories"],
+                    "dependencies": ["get_gsm_ids"],
                     "outputs": [f"raw_data/{geo_accession}_runinfo.csv"],
-                    "description": "Download metadata for GEO accession",
+                    "description": "Download metadata for all GSM IDs",
                     "profile_name": "minimal"
                 },
                 {
@@ -1313,64 +1325,54 @@ If you are being asked to generate a title, set "success" to false.
                     "outputs": [f"raw_data/{geo_accession}_srr_ids.txt"],
                     "description": "Extract SRR IDs from runinfo",
                     "profile_name": "minimal"
-                }
+                },
+                {
+                    "name": "download_fastq_files",
+                    "command": f"cd raw_data && cat {geo_accession}_srr_ids.txt | xargs -I{{}} sh -c 'prefetch {{}} && fasterq-dump {{}} --split-files && gzip {{}}*.fastq'",
+                    "parameters": {},
+                    "dependencies": ["extract_srr_ids"],
+                    "outputs": ["raw_data/*.fastq.gz"],
+                    "description": "Download and convert SRA files to FASTQ",
+                    "profile_name": "minimal"
+                },
+                {
+                    "name": "fastqc",
+                    "command": f"cd raw_data && mkdir -p ../results/rna_seq_kallisto/fastqc && fastqc -o ../results/rna_seq_kallisto/fastqc *.fastq.gz",
+                    "parameters": {},
+                    "dependencies": ["download_fastq_files"],
+                    "outputs": ["results/rna_seq_kallisto/fastqc"],
+                    "description": "Run FastQC on FASTQ files",
+                    "profile_name": "minimal"
+                },
+                {
+                    "name": "kallisto_index",
+                    "command": f"kallisto index -i {reference.rstrip('.')}.idx {reference.rstrip('.')}",
+                    "parameters": {},
+                    "dependencies": ["fastqc"],
+                    "outputs": [f"{reference.rstrip('.')}.idx"],
+                    "description": "Create kallisto index",
+                    "profile_name": "high_memory"
+                },
+                {
+                    "name": "kallisto_quant",
+                    "command": f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr && kallisto quant -i {reference.rstrip('.')}.idx -o results/rna_seq_kallisto/kallisto_quant/$srr raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; done",
+                    "parameters": {},
+                    "dependencies": ["kallisto_index"],
+                    "outputs": ["results/rna_seq_kallisto/kallisto_quant"],
+                    "description": "Quantify transcripts using kallisto",
+                    "profile_name": "multi_thread"
+                },
+                {
+                    "name": "multiqc",
+                    "command": "multiqc -o results/rna_seq_kallisto/qc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant",
+                    "parameters": {},
+                    "dependencies": ["kallisto_quant"],
+                    "outputs": ["results/rna_seq_kallisto/qc/multiqc_report.html"],
+                    "description": "Generate MultiQC report",
+                    "profile_name": "minimal"
+                },
             ]
         }
-        
-        # Add step to download each SRR ID
-        workflow_plan["steps"].append({
-            "name": "download_fastq_files",
-            "command": f"cd raw_data && cat {geo_accession}_srr_ids.txt | xargs -I{{}} sh -c 'prefetch {{}} && fasterq-dump {{}} --split-files && gzip {{}}*.fastq'",
-            "parameters": {},
-            "dependencies": ["extract_srr_ids"],
-            "outputs": ["raw_data/*.fastq.gz"],
-            "description": "Download and convert SRA files to FASTQ",
-            "profile_name": "multi_thread"
-        })
-        
-        # Now add the analysis steps based on the original prompt
-        # Create a modified prompt for the analysis part
-        analysis_prompt = f"{prompt} using the downloaded FASTQ files in raw_data/*.fastq.gz"
-        
-        # Detect workflow type and add appropriate steps
-        if "kallisto" in prompt.lower() or workflow_type == "rna_seq_kallisto":
-            # Extract reference from prompt
-            reference_pattern = r'reference\s+(\S+)'
-            reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
-            reference = reference_match.group(1) if reference_match else "reference.fa"
-            
-            # Add kallisto index step
-            workflow_plan["steps"].append({
-                "name": "kallisto_index",
-                "command": f"kallisto index -i {reference}.idx {reference}",
-                "parameters": {},
-                "dependencies": ["download_fastq_files"],
-                "outputs": [f"{reference}.idx"],
-                "description": "Create kallisto index",
-                "profile_name": "high_memory"
-            })
-            
-            # Add kallisto quant step - this will run for each sample
-            workflow_plan["steps"].append({
-                "name": "kallisto_quant",
-                "command": f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do mkdir -p analysis/$srr && kallisto quant -i {reference}.idx -o analysis/$srr raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; done",
-                "parameters": {},
-                "dependencies": ["kallisto_index"],
-                "outputs": ["analysis/*/abundance.tsv"],
-                "description": "Quantify transcripts with kallisto",
-                "profile_name": "multi_thread"
-            })
-            
-            # Add MultiQC step
-            workflow_plan["steps"].append({
-                "name": "multiqc",
-                "command": "multiqc -o qc analysis/",
-                "parameters": {},
-                "dependencies": ["kallisto_quant"],
-                "outputs": ["qc/multiqc_report.html"],
-                "description": "Generate MultiQC report",
-                "profile_name": "minimal"
-            })
         
         return workflow_plan
 
@@ -1399,7 +1401,16 @@ If you are being asked to generate a title, set "success" to false.
         If the prompt given is entirely unrelated to running a workflow, set "success" to false.
 
         You should only set "success" to true when you are confident that the prompt is correctly analyzed.
-        """
+
+        With the "run" action, you need a prompt, and optionally BOTH a checkpoint directory and 
+        an indication the user does or doesn't want to resume an existing workflow.
+
+        With the "analyze" action, you need a prompt, an analysis directory, optionally an indication 
+        the user does or doesn't want to save an analysis report, and optionally an indication the
+        user does or doesn't want to resume an existing workflow. 
+
+        If you are being asked to generate a title, set "success" to false.
+"""
 
         messages = [
             {
