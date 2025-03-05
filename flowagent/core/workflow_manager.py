@@ -1,20 +1,23 @@
 """Workflow manager for coordinating LLM-based workflow execution."""
 
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 import logging
 import asyncio
 import networkx as nx
 import json
 import os
+import sys
 from flowagent.config.settings import Settings
 
 from ..utils.logging import get_logger
 from ..utils import file_utils
 from ..utils.dependency_manager import DependencyManager
 from .llm import LLMInterface
-from .agent_types import WorkflowStep
+from .executor import Executor
+from .agent_types import WorkflowStep, Workflow
 from .workflow_dag import WorkflowDAG
+from .smart_resume import detect_completed_steps, filter_workflow_steps
 from ..agents.agentic.analysis_system import AgenticAnalysisSystem
 
 logger = get_logger(__name__)
@@ -22,23 +25,25 @@ logger = get_logger(__name__)
 class WorkflowManager:
     """Manages workflow execution and coordination."""
     
-    def __init__(self, executor_type: Optional[str] = None):
-        """Initialize workflow manager.
+    def __init__(self, executor_type: str = "local"):
+        """Initialize the workflow manager.
         
         Args:
-            executor_type: Type of executor to use ("local", "cgat", "kubernetes"). 
-                         If None, uses EXECUTOR_TYPE from settings.
+            executor_type: Type of executor to use (local, slurm, etc.)
         """
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
         self.dependency_manager = DependencyManager()
-        self.analysis_system = AgenticAnalysisSystem()
+        self.executor_type = executor_type
+        self.executor = Executor(executor_type)
+        
+        # Get initial working directory
+        self.initial_cwd = os.getcwd()
+        self.logger.info(f"Initial working directory: {self.initial_cwd}")
+        self.logger.info(f"Using {executor_type} executor")
         
         # Get settings
         self.settings = Settings()
-        
-        # Use provided executor_type or get from settings
-        self.executor_type = executor_type or self.settings.EXECUTOR_TYPE
         
         # Validate executor type
         valid_executors = ["local", "cgat", "kubernetes"]
@@ -51,106 +56,269 @@ class WorkflowManager:
             self.logger.warning("Kubernetes executor requested but not enabled in settings. Defaulting to 'local'")
             self.executor_type = "local"
             
-        self.cwd = os.getcwd()
-        self.logger.info(f"Initial working directory: {self.cwd}")
-        self.logger.info(f"Using {self.executor_type} executor")
-
-    async def execute_workflow(self, prompt: str) -> Dict[str, Any]:
-        """Execute workflow from prompt."""
+        self.analysis_system = AgenticAnalysisSystem()
+        
+    async def execute_workflow(self, prompt_or_workflow: Union[str, Workflow]) -> Dict[str, Any]:
+        """Execute workflow from prompt or workflow object."""
         try:
+            # Check if input is a workflow object or a prompt string
+            if isinstance(prompt_or_workflow, Workflow):
+                # Use the provided workflow object
+                workflow = {
+                    "name": prompt_or_workflow.name,
+                    "description": prompt_or_workflow.description,
+                    "steps": [vars(step) for step in prompt_or_workflow.steps]
+                }
+                workflow_name = workflow["name"]
+                workflow_steps = workflow["steps"]
+                prompt = None  # No prompt in this case
+                
+                # Create output directory if needed
+                if prompt_or_workflow.output_dir:
+                    output_dir = prompt_or_workflow.output_dir
+                else:
+                    output_dir = os.path.join(self.initial_cwd, "flowagent_output", workflow_name.replace(" ", "_"))
+                
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # Save workflow to output directory
+                workflow_file = os.path.join(output_dir, "workflow.json")
+                with open(workflow_file, "w") as f:
+                    json.dump(workflow, f, indent=2)
+                
+                self.logger.info(f"Saved workflow to {workflow_file}")
+                
+            else:
+                # Generate workflow from prompt
+                prompt = prompt_or_workflow
+                workflow_data = await self.llm.generate_workflow(prompt)
+                
+                # Extract workflow from response
+                workflow = workflow_data.get("workflow", {})
+                workflow_name = workflow.get("name", "Unnamed workflow")
+                workflow_steps = workflow.get("steps", [])
+                
+                self.logger.info(f"Generated workflow: {workflow_name} with {len(workflow_steps)} steps")
+                
+                # Create output directory
+                output_dir = os.path.join(self.initial_cwd, "flowagent_output", workflow_name.replace(" ", "_"))
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # Save workflow to output directory
+                workflow_file = os.path.join(output_dir, "workflow.json")
+                with open(workflow_file, "w") as f:
+                    json.dump(workflow, f, indent=2)
+                
+                self.logger.info(f"Saved workflow to {workflow_file}")
+                
+                # Check for GEO accession in prompt and add download steps if needed
+                if prompt:
+                    geo_accession = self._extract_geo_accession(prompt)
+                    if geo_accession:
+                        self.logger.info(f"Detected GEO accession: {geo_accession}")
+                        workflow_steps = self._add_geo_download_steps(geo_accession, workflow_steps, output_dir)
+                        
+                        # Update workflow file with new steps
+                        workflow["steps"] = workflow_steps
+                        with open(workflow_file, "w") as f:
+                            json.dump(workflow, f, indent=2)
+            
+            # Check and install dependencies
+            self.logger.info("Checking dependencies...")
+            
+            # Create a workflow plan with dependencies for the dependency manager
+            workflow_plan = {
+                "name": workflow_name,
+                "steps": workflow_steps
+            }
+            
+            # Try to ensure all dependencies are installed
+            all_installed, available_but_failed_install = self.dependency_manager.ensure_workflow_dependencies_sync(workflow_plan)
+            
+            if not all_installed:
+                self.logger.warning("Not all dependencies could be installed")
+                
+                # Check dependencies to get the missing ones
+                dependency_results = self.dependency_manager.check_dependencies(workflow_steps)
+                missing_dependencies = dependency_results.get("missing", [])
+                
+                # Remove tools that are available but failed to install from missing dependencies
+                missing_dependencies = [dep for dep in missing_dependencies if dep not in available_but_failed_install]
+                
+                if missing_dependencies:
+                    self.logger.warning(f"Missing dependencies: {', '.join(missing_dependencies)}")
+                    self.logger.warning("Some workflow steps may fail due to missing dependencies")
+                    
+                    # Check if critical tools are missing
+                    critical_missing = False
+                    for step in workflow_steps:
+                        if step.get("critical", False):
+                            step_tools = step.get("tools", [])
+                            missing_critical_tools = [tool for tool in step_tools if tool in missing_dependencies]
+                            if missing_critical_tools:
+                                self.logger.error(f"Critical step {step.get('name')} requires missing tools: {', '.join(missing_critical_tools)}")
+                                critical_missing = True
+                    
+                    if critical_missing:
+                        self.logger.warning("Critical tools are missing, but attempting to execute workflow anyway")
+                else:
+                    self.logger.info("All dependencies are available or can be used despite installation failures")
+            else:
+                self.logger.info("All dependencies are available")
+            
+            # Execute workflow steps
+            self.logger.info(f"Executing workflow: {workflow_name}")
+            
+            results = []
+            for i, step in enumerate(workflow_steps):
+                step_name = step.get("name", f"Step {i+1}")
+                self.logger.info(f"Executing step {i+1}/{len(workflow_steps)}: {step_name}")
+                
+                # Get dependency results to check for missing tools
+                dependency_results = self.dependency_manager.check_dependencies([step])
+                missing_dependencies = dependency_results.get("missing", [])
+                
+                # Remove tools that are available but failed to install from missing dependencies
+                missing_dependencies = [dep for dep in missing_dependencies if dep not in available_but_failed_install]
+                
+                # Check if dependencies for this step are available
+                step_tools = step.get("tools", [])
+                missing_step_tools = [tool for tool in step_tools if tool in missing_dependencies]
+                
+                if missing_step_tools:
+                    self.logger.warning(f"Step {step_name} requires missing tools: {', '.join(missing_step_tools)}")
+                    
+                    # If this is a critical step and tools are missing, we might want to skip it
+                    if step.get("critical", False) and len(missing_step_tools) == len(step_tools):
+                        self.logger.error(f"Critical step {step_name} is missing all required tools, skipping")
+                        results.append({
+                            "status": "skipped",
+                            "step": step,
+                            "reason": f"Missing required tools: {', '.join(missing_step_tools)}"
+                        })
+                        continue
+                    
+                    self.logger.warning(f"Attempting to execute step anyway...")
+                
+                # Execute step
+                step_result = await self.executor.execute_step(step, output_dir, cwd=self.initial_cwd)
+                
+                # Add step name to the result for easier reference
+                step_result["step_name"] = step_name
+                
+                results.append(step_result)
+                
+                # Check if step failed
+                if step_result.get("status") == "error":
+                    error_msg = step_result.get('error', '')
+                    stderr = step_result.get('stderr', '')
+                    
+                    self.logger.error(f"Step {step_name} failed: {error_msg}")
+                    if stderr:
+                        self.logger.error(f"STDERR: {stderr}")
+                    
+                    # Check if this is a critical step
+                    if step.get("critical", False):
+                        self.logger.error(f"Critical step {step_name} failed, but continuing with workflow")
+                    else:
+                        self.logger.warning(f"Non-critical step {step_name} failed, continuing workflow")
+                else:
+                    self.logger.info(f"Step {step_name} completed successfully")
+            
+            # Generate workflow report
+            report = self._generate_workflow_report(workflow, results, output_dir)
+            
+            # Determine overall workflow status
+            workflow_status = "success"
+            for result in results:
+                if result.get("status") == "error":
+                    # Check if this is a critical step
+                    step_name = result.get("step_name", "unknown")
+                    for step in workflow_steps:
+                        if step.get("name") == step_name and step.get("critical", True):
+                            workflow_status = "failed"
+                            break
+            
+            # Return results
+            return {
+                "status": workflow_status,
+                "workflow": workflow,
+                "results": results,
+                "report": report,
+                "output_dir": output_dir
+            }
+        
+        except Exception as e:
+            self.logger.error(f"Error executing workflow: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+
+    async def plan_workflow(self, prompt: str) -> Dict[str, Any]:
+        """Plan a workflow based on a natural language prompt without executing it.
+        
+        Args:
+            prompt: Natural language prompt describing the workflow
+            
+        Returns:
+            dict: Workflow plan
+        """
+        try:
+            # Plan the workflow
             self.logger.info("Planning workflow steps...")
             workflow_plan = await self.llm.generate_workflow_plan(prompt)
             
-            # Check and install required dependencies using LLM analysis
-            self.logger.info("Analyzing and installing required dependencies...")
+            # Check dependencies with a timeout
+            self.logger.info("Checking dependencies...")
             try:
-                if not await self.dependency_manager.ensure_workflow_dependencies(workflow_plan):
-                    raise ValueError("Failed to ensure all required workflow dependencies")
-            except Exception as dep_error:
-                self.logger.error("Dependency installation failed:")
-                self.logger.error(f"Error: {str(dep_error)}")
-                self.logger.error("Required dependencies:")
-                for dep in workflow_plan.get("dependencies", {}).get("tools", []):
-                    self.logger.error(f"  - {dep.get('name', 'unknown')}: {dep.get('reason', 'N/A')}")
-                raise ValueError(f"Dependency installation failed: {str(dep_error)}")
-            
-            # Get output directory from workflow steps
-            output_dir = None
-            steps = workflow_plan.get("steps", [])
-            
-            # Look for create_directories step first to get base output directory
-            for step in steps:
-                if step.get("name", "").lower() == "create_directories":
-                    cmd = step.get("command", "")
-                    if "mkdir" in cmd and "results/" in cmd:
-                        # Extract the base output directory (first results/* directory)
-                        parts = cmd.split("results/")
-                        if len(parts) > 1:
-                            # Get the first directory path without subdirectories
-                            base_dir = parts[1].split()[0].split("/")[0]
-                            output_dir = f"results/{base_dir}"
-                            break
-            
-            if not output_dir:
-                # Fallback: look for any results/* pattern in commands
-                for step in steps:
-                    cmd = step.get("command", "")
-                    if "results/" in cmd:
-                        parts = cmd.split("results/")
-                        if len(parts) > 1:
-                            # Get the first directory path without subdirectories
-                            base_dir = parts[1].split()[0].split("/")[0]
-                            output_dir = f"results/{base_dir}"
-                            break
-            
-            if not output_dir:
-                self.logger.warning("No output directory found in workflow steps")
-                output_dir = "results"  # Default to results directory
-            
-            self.logger.info(f"Using output directory: {output_dir}")
-            
-            # Initialize workflow DAG
-            dag = WorkflowDAG(self.executor_type)
-            
-            # Add steps to DAG
-            for step in steps:
+                import signal
+                
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Dependency checking timed out")
+                
+                # Set a 30-second timeout for dependency checking
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+                
                 try:
-                    dependencies = [dep for dep in step.get("dependencies", [])]
-                    dag.add_step(step, dependencies)
-                except ValueError as e:
-                    self.logger.error(f"Error adding step {step.get('name', 'unknown')} to workflow:")
-                    self.logger.error(f"Command: {step.get('command', 'N/A')}")
-                    self.logger.error(f"Error: {str(e)}")
-                    raise
-            
-            # Execute workflow
-            results = await dag.execute_parallel()
-            
-            if results["status"] == "failed":
-                self.logger.error("Workflow execution failed:")
-                self.logger.error(f"Failed step: {results.get('failed_step', 'unknown')}")
-                self.logger.error(f"Error: {results.get('error', 'unknown error')}")
+                    all_installed, available_but_failed_install = await self.dependency_manager.ensure_workflow_dependencies(workflow_plan)
+                finally:
+                    # Cancel the alarm
+                    signal.alarm(0)
                 
-                # Save visualization of failed workflow
-                if output_dir:
-                    viz_file = Path(output_dir) / "failed_workflow.png"
-                    dag.visualize(viz_file)
-                
-                raise ValueError(f"Workflow execution failed: {results.get('error', 'unknown error')}")
+                if not all_installed:
+                    if available_but_failed_install:
+                        # Some dependencies failed to install but are available in the environment
+                        missing_deps = [dep for dep in workflow_plan.get("dependencies", {}).get("tools", []) 
+                                      if isinstance(dep, dict) and dep["name"] not in available_but_failed_install
+                                      or not isinstance(dep, dict) and dep not in available_but_failed_install]
+                        if missing_deps:
+                            self.logger.warning(f"Some dependencies could not be installed and are not available: {missing_deps}")
+                            self.logger.warning("Continuing with workflow execution as some tools were found in the environment.")
+                        else:
+                            self.logger.info("All required tools are available in the environment despite installation failures.")
+                    else:
+                        # No dependencies are available, cannot proceed
+                        self.logger.error("Dependencies not installed. Cannot execute workflow.")
+                        return {"status": "error", "message": "Dependencies not installed. Cannot execute workflow."}
             
-            return {
-                "status": "success",
-                "output_directory": output_dir,
-                "steps": steps,
-                "results": results
-            }
+            except TimeoutError as e:
+                self.logger.warning(f"Dependency checking timed out: {str(e)}")
+                self.logger.warning("Continuing with workflow execution without full dependency verification")
+            
+            except Exception as e:
+                self.logger.error(f"Error during dependency checking: {str(e)}")
+                self.logger.warning("Continuing with workflow execution despite dependency checking error")
+            
+            return workflow_plan
             
         except Exception as e:
-            self.logger.error(f"Workflow execution failed: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+            self.logger.error(f"Failed to plan workflow: {str(e)}")
+            raise
 
     async def analyze_results(self, workflow_results: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze workflow results using agentic system."""
@@ -207,57 +375,140 @@ class WorkflowManager:
                 "error": str(e)
             }
 
-    async def resume_workflow(self, prompt: str, checkpoint_dir: str) -> Dict[str, Any]:
-        """Resume workflow execution from checkpoint."""
+    async def resume_workflow(self, prompt: str, checkpoint_dir: str, force_resume: bool = False) -> Dict[str, Any]:
+        """Resume workflow execution from checkpoint.
+        
+        Args:
+            prompt: Natural language prompt describing the workflow
+            checkpoint_dir: Directory to load workflow checkpoint from
+            force_resume: If True, skip smart resume and run all steps
+            
+        Returns:
+            dict: Workflow execution results
+        """
         try:
-            # Load checkpoint state
-            checkpoint_file = os.path.join(checkpoint_dir, "workflow_state.json")
-            if not os.path.exists(checkpoint_file):
-                self.logger.warning(f"No checkpoint found at {checkpoint_file}, starting new workflow")
-                return await self.execute_workflow(prompt)
+            self.logger.info(f"Resuming workflow from checkpoint: {checkpoint_dir}")
+            
+            # Load checkpoint
+            checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+            if not os.path.exists(checkpoint_path):
+                self.logger.error(f"Checkpoint file not found: {checkpoint_path}")
+                return None
+            
+            try:
+                checkpoint = load_json(checkpoint_path)
                 
-            with open(checkpoint_file, 'r') as f:
-                checkpoint = json.load(f)
+                workflow_plan = checkpoint.get("workflow_plan", {})
+                output_dir = checkpoint.get("output_dir", os.path.abspath("results"))
                 
-            self.logger.info(f"Resuming workflow from checkpoint: {checkpoint_file}")
-            
-            # Get completed steps
-            completed_steps = set(step["name"] for step in checkpoint.get("results", []) 
-                               if step["status"] == "completed")
-            
-            # Get workflow plan
-            workflow_plan = await self.llm.generate_workflow_plan(prompt)
-            
-            # Filter out completed steps
-            remaining_steps = [step for step in workflow_plan["steps"] 
-                             if step["name"] not in completed_steps]
-            
-            if not remaining_steps:
-                self.logger.info("All steps already completed")
-                return checkpoint
+                # Ensure output directory exists
+                os.makedirs(output_dir, exist_ok=True)
                 
-            self.logger.info(f"Resuming with {len(remaining_steps)} remaining steps")
+                # Detect completed steps only if force_resume is False
+                completed_steps = set()
+                if not force_resume:
+                    # Convert to step_dicts format for smart resume
+                    step_dicts = []
+                    for step in workflow_plan.get("steps", []):
+                        step_dict = {
+                            "name": step.get("name", ""),
+                            "command": step.get("command", ""),
+                            "description": step.get("description", ""),
+                            "dependencies": step.get("dependencies", [])
+                        }
+                        step_dicts.append(step_dict)
+                    
+                    # Detect completed steps
+                    from flowagent.core.smart_resume import detect_completed_steps
+                    completed_steps = detect_completed_steps(step_dicts)
+                    if completed_steps:
+                        self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
+                    else:
+                        self.logger.info("No completed steps detected, starting from the beginning")
+                else:
+                    self.logger.info("Force resume enabled, running all steps regardless of completion status")
             
-            # Create workflow DAG for remaining steps
-            self.dag = WorkflowDAG(executor_type=self.executor_type)
+            except Exception as e:
+                self.logger.error(f"Failed to load checkpoint: {str(e)}")
+                return None
             
-            # Add remaining steps to DAG
-            for step in remaining_steps:
-                dependencies = [dep for dep in step.get("dependencies", [])
-                              if dep not in completed_steps]
-                self.dag.add_step(step, dependencies)
+            # Get workflow name and description
+            workflow_name = workflow_plan.get("name", "Unnamed workflow")
+            workflow_description = workflow_plan.get("description", "")
             
-            # Execute remaining steps
-            results = await self.dag.execute_parallel()
+            # Create workflow object
+            workflow = Workflow(
+                name=workflow_name,
+                description=workflow_description,
+                steps=[],
+                dependencies=workflow_plan.get("dependencies", {}).get("tools", []),
+                output_dir=output_dir,
+                checkpoint_dir=checkpoint_dir
+            )
             
-            # Analyze results using agentic system
-            analysis = await self.analyze_results(results)
+            # Create steps
+            for step_data in workflow_plan.get("steps", []):
+                # Get resource requirements for the step
+                resource_requirements = self._get_resource_requirements(step_data.get("tool", ""))
+                
+                # Create step object
+                step = WorkflowStep(
+                    name=step_data.get("name", ""),
+                    description=step_data.get("description", ""),
+                    tool=step_data.get("tool", ""),
+                    command=step_data.get("command", ""),
+                    args=step_data.get("args", {}),
+                    dependencies=step_data.get("dependencies", []),
+                    output_files=step_data.get("output_files", []),
+                    critical=step_data.get("critical", True),
+                    resource_requirements=resource_requirements
+                )
+                
+                workflow.steps.append(step)
             
-            # Combine workflow results with analysis
-            return {
-                "workflow_results": results,
-                "analysis": analysis
-            }
+            # If a checkpoint directory is provided, use smart resume functionality
+            if checkpoint_dir:
+                self.logger.info("Using smart resume functionality")
+                # Convert WorkflowStep objects to dictionaries for smart resume
+                step_dicts = []
+                for step in workflow.steps:
+                    step_dict = {
+                        "name": step.name,
+                        "command": step.command,
+                        "dependencies": step.dependencies
+                    }
+                    step_dicts.append(step_dict)
+                
+                # Detect completed steps
+                completed_steps = detect_completed_steps(step_dicts)
+                if completed_steps:
+                    self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
+                
+                # Filter workflow steps
+                filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
+                
+                # Update workflow steps based on filtered steps
+                if len(filtered_steps) < len(step_dicts):
+                    self.logger.info(f"Filtered {len(step_dicts) - len(filtered_steps)} steps, will run {len(filtered_steps)} steps")
+                    # Keep only the steps that are in the filtered list
+                    workflow.steps = [step for step in workflow.steps if any(step.name == fs["name"] for fs in filtered_steps)]
+            
+            # Execute the workflow
+            result = await self.execute_workflow(workflow)
+            
+            # Generate analysis report if workflow was successful
+            if result.get("status") == "success":
+                self.logger.info("Workflow completed successfully")
+                
+                # Generate a report if requested
+                if workflow_plan.get("generate_report", False):
+                    self.logger.info("Generating report...")
+                    from ..analysis.report_generator import ReportGenerator
+                    report_generator = ReportGenerator()
+                    report_path = await report_generator.generate_report(workflow_plan, result)
+                    result["analysis_report"] = report_path
+            
+            return result
             
         except Exception as e:
             self.logger.error(f"Failed to resume workflow: {str(e)}")
@@ -379,3 +630,382 @@ class WorkflowManager:
         except Exception as e:
             self.logger.error(f"Failed to generate analysis report: {str(e)}")
             return None
+
+    def _generate_workflow_report(self, workflow: Dict[str, Any], results: List[Dict[str, Any]], output_dir: str) -> Dict[str, Any]:
+        """Generate a report for the workflow execution."""
+        # Get workflow name and description
+        workflow_name = workflow.get("name", "Unnamed workflow")
+        workflow_description = workflow.get("description", "")
+        
+        # Calculate workflow statistics
+        total_steps = len(results)
+        successful_steps = sum(1 for r in results if r.get("status") == "success")
+        failed_steps = sum(1 for r in results if r.get("status") == "error")
+        skipped_steps = sum(1 for r in results if r.get("status") == "skipped")
+        
+        # Calculate execution time
+        total_execution_time = sum(r.get("execution_time", 0) for r in results if "execution_time" in r)
+        
+        # Get dependency check results
+        all_tools = set()
+        for step in workflow.get("steps", []):
+            all_tools.update(step.get("tools", []))
+        
+        dependency_results = self.dependency_manager.check_dependencies(workflow.get("steps", []))
+        available_tools = dependency_results.get("available", [])
+        missing_tools = dependency_results.get("missing", [])
+        
+        # Generate step reports
+        step_reports = []
+        for i, (step, result) in enumerate(zip(workflow.get("steps", []), results)):
+            step_name = step.get("name", f"Step {i+1}")
+            step_status = result.get("status", "unknown")
+            step_execution_time = result.get("execution_time", 0)
+            
+            # Get tools for this step
+            step_tools = step.get("tools", [])
+            missing_step_tools = [tool for tool in step_tools if tool in missing_tools]
+            
+            step_report = {
+                "name": step_name,
+                "status": step_status,
+                "execution_time": step_execution_time,
+                "command": step.get("command", ""),
+                "tools": step_tools,
+                "missing_tools": missing_step_tools,
+                "output": result.get("stdout", ""),
+                "error": result.get("stderr", ""),
+                "critical": step.get("critical", False)
+            }
+            
+            step_reports.append(step_report)
+        
+        # Generate report
+        report = {
+            "workflow_name": workflow_name,
+            "workflow_description": workflow_description,
+            "execution_summary": {
+                "total_steps": total_steps,
+                "successful_steps": successful_steps,
+                "failed_steps": failed_steps,
+                "skipped_steps": skipped_steps,
+                "total_execution_time": total_execution_time
+            },
+            "dependency_summary": {
+                "total_tools": len(all_tools),
+                "available_tools": available_tools,
+                "missing_tools": missing_tools,
+                "availability_percentage": len(available_tools) / len(all_tools) * 100 if all_tools else 100
+            },
+            "steps": step_reports,
+            "output_directory": output_dir
+        }
+        
+        # Save report to output directory
+        report_file = os.path.join(output_dir, "report.json")
+        with open(report_file, "w") as f:
+            json.dump(report, f, indent=2)
+        
+        # Generate HTML report
+        html_report = self._generate_html_report(report)
+        html_report_file = os.path.join(output_dir, "report.html")
+        with open(html_report_file, "w") as f:
+            f.write(html_report)
+        
+        report["report_file"] = report_file
+        report["html_report_file"] = html_report_file
+        
+        return report
+
+    async def plan_and_execute_workflow(self, prompt, output_dir=None, checkpoint_dir=None):
+        """Plan and execute a workflow based on a natural language prompt.
+        
+        Args:
+            prompt: Natural language prompt describing the workflow
+            output_dir: Directory to store workflow outputs
+            checkpoint_dir: Directory to store workflow checkpoints
+            
+        Returns:
+            dict: Workflow execution results
+        """
+        try:
+            self.logger.info(f"Initial working directory: {os.getcwd()}")
+            self.logger.info(f"Using {self.executor_type} executor")
+            
+            # Plan the workflow
+            self.logger.info("Planning workflow steps...")
+            workflow_plan = await self.llm.generate_workflow_plan(prompt)
+            
+            # Check if all dependencies are installed
+            self.logger.info("Checking dependencies...")
+            all_installed, available_but_failed_install = await self.dependency_manager.ensure_workflow_dependencies(workflow_plan)
+            
+            if not all_installed:
+                if available_but_failed_install:
+                    # Some dependencies failed to install but are available in the environment
+                    missing_deps = [dep for dep in workflow_plan.get("dependencies", {}).get("tools", []) if dep not in available_but_failed_install]
+                    if missing_deps:
+                        self.logger.warning(f"Some dependencies could not be installed and are not available: {missing_deps}")
+                        self.logger.warning("Continuing with workflow execution as some tools were found in the environment.")
+                    else:
+                        self.logger.info("All required tools are available in the environment despite installation failures.")
+                else:
+                    # No dependencies are available, cannot proceed
+                    self.logger.error("Dependencies not installed. Cannot execute workflow.")
+                    return {"status": "error", "message": "Dependencies not installed. Cannot execute workflow."}
+            
+            # Get output directory from workflow steps
+            if output_dir is None:
+                for step in workflow_plan.get("steps", []):
+                    if "output_dir" in step:
+                        output_dir = step["output_dir"]
+                        break
+            
+            # Create workflow object
+            workflow = Workflow(
+                name=workflow_plan.get("name", "Unnamed Workflow"),
+                description=workflow_plan.get("description", ""),
+                steps=[],
+                dependencies=workflow_plan.get("dependencies", {}).get("tools", []),
+                output_dir=output_dir,
+                checkpoint_dir=checkpoint_dir
+            )
+            
+            # Create steps
+            for step_data in workflow_plan.get("steps", []):
+                # Get resource requirements for the step
+                resource_requirements = self._get_resource_requirements(step_data.get("tool", ""))
+                
+                # Create step object
+                step = WorkflowStep(
+                    name=step_data.get("name", ""),
+                    description=step_data.get("description", ""),
+                    tool=step_data.get("tool", ""),
+                    command=step_data.get("command", ""),
+                    args=step_data.get("args", {}),
+                    dependencies=step_data.get("dependencies", []),
+                    output_files=step_data.get("output_files", []),
+                    critical=step_data.get("critical", True),
+                    resource_requirements=resource_requirements
+                )
+                
+                workflow.steps.append(step)
+            
+            # If a checkpoint directory is provided, use smart resume functionality
+            if checkpoint_dir:
+                self.logger.info("Using smart resume functionality")
+                # Convert WorkflowStep objects to dictionaries for smart resume
+                step_dicts = []
+                for step in workflow.steps:
+                    step_dict = {
+                        "name": step.name,
+                        "command": step.command,
+                        "dependencies": step.dependencies
+                    }
+                    step_dicts.append(step_dict)
+                
+                # Detect completed steps
+                completed_steps = detect_completed_steps(step_dicts)
+                if completed_steps:
+                    self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
+                
+                # Filter workflow steps
+                filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
+                
+                # Update workflow steps based on filtered steps
+                if len(filtered_steps) < len(step_dicts):
+                    self.logger.info(f"Filtered {len(step_dicts) - len(filtered_steps)} steps, will run {len(filtered_steps)} steps")
+                    # Keep only the steps that are in the filtered list
+                    workflow.steps = [step for step in workflow.steps if any(step.name == fs["name"] for fs in filtered_steps)]
+            
+            # Execute the workflow
+            result = await self.execute_workflow(workflow)
+            
+            # Generate analysis report if workflow was successful
+            if result.get("status") == "success":
+                self.logger.info("Workflow completed successfully")
+                
+                # Generate a report if requested
+                if workflow_plan.get("generate_report", False):
+                    self.logger.info("Generating report...")
+                    from ..analysis.report_generator import ReportGenerator
+                    report_generator = ReportGenerator()
+                    report_path = await report_generator.generate_report(workflow_plan, result)
+                    result["analysis_report"] = report_path
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Workflow execution failed: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {"status": "error", "message": str(e)}
+
+    def _extract_geo_accession(self, prompt: str) -> Optional[str]:
+        """Extract GEO accession number from prompt.
+        
+        Args:
+            prompt: User prompt
+            
+        Returns:
+            GEO accession number or None if not found
+        """
+        import re
+        
+        # Define regex pattern for GEO accession numbers
+        geo_pattern = r'(?:GSE|GDS|GSM)\d+'
+        
+        # Search for GEO accession numbers in the prompt
+        match = re.search(geo_pattern, prompt)
+        
+        if match:
+            return match.group(0)
+        
+        return None
+    
+    def _add_geo_download_steps(self, geo_accession: str, workflow_steps: List[Dict[str, Any]], output_dir: str) -> List[Dict[str, Any]]:
+        """Add GEO download steps to workflow.
+        
+        Args:
+            geo_accession: GEO accession number
+            workflow_steps: Original workflow steps
+            output_dir: Output directory for the workflow
+            
+        Returns:
+            Updated workflow steps with GEO download steps added
+        """
+        # Create data directory
+        data_dir = os.path.join(output_dir, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        
+        # Define GEO download steps
+        geo_steps = [
+            {
+                "name": f"Get SRR IDs for {geo_accession}",
+                "description": f"Retrieve SRR IDs for GEO accession {geo_accession}",
+                "command": f"esearch -db sra -query '{geo_accession}[Accession]' | efetch -format runinfo > {data_dir}/{geo_accession}_runinfo.csv",
+                "tools": ["esearch", "efetch"],
+                "critical": True
+            },
+            {
+                "name": f"Extract SRR IDs from {geo_accession} runinfo",
+                "description": "Extract SRR IDs from runinfo CSV file",
+                "command": f"tail -n +2 {data_dir}/{geo_accession}_runinfo.csv | cut -d',' -f1 > {data_dir}/{geo_accession}_srr_ids.txt",
+                "tools": ["tail", "cut"],
+                "critical": True
+            },
+            {
+                "name": f"Download SRA files for {geo_accession}",
+                "description": "Download SRA files using prefetch",
+                "command": f"cat {data_dir}/{geo_accession}_srr_ids.txt | xargs -I{{}} prefetch {{}} --output-directory {data_dir}",
+                "tools": ["prefetch"],
+                "critical": True
+            },
+            {
+                "name": f"Convert SRA to FASTQ for {geo_accession}",
+                "description": "Convert SRA files to FASTQ format",
+                "command": f"cat {data_dir}/{geo_accession}_srr_ids.txt | xargs -I{{}} fasterq-dump {{}} -O {data_dir}",
+                "tools": ["fasterq-dump"],
+                "critical": True
+            },
+            {
+                "name": f"Compress FASTQ files for {geo_accession}",
+                "description": "Compress FASTQ files with gzip",
+                "command": f"find {data_dir} -name '*.fastq' -exec gzip {{}} \\;",
+                "tools": ["gzip", "find"],
+                "critical": False
+            }
+        ]
+        
+        # Add GEO download steps to the beginning of the workflow
+        return geo_steps + workflow_steps
+    
+    def _generate_html_report(self, report: Dict[str, Any]) -> str:
+        """Generate HTML report from workflow report."""
+        # Generate HTML report
+        html_report = "<html><body>"
+        html_report += "<h1>Workflow Report</h1>"
+        html_report += "<h2>Workflow Summary</h2>"
+        html_report += f"<p>Workflow Name: {report['workflow_name']}</p>"
+        html_report += f"<p>Workflow Description: {report['workflow_description']}</p>"
+        html_report += "<h2>Execution Summary</h2>"
+        html_report += f"<p>Total Steps: {report['execution_summary']['total_steps']}</p>"
+        html_report += f"<p>Successful Steps: {report['execution_summary']['successful_steps']}</p>"
+        html_report += f"<p>Failed Steps: {report['execution_summary']['failed_steps']}</p>"
+        html_report += f"<p>Skipped Steps: {report['execution_summary']['skipped_steps']}</p>"
+        html_report += f"<p>Total Execution Time: {report['execution_summary']['total_execution_time']} seconds</p>"
+        html_report += "<h2>Dependency Summary</h2>"
+        html_report += f"<p>Total Tools: {report['dependency_summary']['total_tools']}</p>"
+        html_report += f"<p>Available Tools: {', '.join(report['dependency_summary']['available_tools'])}</p>"
+        html_report += f"<p>Missing Tools: {', '.join(report['dependency_summary']['missing_tools'])}</p>"
+        html_report += f"<p>Availability Percentage: {report['dependency_summary']['availability_percentage']}%</p>"
+        html_report += "<h2>Step Reports</h2>"
+        for step in report["steps"]:
+            html_report += f"<h3>Step {step['name']}</h3>"
+            html_report += f"<p>Status: {step['status']}</p>"
+            html_report += f"<p>Execution Time: {step['execution_time']} seconds</p>"
+            html_report += f"<p>Command: {step['command']}</p>"
+            html_report += f"<p>Tools: {', '.join(step['tools'])}</p>"
+            html_report += f"<p>Missing Tools: {', '.join(step['missing_tools'])}</p>"
+            html_report += f"<p>Output: {step['output']}</p>"
+            html_report += f"<p>Error: {step['error']}</p>"
+            html_report += f"<p>Critical: {step['critical']}</p>"
+        html_report += "</body></html>"
+        
+        return html_report
+
+    def _get_resource_requirements(self, tool_name: str) -> Dict[str, Any]:
+        """Get resource requirements for a tool.
+        
+        Args:
+            tool_name: Name of the tool
+            
+        Returns:
+            Dictionary of resource requirements
+        """
+        # Default resource requirements
+        default_requirements = {
+            "cpu": 1,
+            "memory": "1G",
+            "time": "1:00:00"
+        }
+        
+        # Tool-specific resource requirements
+        tool_requirements = {
+            # RNA-seq tools
+            "star": {"cpu": 8, "memory": "32G", "time": "4:00:00"},
+            "kallisto": {"cpu": 4, "memory": "8G", "time": "2:00:00"},
+            "salmon": {"cpu": 4, "memory": "8G", "time": "2:00:00"},
+            "stringtie": {"cpu": 4, "memory": "8G", "time": "2:00:00"},
+            
+            # Alignment tools
+            "bwa": {"cpu": 8, "memory": "16G", "time": "4:00:00"},
+            "bowtie": {"cpu": 4, "memory": "8G", "time": "2:00:00"},
+            "bowtie2": {"cpu": 4, "memory": "8G", "time": "2:00:00"},
+            "hisat2": {"cpu": 4, "memory": "8G", "time": "2:00:00"},
+            
+            # Variant calling tools
+            "gatk": {"cpu": 4, "memory": "16G", "time": "4:00:00"},
+            "samtools": {"cpu": 2, "memory": "4G", "time": "2:00:00"},
+            "bcftools": {"cpu": 2, "memory": "4G", "time": "2:00:00"},
+            
+            # QC tools
+            "fastqc": {"cpu": 1, "memory": "2G", "time": "1:00:00"},
+            "multiqc": {"cpu": 1, "memory": "2G", "time": "0:30:00"},
+            
+            # SRA tools
+            "prefetch": {"cpu": 1, "memory": "2G", "time": "4:00:00"},
+            "fasterq-dump": {"cpu": 4, "memory": "8G", "time": "4:00:00"},
+            "fastq-dump": {"cpu": 2, "memory": "4G", "time": "4:00:00"},
+            
+            # Single-cell tools
+            "cellranger": {"cpu": 16, "memory": "64G", "time": "24:00:00"},
+            "kb": {"cpu": 8, "memory": "32G", "time": "8:00:00"},
+            "velocyto": {"cpu": 8, "memory": "32G", "time": "8:00:00"}
+        }
+        
+        # Convert tool name to lowercase for case-insensitive matching
+        tool_name_lower = tool_name.lower()
+        
+        # Return tool-specific requirements or default
+        return tool_requirements.get(tool_name_lower, default_requirements)

@@ -1,9 +1,12 @@
-import asyncio
-import logging
+import re
 import os
 import json
+import signal
+import logging
+import asyncio
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple, Union
+
 from .core.workflow_manager import WorkflowManager
 from .core.llm import LLMInterface
 from .analysis.report_generator import ReportGenerator
@@ -160,8 +163,16 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
             "error": str(e)
         }
 
-async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = False) -> None:
-    """Run workflow from prompt."""
+async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = False, force_resume: bool = False) -> None:
+    """
+    Run workflow from prompt.
+    
+    Args:
+        prompt: Workflow prompt
+        checkpoint_dir: Directory for workflow checkpoints
+        resume: Whether to resume from checkpoint
+        force_resume: Whether to force resume and run all steps regardless of completion status
+    """
     try:
         # Initialize workflow manager
         workflow_manager = WorkflowManager()
@@ -174,12 +185,59 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             checkpoint_path = Path("workflow_state")
             checkpoint_path.mkdir(parents=True, exist_ok=True)
         
+        # If we're resuming, just call resume_workflow
+        if resume:
+            logger.info(f"Resuming workflow from checkpoint: {checkpoint_path}")
+            if force_resume:
+                logger.info("Force resume enabled, all steps will be executed regardless of completion status")
+            result = await workflow_manager.resume_workflow(prompt, checkpoint_path, force_resume)
+            
+            if result.get("status") != "success":
+                error_msg = result.get("error", "Unknown error")
+                logger.error(f"Workflow failed: {error_msg}")
+                raise Exception(f"Workflow failed: {error_msg}")
+                
+            logger.info("Workflow completed successfully!")
+            
+            # Get output directory from workflow results
+            output_dir = result.get('output_dir')
+            if output_dir:
+                logger.info(f"Generating analysis report from {output_dir}...")
+                report_result = await analyze_workflow(output_dir)
+                
+                # Print reports to terminal
+                print("\nStandard Analysis Report:")
+                print("=" * 80)
+                print(report_result["report"])
+                print("=" * 80)
+                
+                print("\nAgentic Analysis Report:")
+                print("=" * 80)
+                print(report_result["agentic_report"])
+                print("=" * 80)
+            
+            return
+            
+        # Plan the workflow first
+        logger.info(f"Planning workflow with checkpoint dir: {checkpoint_path}")
+        try:
+            workflow_plan = await workflow_manager.plan_workflow(prompt)
+            # Print the workflow steps
+            print_workflow_plan(workflow_plan)
+        except Exception as e:
+            logger.error(f"Error planning workflow: {str(e)}")
+            print(f"\nError planning workflow: {str(e)}")
+            print("Proceeding with direct execution...")
+            workflow_plan = None
+        
         # Execute workflow
         logger.info(f"Executing workflow with checkpoint dir: {checkpoint_path}")
-        result = await workflow_manager.execute_workflow(prompt)
+        result = await workflow_manager.plan_and_execute_workflow(prompt, checkpoint_dir=checkpoint_path)
         
-        if result["status"] != "success":
-            raise Exception(result.get("error", "Unknown error"))
+        if result.get("status") != "success":
+            error_msg = result.get("error", "Unknown error")
+            logger.error(f"Workflow failed: {error_msg}")
+            raise Exception(f"Workflow failed: {error_msg}")
             
         logger.info("Workflow completed successfully!")
         
@@ -189,11 +247,11 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             workflow_manager.dag.visualize(output_path)
         
         # Get output directory from workflow results
-        output_dir = result.get('output_directory')
+        output_dir = result.get('output_dir')
         if not output_dir:
             # Look for output directory in workflow results
-            for step in result.get('steps', []):
-                cmd = step.get('command', '')
+            for step_name, step_result in result.get('results', {}).items():
+                cmd = step_result.get('command', '')
                 if 'results/' in cmd:
                     output_dir = cmd.split('results/')[1].split()[0].rstrip('/')
                     output_dir = f"results/{output_dir}"
@@ -227,3 +285,170 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
     except Exception as e:
         logger.error(f"Workflow failed: {str(e)}")
         raise
+
+def print_workflow_plan(workflow_plan: Dict[str, Any], timeout: int = 30) -> None:
+    """Print workflow plan with a timeout for user input."""
+    if not workflow_plan:
+        logger.warning("No workflow plan available to print")
+        return
+    
+    if "steps" not in workflow_plan:
+        logger.warning("Workflow plan has no steps to print")
+        return
+    
+    try:
+        print("\n" + "=" * 80)
+        print(f"WORKFLOW PLAN: {workflow_plan.get('workflow_type', 'Custom Workflow')}")
+        print("=" * 80)
+        
+        for i, step in enumerate(workflow_plan["steps"], 1):
+            print(f"\nStep {i}: {step.get('name', 'Unnamed Step')}")
+            print(f"  Command: {step.get('command', 'No command specified')}")
+            
+            if "description" in step:
+                print(f"  Description: {step['description']}")
+                
+            if "dependencies" in step and step["dependencies"]:
+                print(f"  Dependencies: {', '.join(step['dependencies'])}")
+                
+            if "profile_name" in step:
+                print(f"  Resource Profile: {step['profile_name']}")
+        
+        print("\n" + "=" * 80)
+        print("To execute this workflow, press Enter. To cancel, press Ctrl+C.")
+        
+        # Add a timeout to prevent hanging
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Input timed out. Proceeding with workflow execution.")
+        
+        # Set a 10-second timeout
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout)
+        
+        try:
+            input()
+        except (KeyboardInterrupt, TimeoutError) as e:
+            if isinstance(e, KeyboardInterrupt):
+                print("\nWorkflow cancelled by user.")
+                sys.exit(0)
+            else:
+                print("\nInput timed out. Proceeding with workflow execution.")
+        finally:
+            # Cancel the alarm
+            signal.alarm(0)
+            
+    except Exception as e:
+        logger.error(f"Error printing workflow plan: {str(e)}")
+        print("\nError displaying workflow plan. Proceeding with execution.")
+
+def extract_geo_accession(prompt: str) -> List[str]:
+    """
+    Extract GEO accession numbers from a prompt.
+    
+    Args:
+        prompt: The user prompt
+        
+    Returns:
+        List of GEO accession numbers found in the prompt
+    """
+    # Pattern to match GSE followed by 4-8 digits
+    pattern = r'GSE\d{4,8}'
+    matches = re.findall(pattern, prompt)
+    return matches
+
+def _add_geo_download_steps(workflow_plan: Dict[str, Any], geo_accessions: List[str], output_dir: str) -> Dict[str, Any]:
+    """
+    Add steps to download data from GEO to the workflow plan.
+    
+    Args:
+        workflow_plan: The current workflow plan
+        geo_accessions: List of GEO accession numbers
+        output_dir: The output directory for the workflow
+        
+    Returns:
+        Updated workflow plan with GEO download steps
+    """
+    if not geo_accessions:
+        return workflow_plan
+    
+    # Create a data directory if not specified in the workflow
+    data_dir = os.path.join(output_dir, "data")
+    
+    # Check if we already have the necessary tools in dependencies
+    dependencies = workflow_plan.get("dependencies", {})
+    tools = dependencies.get("tools", [])
+    
+    # Ensure we have the necessary tools for GEO download
+    required_tools = ["esearch", "efetch", "prefetch", "fasterq-dump"]
+    for tool in required_tools:
+        if tool not in tools and {"name": tool} not in tools:
+            if isinstance(tools, list):
+                tools.append({"name": tool})
+    
+    # Update dependencies in the workflow plan
+    if "dependencies" not in workflow_plan:
+        workflow_plan["dependencies"] = {}
+    workflow_plan["dependencies"]["tools"] = tools
+    
+    # Get the current steps
+    steps = workflow_plan.get("steps", [])
+    
+    # Add steps for each GEO accession
+    for geo_accession in geo_accessions:
+        # Create directory for this accession
+        accession_dir = os.path.join(data_dir, geo_accession)
+        
+        # Add step to create the directory
+        steps.insert(0, {
+            "name": f"Create directory for {geo_accession}",
+            "command": f"mkdir -p {accession_dir}",
+            "description": f"Create directory to store data from {geo_accession}"
+        })
+        
+        # Add step to get SRR IDs
+        steps.insert(1, {
+            "name": f"Get SRR IDs for {geo_accession}",
+            "command": f"cd {accession_dir} && esearch -db sra -query '{geo_accession}[Accession]' | efetch -format runinfo > {geo_accession}_runinfo.csv",
+            "description": f"Retrieve SRR IDs for {geo_accession} from NCBI SRA database"
+        })
+        
+        # Add step to extract SRR IDs
+        steps.insert(2, {
+            "name": f"Extract SRR IDs for {geo_accession}",
+            "command": f"cd {accession_dir} && tail -n +2 {geo_accession}_runinfo.csv | cut -d',' -f1 > {geo_accession}_srr_ids.txt",
+            "description": f"Extract SRR IDs from runinfo CSV file for {geo_accession}"
+        })
+        
+        # Add step to download FASTQ files
+        steps.insert(3, {
+            "name": f"Download FASTQ files for {geo_accession}",
+            "command": f"cd {accession_dir} && cat {geo_accession}_srr_ids.txt | xargs -I{{}} sh -c 'prefetch {{}} && fasterq-dump {{}} && gzip *.fastq'",
+            "description": f"Download and compress FASTQ files for {geo_accession}"
+        })
+    
+    # Update steps in the workflow plan
+    workflow_plan["steps"] = steps
+    
+    return workflow_plan
+
+async def generate_workflow(prompt: str, llm_client: Any, output_dir: str = None) -> Dict[str, Any]:
+    """Generate workflow from prompt."""
+    try:
+        # Extract GEO accession numbers from the prompt
+        geo_accessions = extract_geo_accession(prompt)
+        
+        # Generate workflow plan using LLM
+        workflow_plan = await llm_client.generate_workflow_plan(prompt)
+        
+        # Add GEO download steps if needed
+        if geo_accessions:
+            if output_dir is None:
+                output_dir = workflow_plan.get("output_dir", os.getcwd())
+            workflow_plan = _add_geo_download_steps(workflow_plan, geo_accessions, output_dir)
+        
+        return workflow_plan
+    except Exception as e:
+        logging.error(f"Error generating workflow: {str(e)}")
+        return {"status": "error", "message": f"Error generating workflow: {str(e)}"}

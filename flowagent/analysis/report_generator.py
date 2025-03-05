@@ -745,10 +745,55 @@ class ReportGenerator:
         }
         
         try:
-            # Find all relevant files recursively
-            fastqc_files = list(output_dir.rglob('*_fastqc.zip')) + list(output_dir.rglob('*_fastqc.html'))
-            multiqc_files = list(output_dir.rglob('multiqc_data.json'))
-            run_info_files = list(output_dir.rglob('run_info.json'))
+            # Define potential results directories to search
+            search_dirs = [output_dir]
+            
+            # Check for results in parent directory (common case)
+            parent_results = Path(os.path.dirname(os.path.dirname(output_dir))) / "results"
+            if parent_results.exists():
+                search_dirs.append(parent_results)
+                self.logger.info(f"Found results directory at {parent_results}")
+            
+            # Check for results in the workflow directory itself
+            workflow_results = output_dir / "results"
+            if workflow_results.exists():
+                search_dirs.append(workflow_results)
+                self.logger.info(f"Found results directory at {workflow_results}")
+            
+            # Check if we have a workflow.json that might point to a results directory
+            workflow_json = output_dir / "workflow.json"
+            if workflow_json.exists():
+                try:
+                    with open(workflow_json) as f:
+                        workflow_data = json.load(f)
+                        # Extract results directory from commands if present
+                        for step in workflow_data.get("steps", []):
+                            if step.get("command", "").startswith("mkdir -p "):
+                                dirs = step.get("command", "").replace("mkdir -p ", "").split()
+                                for dir_path in dirs:
+                                    if "results" in dir_path:
+                                        potential_path = Path(os.path.join(os.path.dirname(output_dir), dir_path))
+                                        if potential_path.exists():
+                                            search_dirs.append(potential_path)
+                                            self.logger.info(f"Found potential results directory from workflow.json: {potential_path}")
+                except Exception as e:
+                    self.logger.warning(f"Error reading workflow.json: {str(e)}")
+            
+            # Log the directories we're searching
+            self.logger.info(f"Searching for output files in: {[str(d) for d in search_dirs]}")
+            
+            # Find all relevant files recursively across all search directories
+            fastqc_files = []
+            multiqc_files = []
+            run_info_files = []
+            
+            for search_dir in search_dirs:
+                fastqc_files.extend(list(search_dir.rglob('*_fastqc.zip')))
+                fastqc_files.extend(list(search_dir.rglob('*_fastqc.html')))
+                multiqc_files.extend(list(search_dir.rglob('multiqc_data.json')))
+                run_info_files.extend(list(search_dir.rglob('run_info.json')))
+            
+            self.logger.info(f"Found {len(fastqc_files)} FastQC files, {len(multiqc_files)} MultiQC files, and {len(run_info_files)} run info files")
             
             # Process FastQC outputs
             for file in fastqc_files:
