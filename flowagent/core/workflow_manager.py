@@ -17,6 +17,7 @@ from .llm import LLMInterface
 from .executor import Executor
 from .agent_types import WorkflowStep, Workflow
 from .workflow_dag import WorkflowDAG
+from .smart_resume import detect_completed_steps, filter_workflow_steps
 from ..agents.agentic.analysis_system import AgenticAnalysisSystem
 
 logger = get_logger(__name__)
@@ -732,6 +733,33 @@ class WorkflowManager:
                 )
                 
                 workflow.steps.append(step)
+            
+            # If a checkpoint directory is provided, use smart resume functionality
+            if checkpoint_dir:
+                self.logger.info("Using smart resume functionality")
+                # Convert WorkflowStep objects to dictionaries for smart resume
+                step_dicts = []
+                for step in workflow.steps:
+                    step_dict = {
+                        "name": step.name,
+                        "command": step.command,
+                        "dependencies": step.dependencies
+                    }
+                    step_dicts.append(step_dict)
+                
+                # Detect completed steps
+                completed_steps = detect_completed_steps(step_dicts)
+                if completed_steps:
+                    self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
+                
+                # Filter workflow steps
+                filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
+                
+                # Update workflow steps based on filtered steps
+                if len(filtered_steps) < len(step_dicts):
+                    self.logger.info(f"Filtered {len(step_dicts) - len(filtered_steps)} steps, will run {len(filtered_steps)} steps")
+                    # Keep only the steps that are in the filtered list
+                    workflow.steps = [step for step in workflow.steps if any(step.name == fs["name"] for fs in filtered_steps)]
             
             # Execute the workflow
             result = await self.execute_workflow(workflow)
