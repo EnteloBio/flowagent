@@ -9,6 +9,7 @@ import os
 import logging
 import re
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Set, Any, Callable, Pattern, Tuple, Optional, Union
 
@@ -142,23 +143,51 @@ def register_tool_validator(tool_pattern: str, validator_func: ToolValidatorType
 
 def kallisto_index_validator(command: str, step: Dict[str, Any]) -> bool:
     """Validate kallisto index outputs."""
+    # Extract the index path from the command
     index_path_match = re.search(r'-i\s+([^\s]+)', command)
     if index_path_match:
         index_path = index_path_match.group(1)
-        return check_file_exists(index_path)
+        
+        # Check that the index file exists and has a minimum size
+        # Kallisto index files are typically several MB in size
+        MIN_INDEX_SIZE = 1000000  # 1MB minimum size for index file
+        
+        if check_file_exists(index_path) and os.path.getsize(index_path) > MIN_INDEX_SIZE:
+            return True
+    
     return False
 
 def kallisto_quant_validator(command: str, step: Dict[str, Any]) -> bool:
-    """Validate kallisto quant outputs."""
+    """Validate kallisto quantification outputs."""
     output_dir_match = re.search(r'-o\s+([^\s]+)', command)
     if output_dir_match:
         output_dir = output_dir_match.group(1)
-        abundance_h5 = os.path.join(output_dir, "abundance.h5")
-        abundance_tsv = os.path.join(output_dir, "abundance.tsv")
-        run_info = os.path.join(output_dir, "run_info.json")
         
-        return ((check_file_exists(abundance_h5) or check_file_exists(abundance_tsv)) 
-                and check_file_exists(run_info))
+        # Check output directory exists
+        if not check_directory_exists(output_dir):
+            return False
+            
+        # Check for required output files in kallisto quant output directory
+        required_files = ['abundance.h5', 'abundance.tsv', 'run_info.json']
+        for file in required_files:
+            if not check_file_exists(os.path.join(output_dir, file)):
+                return False
+                
+        # Verify run_info.json contains completion data
+        try:
+            with open(os.path.join(output_dir, 'run_info.json'), 'r') as f:
+                run_info = json.load(f)
+                # Check for n_processed and n_pseudoaligned fields
+                if 'n_processed' not in run_info or 'n_pseudoaligned' not in run_info:
+                    return False
+                # Ensure some reads were processed
+                if run_info['n_processed'] <= 0:
+                    return False
+        except (json.JSONDecodeError, FileNotFoundError, IOError):
+            return False
+            
+        return True
+    
     return False
 
 def fastqc_validator(command: str, step: Dict[str, Any]) -> bool:
@@ -166,20 +195,56 @@ def fastqc_validator(command: str, step: Dict[str, Any]) -> bool:
     output_dir_match = re.search(r'-o\s+([^\s]+)', command)
     if output_dir_match:
         output_dir = output_dir_match.group(1)
-        return (check_directory_exists(output_dir) and 
-                check_files_match_pattern(output_dir, r'_fastqc\.html$'))
+        
+        # Check for directory existence
+        if not check_directory_exists(output_dir):
+            return False
+        
+        # Look for HTML files with _fastqc.html suffix
+        html_files = [f for f in os.listdir(output_dir) if f.endswith('_fastqc.html')]
+        if not html_files:
+            return False
+            
+        # Look for zip files with _fastqc.zip suffix
+        zip_files = [f for f in os.listdir(output_dir) if f.endswith('_fastqc.zip')]
+        if not zip_files:
+            return False
+            
+        # Ensure we have at least one HTML and one ZIP file
+        return len(html_files) > 0 and len(zip_files) > 0
+    
     return False
 
 def multiqc_validator(command: str, step: Dict[str, Any]) -> bool:
     """Validate MultiQC outputs."""
-    output_dir_match = re.search(r'-o\s+([^\s]+)', command)
-    if output_dir_match:
-        output_dir = output_dir_match.group(1)
-        multiqc_report = os.path.join(output_dir, "multiqc_report.html")
-        return (check_directory_exists(output_dir) and 
-                (check_file_exists(multiqc_report) or 
-                 check_files_match_pattern(output_dir, r'multiqc')))
-    return False
+    # Extract output directory path
+    output_dir = None
+    outdir_match = re.search(r'-o\s+([^\s]+)', command)
+    if outdir_match:
+        output_dir = outdir_match.group(1)
+    else:
+        # If no output directory is specified, MultiQC creates a 'multiqc_data' directory
+        output_dir = 'multiqc_data'
+    
+    # Check for directory existence
+    if not check_directory_exists(output_dir):
+        return False
+    
+    # Check for multiqc_report.html
+    html_report = os.path.join(output_dir, "..", "multiqc_report.html")
+    if not check_file_exists(html_report):
+        # Try alternative location
+        html_report = "multiqc_report.html"
+        if not check_file_exists(html_report):
+            return False
+    
+    # Check for required MultiQC data files
+    required_files = ['multiqc_general_stats.txt', 'multiqc_sources.txt']
+    for file in required_files:
+        if not check_file_exists(os.path.join(output_dir, file)):
+            return False
+    
+    return True
 
 def bwa_index_validator(command: str, step: Dict[str, Any]) -> bool:
     """Validate BWA index outputs."""
@@ -215,20 +280,38 @@ def bowtie2_build_validator(command: str, step: Dict[str, Any]) -> bool:
     return False
 
 def generic_validator(command: str, step: Dict[str, Any]) -> bool:
-    """
-    Generic validator for tools without specific validators.
-    Checks if all extracted output paths exist.
-    """
-    output_paths = extract_output_paths_from_command(command)
-    if not output_paths:
+    """Generic validator that checks for output files or directories."""
+    # Don't consider incomplete command (like commented ones) as completed
+    if command.strip().startswith("#") or len(command.strip()) < 3:
         return False
         
-    for path in output_paths:
-        # Check if the path exists (either as a file or directory)
-        if not (check_file_exists(path) or check_directory_exists(path)):
-            return False
+    # Extract output files or directories from the command
+    # Look for common output redirection patterns
+    output_files = []
     
-    return True
+    # Check for output redirection to files
+    output_redirects = re.findall(r'>\s*(\S+)', command)
+    output_files.extend(output_redirects)
+    
+    # Check for -o/--output arguments (common in bioinformatics tools)
+    output_args = re.findall(r'(?:-o|--output)\s+(\S+)', command)
+    output_files.extend(output_args)
+    
+    # Check for -outdir/--outdir arguments
+    outdir_args = re.findall(r'(?:--outdir|\-outdir|\-output_dir|--output_dir)\s+(\S+)', command)
+    for outdir in outdir_args:
+        if check_directory_exists(outdir):
+            # Make sure it's not just an empty directory
+            if os.path.isdir(outdir) and len(os.listdir(outdir)) > 0:
+                return True
+    
+    # Check if all identified output files exist
+    for output_file in output_files:
+        if not check_file_exists(output_file):
+            return False
+            
+    # If we identified output files and they all exist, consider the step completed
+    return len(output_files) > 0
 
 # Register tool validators
 register_tool_validator(r'kallisto\s+index', kallisto_index_validator)
@@ -242,45 +325,54 @@ register_tool_validator(r'bowtie2-build', bowtie2_build_validator)
 
 def detect_completed_steps(workflow_steps: List[Dict[str, Any]]) -> Set[str]:
     """
-    Detect which steps of a workflow have been completed based on output files.
+    Detects which steps have already been completed based on the existence of their outputs.
     
     Args:
-        workflow_steps: List of workflow steps with commands
+        workflow_steps: List of workflow steps.
         
     Returns:
-        Set of names of completed steps
+        Set of step names that have been completed.
     """
+    logger.info("Detecting completed steps...")
+    
     completed_steps = set()
     
     for step in workflow_steps:
         step_name = step.get("name", "")
+        logger.info(f"Checking step: {step_name}")
         command = step.get("command", "")
         
         # Skip steps with no command
         if not command:
             continue
             
-        # Always consider directory creation steps as completed
-        if "mkdir" in command:
-            logger.info(f"Step {step_name} is a directory creation step, marking as completed")
+        # Check if this is literally just a directory creation step and nothing else
+        if command.strip().startswith("mkdir") and "&&" not in command and ";" not in command and "|" not in command:
+            logger.info(f"Step {step_name} is only a directory creation step, marking as completed")
             completed_steps.add(step_name)
             continue
         
         # Check for tool-specific validators
-        validated = False
-        for tool_pattern, validator in _TOOL_VALIDATORS.items():
-            if re.search(tool_pattern, command):
-                if validator(command, step):
-                    logger.info(f"Step {step_name} detected as completed using {tool_pattern} validator")
+        for pattern, validator_func in _TOOL_VALIDATORS.items():
+            if re.search(pattern, command):
+                logger.info(f"Using {validator_func.__name__} for step {step_name}")
+                if validator_func(command, step):
+                    logger.info(f"Tool-specific validator confirmed step {step_name} is completed")
                     completed_steps.add(step_name)
-                    validated = True
                     break
-        
-        # If no specific validator matched or validation failed, use generic validator
-        if not validated:
+                else:
+                    logger.info(f"Tool-specific validator determined step {step_name} is NOT completed")
+                    break
+        else:
+            # Use generic validator if no tool-specific validator matched
+            logger.info(f"Using generic validator for step {step_name}")
             if generic_validator(command, step):
-                logger.info(f"Step {step_name} detected as completed using generic validator")
+                logger.info(f"Generic validator confirmed step {step_name} is completed")
                 completed_steps.add(step_name)
+            else:
+                logger.info(f"Generic validator determined step {step_name} is NOT completed")
+    
+    logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
     
     return completed_steps
 

@@ -163,8 +163,16 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
             "error": str(e)
         }
 
-async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = False) -> None:
-    """Run workflow from prompt."""
+async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = False, force_resume: bool = False) -> None:
+    """
+    Run workflow from prompt.
+    
+    Args:
+        prompt: Workflow prompt
+        checkpoint_dir: Directory for workflow checkpoints
+        resume: Whether to resume from checkpoint
+        force_resume: Whether to force resume and run all steps regardless of completion status
+    """
     try:
         # Initialize workflow manager
         workflow_manager = WorkflowManager()
@@ -177,6 +185,39 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             checkpoint_path = Path("workflow_state")
             checkpoint_path.mkdir(parents=True, exist_ok=True)
         
+        # If we're resuming, just call resume_workflow
+        if resume:
+            logger.info(f"Resuming workflow from checkpoint: {checkpoint_path}")
+            if force_resume:
+                logger.info("Force resume enabled, all steps will be executed regardless of completion status")
+            result = await workflow_manager.resume_workflow(prompt, checkpoint_path, force_resume)
+            
+            if result.get("status") != "success":
+                error_msg = result.get("error", "Unknown error")
+                logger.error(f"Workflow failed: {error_msg}")
+                raise Exception(f"Workflow failed: {error_msg}")
+                
+            logger.info("Workflow completed successfully!")
+            
+            # Get output directory from workflow results
+            output_dir = result.get('output_dir')
+            if output_dir:
+                logger.info(f"Generating analysis report from {output_dir}...")
+                report_result = await analyze_workflow(output_dir)
+                
+                # Print reports to terminal
+                print("\nStandard Analysis Report:")
+                print("=" * 80)
+                print(report_result["report"])
+                print("=" * 80)
+                
+                print("\nAgentic Analysis Report:")
+                print("=" * 80)
+                print(report_result["agentic_report"])
+                print("=" * 80)
+            
+            return
+            
         # Plan the workflow first
         logger.info(f"Planning workflow with checkpoint dir: {checkpoint_path}")
         try:

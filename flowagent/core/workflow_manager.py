@@ -375,49 +375,79 @@ class WorkflowManager:
                 "error": str(e)
             }
 
-    async def resume_workflow(self, prompt: str, checkpoint_dir: str) -> Dict[str, Any]:
-        """Resume workflow execution from checkpoint."""
+    async def resume_workflow(self, prompt: str, checkpoint_dir: str, force_resume: bool = False) -> Dict[str, Any]:
+        """Resume workflow execution from checkpoint.
+        
+        Args:
+            prompt: Natural language prompt describing the workflow
+            checkpoint_dir: Directory to load workflow checkpoint from
+            force_resume: If True, skip smart resume and run all steps
+            
+        Returns:
+            dict: Workflow execution results
+        """
         try:
-            # Load checkpoint state
-            checkpoint_file = os.path.join(checkpoint_dir, "workflow_state.json")
-            if not os.path.exists(checkpoint_file):
-                self.logger.warning(f"No checkpoint found at {checkpoint_file}, starting new workflow")
-                return await self.execute_workflow(prompt)
+            self.logger.info(f"Resuming workflow from checkpoint: {checkpoint_dir}")
+            
+            # Load checkpoint
+            checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.json")
+            if not os.path.exists(checkpoint_path):
+                self.logger.error(f"Checkpoint file not found: {checkpoint_path}")
+                return None
+            
+            try:
+                checkpoint = load_json(checkpoint_path)
                 
-            with open(checkpoint_file, 'r') as f:
-                checkpoint = json.load(f)
+                workflow_plan = checkpoint.get("workflow_plan", {})
+                output_dir = checkpoint.get("output_dir", os.path.abspath("results"))
                 
-            self.logger.info(f"Resuming workflow from checkpoint: {checkpoint_file}")
-            
-            # Get completed steps
-            completed_steps = set(step["name"] for step in checkpoint.get("results", []) 
-                               if step["status"] == "completed")
-            
-            # Get workflow plan
-            workflow_plan = await self.llm.generate_workflow_plan(prompt)
-            
-            # Filter out completed steps
-            remaining_steps = [step for step in workflow_plan["steps"] 
-                             if step["name"] not in completed_steps]
-            
-            if not remaining_steps:
-                self.logger.info("All steps already completed")
-                return checkpoint
+                # Ensure output directory exists
+                os.makedirs(output_dir, exist_ok=True)
                 
-            self.logger.info(f"Resuming with {len(remaining_steps)} remaining steps")
+                # Detect completed steps only if force_resume is False
+                completed_steps = set()
+                if not force_resume:
+                    # Convert to step_dicts format for smart resume
+                    step_dicts = []
+                    for step in workflow_plan.get("steps", []):
+                        step_dict = {
+                            "name": step.get("name", ""),
+                            "command": step.get("command", ""),
+                            "description": step.get("description", ""),
+                            "dependencies": step.get("dependencies", [])
+                        }
+                        step_dicts.append(step_dict)
+                    
+                    # Detect completed steps
+                    from flowagent.core.smart_resume import detect_completed_steps
+                    completed_steps = detect_completed_steps(step_dicts)
+                    if completed_steps:
+                        self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
+                    else:
+                        self.logger.info("No completed steps detected, starting from the beginning")
+                else:
+                    self.logger.info("Force resume enabled, running all steps regardless of completion status")
+            
+            except Exception as e:
+                self.logger.error(f"Failed to load checkpoint: {str(e)}")
+                return None
+            
+            # Get workflow name and description
+            workflow_name = workflow_plan.get("name", "Unnamed workflow")
+            workflow_description = workflow_plan.get("description", "")
             
             # Create workflow object
             workflow = Workflow(
-                name=workflow_plan.get("name", "Unnamed Workflow"),
-                description=workflow_plan.get("description", ""),
+                name=workflow_name,
+                description=workflow_description,
                 steps=[],
                 dependencies=workflow_plan.get("dependencies", {}).get("tools", []),
-                output_dir=None,
+                output_dir=output_dir,
                 checkpoint_dir=checkpoint_dir
             )
             
             # Create steps
-            for step_data in remaining_steps:
+            for step_data in workflow_plan.get("steps", []):
                 # Get resource requirements for the step
                 resource_requirements = self._get_resource_requirements(step_data.get("tool", ""))
                 
@@ -435,6 +465,33 @@ class WorkflowManager:
                 )
                 
                 workflow.steps.append(step)
+            
+            # If a checkpoint directory is provided, use smart resume functionality
+            if checkpoint_dir:
+                self.logger.info("Using smart resume functionality")
+                # Convert WorkflowStep objects to dictionaries for smart resume
+                step_dicts = []
+                for step in workflow.steps:
+                    step_dict = {
+                        "name": step.name,
+                        "command": step.command,
+                        "dependencies": step.dependencies
+                    }
+                    step_dicts.append(step_dict)
+                
+                # Detect completed steps
+                completed_steps = detect_completed_steps(step_dicts)
+                if completed_steps:
+                    self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
+                
+                # Filter workflow steps
+                filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
+                
+                # Update workflow steps based on filtered steps
+                if len(filtered_steps) < len(step_dicts):
+                    self.logger.info(f"Filtered {len(step_dicts) - len(filtered_steps)} steps, will run {len(filtered_steps)} steps")
+                    # Keep only the steps that are in the filtered list
+                    workflow.steps = [step for step in workflow.steps if any(step.name == fs["name"] for fs in filtered_steps)]
             
             # Execute the workflow
             result = await self.execute_workflow(workflow)
