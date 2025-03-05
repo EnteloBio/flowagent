@@ -13,3 +13,7 @@ click>=8.0.0
 PyYAML>=6.0.0
 rich>=13.0.0  # For better logging output
 kubernetes>=28.1.0  # For Kubernetes support
+pandas>=1.5.0  # For data handling in benchmarking
+matplotlib>=3.5.0  # For visualization in benchmarking
+seaborn>=0.12.0  # For enhanced visualizations in benchmarking
+psutil>=5.9.0  # For resource usage monitoring in benchmarking
