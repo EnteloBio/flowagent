@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 from datetime import datetime
 import numpy as np
+import os
 
 from .analysis_agents import QualityAnalysisAgent, QuantificationAnalysisAgent, TechnicalQCAgent
 
@@ -35,18 +36,88 @@ class AgenticAnalysisSystem:
         }
         
         try:
-            # Recursively find all relevant files
-            kallisto_data = self._find_kallisto_outputs(results_dir)
-            if kallisto_data:
+            # Define potential results directories to search
+            search_dirs = [results_dir]
+            
+            # Check for results in parent directory (common case)
+            parent_results = Path(os.path.dirname(os.path.dirname(results_dir))) / "results"
+            if parent_results.exists():
+                search_dirs.append(parent_results)
+                logger.info(f"Found results directory at {parent_results}")
+            
+            # Check for results in the workflow directory itself
+            workflow_results = results_dir / "results"
+            if workflow_results.exists():
+                search_dirs.append(workflow_results)
+                logger.info(f"Found results directory at {workflow_results}")
+            
+            # Check if we have a workflow.json that might point to a results directory
+            workflow_json = results_dir / "workflow.json"
+            if workflow_json.exists():
+                try:
+                    with open(workflow_json) as f:
+                        workflow_data = json.load(f)
+                        # Extract results directory from commands if present
+                        for step in workflow_data.get("steps", []):
+                            if step.get("command", "").startswith("mkdir -p "):
+                                dirs = step.get("command", "").replace("mkdir -p ", "").split()
+                                for dir_path in dirs:
+                                    if "results" in dir_path:
+                                        potential_path = Path(os.path.join(os.path.dirname(results_dir), dir_path))
+                                        if potential_path.exists():
+                                            search_dirs.append(potential_path)
+                                            logger.info(f"Found potential results directory from workflow.json: {potential_path}")
+                except Exception as e:
+                    logger.warning(f"Error reading workflow.json: {str(e)}")
+            
+            # Log the directories we're searching
+            logger.info(f"Searching for output files in: {[str(d) for d in search_dirs]}")
+            
+            # Recursively find all relevant files from all search directories
+            kallisto_data = {}
+            for search_dir in search_dirs:
+                dir_kallisto_data = self._find_kallisto_outputs(search_dir)
+                if dir_kallisto_data:
+                    # Merge with existing data
+                    if "abundance_files" not in kallisto_data:
+                        kallisto_data["abundance_files"] = []
+                    kallisto_data["abundance_files"].extend(dir_kallisto_data.get("abundance_files", []))
+                    
+                    if "run_info" not in kallisto_data:
+                        kallisto_data["run_info"] = {}
+                    kallisto_data["run_info"].update(dir_kallisto_data.get("run_info", {}))
+                    
+                    if "samples" not in kallisto_data:
+                        kallisto_data["samples"] = {}
+                    kallisto_data["samples"].update(dir_kallisto_data.get("samples", {}))
+            
+            if kallisto_data and kallisto_data.get("abundance_files"):
                 data["tools_used"].append("kallisto")
                 data["quantification_data"]["kallisto"] = kallisto_data
             
-            # Find QC outputs recursively
-            qc_data = self._find_qc_outputs(results_dir)
+            # Find QC outputs recursively from all search directories
+            qc_data = {}
+            for search_dir in search_dirs:
+                dir_qc_data = self._find_qc_outputs(search_dir)
+                # Merge with existing data
+                for key, files in dir_qc_data.items():
+                    if key not in qc_data:
+                        qc_data[key] = []
+                    qc_data[key].extend(files)
             data["qc_data"].update(qc_data)
             
-            # Find technical data recursively
-            tech_data = self._find_technical_data(results_dir)
+            # Find technical data recursively from all search directories
+            tech_data = {
+                "resource_usage": {},
+                "tool_versions": {},
+                "logs": []
+            }
+            for search_dir in search_dirs:
+                dir_tech_data = self._find_technical_data(search_dir)
+                # Merge with existing data
+                tech_data["resource_usage"].update(dir_tech_data.get("resource_usage", {}))
+                tech_data["tool_versions"].update(dir_tech_data.get("tool_versions", {}))
+                tech_data["logs"].extend(dir_tech_data.get("logs", []))
             data["technical_data"].update(tech_data)
             
             return data
@@ -74,6 +145,8 @@ class AgenticAnalysisSystem:
             "run_info": {},
             "samples": {}
         }
+        
+        logger.info(f"Searching for Kallisto outputs in {directory}")
         
         # Find all abundance.h5 files recursively
         for abundance_file in directory.rglob("abundance.h5"):
@@ -122,6 +195,66 @@ class AgenticAnalysisSystem:
                     logger.error(f"Error parsing abundance file for {sample_name}: {str(e)}")
                     continue
         
+        # Also look for abundance.tsv files directly since our test creates only these
+        logger.info(f"Looking for abundance.tsv files in {directory}")
+        for abundance_tsv in directory.rglob("abundance.tsv"):
+            logger.info(f"Found abundance.tsv file at {abundance_tsv}")
+            # Get sample name from parent directory
+            sample_name = None
+            parent_dir = abundance_tsv.parent
+            
+            # Try to find a valid sample name by walking up the directory tree
+            while parent_dir != directory:
+                if parent_dir.name not in ["kallisto", "output", "kallisto_quant"]:
+                    sample_name = parent_dir.name
+                    break
+                parent_dir = parent_dir.parent
+            
+            # Skip if we couldn't determine a valid sample name
+            if not sample_name:
+                logger.warning(f"Could not determine sample name for {abundance_tsv}")
+                continue
+                
+            # Normalize sample name
+            sample_name = self._normalize_sample_name(sample_name)
+            logger.info(f"Using sample name: {sample_name}")
+            
+            # Add the abundance file to the list if not already present
+            if str(abundance_tsv) not in kallisto_data["abundance_files"]:
+                kallisto_data["abundance_files"].append(str(abundance_tsv))
+                
+                # Look for run_info.json in the same directory
+                run_info_file = abundance_tsv.parent / "run_info.json"
+                if run_info_file.exists():
+                    try:
+                        logger.info(f"Found run_info.json file at {run_info_file}")
+                        with open(run_info_file) as f:
+                            run_info = json.load(f)
+                            kallisto_data["run_info"][sample_name] = run_info
+                    except Exception as e:
+                        logger.error(f"Error reading run info for {sample_name}: {str(e)}")
+                        continue
+                
+                # Parse abundance.tsv file
+                try:
+                    metrics = self._parse_abundance_file(abundance_tsv)
+                    kallisto_data["samples"][sample_name] = {
+                        "abundance_file": str(abundance_tsv),
+                        "metrics": metrics
+                    }
+                    logger.info(f"Successfully parsed abundance.tsv for {sample_name}")
+                except Exception as e:
+                    logger.error(f"Error parsing abundance file for {sample_name}: {str(e)}")
+                    continue
+        
+        # Log what we found
+        if kallisto_data["abundance_files"]:
+            logger.info(f"Found {len(kallisto_data['abundance_files'])} Kallisto abundance files")
+            logger.info(f"Found {len(kallisto_data['run_info'])} Kallisto run info files")
+            logger.info(f"Found {len(kallisto_data['samples'])} Kallisto samples")
+        else:
+            logger.warning(f"No Kallisto outputs found in {directory}")
+            
         return kallisto_data if kallisto_data["abundance_files"] else None
     
     def _find_qc_outputs(self, directory: Path) -> Dict[str, Any]:

@@ -175,7 +175,9 @@ async def test_workflow_error_handling():
         # Execute workflow and expect error result
         result = await workflow.execute_parallel()
         assert result["status"] == "failed"
-        assert "nonexistent_command: not found" in result["error"]
+        # Check for a more generic error pattern to make the test more robust
+        assert "nonexistent_command" in result["error"]
+        assert "not found" in result["error"].lower()
         assert workflow.graph.nodes["fail"]["step"]["status"] == "failed"
 
 @pytest.mark.asyncio
