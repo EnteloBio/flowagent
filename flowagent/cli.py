@@ -52,6 +52,11 @@ Examples:
         help="Resume workflow from checkpoint",
     )
     prompt_parser.add_argument(
+        "--force-resume",
+        action="store_true",
+        help="Force resuming workflow and run all steps, regardless of completion status",
+    )
+    prompt_parser.add_argument(
         "--checkpoint-dir",
         help="Directory for workflow checkpoints",
     )
@@ -94,6 +99,7 @@ Examples:
 async def main(
     prompt: str,
     resume: bool = False,
+    force_resume: bool = False,
     checkpoint_dir: str = None,
     analysis_dir: str = None,
 ):
@@ -132,7 +138,7 @@ async def main(
                 )
 
             logger.info("Starting new workflow")
-            await run_workflow(prompt, checkpoint_dir, resume)
+            await run_workflow(prompt, checkpoint_dir, resume, force_resume)
 
     except Exception as e:
         logger.error(f"Operation failed: {str(e)}")
@@ -150,6 +156,7 @@ def run():
                 main(
                     prompt=args.prompt,
                     resume=args.resume,
+                    force_resume=args.force_resume,
                     checkpoint_dir=args.checkpoint_dir,
                     analysis_dir=args.analysis_dir,
                 )
