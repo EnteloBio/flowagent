@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Callable, Optional
 import asyncio
 import logging
+import traceback
 
 from ..utils.logging import get_logger
 from .executors import BaseExecutor, LocalExecutor, HPCExecutor, KubernetesExecutor
@@ -53,8 +54,12 @@ class WorkflowDAG:
             output_file: Path to save the visualization file
             
         Returns:
-            Path to the generated visualization file
+            Path to the generated visualization file or None if visualization fails
         """
+        if output_file is None:
+            logger.warning("No output file specified for workflow DAG visualization")
+            return None
+            
         try:
             if not self.graph.nodes:
                 logger.warning("No nodes in workflow graph to visualize")
@@ -81,25 +86,45 @@ class WorkflowDAG:
             start_nodes = []
             
             for node in self.graph.nodes:
-                step = self.graph.nodes[node]["step"]
-                status = step.get("status", "pending")
-                
-                # Check if this is a starting node (no incoming edges)
-                is_start_node = self.graph.in_degree(node) == 0
-                
-                if is_start_node:
-                    color = "#FFD700"  # Gold
-                    start_nodes.append(node)
-                elif status == "completed":
-                    color = "#90EE90"  # Light green
-                    completed_nodes.append(node)
-                elif status == "failed":
-                    color = "#FF6B6B"  # Light red
-                    failed_nodes.append(node)
-                else:
-                    color = "#ADD8E6"  # Light blue
+                try:
+                    # Get the step, handle case where key doesn't exist
+                    step = self.graph.nodes[node].get("step")
+                    if step is None:
+                        logger.warning(f"Node {node} has no step data, skipping status check")
+                        color = "#D3D3D3"  # Light gray for unknown status
+                        pending_nodes.append(node)
+                        node_colors.append(color)
+                        continue
+                    
+                    # Check if step is a dictionary or an object
+                    if isinstance(step, dict):
+                        status = step.get("status", "pending")
+                    else:
+                        # Handle case where step is an object (like WorkflowStep)
+                        status = getattr(step, "status", "pending")
+                    
+                    # Check if this is a starting node (no incoming edges)
+                    is_start_node = self.graph.in_degree(node) == 0
+                    
+                    if is_start_node:
+                        color = "#FFD700"  # Gold
+                        start_nodes.append(node)
+                    elif status == "completed":
+                        color = "#90EE90"  # Light green
+                        completed_nodes.append(node)
+                    elif status in ["failed", "error"]:
+                        color = "#FFA07A"  # Light salmon
+                        failed_nodes.append(node)
+                    else:
+                        color = "#ADD8E6"  # Light blue
+                        pending_nodes.append(node)
+                    
+                    node_colors.append(color)
+                except Exception as e:
+                    logger.warning(f"Error processing node {node}: {str(e)}")
+                    color = "#D3D3D3"  # Light gray for unknown status
                     pending_nodes.append(node)
-                node_colors.append(color)
+                    node_colors.append(color)
             
             # Draw nodes
             nx.draw_networkx_nodes(self.graph, pos,
@@ -127,7 +152,7 @@ class WorkflowDAG:
                 plt.Line2D([0], [0], marker='o', color='w',
                           markerfacecolor='#90EE90', markersize=15, label='Completed'),
                 plt.Line2D([0], [0], marker='o', color='w',
-                          markerfacecolor='#FF6B6B', markersize=15, label='Failed'),
+                          markerfacecolor='#FFA07A', markersize=15, label='Failed'),
                 plt.Line2D([0], [0], marker='o', color='w',
                           markerfacecolor='#ADD8E6', markersize=15, label='Pending')
             ]
@@ -145,9 +170,11 @@ class WorkflowDAG:
             return output_file
             
         except Exception as e:
-            logger.error(f"Failed to visualize workflow: {e}")
+            logger.error(f"Failed to visualize workflow: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
-    
+
     async def execute_parallel(self, execute_fn: Optional[Callable] = None) -> Dict[str, Any]:
         """Execute workflow steps in parallel respecting dependencies.
         

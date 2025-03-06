@@ -348,8 +348,27 @@ def detect_completed_steps(workflow_steps: List[Dict[str, Any]]) -> Set[str]:
             
         # Check if this is literally just a directory creation step and nothing else
         if command.strip().startswith("mkdir") and "&&" not in command and ";" not in command and "|" not in command:
-            logger.info(f"Step {step_name} is only a directory creation step, marking as completed")
-            completed_steps.add(step_name)
+            # Extract directories to be created from mkdir command
+            dir_paths = []
+            parts = command.strip().split()
+            # Skip "mkdir" and any flags (like -p)
+            for part in parts[1:]:
+                if not part.startswith("-"):
+                    dir_paths.append(part)
+            
+            # Check if the directories actually exist
+            all_directories_exist = True
+            for dir_path in dir_paths:
+                if not os.path.exists(dir_path):
+                    all_directories_exist = False
+                    logger.warning(f"Directory {dir_path} specified in step {step_name} does not exist")
+                    break
+            
+            if all_directories_exist:
+                logger.info(f"Step {step_name} is only a directory creation step and all directories exist, marking as completed")
+                completed_steps.add(step_name)
+            else:
+                logger.info(f"Step {step_name} is a directory creation step but some directories don't exist, marking as not completed")
             continue
         
         # Check for tool-specific validators
