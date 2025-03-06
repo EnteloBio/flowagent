@@ -239,14 +239,56 @@ class WorkflowManager:
                             workflow_status = "failed"
                             break
             
+            # Generate workflow DAG visualization
+            workflow_steps_with_status = []
+            for i, step in enumerate(workflow_steps):
+                # Check if step is a dictionary or a WorkflowStep object
+                if isinstance(step, dict):
+                    # Create a WorkflowStep from dictionary
+                    step_copy = WorkflowStep(
+                        name=step.get("name", f"Step {i+1}"),
+                        description=step.get("description", ""),
+                        command=step.get("command", ""),
+                        dependencies=step.get("dependencies", [])
+                    )
+                else:
+                    # Create a copy of the WorkflowStep object
+                    step_copy = WorkflowStep(
+                        name=step.name,
+                        description=step.description,
+                        command=step.command,
+                        dependencies=step.dependencies
+                    )
+                
+                # Set status based on execution results
+                result_step = next((r for r in results if r.get("step_name") == step_copy.name), None)
+                if result_step:
+                    step_copy.status = result_step.get("status", "pending")
+                else:
+                    # For steps not found in results, check if they were skipped due to smart resume
+                    # If the step name is in completed_steps (smart resume), mark it as completed
+                    if hasattr(workflow, 'completed_steps') and step_copy.name in workflow.completed_steps:
+                        step_copy.status = "completed"
+                        self.logger.debug(f"Setting status of step {step_copy.name} to 'completed' based on smart resume")
+                
+                workflow_steps_with_status.append(step_copy)
+            
+            dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
+            
             # Return results
-            return {
+            result_dict = {
                 "status": workflow_status,
                 "workflow": workflow,
                 "results": results,
                 "report": report,
                 "output_dir": output_dir
             }
+            
+            # Only add dag_visualization if it was successfully created
+            if dag_image_path:
+                result_dict["dag_visualization"] = str(dag_image_path)
+                
+            return result_dict
         
         except Exception as e:
             self.logger.error(f"Error executing workflow: {str(e)}")
@@ -484,6 +526,9 @@ class WorkflowManager:
                 if completed_steps:
                     self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
                 
+                # Store completed steps in the workflow object for later use in DAG visualization
+                workflow.completed_steps = completed_steps
+                
                 # Filter workflow steps
                 filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
                 
@@ -553,6 +598,97 @@ class WorkflowManager:
             for dep in step.dependencies:
                 dag.add_edge(dep, step.name)
         return dag
+
+    def _save_workflow_dag(self, workflow_steps: List[WorkflowStep], output_dir: str) -> Optional[Path]:
+        """Generate and save workflow DAG visualization.
+        
+        Args:
+            workflow_steps: List of workflow steps
+            output_dir: Directory to save the DAG image
+            
+        Returns:
+            Path to the saved DAG image, or None if visualization failed
+        """
+        try:
+            # Check if output_dir is None
+            if output_dir is None:
+                self.logger.warning("No output directory specified for workflow DAG visualization")
+                return None
+                
+            # Check if workflow_steps is None or empty
+            if not workflow_steps:
+                self.logger.warning("No workflow steps provided for DAG visualization")
+                return None
+                
+            # Create output directory if it doesn't exist
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+                
+            # Build the DAG
+            try:
+                dag = self._build_dag(workflow_steps)
+                if not dag or not dag.nodes:
+                    self.logger.warning("Built DAG is empty, nothing to visualize")
+                    return None
+            except Exception as e:
+                self.logger.error(f"Error building DAG: {str(e)}")
+                import traceback
+                self.logger.error(traceback.format_exc())
+                return None
+            
+            # Update status of each step in the DAG based on workflow results
+            for step in workflow_steps:
+                try:
+                    if step.name in dag.nodes:
+                        # Get status from step, defaulting to 'pending'
+                        status = 'pending'
+                        if hasattr(step, 'status'):
+                            status = step.status
+                        elif isinstance(step, dict) and 'status' in step:
+                            status = step['status']
+                        
+                        # Update the node's step status
+                        # Convert WorkflowStep objects to dictionaries for compatibility with the visualizer
+                        if isinstance(dag.nodes[step.name]['step'], dict):
+                            dag.nodes[step.name]['step']['status'] = status
+                        else:
+                            # Convert WorkflowStep to dict if it's not already
+                            step_as_dict = {
+                                'name': dag.nodes[step.name]['step'].name,
+                                'status': status,
+                                'command': dag.nodes[step.name]['step'].command if hasattr(dag.nodes[step.name]['step'], 'command') else '',
+                                'dependencies': dag.nodes[step.name]['step'].dependencies if hasattr(dag.nodes[step.name]['step'], 'dependencies') else []
+                            }
+                            dag.nodes[step.name]['step'] = step_as_dict
+                except Exception as e:
+                    self.logger.warning(f"Error updating step {getattr(step, 'name', 'unknown')} in DAG: {str(e)}")
+                    continue
+            
+            # Create WorkflowDAG instance and visualize
+            try:
+                workflow_dag = WorkflowDAG(executor_type=self.executor_type)
+                workflow_dag.graph = dag
+                
+                # Save visualization to output directory
+                dag_image_path = Path(os.path.join(output_dir, "workflow_dag.png"))
+                result_path = workflow_dag.visualize(dag_image_path)
+                
+                if result_path:
+                    self.logger.info(f"Saved workflow DAG visualization to {result_path}")
+                    return result_path
+                else:
+                    self.logger.warning("Failed to save workflow DAG visualization")
+                    return None
+            except Exception as e:
+                self.logger.error(f"Error visualizing DAG: {str(e)}")
+                import traceback
+                self.logger.error(traceback.format_exc())
+                return None
+        except Exception as e:
+            self.logger.error(f"Failed to save workflow DAG visualization: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
 
     def get_execution_plan(self, dag: nx.DiGraph) -> list:
         """Get ordered list of task batches that can be executed in parallel."""
@@ -809,6 +945,9 @@ class WorkflowManager:
                 if completed_steps:
                     self.logger.info(f"Detected {len(completed_steps)} completed steps: {', '.join(completed_steps)}")
                 
+                # Store completed steps in the workflow object for later use in DAG visualization
+                workflow.completed_steps = completed_steps
+                
                 # Filter workflow steps
                 filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
                 
@@ -832,6 +971,46 @@ class WorkflowManager:
                     report_generator = ReportGenerator()
                     report_path = await report_generator.generate_report(workflow_plan, result)
                     result["analysis_report"] = report_path
+            
+            # Generate workflow DAG visualization
+            workflow_steps_with_status = []
+            for i, step in enumerate(workflow.steps):
+                # Check if step is a dictionary or a WorkflowStep object
+                if isinstance(step, dict):
+                    # Create a WorkflowStep from dictionary
+                    step_copy = WorkflowStep(
+                        name=step.get("name", f"Step {i+1}"),
+                        description=step.get("description", ""),
+                        command=step.get("command", ""),
+                        dependencies=step.get("dependencies", [])
+                    )
+                else:
+                    # Create a copy of the WorkflowStep object
+                    step_copy = WorkflowStep(
+                        name=step.name,
+                        description=step.description,
+                        command=step.command,
+                        dependencies=step.dependencies
+                    )
+                
+                # Set status based on execution results
+                result_step = next((r for r in result.get("results", []) if r.get("step_name") == step_copy.name), None)
+                if result_step:
+                    step_copy.status = result_step.get("status", "pending")
+                else:
+                    # For steps not found in results, check if they were skipped due to smart resume
+                    # If the step name is in completed_steps (smart resume), mark it as completed
+                    if hasattr(workflow, 'completed_steps') and step_copy.name in workflow.completed_steps:
+                        step_copy.status = "completed"
+                        self.logger.debug(f"Setting status of step {step_copy.name} to 'completed' based on smart resume")
+                
+                workflow_steps_with_status.append(step_copy)
+            
+            dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
+            
+            # Only add dag_visualization if it was successfully created
+            if dag_image_path:
+                result["dag_visualization"] = str(dag_image_path)
             
             return result
             
