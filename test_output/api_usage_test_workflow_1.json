@@ -1,0 +1,126 @@
+{
+  "workflow_id": "test_workflow_1",
+  "workflow_name": "Test Workflow",
+  "start_time": "2025-03-06T17:16:53.498243",
+  "end_time": "2025-03-06T17:16:53.498290",
+  "api_calls": [
+    {
+      "timestamp": "2025-03-06T17:16:53.498266",
+      "model": "gpt-4o",
+      "prompt_tokens": 100,
+      "completion_tokens": 50,
+      "total_tokens": 150,
+      "step_name": "step_0",
+      "purpose": "Testing API usage tracking"
+    },
+    {
+      "timestamp": "2025-03-06T17:16:53.498274",
+      "model": "gpt-4o",
+      "prompt_tokens": 200,
+      "completion_tokens": 100,
+      "total_tokens": 300,
+      "step_name": "step_1",
+      "purpose": "Testing API usage tracking"
+    },
+    {
+      "timestamp": "2025-03-06T17:16:53.498280",
+      "model": "gpt-4o",
+      "prompt_tokens": 300,
+      "completion_tokens": 150,
+      "total_tokens": 450,
+      "step_name": "step_2",
+      "purpose": "Testing API usage tracking"
+    },
+    {
+      "timestamp": "2025-03-06T17:16:53.498284",
+      "model": "gpt-4o",
+      "prompt_tokens": 400,
+      "completion_tokens": 200,
+      "total_tokens": 600,
+      "step_name": "step_3",
+      "purpose": "Testing API usage tracking"
+    },
+    {
+      "timestamp": "2025-03-06T17:16:53.498287",
+      "model": "gpt-4o",
+      "prompt_tokens": 500,
+      "completion_tokens": 250,
+      "total_tokens": 750,
+      "step_name": "step_4",
+      "purpose": "Testing API usage tracking"
+    }
+  ],
+  "total_calls": 5,
+  "total_prompt_tokens": 1500,
+  "total_completion_tokens": 750,
+  "total_tokens": 2250,
+  "models_used": [
+    "gpt-4o"
+  ],
+  "duration_seconds": 4.7e-05,
+  "steps_tracked": [
+    "step_3",
+    "step_2",
+    "step_0",
+    "step_4",
+    "step_1"
+  ],
+  "steps_token_usage": {
+    "step_0": {
+      "total_calls": 1,
+      "total_tokens": 150,
+      "prompt_tokens": 100,
+      "completion_tokens": 50,
+      "models": [
+        "gpt-4o"
+      ]
+    },
+    "step_1": {
+      "total_calls": 1,
+      "total_tokens": 300,
+      "prompt_tokens": 200,
+      "completion_tokens": 100,
+      "models": [
+        "gpt-4o"
+      ]
+    },
+    "step_2": {
+      "total_calls": 1,
+      "total_tokens": 450,
+      "prompt_tokens": 300,
+      "completion_tokens": 150,
+      "models": [
+        "gpt-4o"
+      ]
+    },
+    "step_3": {
+      "total_calls": 1,
+      "total_tokens": 600,
+      "prompt_tokens": 400,
+      "completion_tokens": 200,
+      "models": [
+        "gpt-4o"
+      ]
+    },
+    "step_4": {
+      "total_calls": 1,
+      "total_tokens": 750,
+      "prompt_tokens": 500,
+      "completion_tokens": 250,
+      "models": [
+        "gpt-4o"
+      ]
+    }
+  },
+  "is_analysis": false,
+  "parent_workflow_id": null,
+  "cost_estimate": {
+    "total_cost_usd": 0.0375,
+    "costs_by_model": {
+      "gpt-4o": 0.0375
+    },
+    "disclaimer": "This is a rough estimate and should not be used for billing purposes."
+  },
+  "report_generated": "2025-03-06T17:16:53.498720",
+  "report_version": "1.1.0"
+}

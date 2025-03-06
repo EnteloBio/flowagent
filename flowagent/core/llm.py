@@ -7,11 +7,13 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+from datetime import datetime
 
 from openai import AsyncOpenAI
 
 from ..config.settings import Settings
 from ..utils.logging import get_logger
+from .api_usage import APIUsageTracker
 
 # Initialize settings
 settings = Settings()
@@ -25,6 +27,7 @@ class LLMInterface:
     def __init__(self):
         """Initialize LLM interface."""
         self.logger = get_logger(__name__)
+        self.api_usage_tracker = APIUsageTracker()
 
         # Check for OpenAI API key and .env file
         env_found = False
@@ -430,269 +433,499 @@ Use the exact sample name '{sample_name}' for output directories.""",
         },
     }
 
-    def _detect_workflow_type(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
-        """Detect workflow type from prompt.
-
-        Returns:
-            Tuple containing:
-            - workflow_type: String identifier for the workflow
-            - config: Dictionary containing workflow configuration
-              For custom workflows, this includes base templates that can be modified
+    async def _track_api_call(
+        self, response, step_name: Optional[str] = None, purpose: Optional[str] = None,
+        messages: Optional[List[Dict[str, str]]] = None
+    ):
+        """Track an API call's token usage.
+        
+        Args:
+            response: Response from OpenAI API call
+            step_name: Optional name of the workflow step
+            purpose: Optional description of the call's purpose
+            messages: Optional original messages sent to the API
         """
-        prompt_lower = prompt.lower()
-
-        # Score each workflow type based on keyword matches
-        scores = {}
-        for wf_type, config in self.WORKFLOW_TYPES.items():
-            score = sum(1 for kw in config["keywords"] if kw in prompt_lower)
-            scores[wf_type] = score
-
-        # Get workflow type with highest score
-        best_match = max(scores.items(), key=lambda x: x[1])
-
-        # If no strong match (score of 0 or 1), return custom workflow template
-        if best_match[1] <= 1:
-            return "custom", {
-                "keywords": [],
-                "tools": [],
-                "dir_structure": [
-                    "results/workflow/raw_data",
-                    "results/workflow/processed_data",
-                    "results/workflow/qc",
-                    "results/workflow/analysis",
-                    "results/workflow/output",
-                ],
-                "rules": [
-                    "# This is a custom workflow. Consider the following guidelines:",
-                    "1. Choose appropriate tools based on the specific analysis requirements",
-                    "2. Include quality control steps suitable for the data type",
-                    "3. Create a logical directory structure that matches the analysis flow",
-                    "4. Store intermediate files in organized directories",
-                    "5. Generate comprehensive QC reports",
-                    "6. Document all parameters and decisions",
-                ],
-            }
-
-        return best_match[0], self.WORKFLOW_TYPES[best_match[0]]
-
-    async def _call_openai(
-        self, messages: List[Dict[str, str]], model: Optional[str] = None
-    ) -> str:
-        """Call OpenAI API with retry logic and error handling."""
-        try:
-            # Try preferred model first
-            try_models = [
-                model,  # User-specified model
-                settings.OPENAI_MODEL,  # Default model from settings
-                settings.OPENAI_FALLBACK_MODEL,  # Fallback model
-                "gpt-3.5-turbo",  # Last resort
-            ]
-
-            last_error = None
-            for try_model in try_models:
-                if not try_model:
-                    continue
-
-                try:
-                    self.logger.info(f"Attempting to use model: {try_model}")
-                    completion = await self.client.chat.completions.create(
-                        model=try_model,
-                        messages=messages,
-                        temperature=0.2,
-                    )
-                    self.logger.info(f"Successfully used model: {try_model}")
-                    return completion.choices[0].message.content
-                except Exception as e:
-                    last_error = e
-                    if "model_not_found" not in str(e):
-                        # If error is not about model availability, don't try other models
-                        raise
-                    self.logger.warning(
-                        f"Model {try_model} not available, trying next model..."
-                    )
-
-            # If we get here, none of the models worked
-            raise last_error or ValueError("No valid model found")
-
-        except Exception as e:
-            error_msg = str(e)
-            if "insufficient_quota" in error_msg:
-                self.logger.error(
-                    "\n⚠️  OpenAI API quota exceeded. Please:"
-                    "\n   1. Check your billing status at https://platform.openai.com/account/billing"
-                    "\n   2. Add credits to your account or wait for quota reset"
-                    "\n   3. Or use a different API key with available quota"
-                    "\n\nError details: %s",
-                    error_msg,
-                )
-            elif "model_not_found" in error_msg:
-                self.logger.error(
-                    "\n⚠️  No available OpenAI models found. Tried:"
-                    "\n   - User specified model"
-                    "\n   - Default model from settings"
-                    "\n   - Fallback model"
-                    "\n   - Last resort (gpt-3.5-turbo)"
-                    "\n\nError details: %s",
-                    error_msg,
-                )
-            else:
-                self.logger.error("OpenAI API call failed: %s", error_msg)
-            raise
-
-    async def _call_openai_stream(
-        self,
-        messages: List[Dict[str, Any]],
-        response_format: Optional[Dict[str, str]] = None,
-        **kwargs,
-    ) -> str:
-        """Call OpenAI API with streaming completion and retry logic."""
-        return await self._call_openai(messages, response_format, stream=True, **kwargs)
-
-    def _clean_llm_response(self, response: str) -> str:
-        """Clean LLM response by removing markdown formatting."""
-        # Remove markdown code block if present
-        if response.startswith("```"):
-            # Find the first and last ``` and extract content
-            start = response.find("\n", response.find("```")) + 1
-            end = response.rfind("```")
-            if end > start:
-                response = response[start:end].strip()
-
-        # Remove any "json" language identifier
-        if response.lower().startswith("json"):
-            response = response[4:].strip()
-
-        return response.strip()
-
-    async def _suggest_tool_resources(
-        self, tool_name: str, tool_description: str = ""
-    ) -> Dict[str, str]:
-        """Use LLM to suggest appropriate resource profile for unknown tools."""
-        # First check if we have a predefined mapping for common tools
-        common_tools = {
-            "fastqc": {
-                "profile": "minimal",
-                "reason": "FastQC is a lightweight QC tool",
-            },
-            "multiqc": {
-                "profile": "minimal",
-                "reason": "MultiQC aggregates reports with minimal resources",
-            },
-            "kallisto_index": {
-                "profile": "high_memory",
-                "reason": "Indexing requires significant memory",
-            },
-            "kallisto_quant": {
-                "profile": "multi_thread",
-                "reason": "Quantification benefits from parallelization",
-            },
-            "create_directories": {
-                "profile": "minimal",
-                "reason": "Basic file system operations",
-            },
+        if not hasattr(response, "usage"):
+            self.logger.warning("API call response has no usage information")
+            return
+            
+        usage = response.usage
+        model = response.model
+        
+        # Create a detailed call record
+        call_record = {
+            "timestamp": datetime.now().isoformat(),
+            "model": model,
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.prompt_tokens + usage.completion_tokens,
+            "step_name": step_name or "unknown_step",
+            "purpose": purpose or "unknown_purpose",
         }
-
-        # Check if it's a common tool
-        tool_base = tool_name.split("_")[0] if "_" in tool_name else tool_name
-        if tool_base in common_tools:
-            return {
-                "profile_name": common_tools[tool_base]["profile"],
-                "reasoning": common_tools[tool_base]["reason"],
-                "suggested_time_min": 60,
-            }
-
-        # For unknown tools, ask LLM
-        prompt = f"""
-Analyze this bioinformatics tool and suggest computational resources.
-Tool: {tool_name}
-Description: {tool_description}
-
-Choose ONE resource profile from:
-- minimal (1 CPU, 2GB RAM): For lightweight tasks
-- default (1 CPU, 4GB RAM): For standard preprocessing
-- high_memory (1 CPU, 32GB RAM): For memory-intensive tasks
-- multi_thread (8 CPUs, 16GB RAM): For parallel tasks
-- high_memory_parallel (8 CPUs, 64GB RAM): For heavy processing
-
-Return a JSON object in this EXACT format:
-{{
-    "profile_name": "chosen_profile",
-    "reasoning": "brief explanation",
-    "suggested_time_min": estimated_minutes
-}}
-"""
+        
+        # Add content if available
+        if hasattr(response, 'choices') and response.choices and hasattr(response.choices[0], 'message'):
+            call_record["content_length"] = len(response.choices[0].message.content)
+            call_record["content_sample"] = response.choices[0].message.content[:100] + "..." if len(response.choices[0].message.content) > 100 else response.choices[0].message.content
+        
+        # Add original messages if provided
+        if messages:
+            call_record["message_count"] = len(messages)
+            call_record["total_input_chars"] = sum(len(m.get("content", "")) for m in messages)
+        
+        # Add current workflow info if available
+        if hasattr(self, 'api_usage_tracker') and self.api_usage_tracker.current_workflow_id:
+            workflow_id = self.api_usage_tracker.current_workflow_id
+            workflow_name = self.api_usage_tracker.workflows[workflow_id].get('workflow_name', 'Unknown')
+            call_record.update({
+                "workflow_id": workflow_id,
+                "workflow_name": workflow_name
+            })
+        
+        # Log to both file and tracker
+        
+        # First, create logs directory if needed
+        log_dir = Path(os.path.join(os.getcwd(), "flowagent_logs"))
+        log_dir.mkdir(exist_ok=True)
+        
+        # Determine log file paths
+        if hasattr(self, 'api_usage_tracker') and self.api_usage_tracker.current_workflow_id:
+            # Workflow-specific log
+            workflow_id = self.api_usage_tracker.current_workflow_id
+            log_file = log_dir / f"api_calls_{workflow_id}.jsonl"
+        else:
+            # Generic log if no workflow context
+            log_file = log_dir / "api_calls.jsonl"
+        
+        # Also maintain a global log file for all API calls
+        global_log_file = log_dir / "api_calls_all.jsonl"
+        
+        # Log to workflow-specific file
         try:
+            with open(log_file, "a") as f:
+                f.write(json.dumps(call_record) + "\n")
+        except Exception as e:
+            self.logger.error(f"Failed to write to API call log file: {e}")
+        
+        # Log to global file
+        try:
+            with open(global_log_file, "a") as f:
+                f.write(json.dumps(call_record) + "\n")
+        except Exception as e:
+            self.logger.error(f"Failed to write to global API call log file: {e}")
+        
+        # Add token usage to the tracker
+        self.api_usage_tracker.add_tokens(
+            model=model,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            step_name=step_name,
+            purpose=purpose,
+        )
+    
+    async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
+        """Generate a workflow plan from a prompt."""
+        try:
+            # Start tracking API calls for this workflow
+            workflow_id = f"wf_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            workflow_name = f"Workflow from prompt: {prompt[:50]}..."
+            self.api_usage_tracker.start_workflow(workflow_id, workflow_name)
+            self.logger.debug(f"Started API usage tracking for workflow {workflow_id}")
+            
+            # Extract file patterns and relationships using LLM
+            file_info = await self._extract_file_patterns(prompt)
+            
+            # Check if this is a GEO download request
+            geo_accession = file_info.get("geo_accession")
+            
+            # Find files matching the patterns
+            matched_files = []
+            for pattern in file_info["patterns"]:
+                matched_files.extend(glob.glob(pattern))
+            
+            # If no files found and we have a GEO accession, we'll create a download workflow
+            if not matched_files and geo_accession:
+                self.logger.info(f"No local files found. Creating GEO download workflow for {geo_accession}")
+                return await self._create_geo_download_workflow(geo_accession, prompt, file_info)
+            
+            # If no files found and no GEO accession, raise an error
+            if not matched_files:
+                patterns_str = ", ".join(file_info["patterns"])
+                raise ValueError(f"No files found matching patterns: {patterns_str}")
+
+            # Group files according to relationships
+            organized_files = {}
+            if (
+                "relationships" in file_info
+                and file_info["relationships"]["type"] == "paired"
+            ):
+                pairs = {}
+                for group in file_info["relationships"]["pattern_groups"]:
+                    group_files = [
+                        f
+                        for f in matched_files
+                        if glob.fnmatch.fnmatch(f, group["pattern"])
+                    ]
+                    organized_files[group["group"]] = group_files
+
+                # Remove duplicates while preserving order
+                matched_files = list(dict.fromkeys(matched_files))
+
+            self.logger.info(f"Found input files: {matched_files}")
+
+            # Detect workflow type
+            workflow_type, workflow_config = self._detect_workflow_type(prompt)
+            self.logger.info(f"Detected workflow type: {workflow_type}")
+
+            # Create directory structure command
+            dir_structure = " ".join(workflow_config["dir_structure"])
+            mkdir_command = f"mkdir -p {dir_structure}"
+
+            # Prepare workflow-specific instructions
+            if workflow_type == "custom":
+                tool_instructions = """
+You are designing a custom bioinformatics workflow. Please:
+1. Analyze the input files and requirements carefully
+2. Suggest appropriate tools and methods based on the specific needs
+3. Create a logical directory structure that matches the analysis flow
+4. Include necessary quality control and validation steps
+5. Follow best practices for the given analysis type
+6. Document any assumptions or requirements
+
+The base directory structure can be modified to better suit the analysis:
+- raw_data: Store input files
+- processed_data: Store intermediate processing results
+- qc: Quality control reports and metrics
+- analysis: Main analysis outputs
+- output: Final results and reports
+"""
+            else:
+                tool_instructions = f"""Use these specific tool commands, and ensure to use the input file name (without extension) as the output name:
+{json.dumps(workflow_config['rules'], indent=4)}
+
+Important:
+1. Use the input file name (without extension) as the sample name in output paths
+2. For paired-end data, use the common prefix of read1/read2 as the sample name
+3. Maintain consistent sample names across all analysis steps
+4. Ensure output directories match the input sample names"""
+
+            # Add specific instructions for dependency specification
+            enhanced_prompt = f"""
+You are a bioinformatics workflow expert. Generate a workflow plan as a JSON object with the following structure:
+{{
+    "workflow_type": "{workflow_type}",
+    "steps": [
+        {{
+            "name": "step_name",
+            "command": "command_to_execute",
+            "parameters": {{"param1": "value1"}},
+            "dependencies": ["dependent_step_name1"],
+            "outputs": ["expected_output1"]
+        }}
+    ]
+}}
+
+Available input files: {matched_files}
+Task: {prompt}
+
+Rules:
+1. First step MUST be directory creation with this EXACT command:
+   "{mkdir_command}"
+
+2. {tool_instructions}
+
+3. Dependencies must form a valid DAG (no cycles)
+4. Each step needs a unique name
+5. Process each file individually, no wildcards
+6. Return ONLY the JSON object, no markdown formatting or other text
+"""
+
+            # Add resource management instructions to the prompt
+            resource_instructions = """
+Resource Management Rules:
+1. Each task must specify resource requirements and include a brief description
+2. Consider input data size for resource scaling
+3. Available resource profiles:
+   - minimal (1 CPU, 2GB RAM): For lightweight tasks
+   - default (1 CPU, 4GB RAM): For standard preprocessing
+   - high_memory (1 CPU, 32GB RAM): For memory-intensive tasks
+   - multi_thread (8 CPUs, 16GB RAM): For parallel tasks
+   - high_memory_parallel (8 CPUs, 64GB RAM): For heavy processing
+
+4. For unknown tools, provide:
+   - Brief description of the tool's purpose
+   - Expected computational characteristics (CPU, memory, I/O intensive)
+   - Any parallelization capabilities
+   - Typical input data sizes and types
+
+5. Resource scaling:
+   - Large BAM files (>10GB): 1.5x memory, 2x time
+   - Large FASTQ files (>20GB): 1.2x memory, 1.5x time
+"""
+
+            # Update the enhanced prompt with resource instructions
+            enhanced_prompt = f"""
+{enhanced_prompt}
+
+{resource_instructions}
+
+"""
             messages = [
                 {
                     "role": "system",
-                    "content": "You are a bioinformatics resource allocation expert. Return ONLY the JSON object, nothing else.",
+                    "content": "You are a bioinformatics workflow expert. Return only valid JSON.",
                 },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": enhanced_prompt},
             ]
 
             response = await self._call_openai(messages)
 
-            # Clean the response
-            cleaned_response = self._clean_llm_response(response)
-
-            # Ensure we get valid JSON
             try:
-                suggestion = json.loads(cleaned_response)
-                # Validate the response
-                required_fields = ["profile_name", "reasoning", "suggested_time_min"]
-                valid_profiles = [
-                    "minimal",
-                    "default",
-                    "high_memory",
-                    "multi_thread",
-                    "high_memory_parallel",
-                ]
+                workflow_plan = json.loads(self._clean_llm_response(response))
+                # Log workflow plan
+                self.logger.info("Generated workflow plan:")
+                self.logger.info(f"Workflow type: {workflow_plan['workflow_type']}")
+                for step in workflow_plan["steps"]:
+                    self.logger.info(f"  Step: {step['name']}")
+                    self.logger.info(f"    Command: {step['command']}")
+                    self.logger.info(f"    Dependencies: {step['dependencies']}")
 
-                if not all(field in suggestion for field in required_fields):
-                    raise ValueError("Missing required fields in LLM response")
+                # Update resources for each rule
+                for i, step in enumerate(workflow_plan["steps"]):
+                    workflow_plan["steps"][i] = await self._update_rule_resources(step)
 
-                if suggestion["profile_name"] not in valid_profiles:
-                    raise ValueError(
-                        f"Invalid profile name: {suggestion['profile_name']}"
-                    )
+                workflow_plan = {
+                    "workflow_type": workflow_plan["workflow_type"],
+                    "name": f"{workflow_plan['workflow_type']} workflow for {matched_files[0] if matched_files else 'unknown'}",
+                    "description": f"Auto-generated {workflow_plan['workflow_type']} workflow",
+                    "steps": workflow_plan["steps"],
+                    "dependencies": {"tools": workflow_config.get("tools", [])},
+                }
 
-                return suggestion
+                # End API usage tracking
+                if hasattr(self, 'api_usage_tracker') and self.api_usage_tracker.current_workflow_id:
+                    usage_stats = self.api_usage_tracker.end_workflow(self.api_usage_tracker.current_workflow_id)
+                    self.logger.debug(f"Completed API usage tracking. Total tokens: {usage_stats.get('total_tokens', 0)}")
 
-            except json.JSONDecodeError:
-                self.logger.warning(
-                    f"Invalid JSON response from LLM for {tool_name}. Response: {response}"
-                )
+                return workflow_plan
+
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse workflow plan: {str(e)}")
+                self.logger.error(f"Raw response: {response}")
                 raise
 
         except Exception as e:
-            # Fallback based on tool name patterns
-            if any(x in tool_name.lower() for x in ["index", "build"]):
+            # End API usage tracking on error
+            if hasattr(self, 'api_usage_tracker') and self.api_usage_tracker.current_workflow_id:
+                usage_stats = self.api_usage_tracker.end_workflow(self.api_usage_tracker.current_workflow_id)
+                self.logger.debug(f"API usage tracking ended due to error. Total tokens: {usage_stats.get('total_tokens', 0)}")
+            
+            self.logger.error(f"Failed to generate workflow plan: {str(e)}")
+            raise
+
+    async def generate_command(self, step: Dict[str, Any]) -> str:
+        """Generate a command for a workflow step."""
+        try:
+            # If command is already provided, use it
+            if "command" in step and step["command"]:
+                return step["command"]
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a bioinformatics workflow expert. Generate precise shell commands.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Generate a shell command for the following workflow step:\n{json.dumps(step, indent=2)}",
+                },
+            ]
+
+            response = await self._call_openai(messages)
+
+            try:
+                # Track API usage
+                await self._track_api_call(response, purpose="Generate command", step_name="command_generation")
+                
+                return response.strip()
+
+            except Exception as e:
+                self.logger.error(f"Failed to generate command: {str(e)}")
+                raise
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate command: {str(e)}")
+            raise
+
+    async def generate_analysis(self, outputs: Dict[str, Any], query: str) -> str:
+        """Generate analysis of workflow outputs."""
+        try:
+            # If we have an API tracker but no current workflow, create an analysis context
+            workflow_dir = None
+            if isinstance(outputs.get('metadata', {}).get('directory'), (str, Path)):
+                workflow_dir = str(outputs['metadata']['directory'])
+                
+            if hasattr(self, 'api_usage_tracker') and not self.api_usage_tracker.current_workflow_id:
+                workflow_type = outputs.get('metadata', {}).get('workflow_type', 'unknown')
+                analysis_name = f"{workflow_type.upper()} Analysis"
+                self.api_usage_tracker.start_analysis_tracking(
+                    analysis_name=analysis_name,
+                    workflow_output_dir=workflow_dir
+                )
+                self.logger.info(f"Started API tracking for analysis: {analysis_name}")
+                
+            # Prepare the prompt for analysis
+            analysis_prompt = f"""
+Analyze the following bioinformatics workflow outputs and provide a detailed report.
+Focus on: {query}
+
+Output Data:
+{json.dumps(outputs, indent=2)}
+
+Provide analysis in this format:
+1. Overall Quality Assessment
+2. Key Metrics and Statistics
+3. Issues Found (if any)
+4. Recommendations
+"""
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a bioinformatics analysis expert. Provide detailed analysis of workflow outputs.",
+                },
+                {"role": "user", "content": analysis_prompt},
+            ]
+
+            # Call OpenAI with purpose tag for tracking
+            response = await self._call_openai(
+                messages=messages, 
+                purpose="workflow_analysis",
+                step_name="generate_analysis_report"
+            )
+            return response
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate analysis: {str(e)}")
+            raise
+
+    async def _update_rule_resources(self, rule: Dict[str, Any]) -> Dict[str, Any]:
+        """Update rule with appropriate resource requirements."""
+        task_name = rule.get("name", "").split("_")[0].lower()
+
+        # Get task description from rule if available
+        task_description = rule.get("description", "")
+
+        # Estimate input size if there are input files
+        input_size = 0
+        if "parameters" in rule:
+            for param in rule["parameters"].values():
+                if isinstance(param, str) and os.path.isfile(param):
+                    input_size += self._estimate_input_size(param)
+
+        # Get resource requirements with task description
+        resources = await self._get_task_resources(
+            task_name, input_size, task_description
+        )
+        rule["resources"] = resources
+
+        return rule
+
+    async def _get_task_resources(
+        self, task_name: str, input_size_gb: float = 0, task_description: str = ""
+    ) -> Dict[str, Any]:
+        """Get resource requirements for a task, scaling based on input size and characteristics."""
+        # Get base resource profile
+        resource_info = self.WORKFLOW_CONFIG["task_resources"].get(task_name)
+
+        # If task not in predefined config, get suggestion from LLM
+        if resource_info is None:
+            suggestion = await self._suggest_tool_resources(task_name, task_description)
+            resource_info = {
+                "profile": suggestion["profile_name"],
+                "reason": suggestion["reasoning"],
+            }
+
+            # Log the suggestion for future reference
+            self.logger.info(
+                f"Resource suggestion for {task_name}: {suggestion['profile_name']} - {suggestion['reasoning']}"
+            )
+
+            # Cache the suggestion for future use
+            self.WORKFLOW_CONFIG["task_resources"][task_name] = resource_info
+
+        # Get tool-specific characteristics
+        tool_weights = self._get_tool_characteristics(task_name)
+
+        # Get size-based scaling
+        size_multipliers = self._get_size_multipliers(input_size_gb)
+
+        # Apply both tool-specific and size-based scaling
+        final_memory_multiplier = (
+            tool_weights["memory_weight"] * size_multipliers["memory_multiplier"]
+        )
+        final_time_multiplier = (
+            tool_weights["time_weight"] * size_multipliers["time_multiplier"]
+        )
+
+        # Get base resources
+        base_resources = self.WORKFLOW_CONFIG["resources"][
+            resource_info["profile"]
+        ].copy()
+
+        # Apply scaling to resources
+        base_resources["memory_mb"] = int(
+            base_resources["memory_mb"] * final_memory_multiplier
+        )
+        base_resources["time_min"] = int(
+            base_resources["time_min"] * final_time_multiplier
+        )
+
+        # Log scaling decisions
+        self.logger.debug(
+            f"Resource scaling for {task_name}: memory_multiplier={final_memory_multiplier:.2f}, time_multiplier={final_time_multiplier:.2f}"
+        )
+
+        return base_resources
+
+    def _get_tool_characteristics(self, task_name: str) -> Dict[str, float]:
+        """Determine tool characteristics based on task name patterns."""
+        weights = {"memory_weight": 1.0, "time_weight": 1.0}
+
+        task_lower = task_name.lower()
+        for char_type, info in self.WORKFLOW_CONFIG["scaling_factors"][
+            "tool_characteristics"
+        ].items():
+            if any(pattern in task_lower for pattern in info["patterns"]):
+                weights["memory_weight"] *= info["memory_weight"]
+                weights["time_weight"] *= info["time_weight"]
+
+        return weights
+
+    def _get_size_multipliers(self, input_size_gb: float) -> Dict[str, float]:
+        """Get scaling multipliers based on input size."""
+        tiers = self.WORKFLOW_CONFIG["scaling_factors"]["size_tiers"]
+
+        # Find appropriate tier
+        for tier in reversed(tiers):  # Start from largest tier
+            if input_size_gb >= tier["threshold_gb"]:
                 return {
-                    "profile_name": "high_memory",
-                    "reasoning": "Indexing typically needs more memory",
-                    "suggested_time_min": 120,
-                }
-            elif any(x in tool_name.lower() for x in ["align", "map", "quant"]):
-                return {
-                    "profile_name": "multi_thread",
-                    "reasoning": "Alignment/quantification benefits from multiple cores",
-                    "suggested_time_min": 90,
-                }
-            elif any(x in tool_name.lower() for x in ["qc", "check", "stat"]):
-                return {
-                    "profile_name": "minimal",
-                    "reasoning": "QC tasks usually need minimal resources",
-                    "suggested_time_min": 30,
-                }
-            else:
-                return {
-                    "profile_name": "default",
-                    "reasoning": "Using safe default profile",
-                    "suggested_time_min": 60,
+                    "memory_multiplier": tier["memory_multiplier"],
+                    "time_multiplier": tier["time_multiplier"],
                 }
 
-    async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
-        """Generate a workflow plan from a prompt."""
+        # If smaller than smallest tier
+        return {"memory_multiplier": 1.0, "time_multiplier": 1.0}
+
+    def _estimate_input_size(self, input_pattern: str) -> float:
+        """Estimate input size in GB for resource scaling."""
+        total_size = 0
+        for file in glob.glob(input_pattern):
+            if os.path.exists(file):
+                total_size += os.path.getsize(file)
+        return total_size / (1024 * 1024 * 1024)  # Convert to GB
+
+    async def analyze_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Analyze the prompt to determine the action and extract options."""
         try:
             # Extract file patterns and relationships using LLM
             file_info = await self._extract_file_patterns(prompt)
@@ -867,309 +1100,133 @@ Resource Management Rules:
             self.logger.error(f"Failed to generate workflow plan: {str(e)}")
             raise
 
-    async def generate_command(self, step: Dict[str, Any]) -> str:
-        """Generate a command for a workflow step."""
-        try:
-            # If command is already provided, use it
-            if "command" in step and step["command"]:
-                return step["command"]
+    async def analyze_run_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Analyze the prompt to extract options for running a workflow."""
+        analysis_prompt = f"""
+        Analyze the following prompt to extract options for running a workflow.
+        Extract the following options if provided:
+        - checkpoint_dir
+        - resume
 
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are a bioinformatics workflow expert. Generate precise shell commands.",
-                },
-                {
-                    "role": "user",
-                    "content": f"Generate a shell command for the following workflow step:\n{json.dumps(step, indent=2)}",
-                },
-            ]
+        Prompt: {prompt}
 
-            response = await self._call_openai(messages)
-            return response.strip()
+        Return the result as a JSON object with the following structure:
+        {{
+            "prompt": "original prompt",
+            "checkpoint_dir": "extracted checkpoint directory" or null,
+            "resume": true or false,
+            "success": true or false
+        }}
 
-        except Exception as e:
-            self.logger.error(f"Failed to generate command: {str(e)}")
-            raise
+        "success" should be true if the prompt is successfully analyzed, false otherwise.
 
-    async def generate_analysis(self, outputs: Dict[str, Any], query: str) -> str:
-        """Generate analysis of workflow outputs."""
-        try:
-            # Prepare the prompt for analysis
-            analysis_prompt = f"""
-Analyze the following bioinformatics workflow outputs and provide a detailed report.
-Focus on: {query}
+        Do not output any markdown formatting or additional text. Return only JSON.
 
-Output Data:
-{json.dumps(outputs, indent=2)}
+        If the prompt given is entirely unrelated to running a workflow, set "success" to false.
 
-Provide analysis in this format:
-1. Overall Quality Assessment
-2. Key Metrics and Statistics
-3. Issues Found (if any)
-4. Recommendations
-"""
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are a bioinformatics analysis expert. Provide detailed analysis of workflow outputs.",
-                },
-                {"role": "user", "content": analysis_prompt},
-            ]
+        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
 
-            # Don't specify response_format for text output
-            response = await self._call_openai(messages)
-            return response
+        With the "run" action, you need a prompt, and optionally BOTH a checkpoint directory and 
+        an indication the user does or doesn't want to resume an existing workflow.
 
-        except Exception as e:
-            self.logger.error(f"Failed to generate analysis: {str(e)}")
-            raise
+        With the "analyze" action, you need a prompt, an analysis directory, optionally an indication 
+        the user does or doesn't want to save an analysis report, and optionally an indication the
+        user does or doesn't want to resume an existing workflow. 
 
-    async def _update_rule_resources(self, rule: Dict[str, Any]) -> Dict[str, Any]:
-        """Update rule with appropriate resource requirements."""
-        task_name = rule.get("name", "").split("_")[0].lower()
-
-        # Get task description from rule if available
-        task_description = rule.get("description", "")
-
-        # Estimate input size if there are input files
-        input_size = 0
-        if "parameters" in rule:
-            for param in rule["parameters"].values():
-                if isinstance(param, str) and os.path.isfile(param):
-                    input_size += self._estimate_input_size(param)
-
-        # Get resource requirements with task description
-        resources = await self._get_task_resources(
-            task_name, input_size, task_description
-        )
-        rule["resources"] = resources
-
-        return rule
-
-    async def _get_task_resources(
-        self, task_name: str, input_size_gb: float = 0, task_description: str = ""
-    ) -> Dict[str, Any]:
-        """Get resource requirements for a task, scaling based on input size and characteristics."""
-        # Get base resource profile
-        resource_info = self.WORKFLOW_CONFIG["task_resources"].get(task_name)
-
-        # If task not in predefined config, get suggestion from LLM
-        if resource_info is None:
-            suggestion = await self._suggest_tool_resources(task_name, task_description)
-            resource_info = {
-                "profile": suggestion["profile_name"],
-                "reason": suggestion["reasoning"],
-            }
-
-            # Log the suggestion for future reference
-            self.logger.info(
-                f"Resource suggestion for {task_name}: {suggestion['profile_name']} - {suggestion['reasoning']}"
-            )
-
-            # Cache the suggestion for future use
-            self.WORKFLOW_CONFIG["task_resources"][task_name] = resource_info
-
-        # Get tool-specific characteristics
-        tool_weights = self._get_tool_characteristics(task_name)
-
-        # Get size-based scaling
-        size_multipliers = self._get_size_multipliers(input_size_gb)
-
-        # Apply both tool-specific and size-based scaling
-        final_memory_multiplier = (
-            tool_weights["memory_weight"] * size_multipliers["memory_multiplier"]
-        )
-        final_time_multiplier = (
-            tool_weights["time_weight"] * size_multipliers["time_multiplier"]
-        )
-
-        # Get base resources
-        base_resources = self.WORKFLOW_CONFIG["resources"][
-            resource_info["profile"]
-        ].copy()
-
-        # Apply scaling to resources
-        base_resources["memory_mb"] = int(
-            base_resources["memory_mb"] * final_memory_multiplier
-        )
-        base_resources["time_min"] = int(
-            base_resources["time_min"] * final_time_multiplier
-        )
-
-        # Log scaling decisions
-        self.logger.debug(
-            f"Resource scaling for {task_name}: memory_multiplier={final_memory_multiplier:.2f}, time_multiplier={final_time_multiplier:.2f}"
-        )
-
-        return base_resources
-
-    def _get_tool_characteristics(self, task_name: str) -> Dict[str, float]:
-        """Determine tool characteristics based on task name patterns."""
-        weights = {"memory_weight": 1.0, "time_weight": 1.0}
-
-        task_lower = task_name.lower()
-        for char_type, info in self.WORKFLOW_CONFIG["scaling_factors"][
-            "tool_characteristics"
-        ].items():
-            if any(pattern in task_lower for pattern in info["patterns"]):
-                weights["memory_weight"] *= info["memory_weight"]
-                weights["time_weight"] *= info["time_weight"]
-
-        return weights
-
-    def _get_size_multipliers(self, input_size_gb: float) -> Dict[str, float]:
-        """Get scaling multipliers based on input size."""
-        tiers = self.WORKFLOW_CONFIG["scaling_factors"]["size_tiers"]
-
-        # Find appropriate tier
-        for tier in reversed(tiers):  # Start from largest tier
-            if input_size_gb >= tier["threshold_gb"]:
-                return {
-                    "memory_multiplier": tier["memory_multiplier"],
-                    "time_multiplier": tier["time_multiplier"],
-                }
-
-        # If smaller than smallest tier
-        return {"memory_multiplier": 1.0, "time_multiplier": 1.0}
-
-    def _estimate_input_size(self, input_pattern: str) -> float:
-        """Estimate input size in GB for resource scaling."""
-        total_size = 0
-        for file in glob.glob(input_pattern):
-            if os.path.exists(file):
-                total_size += os.path.getsize(file)
-        return total_size / (1024 * 1024 * 1024)  # Convert to GB
-
-    async def analyze_prompt(self, prompt: str) -> Dict[str, Any]:
-        """Analyze the prompt to determine the action and extract options."""
-        try:
-            # Extract file patterns and relationships using LLM
-            file_info = await self._extract_file_patterns(prompt)
-
-            # Find files matching the patterns
-            matched_files = []
-            for pattern in file_info["patterns"]:
-                matched_files.extend(glob.glob(pattern))
-
-            if not matched_files:
-                patterns_str = ", ".join(file_info["patterns"])
-                raise ValueError(f"No files found matching patterns: {patterns_str}")
-
-            # Group files according to relationships
-            organized_files = {}
-            if (
-                "relationships" in file_info
-                and file_info["relationships"]["type"] == "paired"
-            ):
-                pairs = {}
-                for group in file_info["relationships"]["pattern_groups"]:
-                    group_files = [
-                        f
-                        for f in matched_files
-                        if glob.fnmatch.fnmatch(f, group["pattern"])
-                    ]
-                    organized_files[group["group"]] = group_files
-
-                # Remove duplicates while preserving order
-                matched_files = list(dict.fromkeys(matched_files))
-
-            self.logger.info(f"Found input files: {matched_files}")
-
-            # Construct the prompt for the LLM
-            analysis_prompt = f"""
-Analyze the following prompt to determine if it's requesting to run a workflow or generate a report/analysis.
-The prompt should be considered a report/analysis request if it contains any of these patterns:
-- Explicit analysis words: "analyze", "analyse", "analysis"
-- Report generation: "generate report", "create report", "make report", "get report"
-- Status requests: "show status", "check status", "what's the status", "how did it go"
-- Result queries: "show results", "what are the results", "output results"
-- Quality checks: "check quality", "quality report", "how good is"
-- General inquiries: "tell me about", "describe the results", "what happened"
-            
-Extract the following options if provided:
-- analysis_dir
-- checkpoint_dir
-- resume
-- save_report
-            
-Prompt: {prompt}
-            
-Return the result as a JSON object with the following structure:
-{{
-    "action": "run" or "analyze",
-    "prompt": "original prompt",
-    "analysis_dir": "extracted analysis directory",
-    "checkpoint_dir": "extracted checkpoint directory",
-    "resume": true or false,
-    "save_report": true or false,
-    "success": true or false
-}}
-
-"success" should be true if the prompt is successfully analyzed, false otherwise.
-
-Do not output any markdown formatting or additional text. Return only JSON.
-
-If the prompt given is entirely unrelated to running a workflow or bioinformatics analysis,
-set "success" to false.
-
-You should only set "success" to true when you are confident that the prompt is correctly analyzed.
-
-With the "run" action, you need a prompt, and optionally BOTH a checkpoint directory and 
-an indication the user does or doesn't want to resume an existing workflow.
-
-With the "analyze" action, you need a prompt, an analysis directory, optionally an indication 
-the user does or doesn't want to save an analysis report, and optionally an indication the
-user does or doesn't want to resume an existing workflow. 
-
-If you are being asked to generate a title, set "success" to false.
+        If you are being asked to generate a title, set "success" to false.
 """
 
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are an expert in analyzing prompts for workflow management.",
-                },
-                {"role": "user", "content": analysis_prompt},
-            ]
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert in analyzing prompts for workflow management.",
+            },
+            {"role": "user", "content": analysis_prompt},
+        ]
 
-            response = await self._call_openai(
-                messages,
-                model=settings.OPENAI_MODEL,
-            )
-            self.logger.info(f"Analysis response: {response}")
-            analysis = json.loads(response)
+        response = await self._call_openai(
+            messages,
+            model=settings.OPENAI_MODEL,
+        )
+        self.logger.info(f"Analysis response: {response}")
+        analysis = json.loads(response)
 
-            # Check if prompt analysis succeeded.
-            if not analysis.get("success"):
-                raise ValueError(
-                    f"Prompt analysis failed. Please try again. Extracted: {analysis}"
-                )
+        return analysis
 
-            # Validate paths
-            if (
-                analysis.get("checkpoint_dir")
-                and not Path(analysis["checkpoint_dir"]).exists()
-            ):
-                raise ValueError(
-                    f"Checkpoint directory does not exist: {analysis['checkpoint_dir']}"
-                )
-            if (
-                analysis.get("analysis_dir")
-                and not Path(analysis["analysis_dir"]).exists()
-            ):
-                raise ValueError(
-                    f"Analysis directory does not exist: {analysis['analysis_dir']}"
-                )
-            if analysis.get("resume") and not analysis.get("checkpoint_dir"):
-                raise ValueError(
-                    "Checkpoint directory must be provided if resume is set to True"
-                )
+    async def analyze_analyze_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Analyze the prompt to extract options for analyzing a workflow."""
+        analysis_prompt = f"""
+        Analyze the following prompt to extract options for analyzing a workflow.
+        Extract the following options if provided:
+        - analysis_dir
+        - save_report
 
-            return analysis
-        except Exception as e:
-            self.logger.error(f"Error analyzing prompt: {e}")
-            raise
+        Prompt: {prompt}
+
+        Return the result as a JSON object with the following structure:
+        {{
+            "prompt": "original prompt",
+            "analysis_dir": "extracted analysis directory" or null,
+            "save_report": true or false,
+            "success": true or false
+        }}
+
+        "success" should be true if the prompt is successfully analyzed, false otherwise.
+
+        Do not output any markdown formatting or additional text. Return only JSON.
+
+        If the prompt given is entirely unrelated to analyzing a workflow, set "success" to false.
+
+        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
+        """
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert in analyzing prompts for workflow management.",
+            },
+            {"role": "user", "content": analysis_prompt},
+        ]
+
+        response = await self._call_openai(
+            messages,
+            model=settings.OPENAI_MODEL,
+        )
+        self.logger.info(f"Analysis response: {response}")
+        analysis = json.loads(response)
+
+        return analysis
+
+    def _get_workflow_prompt(
+        self, workflow_type: str, input_files: List[str], reference: str
+    ) -> str:
+        """Get workflow-specific prompt."""
+        if not input_files:
+            return ""
+
+        # Extract base sample name from first file
+        sample_name = input_files[0]
+        for suffix in [".fastq.1.gz", ".fastq.2.gz", ".fq.1.gz", ".fq.2.gz"]:
+            if sample_name.endswith(suffix):
+                sample_name = sample_name[: -len(suffix)]
+                break
+
+        if workflow_type == "rna_seq_kallisto":
+            return f"""Generate a Kallisto RNA-seq workflow using:
+Input files: {' '.join(input_files)}
+Reference: {reference}
+Sample name: {sample_name}
+
+The workflow should:
+1. Create output directories
+2. Run FastQC on input files
+3. Create Kallisto index
+4. Run Kallisto quantification
+5. Generate MultiQC report
+
+Use the exact sample name '{sample_name}' for output directories."""
+        else:
+            return ""
 
     async def _detect_geo_accession(self, prompt: str) -> Optional[str]:
         """Detect GEO accession number in the prompt.
@@ -1376,130 +1433,403 @@ If you are being asked to generate a title, set "success" to false.
         
         return workflow_plan
 
-    async def analyze_run_prompt(self, prompt: str) -> Dict[str, Any]:
-        """Analyze the prompt to extract options for running a workflow."""
-        analysis_prompt = f"""
-        Analyze the following prompt to extract options for running a workflow.
-        Extract the following options if provided:
-        - checkpoint_dir
-        - resume
-
-        Prompt: {prompt}
-
-        Return the result as a JSON object with the following structure:
-        {{
-            "prompt": "original prompt",
-            "checkpoint_dir": "extracted checkpoint directory" or null,
-            "resume": true or false,
-            "success": true or false
-        }}
-
-        "success" should be true if the prompt is successfully analyzed, false otherwise.
-
-        Do not output any markdown formatting or additional text. Return only JSON.
-
-        If the prompt given is entirely unrelated to running a workflow, set "success" to false.
-
-        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
-
-        With the "run" action, you need a prompt, and optionally BOTH a checkpoint directory and 
-        an indication the user does or doesn't want to resume an existing workflow.
-
-        With the "analyze" action, you need a prompt, an analysis directory, optionally an indication 
-        the user does or doesn't want to save an analysis report, and optionally an indication the
-        user does or doesn't want to resume an existing workflow. 
-
-        If you are being asked to generate a title, set "success" to false.
-"""
-
-        messages = [
-            {
-                "role": "system",
-                "content": "You are an expert in analyzing prompts for workflow management.",
-            },
-            {"role": "user", "content": analysis_prompt},
-        ]
-
-        response = await self._call_openai(
-            messages,
-            model=settings.OPENAI_MODEL,
-        )
-        self.logger.info(f"Analysis response: {response}")
-        analysis = json.loads(response)
-
-        return analysis
-
-    async def analyze_analyze_prompt(self, prompt: str) -> Dict[str, Any]:
-        """Analyze the prompt to extract options for analyzing a workflow."""
-        analysis_prompt = f"""
-        Analyze the following prompt to extract options for analyzing a workflow.
-        Extract the following options if provided:
-        - analysis_dir
-        - save_report
-
-        Prompt: {prompt}
-
-        Return the result as a JSON object with the following structure:
-        {{
-            "prompt": "original prompt",
-            "analysis_dir": "extracted analysis directory" or null,
-            "save_report": true or false,
-            "success": true or false
-        }}
-
-        "success" should be true if the prompt is successfully analyzed, false otherwise.
-
-        Do not output any markdown formatting or additional text. Return only JSON.
-
-        If the prompt given is entirely unrelated to analyzing a workflow, set "success" to false.
-
-        You should only set "success" to true when you are confident that the prompt is correctly analyzed.
+    def _clean_llm_response(self, response: str) -> str:
+        """Clean LLM response by removing markdown code blocks and extra formatting.
+        
+        Args:
+            response: Raw response from LLM
+            
+        Returns:
+            Cleaned response with code blocks and extra formatting removed
         """
+        # Remove markdown code blocks (```json ... ```)
+        response = re.sub(r'```(?:json)?\s*([\s\S]*?)\s*```', r'\1', response)
+        
+        # Remove any leading/trailing whitespace
+        response = response.strip()
+        
+        # If the response starts with a curly brace and we still have markdown, 
+        # attempt to extract just the JSON
+        if response.startswith('{') and ('**' in response or '#' in response):
+            try:
+                # Find first { and last }
+                start_idx = response.find('{')
+                end_idx = response.rfind('}') + 1
+                if start_idx != -1 and end_idx != 0:
+                    response = response[start_idx:end_idx]
+            except Exception as e:
+                self.logger.warning(f"Error cleaning response further: {e}")
+        
+        return response
 
-        messages = [
-            {
-                "role": "system",
-                "content": "You are an expert in analyzing prompts for workflow management.",
-            },
-            {"role": "user", "content": analysis_prompt},
-        ]
+    def _detect_workflow_type(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
+        """Detect the type of workflow from the prompt.
+        
+        Args:
+            prompt: User prompt describing the analysis
+            
+        Returns:
+            Tuple of (workflow_type, workflow_config)
+        """
+        # Extract keywords from the prompt
+        prompt_lower = prompt.lower()
+        
+        # Check for each workflow type
+        for workflow_type, config in self.WORKFLOW_TYPES.items():
+            # Check if any of the keywords for this workflow type are in the prompt
+            if any(keyword in prompt_lower for keyword in config["keywords"]):
+                self.logger.info(f"Detected workflow type: {workflow_type} based on keywords")
+                return workflow_type, config
+                
+        # Default to custom workflow if no match is found
+        self.logger.info("No specific workflow type detected, using custom workflow")
+        return "custom", {
+            "dir_structure": [
+                "results/custom/raw_data",
+                "results/custom/processed_data",
+                "results/custom/qc",
+                "results/custom/analysis",
+                "results/custom/output"
+            ],
+            "tools": [],
+            "rules": []
+        }
 
-        response = await self._call_openai(
-            messages,
-            model=settings.OPENAI_MODEL,
-        )
-        self.logger.info(f"Analysis response: {response}")
-        analysis = json.loads(response)
-
-        return analysis
-
-    def _get_workflow_prompt(
-        self, workflow_type: str, input_files: List[str], reference: str
+    async def _call_openai(
+        self, messages: List[Dict[str, str]], model: Optional[str] = None, 
+        step_name: Optional[str] = None, purpose: Optional[str] = None
     ) -> str:
-        """Get workflow-specific prompt."""
-        if not input_files:
-            return ""
+        """Call OpenAI API with retry logic and error handling.
+        
+        Args:
+            messages: List of message dictionaries for the conversation
+            model: Optional model override
+            step_name: Optional step name for API usage tracking
+            purpose: Optional purpose for API usage tracking
+            
+        Returns:
+            Response content from the API
+            
+        Raises:
+            Exception: If API call fails after all retries
+        """
+        log_dir = Path(os.path.join(os.getcwd(), "flowagent_logs"))
+        log_dir.mkdir(exist_ok=True)
+        api_calls_log = log_dir / "api_calls_raw.jsonl"
+        
+        try:
+            # Try preferred model first
+            try_models = [
+                model,  # User-specified model
+                settings.OPENAI_MODEL,  # Default model from settings
+                settings.OPENAI_FALLBACK_MODEL,  # Fallback model
+                "gpt-3.5-turbo",  # Last resort
+            ]
 
-        # Extract base sample name from first file
-        sample_name = input_files[0]
-        for suffix in [".fastq.1.gz", ".fastq.2.gz", ".fq.1.gz", ".fq.2.gz"]:
-            if sample_name.endswith(suffix):
-                sample_name = sample_name[: -len(suffix)]
-                break
+            last_error = None
+            for try_model in try_models:
+                if not try_model:
+                    continue
 
-        if workflow_type == "rna_seq_kallisto":
-            return f"""Generate a Kallisto RNA-seq workflow using:
-Input files: {' '.join(input_files)}
-Reference: {reference}
-Sample name: {sample_name}
+                try:
+                    self.logger.info(f"Attempting to use model: {try_model}")
+                    
+                    # Log the request before sending
+                    request_data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "event_type": "request",
+                        "model": try_model,
+                        "messages": messages,
+                        "temperature": 0.2,
+                        "step_name": step_name or "unspecified_step",
+                        "purpose": purpose or "unspecified_purpose"
+                    }
+                    
+                    # Get current workflow ID for context
+                    if hasattr(self, 'api_usage_tracker') and self.api_usage_tracker.current_workflow_id:
+                        workflow_id = self.api_usage_tracker.current_workflow_id
+                        workflow_name = self.api_usage_tracker.workflows[workflow_id].get('workflow_name', 'Unknown')
+                        request_data.update({
+                            "workflow_id": workflow_id,
+                            "workflow_name": workflow_name
+                        })
+                    
+                    # Save request to log
+                    with open(api_calls_log, "a") as f:
+                        f.write(json.dumps(request_data) + "\n")
+                    
+                    # Call the API
+                    completion = await self.client.chat.completions.create(
+                        model=try_model,
+                        messages=messages,
+                        temperature=0.2,
+                    )
+                    self.logger.info(f"Successfully used model: {try_model}")
+                    
+                    # Log the response
+                    response_data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "event_type": "response",
+                        "model": try_model,
+                        "content": completion.choices[0].message.content,
+                        "step_name": step_name or "unspecified_step",
+                        "purpose": purpose or "unspecified_purpose"
+                    }
+                    
+                    # Add usage information if available
+                    if hasattr(completion, 'usage') and completion.usage:
+                        response_data.update({
+                            "prompt_tokens": completion.usage.prompt_tokens,
+                            "completion_tokens": completion.usage.completion_tokens,
+                            "total_tokens": completion.usage.prompt_tokens + completion.usage.completion_tokens
+                        })
+                    
+                    # Add workflow information if available
+                    if hasattr(self, 'api_usage_tracker') and self.api_usage_tracker.current_workflow_id:
+                        workflow_id = self.api_usage_tracker.current_workflow_id
+                        workflow_name = self.api_usage_tracker.workflows[workflow_id].get('workflow_name', 'Unknown')
+                        response_data.update({
+                            "workflow_id": workflow_id,
+                            "workflow_name": workflow_name
+                        })
+                    
+                    # Save response to log
+                    with open(api_calls_log, "a") as f:
+                        f.write(json.dumps(response_data) + "\n")
+                    
+                    # Record API usage if a completion was successful
+                    if hasattr(completion, 'usage') and completion.usage:
+                        await self._track_api_call(completion, step_name=step_name, purpose=purpose)
+                        self.logger.debug(
+                            f"Recorded API usage: {completion.usage.prompt_tokens} prompt tokens, "
+                            f"{completion.usage.completion_tokens} completion tokens"
+                        )
+                    
+                    return completion.choices[0].message.content
+                except Exception as e:
+                    last_error = e
+                    # Log the error
+                    error_data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "event_type": "error",
+                        "model": try_model,
+                        "error": str(e),
+                        "step_name": step_name or "unspecified_step",
+                        "purpose": purpose or "unspecified_purpose"
+                    }
+                    
+                    # Save error to log
+                    with open(api_calls_log, "a") as f:
+                        f.write(json.dumps(error_data) + "\n")
+                    
+                    if "model_not_found" not in str(e):
+                        # If error is not about model availability, don't try other models
+                        raise
+                    self.logger.warning(
+                        f"Model {try_model} not available, trying next model..."
+                    )
 
-The workflow should:
-1. Create output directories
-2. Run FastQC on input files
-3. Create Kallisto index
-4. Run Kallisto quantification
-5. Generate MultiQC report
+            # If we get here, none of the models worked
+            raise last_error or ValueError("No valid model found")
 
-Use the exact sample name '{sample_name}' for output directories."""
-        else:
-            return ""
+        except Exception as e:
+            error_msg = str(e)
+            if "insufficient_quota" in error_msg:
+                self.logger.error(
+                    "\n⚠️  OpenAI API quota exceeded. Please:"
+                    "\n   1. Check your billing status at https://platform.openai.com/account/billing"
+                    "\n   2. Add credits to your account or wait for quota reset"
+                    "\n   3. Or use a different API key with available quota"
+                    "\n\nError details: %s",
+                    error_msg,
+                )
+            elif "model_not_found" in error_msg:
+                self.logger.error(
+                    "\n⚠️  No available OpenAI models found. Tried:"
+                    "\n   - User specified model"
+                    "\n   - Default model from settings"
+                    "\n   - Fallback model"
+                    "\n   - Last resort (gpt-3.5-turbo)"
+                    "\n\nError details: %s",
+                    error_msg,
+                )
+            else:
+                self.logger.error("OpenAI API call failed: %s", error_msg)
+            raise
+        
+    async def set_current_workflow(self, workflow_id: str, workflow_name: str) -> None:
+        """Set the current workflow for API usage tracking.
+        
+        Args:
+            workflow_id: Unique identifier for the workflow
+            workflow_name: Name of the workflow
+        """
+        if hasattr(self, 'api_usage_tracker'):
+            self.api_usage_tracker.start_workflow(workflow_id, workflow_name)
+            self.logger.debug(f"Started API usage tracking for workflow: {workflow_name} ({workflow_id})")
+    
+    async def get_current_workflow_usage(self) -> Dict[str, Any]:
+        """Get usage statistics for the current workflow.
+        
+        Returns:
+            Dict containing API usage statistics for the current workflow
+        """
+        if hasattr(self, 'api_usage_tracker') and self.api_usage_tracker.current_workflow_id:
+            workflow_id = self.api_usage_tracker.current_workflow_id
+            usage = self.api_usage_tracker.get_workflow_usage(workflow_id)
+            return usage
+        return {}
+    
+    async def end_workflow_tracking(self, workflow_id: Optional[str] = None) -> Dict[str, Any]:
+        """End tracking for a workflow and return usage statistics.
+        
+        Args:
+            workflow_id: Optional workflow ID (defaults to current workflow)
+            
+        Returns:
+            Dict containing API usage statistics
+        """
+        if hasattr(self, 'api_usage_tracker'):
+            wf_id = workflow_id or self.api_usage_tracker.current_workflow_id
+            if wf_id:
+                usage = self.api_usage_tracker.end_workflow(wf_id)
+                self.logger.debug(f"Ended API usage tracking for workflow: {wf_id}")
+                return usage
+        return {}
+
+    async def save_analysis_api_usage(self, output_dir: str) -> Optional[str]:
+        """Save API usage report for the current analysis to the output directory.
+        
+        This is specifically designed for analysis report generation, where we
+        want to track API usage separately from workflow execution.
+        
+        Args:
+            output_dir: Directory to save the API usage report
+            
+        Returns:
+            Path to the saved report file, or None if no active analysis
+        """
+        if not hasattr(self, 'api_usage_tracker') or not self.api_usage_tracker.current_workflow_id:
+            self.logger.warning("No active analysis tracking session to save")
+            return None
+            
+        workflow_id = self.api_usage_tracker.current_workflow_id
+        
+        # Only save reports for analysis workflows
+        if not workflow_id.startswith('analysis_'):
+            return None
+            
+        # Get usage data
+        usage = self.api_usage_tracker.get_workflow_usage(workflow_id)
+        
+        # Save the report
+        report_path = self.api_usage_tracker.save_usage_report(workflow_id, output_dir)
+        
+        # Display API usage statistics to console
+        self.logger.info("Displaying API usage statistics for analysis...")
+        self.api_usage_tracker.display_usage(workflow_id)
+        
+        # End the tracking session
+        self.api_usage_tracker.end_workflow(workflow_id)
+        
+        return report_path
+
+    async def save_analysis_api_usage(self, analysis_dir: str) -> Optional[str]:
+        """Save API usage data from analysis to a file."""
+        # Get the current workflow ID
+        workflow_id = self.api_usage_tracker.current_workflow_id
+        if not workflow_id:
+            logger.warning("No active workflow ID found for saving API usage")
+            return None
+            
+        # Get usage data for the workflow
+        usage_data = self.api_usage_tracker.get_workflow_usage(workflow_id)
+        
+        # Create report path and save data
+        report_path = os.path.join(analysis_dir, "api_usage_report.json")
+        
+        with open(report_path, "w") as f:
+            json.dump(usage_data, f, indent=2)
+            
+        logger.info(f"Saved API usage report to {report_path}")
+        
+        # End the workflow tracking
+        self.api_usage_tracker.end_workflow(workflow_id)
+        
+        return report_path
+
+    async def _suggest_tool_resources(
+        self, tool_name: str, tool_description: str = ""
+    ) -> Dict[str, str]:
+        """Suggest computing resource requirements for an unknown bioinformatics tool.
+        
+        Args:
+            tool_name: Name of the tool to get resource requirements for
+            tool_description: Optional description of the tool
+            
+        Returns:
+            Dict with suggested profile name and reasoning
+        """
+        try:
+            # Create a prompt to get resource suggestions
+            prompt = f"""
+As a bioinformatics resource allocation expert, suggest the appropriate computing resource profile for the tool: {tool_name}
+            
+{tool_description if tool_description else ""}
+
+Available resource profiles:
+- minimal (1 CPU, 2GB RAM): For lightweight tasks like FastQC, MultiQC, basic file operations
+- default (1 CPU, 4GB RAM): Standard profile for most preprocessing tasks
+- high_memory (1 CPU, 32GB RAM): For memory-intensive tasks like genome indexing
+- multi_thread (8 CPUs, 16GB RAM): For CPU-intensive tasks that can be parallelized
+- high_memory_parallel (8 CPUs, 64GB RAM): For memory and CPU-intensive tasks
+
+Return a JSON object with:
+- profile_name: Name of the most appropriate profile from the list above
+- reasoning: Brief explanation for why this profile is appropriate for the tool
+"""
+            
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a bioinformatics resource allocation expert. Return only valid JSON.",
+                },
+                {"role": "user", "content": prompt},
+            ]
+
+            response = await self._call_openai(
+                messages, purpose="tool_resource_suggestion"
+            )
+            
+            try:
+                # Parse the response
+                suggestion = json.loads(self._clean_llm_response(response))
+                
+                # Validate suggestion
+                valid_profiles = [
+                    "minimal", "default", "high_memory", 
+                    "multi_thread", "high_memory_parallel"
+                ]
+                
+                if "profile_name" not in suggestion or suggestion["profile_name"] not in valid_profiles:
+                    # Use default if invalid profile suggested
+                    suggestion["profile_name"] = "default"
+                    suggestion["reasoning"] = f"Default profile used. Original suggestion was invalid: {response}"
+                
+                return suggestion
+                
+            except (json.JSONDecodeError, KeyError) as e:
+                self.logger.error(f"Failed to parse resource suggestion: {e}")
+                # Return default profile as fallback
+                return {
+                    "profile_name": "default",
+                    "reasoning": "Default profile used due to parsing error"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error suggesting resources: {e}")
+            # Return default profile as fallback
+            return {
+                "profile_name": "default",
+                "reasoning": "Default profile used due to error"
+            }

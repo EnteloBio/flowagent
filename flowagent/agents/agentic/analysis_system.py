@@ -3,12 +3,13 @@
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import numpy as np
 import os
 
 from .analysis_agents import QualityAnalysisAgent, QuantificationAnalysisAgent, TechnicalQCAgent
+from ...core.api_usage import APIUsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,10 @@ class AgenticAnalysisSystem:
     
     def __init__(self):
         """Initialize analysis agents."""
-        self.quality_agent = QualityAnalysisAgent()
-        self.quantification_agent = QuantificationAnalysisAgent()
-        self.technical_agent = TechnicalQCAgent()
+        self.api_usage_tracker = APIUsageTracker()
+        self.quality_agent = QualityAnalysisAgent(self.api_usage_tracker)
+        self.quantification_agent = QuantificationAnalysisAgent(self.api_usage_tracker)
+        self.technical_agent = TechnicalQCAgent(self.api_usage_tracker)
     
     async def _prepare_analysis_data(self, results_dir: Path) -> Dict[str, Any]:
         """Prepare data for analysis by organizing files and metrics."""
@@ -349,6 +351,10 @@ class AgenticAnalysisSystem:
     
     async def analyze_results(self, results_dir: Path) -> Dict[str, Any]:
         """Analyze workflow results using specialized agents."""
+        # Start tracking API usage for analysis
+        analysis_id = f"analysis_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        self.api_usage_tracker.start_workflow(analysis_id, f"Analysis of {results_dir}")
+        
         try:
             # Prepare data for analysis
             data = await self._prepare_analysis_data(results_dir)
@@ -408,9 +414,17 @@ class AgenticAnalysisSystem:
                         f"Review samples with low expressed transcript counts: {', '.join(low_expressed)}"
                     )
             
+            # End API usage tracking and display stats
+            self.api_usage_tracker.end_workflow(analysis_id)
+            self.api_usage_tracker.display_usage(analysis_id)
+            
             return analysis
             
         except Exception as e:
+            # End API usage tracking even on error
+            if self.api_usage_tracker.current_workflow_id == analysis_id:
+                self.api_usage_tracker.end_workflow(analysis_id)
+                
             logger.error(f"Error in agentic analysis: {str(e)}")
             return {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

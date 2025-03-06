@@ -11,6 +11,7 @@ from ..utils.logging import get_logger
 from ..config.settings import Settings
 import asyncio
 import time
+from ..core.api_usage import APIUsageTracker
 
 # Get settings
 settings = Settings()
@@ -35,6 +36,12 @@ class LLMAgent:
             timeout=self.settings.TIMEOUT
         )
         
+        # Set up API usage tracking
+        if hasattr(self.client, "api_usage_tracker") and self.client.api_usage_tracker:
+            self.api_usage_tracker = self.client.api_usage_tracker
+        else:
+            self.api_usage_tracker = APIUsageTracker()
+        
         # Get model to use (with fallback)
         self.model = self.settings.OPENAI_MODEL
         self.logger.info(f"Using OpenAI model: {self.model}")
@@ -51,6 +58,30 @@ class LLMAgent:
             await asyncio.sleep(self.min_request_interval - time_since_last)
         self.last_request_time = time.time()
         
+    async def _track_api_call(self, response: Any, purpose: Optional[str] = None, step_name: Optional[str] = None) -> None:
+        """Track API call usage.
+        
+        Args:
+            response: API response from OpenAI
+            purpose: Optional purpose of the call for tracking
+            step_name: Optional step name for tracking context
+        """
+        if not hasattr(response, "usage") or not hasattr(self, "api_usage_tracker"):
+            return
+            
+        usage = response.usage
+        model = response.model
+        
+        self.api_usage_tracker.record_api_call(
+            model=model,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            step_name=step_name,
+            purpose=purpose
+        )
+        
+        self.logger.debug(f"Tracked API call: {usage.prompt_tokens}+{usage.completion_tokens}={usage.total_tokens} tokens")
+
     async def _get_chat_completion(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """Get a chat completion from OpenAI's API with retries and rate limiting.
         
@@ -78,6 +109,7 @@ class LLMAgent:
                     messages=messages,
                     **kwargs
                 )
+                await self._track_api_call(completion)
                 return completion.choices[0].message.content
                 
             except openai.error.RateLimitError as e:
@@ -346,3 +378,35 @@ class LLMAgent:
         if response.startswith('bash\n'):
             response = response[5:]
         return response.strip()
+
+    async def _execute_step(self, step: Dict[str, Any], environment: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Execute a single workflow step."""
+        step_id = step.get("id", "unknown")
+        step_type = step.get("type", "unknown")
+        self._track_api_usage(f"execute_step_{step_type}")
+        
+        logger.info(f"Executing step {step_id} of type {step_type}")
+        
+        if step_type == "command":
+            command = step.get("command", "")
+            cwd = step.get("cwd", os.getcwd())
+            
+            result = await run_command(command, cwd)
+            return {"status": "success", "output": result, **step}
+        elif step_type == "python":
+            code = step.get("code", "")
+            result = run_python_code(code)
+            return {"status": "success", "output": result, **step}
+        else:
+            logger.error(f"Unknown step type: {step_type}")
+            return {"status": "error", "error": f"Unknown step type: {step_type}", **step}
+
+    def _track_api_usage(self, operation: str, tokens: int = 0, cost: float = 0):
+        """Track API usage for the given operation in the usage tracker."""
+        if hasattr(self, "api_usage_tracker") and self.api_usage_tracker:
+            self.api_usage_tracker.record_api_call(
+                model=self.model,
+                prompt_tokens=tokens // 2,  # Rough estimation, divide tokens between prompt and completion
+                completion_tokens=tokens // 2,
+                purpose=operation
+            )

@@ -1,9 +1,24 @@
 """Directed Acyclic Graph for workflow management."""
 
+import os
+import logging
+import json
+import datetime
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import numpy as np
+from typing import Dict, List, Optional, Any, Tuple, Set, Callable
+from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, List, Callable, Optional
+
+# Monkey patch to fix numpy alltrue deprecation in networkx
+# This addresses the issue with np.alltrue being removed in NumPy 2.0
+import networkx.drawing.nx_pylab as nx_pylab
+if hasattr(nx_pylab, 'np') and hasattr(nx_pylab.np, 'alltrue'):
+    # Replace alltrue with all in the nx_pylab module
+    nx_pylab.np.alltrue = nx_pylab.np.all
+
 import asyncio
 import logging
 import traceback

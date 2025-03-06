@@ -108,16 +108,7 @@ def format_agentic_results(results: Dict[str, Any]) -> str:
     return "\n".join(output)
 
 async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[str, Any]:
-    """
-    Analyze workflow results in the specified directory using both standard and agentic analysis.
-    
-    Args:
-        analysis_dir: Directory containing workflow results
-        save_report: Whether to save the analysis report to a file
-        
-    Returns:
-        Dict containing analysis results and report
-    """
+    """Analyze workflow results using AI-based analysis systems."""
     try:
         logger.info(f"Analyzing workflow results in {analysis_dir}")
         
@@ -127,10 +118,19 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
         
         # Run agentic analysis
         logger.info("Running agentic analysis...")
-        agentic_results = await agentic_system.analyze_results(Path(analysis_dir))
+        try:
+            agentic_results = await agentic_system.analyze_results(Path(analysis_dir))
+            logger.debug(f"Agentic analysis results: {str(agentic_results)[:200]}...")
+        except Exception as e:
+            logger.error(f"Failed to analyze workflow with agentic system: {e}")
+            agentic_results = {"error": str(e)}
         
         # Generate analysis report incorporating agentic results
-        report = await report_gen.generate_analysis_report(Path(analysis_dir))
+        try:
+            report = await report_gen.generate_analysis_report(Path(analysis_dir))
+        except Exception as e:
+            logger.error(f"Failed to generate analysis report: {e}")
+            report = f"Standard Analysis Report:\n================================================================================\nFailed to generate report: {str(e)}"
         
         # Save reports if requested
         report_files = {}
@@ -146,7 +146,62 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
                 f.write(format_agentic_results(agentic_results))
             report_files["agentic"] = agentic_file
             
+            # Save API usage report if available
+            api_usage_file = None
+            
+            # Try both API usage trackers (from report_gen and agentic_system)
+            if hasattr(report_gen.llm, "api_usage_tracker") and report_gen.llm.api_usage_tracker:
+                api_usage_file = await report_gen.llm.save_analysis_api_usage(analysis_dir)
+                
+            # If that didn't work, try the agentic system's tracker
+            if not api_usage_file and hasattr(agentic_system, "api_usage_tracker") and agentic_system.api_usage_tracker:
+                # Save API usage directly from agentic system
+                current_workflow = agentic_system.api_usage_tracker.current_workflow_id
+                if current_workflow:
+                    try:
+                        # Use the tracker's built-in save method if available
+                        api_usage_file = agentic_system.api_usage_tracker.save_usage_report(current_workflow, analysis_dir)
+                    except Exception as e:
+                        logger.warning(f"Error using tracker's save_usage_report method: {e}")
+                        
+                        # Manual fallback if the built-in method fails
+                        try:
+                            api_usage_path = os.path.join(analysis_dir, "api_usage_report.json")
+                            usage_data = agentic_system.api_usage_tracker.get_workflow_usage(current_workflow)
+                            
+                            # Ensure all data is serializable before writing
+                            if hasattr(agentic_system.api_usage_tracker, "_prepare_data_for_serialization"):
+                                usage_data = agentic_system.api_usage_tracker._prepare_data_for_serialization(usage_data)
+                            else:
+                                # Simple conversion for basic non-serializable types
+                                for key, value in usage_data.items():
+                                    if isinstance(value, set):
+                                        usage_data[key] = list(value)
+                                
+                                # Handle nested dictionaries and structures
+                                usage_data = json.loads(json.dumps(usage_data, default=lambda o: str(o)))
+                            
+                            with open(api_usage_path, "w") as f:
+                                json.dump(usage_data, f, indent=2)
+                            api_usage_file = api_usage_path
+                            logger.info(f"Saved API usage report from agentic system to {api_usage_file} (using fallback method)")
+                        except Exception as inner_e:
+                            logger.error(f"Failed to save API usage with fallback method: {inner_e}")
+            
+            if api_usage_file:
+                report_files["api_usage"] = api_usage_file
+                logger.info(f"Saved API usage report to {api_usage_file}")
+            
             logger.info(f"Saved analysis reports to {', '.join(report_files.values())}")
+        
+        # Display API usage statistics from both systems
+        if hasattr(report_gen.llm, "api_usage_tracker") and report_gen.llm.api_usage_tracker:
+            logger.info("Displaying API usage statistics from report generator:")
+            report_gen.llm.api_usage_tracker.display_usage()
+            
+        if hasattr(agentic_system, "api_usage_tracker") and agentic_system.api_usage_tracker:
+            logger.info("Displaying API usage statistics from agentic analysis system:")
+            agentic_system.api_usage_tracker.display_usage()
             
         return {
             "status": "success",
@@ -157,7 +212,21 @@ async def analyze_workflow(analysis_dir: str, save_report: bool = True) -> Dict[
         }
         
     except Exception as e:
-        logger.error(f"Failed to analyze workflow: {str(e)}")
+        logger.error(f"Failed to analyze workflow: {e}")
+        
+        # Attempt to display API usage even on error
+        try:
+            # Display API usage statistics if available
+            if 'report_gen' in locals() and hasattr(report_gen.llm, "api_usage_tracker") and report_gen.llm.api_usage_tracker:
+                logger.info("Displaying API usage statistics from report generator (after error):")
+                report_gen.llm.api_usage_tracker.display_usage()
+                
+            if 'agentic_system' in locals() and hasattr(agentic_system, "api_usage_tracker") and agentic_system.api_usage_tracker:
+                logger.info("Displaying API usage statistics from agentic analysis system (after error):")
+                agentic_system.api_usage_tracker.display_usage()
+        except Exception as usage_err:
+            logger.warning(f"Failed to display API usage after error: {usage_err}")
+            
         return {
             "status": "error",
             "error": str(e)
@@ -433,6 +502,25 @@ def _add_geo_download_steps(workflow_plan: Dict[str, Any], geo_accessions: List[
     
     return workflow_plan
 
+async def generate_workflow(prompt: str, llm_client: Any, output_dir: str = None) -> Dict[str, Any]:
+    """Generate workflow from prompt."""
+    try:
+        # Extract GEO accession numbers from the prompt
+        geo_accessions = extract_geo_accession(prompt)
+        
+        # Generate workflow plan using LLM
+        workflow_plan = await llm_client.generate_workflow_plan(prompt)
+        
+        # Add GEO download steps if needed
+        if geo_accessions:
+            if output_dir is None:
+                output_dir = workflow_plan.get("output_dir", os.getcwd())
+            workflow_plan = _add_geo_download_steps(workflow_plan, geo_accessions, output_dir)
+        
+        return workflow_plan
+    except Exception as e:
+        logging.error(f"Error generating workflow: {str(e)}")
+        return {"status": "error", "message": f"Error generating workflow: {str(e)}"}
 async def generate_workflow(prompt: str, llm_client: Any, output_dir: str = None) -> Dict[str, Any]:
     """Generate workflow from prompt."""
     try:

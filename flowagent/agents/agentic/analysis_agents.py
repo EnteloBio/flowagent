@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 class BaseAnalysisAgent:
     """Base class for analysis agents."""
     
-    def __init__(self):
+    def __init__(self, api_usage_tracker):
         """Initialize base analysis agent."""
-        pass
+        self.api_usage_tracker = api_usage_tracker
     
     async def analyze(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Base analyze method to be implemented by subclasses."""
@@ -66,6 +66,8 @@ class QualityAnalysisAgent(BaseAnalysisAgent):
             summary = "Quality control analysis completed."
             if issues:
                 summary = f"Found {len(issues)} quality-related issues."
+            
+            self.api_usage_tracker.track_api_usage("quality_analysis")
             
             return {
                 "summary": summary,
@@ -120,6 +122,8 @@ class QuantificationAnalysisAgent(BaseAnalysisAgent):
             summary = "Quantification analysis completed."
             if issues:
                 summary = f"Found {len(issues)} quantification-related issues."
+            
+            self.api_usage_tracker.track_api_usage("quantification_analysis")
             
             return {
                 "summary": summary,
@@ -349,6 +353,8 @@ class TechnicalQCAgent(BaseAnalysisAgent):
                 "error_count": len(error_logs),
                 "tool_versions_available": bool(tool_versions)
             }
+            
+            self.api_usage_tracker.track_api_usage("technical_analysis")
             
             return {
                 "summary": summary,

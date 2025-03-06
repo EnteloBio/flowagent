@@ -165,12 +165,14 @@ def kallisto_quant_validator(command: str, step: Dict[str, Any]) -> bool:
         
         # Check output directory exists
         if not check_directory_exists(output_dir):
+            logger.warning(f"Kallisto output directory not found: {output_dir}")
             return False
             
         # Check for required output files in kallisto quant output directory
         required_files = ['abundance.h5', 'abundance.tsv', 'run_info.json']
         for file in required_files:
             if not check_file_exists(os.path.join(output_dir, file)):
+                logger.warning(f"Required Kallisto output file not found: {file}")
                 return False
                 
         # Verify run_info.json contains completion data
@@ -179,11 +181,14 @@ def kallisto_quant_validator(command: str, step: Dict[str, Any]) -> bool:
                 run_info = json.load(f)
                 # Check for n_processed and n_pseudoaligned fields
                 if 'n_processed' not in run_info or 'n_pseudoaligned' not in run_info:
+                    logger.warning("Kallisto run_info.json missing required fields")
                     return False
                 # Ensure some reads were processed
                 if run_info['n_processed'] <= 0:
+                    logger.warning("Kallisto processed 0 reads")
                     return False
-        except (json.JSONDecodeError, FileNotFoundError, IOError):
+        except (json.JSONDecodeError, FileNotFoundError, IOError) as e:
+            logger.warning(f"Error reading Kallisto run_info.json: {e}")
             return False
             
         return True

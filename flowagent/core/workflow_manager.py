@@ -8,6 +8,7 @@ import networkx as nx
 import json
 import os
 import sys
+from datetime import datetime
 from flowagent.config.settings import Settings
 
 from ..utils.logging import get_logger
@@ -19,6 +20,7 @@ from .agent_types import WorkflowStep, Workflow
 from .workflow_dag import WorkflowDAG
 from .smart_resume import detect_completed_steps, filter_workflow_steps
 from ..agents.agentic.analysis_system import AgenticAnalysisSystem
+from .api_usage import APIUsageTracker
 
 logger = get_logger(__name__)
 
@@ -33,6 +35,11 @@ class WorkflowManager:
         """
         self.logger = get_logger(__name__)
         self.llm = LLMInterface()
+        self.logger.debug("LLMInterface initialized. Checking available methods...")
+        if hasattr(self.llm, 'generate_workflow_plan'):
+            self.logger.debug("generate_workflow_plan method is available.")
+        else:
+            self.logger.error("generate_workflow_plan method is NOT available.")
         self.dependency_manager = DependencyManager()
         self.executor_type = executor_type
         self.executor = Executor(executor_type)
@@ -63,7 +70,6 @@ class WorkflowManager:
         try:
             # Check if input is a workflow object or a prompt string
             if isinstance(prompt_or_workflow, Workflow):
-                # Use the provided workflow object
                 workflow = {
                     "name": prompt_or_workflow.name,
                     "description": prompt_or_workflow.description,
@@ -71,134 +77,37 @@ class WorkflowManager:
                 }
                 workflow_name = workflow["name"]
                 workflow_steps = workflow["steps"]
-                prompt = None  # No prompt in this case
-                
-                # Create output directory if needed
-                if prompt_or_workflow.output_dir:
-                    output_dir = prompt_or_workflow.output_dir
-                else:
-                    output_dir = os.path.join(self.initial_cwd, "flowagent_output", workflow_name.replace(" ", "_"))
-                
-                os.makedirs(output_dir, exist_ok=True)
-                
-                # Save workflow to output directory
-                workflow_file = os.path.join(output_dir, "workflow.json")
-                with open(workflow_file, "w") as f:
-                    json.dump(workflow, f, indent=2)
-                
-                self.logger.info(f"Saved workflow to {workflow_file}")
-                
+                prompt = None
             else:
-                # Generate workflow from prompt
                 prompt = prompt_or_workflow
-                workflow_data = await self.llm.generate_workflow(prompt)
-                
-                # Extract workflow from response
+                workflow_data = await self.llm.generate_workflow_plan(prompt)
+                self.logger.debug("generate_workflow_plan method called successfully.")
                 workflow = workflow_data.get("workflow", {})
                 workflow_name = workflow.get("name", "Unnamed workflow")
                 workflow_steps = workflow.get("steps", [])
-                
-                self.logger.info(f"Generated workflow: {workflow_name} with {len(workflow_steps)} steps")
-                
-                # Create output directory
-                output_dir = os.path.join(self.initial_cwd, "flowagent_output", workflow_name.replace(" ", "_"))
-                os.makedirs(output_dir, exist_ok=True)
-                
-                # Save workflow to output directory
-                workflow_file = os.path.join(output_dir, "workflow.json")
-                with open(workflow_file, "w") as f:
-                    json.dump(workflow, f, indent=2)
-                
-                self.logger.info(f"Saved workflow to {workflow_file}")
-                
-                # Check for GEO accession in prompt and add download steps if needed
-                if prompt:
-                    geo_accession = self._extract_geo_accession(prompt)
-                    if geo_accession:
-                        self.logger.info(f"Detected GEO accession: {geo_accession}")
-                        workflow_steps = self._add_geo_download_steps(geo_accession, workflow_steps, output_dir)
-                        
-                        # Update workflow file with new steps
-                        workflow["steps"] = workflow_steps
-                        with open(workflow_file, "w") as f:
-                            json.dump(workflow, f, indent=2)
             
-            # Check and install dependencies
-            self.logger.info("Checking dependencies...")
+            # Create output directory
+            output_dir = os.path.join(self.initial_cwd, "flowagent_output", workflow_name.replace(" ", "_"))
+            os.makedirs(output_dir, exist_ok=True)
             
-            # Create a workflow plan with dependencies for the dependency manager
-            workflow_plan = {
-                "name": workflow_name,
-                "steps": workflow_steps
-            }
+            # Save workflow to output directory
+            workflow_file = os.path.join(output_dir, "workflow.json")
+            with open(workflow_file, "w") as f:
+                json.dump(workflow, f, indent=2)
             
-            # Try to ensure all dependencies are installed
-            all_installed, available_but_failed_install = self.dependency_manager.ensure_workflow_dependencies_sync(workflow_plan)
-            
-            if not all_installed:
-                self.logger.warning("Not all dependencies could be installed")
-                
-                # Check dependencies to get the missing ones
-                dependency_results = self.dependency_manager.check_dependencies(workflow_steps)
-                missing_dependencies = dependency_results.get("missing", [])
-                
-                # Remove tools that are available but failed to install from missing dependencies
-                missing_dependencies = [dep for dep in missing_dependencies if dep not in available_but_failed_install]
-                
-                if missing_dependencies:
-                    self.logger.warning(f"Missing dependencies: {', '.join(missing_dependencies)}")
-                    self.logger.warning("Some workflow steps may fail due to missing dependencies")
-                    
-                    # Check if critical tools are missing
-                    critical_missing = False
-                    for step in workflow_steps:
-                        if step.get("critical", False):
-                            step_tools = step.get("tools", [])
-                            missing_critical_tools = [tool for tool in step_tools if tool in missing_dependencies]
-                            if missing_critical_tools:
-                                self.logger.error(f"Critical step {step.get('name')} requires missing tools: {', '.join(missing_critical_tools)}")
-                                critical_missing = True
-                    
-                    if critical_missing:
-                        self.logger.warning("Critical tools are missing, but attempting to execute workflow anyway")
-                else:
-                    self.logger.info("All dependencies are available or can be used despite installation failures")
-            else:
-                self.logger.info("All dependencies are available")
+            self.logger.info(f"Saved workflow to {workflow_file}")
             
             # Execute workflow steps
             self.logger.info(f"Executing workflow: {workflow_name}")
+            
+            # Start workflow API usage tracking
+            workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            self.llm.api_usage_tracker.start_workflow(workflow_id, workflow_name)
             
             results = []
             for i, step in enumerate(workflow_steps):
                 step_name = step.get("name", f"Step {i+1}")
                 self.logger.info(f"Executing step {i+1}/{len(workflow_steps)}: {step_name}")
-                
-                # Get dependency results to check for missing tools
-                dependency_results = self.dependency_manager.check_dependencies([step])
-                missing_dependencies = dependency_results.get("missing", [])
-                
-                # Remove tools that are available but failed to install from missing dependencies
-                missing_dependencies = [dep for dep in missing_dependencies if dep not in available_but_failed_install]
-                
-                # Check if dependencies for this step are available
-                step_tools = step.get("tools", [])
-                missing_step_tools = [tool for tool in step_tools if tool in missing_dependencies]
-                
-                if missing_step_tools:
-                    self.logger.warning(f"Step {step_name} requires missing tools: {', '.join(missing_step_tools)}")
-                    
-                    # If this is a critical step and tools are missing, we might want to skip it
-                    if step.get("critical", False) and len(missing_step_tools) == len(step_tools):
-                        self.logger.error(f"Critical step {step_name} is missing all required tools, skipping")
-                        results.append({
-                            "status": "skipped",
-                            "step": step,
-                            "reason": f"Missing required tools: {', '.join(missing_step_tools)}"
-                        })
-                        continue
-                    
-                    self.logger.warning(f"Attempting to execute step anyway...")
                 
                 # Execute step
                 step_result = await self.executor.execute_step(step, output_dir, cwd=self.initial_cwd)
@@ -275,13 +184,18 @@ class WorkflowManager:
             
             dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
             
+            # End workflow API usage tracking
+            workflow_usage = self.llm.api_usage_tracker.end_workflow(workflow_id)
+            self.llm.api_usage_tracker.display_usage(workflow_id)
+            
             # Return results
             result_dict = {
                 "status": workflow_status,
                 "workflow": workflow,
                 "results": results,
                 "report": report,
-                "output_dir": output_dir
+                "output_dir": output_dir,
+                "api_usage": workflow_usage
             }
             
             # Only add dag_visualization if it was successfully created
@@ -292,6 +206,66 @@ class WorkflowManager:
         
         except Exception as e:
             self.logger.error(f"Error executing workflow: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+            
+    async def analyze_results(self, workflow_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze workflow results using agentic system."""
+        try:
+            self.logger.info("Starting agentic analysis of workflow results...")
+            
+            # Get results directory from workflow results
+            results_dir = None
+            
+            # Method 1: Try primary output directory
+            if "primary_output_dir" in workflow_results:
+                results_dir = Path(workflow_results["primary_output_dir"])
+            
+            # Method 2: Try output directories list
+            if not results_dir and "output_directories" in workflow_results:
+                output_dirs = workflow_results["output_directories"]
+                if output_dirs:
+                    results_dir = Path(output_dirs[0])
+            
+            # Method 3: Try output_directory field
+            if not results_dir:
+                results_dir = Path(workflow_results.get("output_directory", "results"))
+            
+            # Validate directory exists
+            if not results_dir or not results_dir.exists():
+                self.logger.warning("No valid output directory found for analysis")
+                return {
+                    "status": "error",
+                    "error": "No valid output directory found"
+                }
+                
+            self.logger.info(f"Analyzing results in directory: {results_dir}")
+            
+            # Start analysis API usage tracking
+            analysis_name = f"Analysis of {str(results_dir)}"
+            analysis_workflow_id = self.llm.api_usage_tracker.start_analysis_tracking(
+                analysis_name=analysis_name,
+                workflow_output_dir=str(results_dir)
+            )
+            
+            # Perform analysis
+            analysis_results = await self.analysis_system.analyze_results(workflow_results)
+            
+            # End analysis API usage tracking
+            analysis_usage = self.llm.api_usage_tracker.end_workflow(analysis_workflow_id)
+            
+            # Add API usage to analysis results
+            analysis_results["api_usage"] = analysis_usage
+            
+            return analysis_results
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing workflow results: {str(e)}")
             import traceback
             self.logger.error(traceback.format_exc())
             return {
@@ -313,6 +287,7 @@ class WorkflowManager:
             # Plan the workflow
             self.logger.info("Planning workflow steps...")
             workflow_plan = await self.llm.generate_workflow_plan(prompt)
+            self.logger.debug("generate_workflow_plan method called successfully.")
             
             # Check dependencies with a timeout
             self.logger.info("Checking dependencies...")
@@ -361,61 +336,6 @@ class WorkflowManager:
         except Exception as e:
             self.logger.error(f"Failed to plan workflow: {str(e)}")
             raise
-
-    async def analyze_results(self, workflow_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze workflow results using agentic system."""
-        try:
-            self.logger.info("Starting agentic analysis of workflow results...")
-            
-            # Get results directory from workflow results
-            results_dir = None
-            
-            # Method 1: Try primary output directory
-            if "primary_output_dir" in workflow_results:
-                results_dir = Path(workflow_results["primary_output_dir"])
-            
-            # Method 2: Try output directories list
-            if not results_dir and "output_directories" in workflow_results:
-                output_dirs = workflow_results["output_directories"]
-                if output_dirs:
-                    results_dir = Path(output_dirs[0])
-            
-            # Method 3: Try output_directory field
-            if not results_dir:
-                results_dir = Path(workflow_results.get("output_directory", "results"))
-            
-            # Validate directory exists
-            if not results_dir or not results_dir.exists():
-                self.logger.warning("No valid output directory found for analysis")
-                return {
-                    "status": "error",
-                    "error": "No valid output directory found"
-                }
-                
-            self.logger.info(f"Analyzing results in directory: {results_dir}")
-            analysis_data = await self.analysis_system._prepare_analysis_data(results_dir)
-            
-            # Run analysis agents
-            quality_analysis = await self.analysis_system.quality_agent.analyze(analysis_data)
-            quant_analysis = await self.analysis_system.quantification_agent.analyze(analysis_data)
-            tech_analysis = await self.analysis_system.technical_agent.analyze(analysis_data)
-            
-            self.logger.info("Agentic analysis completed successfully")
-            
-            return {
-                "status": "success",
-                "quality": quality_analysis,
-                "quantification": quant_analysis,
-                "technical": tech_analysis,
-                "data": analysis_data
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Analysis failed: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
 
     async def resume_workflow(self, prompt: str, checkpoint_dir: str, force_resume: bool = False) -> Dict[str, Any]:
         """Resume workflow execution from checkpoint.
@@ -553,7 +473,58 @@ class WorkflowManager:
                     report_path = await report_generator.generate_report(workflow_plan, result)
                     result["analysis_report"] = report_path
             
-            return result
+            # Generate workflow DAG visualization
+            workflow_steps_with_status = []
+            for i, step in enumerate(workflow.steps):
+                # Check if step is a dictionary or a WorkflowStep object
+                if isinstance(step, dict):
+                    # Create a WorkflowStep from dictionary
+                    step_copy = WorkflowStep(
+                        name=step.get("name", f"Step {i+1}"),
+                        description=step.get("description", ""),
+                        command=step.get("command", ""),
+                        dependencies=step.get("dependencies", [])
+                    )
+                else:
+                    # Create a copy of the WorkflowStep object
+                    step_copy = WorkflowStep(
+                        name=step.name,
+                        description=step.description,
+                        command=step.command,
+                        dependencies=step.dependencies
+                    )
+                
+                # Set status based on execution results
+                result_step = next((r for r in result.get("results", []) if r.get("step_name") == step_copy.name), None)
+                if result_step:
+                    step_copy.status = result_step.get("status", "pending")
+                else:
+                    # For steps not found in results, check if they were skipped due to smart resume
+                    # If the step name is in completed_steps (smart resume), mark it as completed
+                    if hasattr(workflow, 'completed_steps') and step_copy.name in workflow.completed_steps:
+                        step_copy.status = "completed"
+                        self.logger.debug(f"Setting status of step {step_copy.name} to 'completed' based on smart resume")
+                
+                workflow_steps_with_status.append(step_copy)
+            
+            dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
+            
+            # Return results
+            result_dict = {
+                "status": result.get("status", "unknown"),
+                "output_dir": str(output_dir),
+                "steps": [step_to_dict(step) for step in workflow_steps_with_status],
+                "dag_image": dag_image_path and str(dag_image_path),
+                "report": result.get("report", {})
+            }
+            
+            # Display API usage statistics if available
+            if hasattr(self.llm, "api_usage_tracker") and self.llm.api_usage_tracker:
+                self.logger.info("Displaying API usage statistics...")
+                # Force display API usage summary to console
+                self.llm.api_usage_tracker.display_usage(workflow_id=f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            
+            return result_dict
             
         except Exception as e:
             self.logger.error(f"Failed to resume workflow: {str(e)}")
@@ -871,6 +842,7 @@ class WorkflowManager:
             # Plan the workflow
             self.logger.info("Planning workflow steps...")
             workflow_plan = await self.llm.generate_workflow_plan(prompt)
+            self.logger.debug("generate_workflow_plan method called successfully.")
             
             # Check if all dependencies are installed
             self.logger.info("Checking dependencies...")
@@ -1011,6 +983,12 @@ class WorkflowManager:
             # Only add dag_visualization if it was successfully created
             if dag_image_path:
                 result["dag_visualization"] = str(dag_image_path)
+            
+            # Display API usage statistics if available
+            if hasattr(self.llm, "api_usage_tracker") and self.llm.api_usage_tracker:
+                self.logger.info("Displaying API usage statistics...")
+                # Force display API usage summary to console
+                self.llm.api_usage_tracker.display_usage(workflow_id=f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
             
             return result
             
