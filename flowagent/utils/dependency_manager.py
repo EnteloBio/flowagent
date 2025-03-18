@@ -215,13 +215,27 @@ Example format:
                 dependencies = json.loads(response)
                 self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
                 
-                converted = [
-                    'entrez-direct' if pkg.lower() == 'ncbi-entrez-direct' else pkg
-                    for pkg in dependencies.get("tools", [])
-                ]
+                # Handle the case where tools can be either strings or dictionaries
+                tools_list = []
+                for pkg in dependencies.get("tools", []):
+                    if isinstance(pkg, str):
+                        # Convert 'ncbi-entrez-direct' to 'entrez-direct' if needed
+                        pkg_name = 'entrez-direct' if pkg.lower() == 'ncbi-entrez-direct' else pkg
+                        tools_list.append({"name": pkg_name, "channel": "bioconda"})
+                    elif isinstance(pkg, dict) and "name" in pkg:
+                        # If it's already a dictionary with a name, use it directly
+                        # But still convert 'ncbi-entrez-direct' to 'entrez-direct' if needed
+                        if pkg["name"].lower() == 'ncbi-entrez-direct':
+                            pkg["name"] = 'entrez-direct'
+                        # Ensure it has a channel if not specified
+                        if "channel" not in pkg:
+                            pkg["channel"] = "bioconda"
+                        tools_list.append(pkg)
+                    else:
+                        self.logger.warning(f"Skipping invalid tool specification: {pkg}")
                 
                 return {
-                    "tools": [{"name": pkg, "channel": "bioconda"} for pkg in converted],
+                    "tools": tools_list,
                     "python_packages": dependencies.get("python_packages", []),
                     "r_packages": dependencies.get("r_packages", [])
                 }
