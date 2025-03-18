@@ -25,6 +25,13 @@ class DependencyManager:
         
         # Dictionary of tool suites with their components and detection patterns
         self.TOOL_SUITES = {
+            "entrez-direct": {
+                "components": ["esearch", "efetch"],
+                "patterns": [
+                    {"type": "conda", "name": "entrez-direct", "channel": "bioconda"},
+                    {"type": "path", "paths": ["/usr/bin/", "/usr/local/bin/"]}
+                ]
+            },
             "sra-toolkit": {
                 "components": ["prefetch", "fasterq-dump", "fastq-dump", "sam-dump"],
                 "detection_patterns": [
@@ -35,19 +42,6 @@ class DependencyManager:
                     "/opt/homebrew/bin/{}",
                     "/opt/conda/bin/{}",
                     "~/.conda/envs/*/bin/{}"
-                ]
-            },
-            "entrez-direct": {
-                "components": ["esearch", "efetch", "einfo", "elink", "xtract"],
-                "detection_patterns": [
-                    "/usr/local/bin/{}",
-                    "/usr/bin/{}",
-                    "~/miniconda3/bin/{}",
-                    "~/anaconda3/bin/{}",
-                    "/opt/homebrew/bin/{}",
-                    "/opt/conda/bin/{}",
-                    "~/.conda/envs/*/bin/{}",
-                    "~/edirect/{}"
                 ]
             },
             "blast": {
@@ -221,7 +215,30 @@ Example format:
                 dependencies = json.loads(response)
                 self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
                 
-                return dependencies
+                # Handle the case where tools can be either strings or dictionaries
+                tools_list = []
+                for pkg in dependencies.get("tools", []):
+                    if isinstance(pkg, str):
+                        # Convert 'ncbi-entrez-direct' to 'entrez-direct' if needed
+                        pkg_name = 'entrez-direct' if pkg.lower() == 'ncbi-entrez-direct' else pkg
+                        tools_list.append({"name": pkg_name, "channel": "bioconda"})
+                    elif isinstance(pkg, dict) and "name" in pkg:
+                        # If it's already a dictionary with a name, use it directly
+                        # But still convert 'ncbi-entrez-direct' to 'entrez-direct' if needed
+                        if pkg["name"].lower() == 'ncbi-entrez-direct':
+                            pkg["name"] = 'entrez-direct'
+                        # Ensure it has a channel if not specified
+                        if "channel" not in pkg:
+                            pkg["channel"] = "bioconda"
+                        tools_list.append(pkg)
+                    else:
+                        self.logger.warning(f"Skipping invalid tool specification: {pkg}")
+                
+                return {
+                    "tools": tools_list,
+                    "python_packages": dependencies.get("python_packages", []),
+                    "r_packages": dependencies.get("r_packages", [])
+                }
                 
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
@@ -766,9 +783,8 @@ Option 2: Check the tool's documentation for alternative installation methods
             List of tool names associated with the package
         """
         package_mapping = {
+            "entrez-direct": ["esearch", "efetch"],
             "sra-tools": ["prefetch", "fasterq-dump", "fastq-dump", "sam-dump"],
-            "entrez-direct": ["esearch", "efetch", "einfo", "elink", "xtract"],
-            "edirect": ["esearch", "efetch", "einfo", "elink", "xtract"],
             "blast": ["blastn", "blastp", "blastx", "tblastn", "tblastx", "makeblastdb"],
             "samtools": ["samtools"],
             "bcftools": ["bcftools"],
@@ -797,7 +813,7 @@ Option 2: Check the tool's documentation for alternative installation methods
             "gzip": ["gzip"]
         }
         
-        return package_mapping.get(package_name, [package_name])
+        return package_mapping.get(package_name.lower(), [])
 
     def ensure_workflow_dependencies_sync(self, workflow_plan):
         """Ensure that all dependencies required by a workflow are installed.
