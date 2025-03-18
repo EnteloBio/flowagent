@@ -768,7 +768,6 @@ Option 2: Check the tool's documentation for alternative installation methods
         package_mapping = {
             "sra-tools": ["prefetch", "fasterq-dump", "fastq-dump", "sam-dump"],
             "entrez-direct": ["esearch", "efetch", "einfo", "elink", "xtract"],
-            "edirect": ["esearch", "efetch", "einfo", "elink", "xtract"],
             "blast": ["blastn", "blastp", "blastx", "tblastn", "tblastx", "makeblastdb"],
             "samtools": ["samtools"],
             "bcftools": ["bcftools"],

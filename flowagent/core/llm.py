@@ -430,6 +430,13 @@ Use the exact sample name '{sample_name}' for output directories.""",
         },
     }
 
+    GEO_DOWNLOAD_STEPS = {
+        'check_entrez_tools': {
+            'command': 'command -v esearch && command -v efetch',
+            'description': 'Verify Entrez Direct tools are available'
+        },
+    }
+
     def _detect_workflow_type(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
         """Detect workflow type from prompt.
 
@@ -1046,12 +1053,15 @@ Provide analysis in this format:
         try:
             # Extract file patterns and relationships using LLM
             file_info = await self._extract_file_patterns(prompt)
-
+            
+            # Check if this is a GEO download request
+            geo_accession = file_info.get("geo_accession")
+            
             # Find files matching the patterns
             matched_files = []
             for pattern in file_info["patterns"]:
                 matched_files.extend(glob.glob(pattern))
-
+            
             if not matched_files:
                 patterns_str = ", ".join(file_info["patterns"])
                 raise ValueError(f"No files found matching patterns: {patterns_str}")
