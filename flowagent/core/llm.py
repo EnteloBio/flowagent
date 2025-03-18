@@ -715,7 +715,16 @@ Return a JSON object in this EXACT format:
             # If no files found and we have a GEO accession, we'll create a download workflow
             if not matched_files and geo_accession:
                 self.logger.info(f"No local files found. Creating GEO download workflow for {geo_accession}")
-                return await self._create_geo_download_workflow(geo_accession, prompt, file_info)
+                workflow_plan = await self._create_geo_download_workflow(geo_accession, prompt, file_info)
+                
+                # Check if the user wants to analyze the data after downloading
+                prompt_lower = prompt.lower()
+                analysis_keywords = ["analyze", "analysis", "run", "kallisto", "hisat", "star", "salmon", "quantify"]
+                
+                if any(keyword in prompt_lower for keyword in analysis_keywords) and "only download" not in prompt_lower and "just download" not in prompt_lower:
+                    workflow_plan = await self._add_analysis_steps_to_geo_workflow(workflow_plan, prompt, file_info)
+                
+                return workflow_plan
             
             # If no files found and no GEO accession, raise an error
             if not matched_files:
@@ -1199,106 +1208,130 @@ If you are being asked to generate a title, set "success" to false.
         return None
 
     async def _extract_file_patterns(self, prompt: str) -> Dict[str, Any]:
-        """Use LLM to extract file patterns and relationships from the prompt.
-
+        """Extract file patterns and relationships from a prompt.
+        
+        This method uses the LLM to extract file patterns, relationships, and other parameters
+        from the user prompt. It also detects GEO accession numbers and references.
+        
         Args:
-            prompt: User prompt describing the analysis and files
-
+            prompt: User prompt
+            
         Returns:
-            Dict containing:
-            - patterns: List of glob patterns to find files
-            - relationships: Dict describing relationships between files (e.g. paired-end reads)
-            - file_type: Type of expected files (e.g. 'fastq', 'bam', etc.)
-            - geo_accession: GEO accession number if present
+            Dictionary with file patterns, relationships, and other parameters
         """
-        # First check if this is a GEO download request
+        # Check for GEO accession first
         geo_accession = await self._detect_geo_accession(prompt)
         
+        # Extract reference file if mentioned
+        reference_pattern = r'reference\s+(\S+)'
+        reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
+        reference = reference_match.group(1) if reference_match else ""
+        
+        # Detect if data is paired-end
+        paired_end = False
+        paired_patterns = ["paired[- ]end", "pair[- ]end", "paired", "PE"]
+        if any(re.search(pattern, prompt, re.IGNORECASE) for pattern in paired_patterns):
+            paired_end = True
+        
+        # If we found a GEO accession, we can return early with minimal patterns
         if geo_accession:
-            self.logger.info(f"Detected GEO accession: {geo_accession}")
-            # For GEO data, we'll return patterns for paired-end FASTQ files
-            # These don't exist yet but will be downloaded
-            return {
-                "patterns": ["*_1.fastq.gz", "*_2.fastq.gz"],
-                "relationships": {
-                    "type": "paired",
-                    "pattern_groups": [
-                        {"pattern": "*_1.fastq.gz", "group": "read1"},
-                        {"pattern": "*_2.fastq.gz", "group": "read2"}
-                    ],
-                    "matching_rules": [
-                        "Replace '_1' with '_2' to find matching pair"
-                    ]
-                },
-                "file_type": "fastq",
-                "geo_accession": geo_accession
+            result = {
+                "patterns": ["*.fastq.gz", "*.fq.gz"],
+                "geo_accession": geo_accession,
+                "reference": reference,
+                "paired_end": paired_end
             }
             
-        # Otherwise, use LLM to extract file patterns
+            # If paired-end, add relationship information
+            if paired_end:
+                result["relationships"] = {
+                    "type": "paired",
+                    "pattern_groups": [
+                        {"group": "read1", "pattern": "*_1.fastq.gz"},
+                        {"group": "read2", "pattern": "*_2.fastq.gz"}
+                    ]
+                }
+            
+            return result
+        
+        # For non-GEO requests, use the LLM to extract patterns
         messages = [
             {
                 "role": "system",
-                "content": """You are an expert at analyzing bioinformatics file patterns.
-                Extract precise file matching patterns and relationships from user prompts.
-                Return a JSON object with:
-                - patterns: List of glob patterns that will match the described files
-                - relationships: Dict describing how files are related (e.g. paired-end reads)
-                - file_type: Type of files being described
-                
-                Example:
-                Input: "I have paired-end RNA-seq data with read1 files ending in _R1.fastq.gz and read2 in _R2.fastq.gz"
-                Output: {
-                    "patterns": ["*_R1.fastq.gz", "*_R2.fastq.gz"],
-                    "relationships": {
-                        "type": "paired",
-                        "pattern_groups": [
-                            {"pattern": "*_R1.fastq.gz", "group": "read1"},
-                            {"pattern": "*_R2.fastq.gz", "group": "read2"}
-                        ],
-                        "matching_rules": [
-                            "Replace '_R1' with '_R2' to find matching pair"
-                        ]
-                    },
-                    "file_type": "fastq"
-                }""",
+                "content": """You are an expert in bioinformatics file pattern recognition.
+                Extract file patterns and relationships from user prompts.
+                Return only valid JSON.""",
             },
-            {"role": "user", "content": prompt},
+            {
+                "role": "user",
+                "content": f"""Extract file patterns and relationships from this prompt:
+                {prompt}
+                
+                Return a JSON object with:
+                1. "patterns": List of file patterns (e.g., "*.fastq.gz", "sample_*.bam")
+                2. "relationships": Object describing relationships between patterns
+                   - "type": "paired" for paired-end data
+                   - "pattern_groups": List of objects with "group" and "pattern"
+                
+                Example for paired-end RNA-seq:
+                {{
+                  "patterns": ["*.fastq.gz", "*.fq.gz"],
+                  "relationships": {{
+                    "type": "paired",
+                    "pattern_groups": [
+                      {{"group": "read1", "pattern": "*_1.fastq.gz"}},
+                      {{"group": "read2", "pattern": "*_2.fastq.gz"}}
+                    ]
+                  }}
+                }}
+                
+                Return only the JSON object, no markdown or other text.""",
+            },
         ]
 
+        response = await self._call_openai(messages)
+        
         try:
-            response = await self._call_openai(messages)
-            file_info = json.loads(self._clean_llm_response(response))
-            return file_info
-        except Exception as e:
-            self.logger.error(f"Error extracting file patterns: {e}")
-            raise
+            # Clean and parse the response
+            cleaned_response = self._clean_llm_response(response)
+            result = json.loads(cleaned_response)
+            
+            # Add reference if found
+            if reference:
+                result["reference"] = reference
+                
+            # Add paired_end flag based on relationships
+            if "relationships" in result and result["relationships"]["type"] == "paired":
+                result["paired_end"] = True
+            else:
+                result["paired_end"] = paired_end
+                
+            return result
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse file patterns: {str(e)}")
+            # Return default patterns if parsing fails
+            return {
+                "patterns": ["*.fastq.gz", "*.fq.gz", "*.bam", "*.sam"],
+                "reference": reference,
+                "paired_end": paired_end
+            }
 
     async def _create_geo_download_workflow(self, geo_accession: str, prompt: str, file_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a workflow plan for downloading GEO data.
-        
-        Args:
-            geo_accession: GEO accession number
-            prompt: Original user prompt
-            file_info: File pattern information
-            
-        Returns:
-            Workflow plan with GEO download steps
-        """
+        """Create a workflow plan for downloading data from GEO."""
         self.logger.info(f"Creating GEO download workflow for {geo_accession}")
         
-        # Extract reference from prompt
-        reference_pattern = r'reference\s+(\S+)'
-        reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
-        reference = reference_match.group(1) if reference_match else "reference.fa"
+        # Detect if a specific workflow type is mentioned in the prompt
+        workflow_type, _ = self._detect_workflow_type(prompt)
         
-        # Create directory structure
-        workflow_type, workflow_config = self._detect_workflow_type(prompt)
-        dir_structure = " ".join(workflow_config["dir_structure"])
-        mkdir_command = f"mkdir -p {dir_structure} raw_data"
+        # Create directory structure command
+        mkdir_command = "mkdir -p raw_data results"
         
-        # Create the workflow plan
+        # Extract reference from file_info if available
+        reference = file_info.get("reference", "")
+        
+        # Create the workflow plan with only download steps
         workflow_plan = {
-            "workflow_type": "geo_download_" + workflow_type,
+            "workflow_type": "geo_download",
             "steps": [
                 {
                     "name": "create_directories",
@@ -1344,7 +1377,63 @@ If you are being asked to generate a title, set "success" to false.
                     "outputs": ["raw_data/*.fastq.gz"],
                     "description": "Download and convert SRA files to FASTQ",
                     "profile_name": "minimal"
-                },
+                }
+            ]
+        }
+        
+        return workflow_plan
+
+    async def _add_analysis_steps_to_geo_workflow(self, workflow_plan: Dict[str, Any], prompt: str, file_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Add analysis steps to a GEO download workflow if requested.
+        
+        Args:
+            workflow_plan: Existing workflow plan with GEO download steps
+            prompt: Original user prompt
+            file_info: File pattern information
+            
+        Returns:
+            Updated workflow plan with analysis steps added
+        """
+        self.logger.info("Adding analysis steps to GEO download workflow")
+        
+        # Detect workflow type based on the prompt
+        workflow_type, workflow_config = self._detect_workflow_type(prompt)
+        
+        # Extract reference from file_info or prompt
+        reference = file_info.get("reference", "")
+        if not reference:
+            reference_pattern = r'reference\s+(\S+)'
+            reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
+            reference = reference_match.group(1) if reference_match else "reference.fa"
+        
+        # Get GEO accession from the workflow plan
+        geo_accession = None
+        for step in workflow_plan["steps"]:
+            if step["name"] == "extract_srr_ids":
+                # Extract GEO accession from the command
+                match = re.search(r'(GSE\d+)_runinfo\.csv', step["command"])
+                if match:
+                    geo_accession = match.group(1)
+                    break
+        
+        if not geo_accession:
+            self.logger.warning("Could not extract GEO accession from workflow plan")
+            return workflow_plan
+            
+        # Update workflow type to include analysis
+        workflow_plan["workflow_type"] = f"geo_download_and_{workflow_type}"
+        
+        # Create directory structure for analysis
+        dir_structure = " ".join(workflow_config["dir_structure"])
+        for step in workflow_plan["steps"]:
+            if step["name"] == "create_directories":
+                step["command"] = f"{step['command']} {dir_structure}"
+                break
+        
+        # Add analysis steps based on workflow type
+        if workflow_type == "rna_seq_kallisto":
+            # Add RNA-seq analysis steps with Kallisto
+            workflow_plan["steps"].extend([
                 {
                     "name": "fastqc",
                     "command": f"cd raw_data && mkdir -p ../results/rna_seq_kallisto/fastqc && fastqc -o ../results/rna_seq_kallisto/fastqc *.fastq.gz",
@@ -1380,9 +1469,13 @@ If you are being asked to generate a title, set "success" to false.
                     "outputs": ["results/rna_seq_kallisto/qc/multiqc_report.html"],
                     "description": "Generate MultiQC report",
                     "profile_name": "minimal"
-                },
-            ]
-        }
+                }
+            ])
+        elif workflow_type == "rna_seq_hisat":
+            # Add RNA-seq analysis steps with HISAT2
+            # Implementation for other workflow types would go here
+            pass
+        # Add more workflow types as needed
         
         return workflow_plan
 
