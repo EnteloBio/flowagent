@@ -25,6 +25,13 @@ class DependencyManager:
         
         # Dictionary of tool suites with their components and detection patterns
         self.TOOL_SUITES = {
+            "entrez-direct": {
+                "components": ["esearch", "efetch"],
+                "patterns": [
+                    {"type": "conda", "name": "entrez-direct", "channel": "bioconda"},
+                    {"type": "path", "paths": ["/usr/bin/", "/usr/local/bin/"]}
+                ]
+            },
             "sra-toolkit": {
                 "components": ["prefetch", "fasterq-dump", "fastq-dump", "sam-dump"],
                 "detection_patterns": [
@@ -35,19 +42,6 @@ class DependencyManager:
                     "/opt/homebrew/bin/{}",
                     "/opt/conda/bin/{}",
                     "~/.conda/envs/*/bin/{}"
-                ]
-            },
-            "entrez-direct": {
-                "components": ["esearch", "efetch", "einfo", "elink", "xtract"],
-                "detection_patterns": [
-                    "/usr/local/bin/{}",
-                    "/usr/bin/{}",
-                    "~/miniconda3/bin/{}",
-                    "~/anaconda3/bin/{}",
-                    "/opt/homebrew/bin/{}",
-                    "/opt/conda/bin/{}",
-                    "~/.conda/envs/*/bin/{}",
-                    "~/edirect/{}"
                 ]
             },
             "blast": {
@@ -221,7 +215,16 @@ Example format:
                 dependencies = json.loads(response)
                 self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
                 
-                return dependencies
+                converted = [
+                    'entrez-direct' if pkg.lower() == 'ncbi-entrez-direct' else pkg
+                    for pkg in dependencies.get("tools", [])
+                ]
+                
+                return {
+                    "tools": [{"name": pkg, "channel": "bioconda"} for pkg in converted],
+                    "python_packages": dependencies.get("python_packages", []),
+                    "r_packages": dependencies.get("r_packages", [])
+                }
                 
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
@@ -766,8 +769,8 @@ Option 2: Check the tool's documentation for alternative installation methods
             List of tool names associated with the package
         """
         package_mapping = {
+            "entrez-direct": ["esearch", "efetch"],
             "sra-tools": ["prefetch", "fasterq-dump", "fastq-dump", "sam-dump"],
-            "entrez-direct": ["esearch", "efetch", "einfo", "elink", "xtract"],
             "blast": ["blastn", "blastp", "blastx", "tblastn", "tblastx", "makeblastdb"],
             "samtools": ["samtools"],
             "bcftools": ["bcftools"],
@@ -796,7 +799,7 @@ Option 2: Check the tool's documentation for alternative installation methods
             "gzip": ["gzip"]
         }
         
-        return package_mapping.get(package_name, [package_name])
+        return package_mapping.get(package_name.lower(), [])
 
     def ensure_workflow_dependencies_sync(self, workflow_plan):
         """Ensure that all dependencies required by a workflow are installed.
