@@ -16,6 +16,11 @@ openai>=1.0.0
 anthropic>=0.40.0
 google-genai>=1.0.0
 
+# Web UI (install with: pip install flowagent[web])
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+sse-starlette>=2.0.0
+
 # HPC (optional - install with: pip install flowagent[hpc])
 # cgatcore>=0.6.7
 # drmaa>=0.7.9

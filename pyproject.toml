@@ -35,7 +35,9 @@ kubernetes = [
     "kubernetes>=28.1.0",
 ]
 web = [
-    "chainlit>=2.1.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sse-starlette>=2.0.0",
 ]
 dev = [
     "pytest>=7.0.0",
