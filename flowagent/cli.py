@@ -252,27 +252,21 @@ def run():
                 )
             )
         elif args.command == "serve":
-            # Start new web interface
-            web_path = Path(__file__).parent / "web.py"
-
-            env = os.environ.copy()
-            env["USER_EXECUTION_DIR"] = os.getcwd()
-
-            project_dir = Path(__file__).parent.parent
-            os.chdir(project_dir)
+            os.environ["USER_EXECUTION_DIR"] = os.getcwd()
 
             try:
-                subprocess.run(
-                    [
-                        "chainlit",
-                        "run",
-                        web_path.absolute(),
-                        "--host",
-                        str(args.host),
-                        "--port",
-                        str(args.port),
-                    ],
-                    env=env,
+                import uvicorn
+            except ImportError:
+                logger.error("uvicorn is required for the web UI: pip install 'flowagent[web]'")
+                sys.exit(1)
+
+            logger.info("Starting FlowAgent web UI on %s:%s", args.host, args.port)
+            try:
+                uvicorn.run(
+                    "flowagent.web:app",
+                    host=str(args.host),
+                    port=int(args.port),
+                    log_level="info",
                 )
             except KeyboardInterrupt:
                 logger.info("Shutting down web interface...")
