@@ -7,7 +7,11 @@ from pathlib import Path
 import subprocess
 from abc import ABC, abstractmethod
 
-from cgatcore import pipeline as P
+try:
+    from cgatcore import pipeline as P
+except ImportError:
+    P = None
+
 from ..utils.logging import get_logger
 from flowagent.config.settings import Settings
 
@@ -59,6 +63,8 @@ class CGATExecutor(BaseExecutor):
     
     def __init__(self):
         """Initialize CGATCore pipeline."""
+        if P is None:
+            raise ImportError("cgatcore is required for CGATExecutor: pip install 'flowagent[hpc]'")
         self.pipeline = P
         self.pipeline.start_pipeline()
         self.settings = Settings()
