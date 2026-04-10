@@ -45,11 +45,21 @@ class Settings(BaseSettings):
     API_KEY_HEADER: str = "X-API-Key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 3000
     
-    # OpenAI Settings
+    # LLM Provider Settings (multi-provider)
+    LLM_PROVIDER: str = Field("openai", description="LLM provider: openai | anthropic | google | ollama")
+    LLM_MODEL: str = Field("gpt-4.1", description="Primary model (provider/model or bare name)")
+    LLM_FALLBACK_MODEL: str = Field("gpt-4.1-mini", description="Fallback model if primary unavailable")
+    LLM_BASE_URL: Optional[str] = Field(None, description="Custom endpoint URL (for Ollama/vLLM)")
+
+    # Provider API keys
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API Key")
+    ANTHROPIC_API_KEY: Optional[str] = Field(None, description="Anthropic API Key")
+    GOOGLE_API_KEY: Optional[str] = Field(None, description="Google Gemini API Key")
+
+    # Legacy OpenAI settings (still read for backwards compatibility)
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-    OPENAI_MODEL: str = Field('gpt-3.5-turbo', description="OpenAI Model to use")
-    OPENAI_FALLBACK_MODEL: str = Field('gpt-3.5-turbo', description="Fallback model if primary is unavailable")
+    OPENAI_MODEL: str = Field('gpt-4.1', description="OpenAI Model to use (legacy, prefer LLM_MODEL)")
+    OPENAI_FALLBACK_MODEL: str = Field('gpt-4.1-mini', description="Fallback model (legacy, prefer LLM_FALLBACK_MODEL)")
     
     @field_validator('OPENAI_API_KEY')
     def validate_openai_key(cls, v):
@@ -97,8 +107,14 @@ class Settings(BaseSettings):
         "memory": "16G"
     }
     
+    # Pipeline generation settings
+    PIPELINE_FORMAT: str = Field("shell", description="Pipeline format: shell | nextflow | snakemake")
+    PIPELINE_PROFILE: str = Field("local", description="Nextflow profile")
+    CONTAINER_ENGINE: str = Field("docker", description="Container engine: docker | singularity | conda")
+    AUTO_EXECUTE_PIPELINE: bool = Field(True, description="Auto-execute generated pipelines")
+
     # Executor settings
-    EXECUTOR_TYPE: str = Field("local", env='EXECUTOR_TYPE')  # Options: local, hpc
+    EXECUTOR_TYPE: str = Field("local", env='EXECUTOR_TYPE')  # Options: local, cgat, hpc, kubernetes, nextflow, snakemake
     HPC_SYSTEM: str = Field("slurm", env='HPC_SYSTEM')  # Options: slurm, sge, torque
     HPC_QUEUE: str = Field("all.q", env='HPC_QUEUE')
     HPC_DEFAULT_MEMORY: str = Field("4G", env='HPC_DEFAULT_MEMORY')
@@ -142,6 +158,17 @@ class Settings(BaseSettings):
     def openai_api_key(self) -> Optional[str]:
         """Get OpenAI API key."""
         return self.OPENAI_API_KEY
+
+    @property
+    def active_api_key(self) -> Optional[str]:
+        """Get the API key for the currently-configured LLM provider."""
+        key_map = {
+            "openai": self.OPENAI_API_KEY,
+            "anthropic": self.ANTHROPIC_API_KEY,
+            "google": self.GOOGLE_API_KEY,
+            "ollama": "ollama",
+        }
+        return key_map.get(self.LLM_PROVIDER.lower())
     
     @property
     def is_development(self) -> bool:

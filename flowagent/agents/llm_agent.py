@@ -1,102 +1,49 @@
 """LLM Agent for handling tool execution and decision making."""
 
-import os
 import json
 import logging
 from typing import Any, Dict, List, Optional
-import openai
-from pathlib import Path
-from dotenv import load_dotenv
 from ..utils.logging import get_logger
 from ..config.settings import Settings
-import asyncio
-import time
+from ..core.providers import create_provider
 
 # Get settings
 settings = Settings()
 
 logger = get_logger(__name__)
 
+
 class LLMAgent:
-    """Agent that uses LLM (ChatGPT) for decision making and tool execution."""
-    
-    def __init__(self, settings=None):
+    """Agent that uses LLM for decision making and tool execution.
+
+    Now delegates to the multi-provider abstraction so OpenAI, Anthropic,
+    Google Gemini, and Ollama all work identically.
+    """
+
+    def __init__(self, agent_settings: Optional[Settings] = None):
         """Initialize the LLM agent."""
         self.logger = get_logger(__name__)
-        self.settings = settings or settings
-        
-        if not self.settings.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key not found")
-            
-        # Configure OpenAI client
-        self.client = openai.AsyncOpenAI(
-            api_key=self.settings.OPENAI_API_KEY,
-            base_url=self.settings.OPENAI_BASE_URL,
-            timeout=self.settings.TIMEOUT
+        self.settings = agent_settings or settings
+
+        api_key = self.settings.active_api_key or self.settings.OPENAI_API_KEY
+        if not api_key:
+            raise ValueError(
+                f"No API key found for provider '{self.settings.LLM_PROVIDER}'"
+            )
+
+        self.provider = create_provider(
+            self.settings.LLM_PROVIDER,
+            model=self.settings.LLM_MODEL,
+            api_key=api_key,
+            base_url=self.settings.LLM_BASE_URL,
         )
-        
-        # Get model to use (with fallback)
-        self.model = self.settings.OPENAI_MODEL
-        self.logger.info(f"Using OpenAI model: {self.model}")
-        
-        # Rate limiting state
-        self.last_request_time = 0
-        self.min_request_interval = 1.0  # Minimum time between requests in seconds
-        
-    async def _wait_for_rate_limit(self):
-        """Wait if needed to respect rate limits."""
-        now = time.time()
-        time_since_last = now - self.last_request_time
-        if time_since_last < self.min_request_interval:
-            await asyncio.sleep(self.min_request_interval - time_since_last)
-        self.last_request_time = time.time()
-        
+        self.logger.info("LLMAgent using provider=%s model=%s",
+                         self.settings.LLM_PROVIDER, self.settings.LLM_MODEL)
+
     async def _get_chat_completion(self, messages: List[Dict[str, str]], **kwargs) -> str:
-        """Get a chat completion from OpenAI's API with retries and rate limiting.
-        
-        Args:
-            messages: List of message dictionaries
-            **kwargs: Additional arguments for completion
-            
-        Returns:
-            The completion text
-            
-        Raises:
-            Exception: If there is an error getting the response
-        """
-        max_retries = self.settings.MAX_RETRIES
-        base_delay = self.settings.RETRY_DELAY
-        
-        for attempt in range(max_retries):
-            try:
-                # Wait for rate limit if needed
-                await self._wait_for_rate_limit()
-                
-                # Make the API call
-                completion = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    **kwargs
-                )
-                return completion.choices[0].message.content
-                
-            except openai.error.RateLimitError as e:
-                if attempt == max_retries - 1:
-                    self.logger.error("OpenAI API quota exceeded")
-                    raise Exception("OpenAI API quota exceeded. Disabling LLM functionality.")
-                    
-                # Exponential backoff with jitter
-                delay = base_delay * (2 ** attempt) * (0.5 + 0.5 * time.time() % 1)
-                self.logger.warning(f"Rate limit hit, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
-                await asyncio.sleep(delay)
-                
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise Exception(f"Failed to get ChatGPT response after {max_retries} attempts: {str(e)}")
-                    
-                delay = base_delay * (2 ** attempt)
-                self.logger.warning(f"Error in request, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries}): {str(e)}")
-                await asyncio.sleep(delay)
+        """Get a chat completion from the configured provider."""
+        resp = await self.provider.chat(messages, **kwargs)
+        return resp.content
                 
     async def analyze_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze input data and make decisions about processing.

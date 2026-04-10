@@ -6,6 +6,7 @@ and handle user commands.
 
 import asyncio
 import io
+import json
 import logging
 import os
 from datetime import datetime
@@ -15,11 +16,15 @@ from typing import Optional
 import chainlit as cl
 
 from flowagent.core.llm import LLMInterface
+from flowagent.core.providers import create_provider
+from flowagent.core.agent_loop import run_agent_loop
+from flowagent.config.settings import Settings
 from flowagent.workflow import analyze_workflow, run_workflow
 
 commands = [
     {"id": "Run", "icon": "chart-no-axes-gantt", "description": "Run a workflow"},
     {"id": "Analyse", "icon": "search", "description": "Analyse a workflow"},
+    {"id": "Agent", "icon": "bot", "description": "Interactive agent with tool calling"},
 ]
 
 
@@ -182,10 +187,10 @@ async def start_run_workflow(message: cl.Message, output: OutputMessage):
         output.root_logger.critical("🚨 Failed to parse input prompt!")
         return
 
+    _cp = Path(extracted_params["checkpoint_dir"]) if extracted_params["checkpoint_dir"] else None
     if (
-        extracted_params["checkpoint_dir"]
-        and not Path(extracted_params["checkpoint_dir"]).exists()
-        and not Path(extracted_params["checkpoint_dir"]).is_dir()
+        _cp is not None
+        and (not _cp.exists() or not _cp.is_dir())
     ):
         output.root_logger.critical(
             "🚨 Checkpoint folder does not exist or is not a folder!"
@@ -244,6 +249,37 @@ async def start_analyse_workflow(message: cl.Message, output: OutputMessage):
     output.root_logger.info("Analysis completed!")
 
 
+async def start_agent_chat(message: cl.Message):
+    """Run the interactive agent loop with streaming and tool calling."""
+    s = Settings()
+    api_key = s.active_api_key or s.OPENAI_API_KEY
+    provider = create_provider(
+        s.LLM_PROVIDER, model=s.LLM_MODEL,
+        api_key=api_key, base_url=s.LLM_BASE_URL,
+    )
+
+    # Stream a thinking indicator
+    thinking_msg = cl.Message(content="")
+    await thinking_msg.send()
+
+    result = await run_agent_loop(provider, message.content)
+
+    # Stream final response
+    resp_msg = cl.Message(content="")
+    await resp_msg.send()
+    response_text = result.get("response", "") or ""
+    for chunk in [response_text[i:i+50] for i in range(0, len(response_text), 50)]:
+        await resp_msg.stream_token(chunk)
+    await resp_msg.update()
+
+    # Show tool call summary
+    if result["tool_calls"]:
+        summary_lines = [f"**Tools used:** {result['iterations']} iterations\n"]
+        for tc in result["tool_calls"]:
+            summary_lines.append(f"- `{tc['name']}({json.dumps(tc['arguments'])[:80]})`")
+        await cl.Message(content="\n".join(summary_lines)).send()
+
+
 @cl.on_chat_start
 async def on_chat_start():
     """
@@ -257,6 +293,7 @@ async def on_chat_start():
             "🚨 Warning: USER_EXECUTION_DIR environment variable not set! "
             "Are you serving the web app correctly?"
         )
+        return
 
     c_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c_wd = os.getcwd()
@@ -302,6 +339,8 @@ async def on_message(message: cl.Message):
                     await start_run_workflow(message, output)
                 case "Analyse":
                     await start_analyse_workflow(message, output)
+                case "Agent":
+                    await start_agent_chat(message)
                 case None:
                     output.root_logger.critical(
                         "🚨 No command provided! Start typing with / to see available commands."

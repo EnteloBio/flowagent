@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 
 from ..config.settings import Settings
 from ..utils.logging import get_logger
+from .providers import create_provider, LLMProvider
 
 # Initialize settings
 settings = Settings()
@@ -20,51 +21,59 @@ logger = get_logger(__name__)
 
 
 class LLMInterface:
-    """Interface for LLM-based workflow generation."""
+    """Interface for LLM-based workflow generation.
+
+    Now delegates API calls to the provider abstraction layer so that
+    OpenAI, Anthropic, Google Gemini, and Ollama all work identically.
+    """
 
     def __init__(self):
         """Initialize LLM interface."""
         self.logger = get_logger(__name__)
 
-        # Check for OpenAI API key and .env file
+        # Check for .env file (warn, don't hard-fail -- keys may come from env)
         env_found = False
-        
-        # Check current directory first
         current_env_path = Path(".env")
         if current_env_path.exists():
             env_found = True
-            
-        # If not found, check USER_EXECUTION_DIR if it exists
         if not env_found and "USER_EXECUTION_DIR" in os.environ:
             user_dir_env_path = Path(os.environ["USER_EXECUTION_DIR"]) / ".env"
             if user_dir_env_path.exists():
-                # Load the .env file from USER_EXECUTION_DIR
                 from dotenv import load_dotenv
                 load_dotenv(dotenv_path=user_dir_env_path)
                 env_found = True
                 self.logger.info(f"Loaded .env file from USER_EXECUTION_DIR: {user_dir_env_path}")
-        
+
         if not env_found:
-            self.logger.error(
-                "\n⚠️  No .env file found in the current directory or USER_EXECUTION_DIR."
-                "\n   Please create a .env file with your OpenAI API key:"
-                "\n   OPENAI_API_KEY=your-api-key-here"
-                "\n   OPENAI_MODEL=gpt-4 (optional)"
-                "\n   OPENAI_FALLBACK_MODEL=gpt-3.5-turbo (optional)"
+            self.logger.warning(
+                "No .env file found. Ensure LLM API keys are set via environment variables."
             )
-            raise ValueError("Missing .env file with OpenAI API key")
 
-        if not settings.OPENAI_API_KEY:
+        # Build the provider using new multi-provider settings
+        api_key = settings.active_api_key or settings.OPENAI_API_KEY
+        if not api_key:
             self.logger.error(
-                "\n⚠️  OPENAI_API_KEY not found in environment variables or .env file."
-                "\n   Please add your OpenAI API key to the .env file:"
-                "\n   OPENAI_API_KEY=your-api-key-here"
+                "\n⚠️  No API key found for provider '%s'."
+                "\n   Set the appropriate key in .env or environment variables."
+                "\n   OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY",
+                settings.LLM_PROVIDER,
             )
-            raise ValueError("Missing OpenAI API key")
+            raise ValueError(f"Missing API key for LLM provider '{settings.LLM_PROVIDER}'")
 
-        # Initialize OpenAI client with API key from settings
+        # Create multi-provider LLM backend
+        self.provider: LLMProvider = create_provider(
+            settings.LLM_PROVIDER,
+            model=settings.LLM_MODEL,
+            api_key=api_key,
+            base_url=settings.LLM_BASE_URL or (
+                settings.OPENAI_BASE_URL if settings.LLM_PROVIDER == "openai" else None
+            ),
+        )
+
+        # Keep a raw OpenAI client for backwards-compat paths that use it directly
         self.client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL
+            api_key=settings.OPENAI_API_KEY or "unused",
+            base_url=settings.OPENAI_BASE_URL,
         )
 
     WORKFLOW_TYPES = {
@@ -485,75 +494,36 @@ Use the exact sample name '{sample_name}' for output directories.""",
     async def _call_openai(
         self, messages: List[Dict[str, str]], model: Optional[str] = None
     ) -> str:
-        """Call OpenAI API with retry logic and error handling."""
+        """Call the configured LLM provider with retry / fallback logic.
+
+        Despite the legacy name, this now routes through whichever provider
+        is configured (OpenAI, Anthropic, Google, Ollama).
+        """
         try:
-            # Try preferred model first
-            try_models = [
-                model,  # User-specified model
-                settings.OPENAI_MODEL,  # Default model from settings
-                settings.OPENAI_FALLBACK_MODEL,  # Fallback model
-                "gpt-3.5-turbo",  # Last resort
-            ]
-
-            last_error = None
-            for try_model in try_models:
-                if not try_model:
-                    continue
-
-                try:
-                    self.logger.info(f"Attempting to use model: {try_model}")
-                    completion = await self.client.chat.completions.create(
-                        model=try_model,
-                        messages=messages,
-                        temperature=0.2,
-                    )
-                    self.logger.info(f"Successfully used model: {try_model}")
-                    return completion.choices[0].message.content
-                except Exception as e:
-                    last_error = e
-                    if "model_not_found" not in str(e):
-                        # If error is not about model availability, don't try other models
-                        raise
-                    self.logger.warning(
-                        f"Model {try_model} not available, trying next model..."
-                    )
-
-            # If we get here, none of the models worked
-            raise last_error or ValueError("No valid model found")
-
+            resp = await self.provider.chat(messages, model=model)
+            self.logger.info("LLM call succeeded (provider=%s)", settings.LLM_PROVIDER)
+            return resp.content
         except Exception as e:
             error_msg = str(e)
             if "insufficient_quota" in error_msg:
-                self.logger.error(
-                    "\n⚠️  OpenAI API quota exceeded. Please:"
-                    "\n   1. Check your billing status at https://platform.openai.com/account/billing"
-                    "\n   2. Add credits to your account or wait for quota reset"
-                    "\n   3. Or use a different API key with available quota"
-                    "\n\nError details: %s",
-                    error_msg,
-                )
+                self.logger.error("API quota exceeded – check billing. %s", error_msg)
             elif "model_not_found" in error_msg:
-                self.logger.error(
-                    "\n⚠️  No available OpenAI models found. Tried:"
-                    "\n   - User specified model"
-                    "\n   - Default model from settings"
-                    "\n   - Fallback model"
-                    "\n   - Last resort (gpt-3.5-turbo)"
-                    "\n\nError details: %s",
-                    error_msg,
-                )
+                self.logger.error("Model not found – check LLM_MODEL setting. %s", error_msg)
             else:
-                self.logger.error("OpenAI API call failed: %s", error_msg)
+                self.logger.error("LLM API call failed: %s", error_msg)
             raise
 
     async def _call_openai_stream(
         self,
         messages: List[Dict[str, Any]],
-        response_format: Optional[Dict[str, str]] = None,
         **kwargs,
-    ) -> str:
-        """Call OpenAI API with streaming completion and retry logic."""
-        return await self._call_openai(messages, response_format, stream=True, **kwargs)
+    ):
+        """Stream tokens from the configured LLM provider.
+
+        Yields text chunks as they arrive.
+        """
+        async for token in self.provider.stream(messages):
+            yield token
 
     def _clean_llm_response(self, response: str) -> str:
         """Clean LLM response by removing markdown formatting."""
@@ -1088,10 +1058,11 @@ Provide analysis in this format:
             ):
                 pairs = {}
                 for group in file_info["relationships"]["pattern_groups"]:
+                    import fnmatch
                     group_files = [
                         f
                         for f in matched_files
-                        if glob.fnmatch.fnmatch(f, group["pattern"])
+                        if fnmatch.fnmatch(f, group["pattern"])
                     ]
                     organized_files[group["group"]] = group_files
 
@@ -1162,7 +1133,7 @@ If you are being asked to generate a title, set "success" to false.
                 model=settings.OPENAI_MODEL,
             )
             self.logger.info(f"Analysis response: {response}")
-            analysis = json.loads(response)
+            analysis = json.loads(self._clean_llm_response(response))
 
             # Check if prompt analysis succeeded.
             if not analysis.get("success"):
@@ -1339,25 +1310,95 @@ If you are being asked to generate a title, set "success" to false.
             }
 
     async def _create_geo_download_workflow(self, geo_accession: str, prompt: str, file_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a workflow plan for downloading data from GEO."""
+        """Create a workflow plan for downloading data from GEO.
+        
+        Routes to supplementary-file download or raw FASTQ download depending
+        on what the user asked for.
+        """
         self.logger.info(f"Creating GEO download workflow for {geo_accession}")
-        
-        # Detect if a specific workflow type is mentioned in the prompt
-        workflow_type, _ = self._detect_workflow_type(prompt)
-        
-        # Create directory structure command
-        mkdir_command = "mkdir -p raw_data results"
-        
-        # Extract reference from file_info if available
-        reference = file_info.get("reference", "")
-        
-        # Create the workflow plan with only download steps
+
+        prompt_lower = prompt.lower()
+
+        supplementary_indicators = [
+            "no fastq", "no raw fastq",
+            "counts", "matrix", "supplementary", "suppl",
+            "processed", "metadata",
+            "barcodes.tsv", "features.tsv", "matrix.mtx",
+            "counts_matrix", "cell_metadata", "count_matrix",
+            "no raw", "not raw",
+        ]
+        wants_supplementary = any(ind in prompt_lower for ind in supplementary_indicators)
+
+        if wants_supplementary:
+            self.logger.info("Detected request for supplementary/processed files (not raw FASTQ)")
+            return self._create_geo_supplementary_download_workflow(geo_accession, prompt)
+
+        return self._create_geo_fastq_download_workflow(geo_accession, prompt, file_info)
+
+    def _geo_ftp_suppl_url(self, geo_accession: str) -> str:
+        """Construct the NCBI FTP URL for a GEO series supplementary directory."""
+        numeric = geo_accession.upper().replace("GSE", "")
+        prefix = numeric[:-3] if len(numeric) > 3 else numeric
+        return f"ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE{prefix}nnn/{geo_accession}/suppl/"
+
+    def _geo_download_page_url(self, geo_accession: str) -> str:
+        """Construct the GEO bulk-download URL that returns a tar of all supplementary files."""
+        return f"https://www.ncbi.nlm.nih.gov/geo/download/?acc={geo_accession}&format=file"
+
+    def _create_geo_supplementary_download_workflow(self, geo_accession: str, prompt: str) -> Dict[str, Any]:
+        """Create a workflow to download supplementary (processed) files from GEO."""
+        self.logger.info(f"Creating GEO supplementary file download workflow for {geo_accession}")
+
+        ftp_url = self._geo_ftp_suppl_url(geo_accession)
+
         workflow_plan = {
             "workflow_type": "geo_download",
             "steps": [
                 {
                     "name": "create_directories",
-                    "command": mkdir_command,
+                    "command": "mkdir -p raw_data",
+                    "parameters": {},
+                    "dependencies": [],
+                    "outputs": ["raw_data"],
+                    "description": "Create directory structure",
+                    "profile_name": "minimal"
+                },
+                {
+                    "name": "download_supplementary_files",
+                    "command": (
+                        f"cd raw_data && "
+                        f"wget -r -np -nd -N '{ftp_url}'"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["create_directories"],
+                    "outputs": ["raw_data/"],
+                    "description": f"Download supplementary files from {geo_accession} via FTP",
+                    "profile_name": "minimal"
+                },
+                {
+                    "name": "list_downloaded_files",
+                    "command": "ls -lh raw_data/",
+                    "parameters": {},
+                    "dependencies": ["download_supplementary_files"],
+                    "outputs": [],
+                    "description": "List downloaded files and verify",
+                    "profile_name": "minimal"
+                }
+            ]
+        }
+        return workflow_plan
+
+    def _create_geo_fastq_download_workflow(self, geo_accession: str, prompt: str, file_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a workflow to download raw FASTQ files from GEO/SRA."""
+        workflow_type, _ = self._detect_workflow_type(prompt)
+        reference = file_info.get("reference", "")
+
+        workflow_plan = {
+            "workflow_type": "geo_download",
+            "steps": [
+                {
+                    "name": "create_directories",
+                    "command": "mkdir -p raw_data results",
                     "parameters": {},
                     "dependencies": [],
                     "outputs": ["raw_data"],
@@ -1402,7 +1443,6 @@ If you are being asked to generate a title, set "success" to false.
                 }
             ]
         }
-        
         return workflow_plan
 
     async def _add_analysis_steps_to_geo_workflow(self, workflow_plan: Dict[str, Any], prompt: str, file_info: Dict[str, Any]) -> Dict[str, Any]:

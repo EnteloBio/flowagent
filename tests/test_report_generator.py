@@ -18,8 +18,8 @@ def report_generator(mock_openai_client):
     with patch('pathlib.Path.exists', return_value=True), \
          patch('flowagent.core.llm.settings') as mock_settings:
         mock_settings.OPENAI_API_KEY = 'test-key'
-        mock_settings.OPENAI_MODEL = 'gpt-4'
-        mock_settings.OPENAI_FALLBACK_MODEL = 'gpt-3.5-turbo'
+        mock_settings.OPENAI_MODEL = 'gpt-4.1'
+        mock_settings.OPENAI_FALLBACK_MODEL = 'gpt-4.1-mini'
         return ReportGenerator()
 
 @pytest.fixture
