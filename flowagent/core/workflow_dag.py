@@ -175,67 +175,83 @@ class WorkflowDAG:
             logger.error(traceback.format_exc())
             return None
 
+    def _get_execution_batches(self) -> List[List[str]]:
+        """Group steps into batches that can run in parallel.
+        
+        Each batch contains steps whose dependencies are all in earlier batches.
+        """
+        batches = []
+        remaining = set(self.graph.nodes())
+        completed = set()
+
+        while remaining:
+            batch = [
+                node for node in remaining
+                if all(pred in completed for pred in self.graph.predecessors(node))
+            ]
+            if not batch:
+                raise ValueError("Cycle detected in workflow DAG")
+            batches.append(batch)
+            completed.update(batch)
+            remaining -= set(batch)
+
+        return batches
+
     async def execute_parallel(self, execute_fn: Optional[Callable] = None) -> Dict[str, Any]:
         """Execute workflow steps in parallel respecting dependencies.
+        
+        Steps within the same topological level run concurrently via
+        asyncio.gather; levels are processed sequentially.
         
         Args:
             execute_fn: Optional function to execute steps. If not provided,
                        uses the configured executor.
         """
         try:
-            # Use provided execute function or executor
             execute = execute_fn or self.executor.execute_step
-            
-            # Track job information
             jobs = {}
-            
-            # Execute steps in topological order
-            for step_name in nx.topological_sort(self.graph):
-                step = self.graph.nodes[step_name]["step"]
-                
-                # Get dependency job IDs
-                step["dependencies"] = [
-                    jobs[dep]["job_id"] 
-                    for dep in self.graph.predecessors(step_name)
-                    if dep in jobs and "job_id" in jobs[dep]
-                ]
-                
-                # Execute step
-                logger.info(f"Executing step: {step_name}")
-                try:
+            batches = self._get_execution_batches()
+
+            for batch in batches:
+                async def _run_step(step_name: str) -> tuple:
+                    step = self.graph.nodes[step_name]["step"]
+                    step["dependencies"] = [
+                        jobs[dep]["job_id"]
+                        for dep in self.graph.predecessors(step_name)
+                        if dep in jobs and "job_id" in jobs[dep]
+                    ]
+                    logger.info(f"Executing step: {step_name}")
                     result = await execute(step)
+                    return step_name, result
+
+                results_list = await asyncio.gather(
+                    *[_run_step(name) for name in batch],
+                    return_exceptions=True,
+                )
+
+                for item in results_list:
+                    if isinstance(item, Exception):
+                        raise item
+                    step_name, result = item
                     jobs[step_name] = result
-                    
-                    # Update step status in graph
                     self.graph.nodes[step_name]["step"]["status"] = result.get("status", "pending")
-                    
+
                     if result.get("status") == "failed":
                         error_msg = result.get("stderr", "")
-                        cmd = step.get("command", "")
+                        cmd = self.graph.nodes[step_name]["step"].get("command", "")
                         logger.error(f"Step {step_name} failed:\nCommand: {cmd}\nError: {error_msg}")
-                        
-                        # Check for common error patterns
                         if "command not found" in error_msg:
                             logger.error(f"Tool '{cmd.split()[0]}' not found. Please ensure it is installed and in your PATH")
                         elif "permission denied" in error_msg.lower():
                             logger.error("Permission denied. Check file/directory permissions")
                         elif "no such file" in error_msg.lower():
                             logger.error("Required input file not found. Check file paths and names")
-                            
                         raise Exception(f"Step {step_name} failed: {error_msg}")
-                        
-                except Exception as step_error:
-                    logger.error(f"Error executing step {step_name}: {str(step_error)}")
-                    self.graph.nodes[step_name]["step"]["status"] = "failed"
-                    raise
-            
-            # Wait for all jobs to complete
+
             results = await self.executor.wait_for_completion(jobs)
-            
-            # Update final status for all steps
             for step_name, result in results.items():
                 self.graph.nodes[step_name]["step"]["status"] = result.get("status", "completed")
-            
+
             return {
                 "status": "success",
                 "results": results

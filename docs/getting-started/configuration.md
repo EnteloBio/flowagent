@@ -1,46 +1,67 @@
 # Configuration
 
-## OpenAI Model Configuration
+## LLM Provider Configuration
 
-FlowAgent uses OpenAI's language models for workflow generation and analysis. Different operations have different model requirements:
+FlowAgent supports multiple LLM providers. Set your provider and model in `.env`:
 
-### Workflow Generation (gpt-3.5-turbo or better)
-- Basic workflow creation and execution can use gpt-3.5-turbo
-- Set in your `.env` file:
-  ```bash
-  OPENAI_MODEL=gpt-3.5-turbo
-  ```
-
-### Report Generation (gpt-4-turbo-preview recommended)
-- For comprehensive analysis and insights, use gpt-4-turbo-preview
-- This model provides better reasoning and analysis capabilities
-- Set in your `.env` file:
-  ```bash
-  OPENAI_MODEL=gpt-4-turbo-preview
-  ```
-
-## Example configurations:
-
-1. For workflow execution:
-   ```bash
-   # Set model in .env
-   OPENAI_MODEL=gpt-3.5-turbo
-
-   # Run workflow
-   flowagent "Analyze RNA-seq data in my fastq.gz files using Kallisto..."
-   ```
-
-2. For report generation:
-   ```bash
-   # Set model in .env
-   OPENAI_MODEL=gpt-4-turbo-preview
-
-   # Generate comprehensive analysis
-   flowagent "analyze workflow results" --analysis-dir=results
-   ```
-
-You can also set the model temporarily using environment variables:
 ```bash
-# For one-time report generation with gpt-4-turbo-preview
-OPENAI_MODEL=gpt-4-turbo-preview flowagent "analyze workflow results" --analysis-dir=results
+LLM_PROVIDER=openai           # openai | anthropic | google | ollama
+LLM_MODEL=gpt-4.1             # Primary model
+LLM_FALLBACK_MODEL=gpt-4.1-mini  # Fallback if primary unavailable
+```
+
+### Provider API keys
+
+Set the key matching your chosen provider:
+
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Google Gemini
+GOOGLE_API_KEY=AIza...
+
+# Ollama (local, no key needed)
+LLM_BASE_URL=http://localhost:11434/v1
+```
+
+### Recommended models by provider
+
+| Provider | Recommended | Notes |
+|----------|------------|-------|
+| OpenAI | `gpt-4.1`, `gpt-4.1-mini` | `gpt-4.1-nano` for lightweight tasks |
+| Anthropic | `claude-sonnet-4-20250514` | `claude-opus-4-20250514` for complex analysis |
+| Google | `gemini-2.5-flash` | `gemini-2.5-pro` for longer reasoning |
+| Ollama | `llama4`, `qwen`, `deepseek` | Runs locally, no API key |
+
+## Example configurations
+
+1. Workflow execution (OpenAI):
+   ```bash
+   LLM_PROVIDER=openai
+   LLM_MODEL=gpt-4.1
+   flowagent prompt "Analyze RNA-seq data in my fastq.gz files using Kallisto..."
+   ```
+
+2. Report generation (Anthropic):
+   ```bash
+   LLM_PROVIDER=anthropic
+   LLM_MODEL=claude-sonnet-4-20250514
+   flowagent prompt "analyze workflow results" --analysis-dir=results
+   ```
+
+3. Local model (Ollama):
+   ```bash
+   LLM_PROVIDER=ollama
+   LLM_MODEL=llama4
+   LLM_BASE_URL=http://localhost:11434/v1
+   flowagent prompt "Analyze my ChIP-seq data..."
+   ```
+
+You can also override the model for a single run:
+```bash
+LLM_MODEL=gpt-4.1-mini flowagent prompt "quick QC check on my fastq files"
 ```

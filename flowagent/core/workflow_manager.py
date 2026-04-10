@@ -15,6 +15,7 @@ from ..utils import file_utils
 from ..utils.dependency_manager import DependencyManager
 from .llm import LLMInterface
 from .executor import Executor
+from .executor_factory import ExecutorFactory
 from .agent_types import WorkflowStep, Workflow
 from .workflow_dag import WorkflowDAG
 from .smart_resume import detect_completed_steps, filter_workflow_steps
@@ -35,26 +36,28 @@ class WorkflowManager:
         self.llm = LLMInterface()
         self.dependency_manager = DependencyManager()
         self.executor_type = executor_type
-        self.executor = Executor(executor_type)
-        
-        # Get initial working directory
-        self.initial_cwd = os.getcwd()
-        self.logger.info(f"Initial working directory: {self.initial_cwd}")
-        self.logger.info(f"Using {executor_type} executor")
-        
+
         # Get settings
         self.settings = Settings()
-        
-        # Validate executor type
-        valid_executors = ["local", "cgat", "kubernetes"]
-        if self.executor_type not in valid_executors:
-            self.logger.warning(f"Invalid executor type '{self.executor_type}'. Defaulting to 'local'")
-            self.executor_type = "local"
-        
+
         # Special handling for Kubernetes executor
         if self.executor_type == "kubernetes" and not self.settings.KUBERNETES_ENABLED:
             self.logger.warning("Kubernetes executor requested but not enabled in settings. Defaulting to 'local'")
             self.executor_type = "local"
+
+        # Factory executor for advanced backends (CGAT, HPC, Kubernetes, Nextflow, Snakemake)
+        self.executor = ExecutorFactory.create(self.executor_type)
+        # Legacy Executor wraps subprocess-based step execution for local/slurm
+        self._legacy_executor = Executor(executor_type if executor_type in ("local", "slurm") else "local")
+        # Prefer factory executor when it supports execute_step
+        self._step_executor = (
+            self.executor if hasattr(self.executor, "execute_step") else self._legacy_executor
+        )
+
+        # Get initial working directory
+        self.initial_cwd = os.getcwd()
+        self.logger.info(f"Initial working directory: {self.initial_cwd}")
+        self.logger.info(f"Using {self.executor_type} executor (via ExecutorFactory)")
             
         self.analysis_system = AgenticAnalysisSystem()
         
@@ -91,12 +94,12 @@ class WorkflowManager:
             else:
                 # Generate workflow from prompt
                 prompt = prompt_or_workflow
-                workflow_data = await self.llm.generate_workflow(prompt)
+                workflow_data = await self.llm.generate_workflow_plan(prompt)
                 
                 # Extract workflow from response
-                workflow = workflow_data.get("workflow", {})
-                workflow_name = workflow.get("name", "Unnamed workflow")
-                workflow_steps = workflow.get("steps", [])
+                workflow_name = workflow_data.get("workflow_type", "Unnamed workflow")
+                workflow_steps = workflow_data.get("steps", [])
+                workflow = {"name": workflow_name, "steps": workflow_steps}
                 
                 self.logger.info(f"Generated workflow: {workflow_name} with {len(workflow_steps)} steps")
                 
@@ -201,7 +204,7 @@ class WorkflowManager:
                     self.logger.warning(f"Attempting to execute step anyway...")
                 
                 # Execute step
-                step_result = await self.executor.execute_step(step, output_dir, cwd=self.initial_cwd)
+                step_result = await self._step_executor.execute_step(step, output_dir, cwd=self.initial_cwd)
                 
                 # Add step name to the result for easier reference
                 step_result["step_name"] = step_name
@@ -322,9 +325,9 @@ class WorkflowManager:
                 def timeout_handler(signum, frame):
                     raise TimeoutError("Dependency checking timed out")
                 
-                # Set a 30-second timeout for dependency checking
+                # Set a 5-minute timeout for dependency checking (conda installs can be slow)
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(30)
+                signal.alarm(300)
                 
                 try:
                     all_installed, available_but_failed_install = await self.dependency_manager.ensure_workflow_dependencies(workflow_plan)
@@ -336,7 +339,7 @@ class WorkflowManager:
                     if available_but_failed_install:
                         # Some dependencies failed to install but are available in the environment
                         missing_deps = [dep for dep in workflow_plan.get("dependencies", {}).get("tools", []) 
-                                      if isinstance(dep, dict) and dep["name"] not in available_but_failed_install
+                                      if isinstance(dep, dict) and dep.get("name", "") not in available_but_failed_install
                                       or not isinstance(dep, dict) and dep not in available_but_failed_install]
                         if missing_deps:
                             self.logger.warning(f"Some dependencies could not be installed and are not available: {missing_deps}")
@@ -438,7 +441,8 @@ class WorkflowManager:
                 return None
             
             try:
-                checkpoint = load_json(checkpoint_path)
+                with open(checkpoint_path, "r") as f:
+                    checkpoint = json.load(f)
                 
                 workflow_plan = checkpoint.get("workflow_plan", {})
                 output_dir = checkpoint.get("output_dir", os.path.abspath("results"))

@@ -7,7 +7,6 @@ import logging
 from typing import Dict, Any, List, Optional, Type, Union
 from abc import ABC, abstractmethod
 import importlib
-import pkg_resources
 from ..utils.logging import get_logger
 from ..core.llm import LLMInterface
 import fnmatch

@@ -1,2 +1,1 @@
-# This file can be empty or contain package-level imports
-
+"""Core modules for FlowAgent workflow orchestration."""

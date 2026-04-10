@@ -5,8 +5,8 @@ import sys
 import logging
 import shutil
 from typing import Dict, List, Optional, Union, Set, Tuple, Any
-import pkg_resources
 import importlib
+from importlib.metadata import distribution, PackageNotFoundError
 import json
 import os
 import glob
@@ -22,6 +22,7 @@ class DependencyManager:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.llm = LLMInterface()
+        self._installer = self._detect_installer()
         
         # Dictionary of tool suites with their components and detection patterns
         self.TOOL_SUITES = {
@@ -117,6 +118,14 @@ class DependencyManager:
             }
         }
         
+    def _detect_installer(self) -> str:
+        """Return 'mamba' if available, otherwise fall back to 'conda'."""
+        if shutil.which("mamba"):
+            self.logger.info("Using mamba for package installation (faster solver)")
+            return "mamba"
+        self.logger.info("mamba not found, using conda for package installation")
+        return "conda"
+
     async def analyze_workflow_dependencies(self, workflow_plan: Dict) -> Dict[str, Set[str]]:
         """Use LLM to analyze workflow dependencies from the workflow plan."""
         try:
@@ -252,11 +261,11 @@ Example format:
     def check_python_package(self, package_name: str, min_version: Optional[str] = None) -> bool:
         """Check if a Python package is installed with minimum version."""
         try:
-            pkg = pkg_resources.get_distribution(package_name)
+            pkg = distribution(package_name)
             if min_version:
-                return pkg.version >= min_version
+                return pkg.metadata["Version"] >= min_version
             return True
-        except pkg_resources.DistributionNotFound:
+        except PackageNotFoundError:
             return False
             
     def check_r_package(self, package_name: str) -> bool:
@@ -476,14 +485,14 @@ Example format:
                 if "min_version" in package_info:
                     cmd += f">={package_info['min_version']}"
             else:
-                cmd = f"conda install -y -c {channel} {package_name}"
+                cmd = f"{self._installer} install -y -c {channel} {package_name}"
                 if "min_version" in package_info:
-                    cmd += f"={package_info['min_version']}"
+                    cmd += f">={package_info['min_version']}"
                     
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             
             if result.returncode != 0 and channel != "pip":
-                self.logger.warning(f"Failed to install {package_name} via conda, trying pip...")
+                self.logger.warning(f"Failed to install {package_name} via {self._installer}, trying pip...")
                 return self.install_python_package({"name": package_name, "channel": "pip"})
                 
             return result.returncode == 0
@@ -538,8 +547,8 @@ Example format:
             
         # Try to install using conda
         try:
-            version_spec = f"={min_version}" if min_version else ""
-            cmd = f"conda install -y -c {channel} {tool_name}{version_spec}"
+            version_spec = f">={min_version}" if min_version else ""
+            cmd = f"{self._installer} install -y -c {channel} {tool_name}{version_spec}"
             
             self.logger.info(f"Running: {cmd}")
             
@@ -619,12 +628,13 @@ Example format:
         self.logger.info(f"Providing installation guidance for {tool_name}")
         
         # Special case for Entrez Direct tools
+        installer = self._installer
         if tool_name in ["esearch", "efetch", "einfo", "elink", "xtract"]:
-            self.logger.info("""
+            self.logger.info(f"""
 To install Entrez Direct tools manually:
 
-Option 1: Using conda (recommended)
-    conda install -c bioconda entrez-direct
+Option 1: Using {installer} (recommended)
+    {installer} install -c bioconda entrez-direct
 
 Option 2: Using the NCBI installer script
     cd ~
@@ -642,11 +652,11 @@ After installation, add to your PATH:
             
         # Special case for SRA Toolkit tools
         elif tool_name in ["prefetch", "fasterq-dump", "fastq-dump", "sam-dump"]:
-            self.logger.info("""
+            self.logger.info(f"""
 To install SRA Toolkit tools manually:
 
-Option 1: Using conda (recommended)
-    conda install -c bioconda sra-tools
+Option 1: Using {installer} (recommended)
+    {installer} install -c bioconda sra-tools
 
 Option 2: Download from NCBI
     1. Visit https://github.com/ncbi/sra-tools/wiki/01.-Downloading-SRA-Toolkit
@@ -659,8 +669,8 @@ Option 2: Download from NCBI
             self.logger.info(f"""
 To install {tool_name} manually:
 
-Option 1: Using conda (recommended)
-    conda install -c {channel} {tool_name}
+Option 1: Using {installer} (recommended)
+    {installer} install -c {channel} {tool_name}
 
 Option 2: Check the tool's documentation for alternative installation methods
             """)
@@ -810,7 +820,9 @@ Option 2: Check the tool's documentation for alternative installation methods
             "cellranger": ["cellranger"],
             "velocyto": ["velocyto"],
             "coreutils": ["mkdir", "tail", "cut", "cat", "echo", "rm", "cp", "mv"],
-            "gzip": ["gzip"]
+            "gzip": ["gzip"],
+            "wget": ["wget"],
+            "curl": ["curl"]
         }
         
         return package_mapping.get(package_name.lower(), [])
