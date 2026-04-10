@@ -4,7 +4,10 @@ import json
 import logging
 from typing import Dict, Any, List
 from pathlib import Path
-import h5py
+try:
+    import h5py
+except ImportError:
+    h5py = None
 
 logger = logging.getLogger(__name__)
 

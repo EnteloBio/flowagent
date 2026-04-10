@@ -85,28 +85,28 @@ class Settings(BaseSettings):
         return v
     
     # Rate Limiting Settings
-    MAX_RETRIES: int = Field(5, env='MAX_RETRIES')
-    RETRY_DELAY: float = Field(2.0, env='RETRY_DELAY')
+    MAX_RETRIES: int = 5
+    RETRY_DELAY: float = 2.0
     TIMEOUT: float = 60.0
-    REQUEST_INTERVAL: float = Field(1.0, env='REQUEST_INTERVAL')
-    
+    REQUEST_INTERVAL: float = 1.0
+
     # Database Settings
-    VECTOR_DB_PATH: Path = Field(default=Path("data/vector_store"), env='VECTOR_DB_PATH')
-    SQLITE_DB_PATH: Path = Field(default=Path("data/flowagent.db"), env='SQLITE_DB_PATH')
-    
+    VECTOR_DB_PATH: Path = Path("data/vector_store")
+    SQLITE_DB_PATH: Path = Path("data/flowagent.db")
+
     # Agent Settings
-    MAX_CONCURRENT_WORKFLOWS: int = Field(5, env='MAX_CONCURRENT_WORKFLOWS')
-    WORKFLOW_TIMEOUT: int = Field(3600, env='WORKFLOW_TIMEOUT')
-    AGENT_TIMEOUT: float = Field(30.0, env='AGENT_TIMEOUT')
-    AGENT_MAX_RETRIES: int = Field(3, env='AGENT_MAX_RETRIES')
-    AGENT_RETRY_DELAY: float = Field(1.0, env='AGENT_RETRY_DELAY')
-    
+    MAX_CONCURRENT_WORKFLOWS: int = 5
+    WORKFLOW_TIMEOUT: int = 3600
+    AGENT_TIMEOUT: float = 30.0
+    AGENT_MAX_RETRIES: int = 3
+    AGENT_RETRY_DELAY: float = 1.0
+
     # Workflow Settings
     DEFAULT_WORKFLOW_PARAMS: Dict[str, Any] = {
         "threads": 4,
         "memory": "16G"
     }
-    
+
     # Pipeline generation settings
     PIPELINE_FORMAT: str = Field("shell", description="Pipeline format: shell | nextflow | snakemake")
     PIPELINE_PROFILE: str = Field("local", description="Nextflow profile")
@@ -114,24 +114,24 @@ class Settings(BaseSettings):
     AUTO_EXECUTE_PIPELINE: bool = Field(True, description="Auto-execute generated pipelines")
 
     # Executor settings
-    EXECUTOR_TYPE: str = Field("local", env='EXECUTOR_TYPE')  # Options: local, cgat, hpc, kubernetes, nextflow, snakemake
-    HPC_SYSTEM: str = Field("slurm", env='HPC_SYSTEM')  # Options: slurm, sge, torque
-    HPC_QUEUE: str = Field("all.q", env='HPC_QUEUE')
-    HPC_DEFAULT_MEMORY: str = Field("4G", env='HPC_DEFAULT_MEMORY')
-    HPC_DEFAULT_CPUS: int = Field(1, env='HPC_DEFAULT_CPUS')
-    HPC_DEFAULT_TIME: int = Field(60, env='HPC_DEFAULT_TIME')
-    
+    EXECUTOR_TYPE: str = "local"
+    HPC_SYSTEM: str = "slurm"
+    HPC_QUEUE: str = "all.q"
+    HPC_DEFAULT_MEMORY: str = "4G"
+    HPC_DEFAULT_CPUS: int = 1
+    HPC_DEFAULT_TIME: int = 60
+
     # Kubernetes Settings
-    KUBERNETES_ENABLED: bool = Field(default=False, env="KUBERNETES_ENABLED")
-    KUBERNETES_NAMESPACE: str = Field(default="default", env="KUBERNETES_NAMESPACE")
-    KUBERNETES_SERVICE_ACCOUNT: str = Field(default="default", env="KUBERNETES_SERVICE_ACCOUNT")
-    KUBERNETES_IMAGE: str = Field(default="python:3.9", env="KUBERNETES_IMAGE")
-    KUBERNETES_CPU_REQUEST: str = Field(default="0.5", env="KUBERNETES_CPU_REQUEST")
-    KUBERNETES_CPU_LIMIT: str = Field(default="1.0", env="KUBERNETES_CPU_LIMIT")
-    KUBERNETES_MEMORY_REQUEST: str = Field(default="512Mi", env="KUBERNETES_MEMORY_REQUEST")
-    KUBERNETES_MEMORY_LIMIT: str = Field(default="1Gi", env="KUBERNETES_MEMORY_LIMIT")
-    KUBERNETES_JOB_TTL: int = Field(default=3600, env="KUBERNETES_JOB_TTL")
-    
+    KUBERNETES_ENABLED: bool = False
+    KUBERNETES_NAMESPACE: str = "default"
+    KUBERNETES_SERVICE_ACCOUNT: str = "default"
+    KUBERNETES_IMAGE: str = "python:3.11"
+    KUBERNETES_CPU_REQUEST: str = "0.5"
+    KUBERNETES_CPU_LIMIT: str = "1.0"
+    KUBERNETES_MEMORY_REQUEST: str = "512Mi"
+    KUBERNETES_MEMORY_LIMIT: str = "1Gi"
+    KUBERNETES_JOB_TTL: int = 3600
+
     # Tool Settings
     REQUIRED_TOOLS: List[str] = [
         "kallisto",
@@ -147,11 +147,11 @@ class Settings(BaseSettings):
         "cellranger": "7.0.0",
         "seurat": "4.3.0"
     }
-    
+
     # Monitoring
-    ENABLE_MONITORING: bool = Field(True, env='ENABLE_MONITORING')
-    METRICS_PORT: int = Field(9090, env='METRICS_PORT')
-    LOG_LEVEL: str = Field("INFO", env='LOG_LEVEL')
+    ENABLE_MONITORING: bool = True
+    METRICS_PORT: int = 9090
+    LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     
     @property
