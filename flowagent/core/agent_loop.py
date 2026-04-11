@@ -7,6 +7,7 @@ check dependencies, run commands), observe results, and self-correct.
 
 import asyncio
 import json
+import platform
 import shutil
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -260,12 +261,23 @@ async def run_agent_loop(
     dict with ``response`` (final text), ``tool_calls`` (history), ``iterations``.
     """
     if system_prompt is None:
+        os_hint = ""
+        sys_name = platform.system()
+        if sys_name == "Darwin":
+            os_hint = (
+                " The host OS is macOS — use BSD-compatible commands "
+                "(e.g. 'ls', 'find . -name …' without GNU extensions like -printf)."
+            )
+        elif sys_name == "Linux":
+            os_hint = " The host OS is Linux."
+
         system_prompt = (
             "You are FlowAgent, an expert bioinformatics workflow assistant. "
             "You can inspect files, check tool availability, install dependencies, "
             "run commands, and read/write files to build and execute analysis pipelines. "
             "Use the provided tools to gather information before generating a workflow. "
             "When you have enough context, describe the plan and execute it step by step."
+            f"{os_hint}"
         )
 
     messages: List[Dict[str, Any]] = [

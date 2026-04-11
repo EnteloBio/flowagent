@@ -4,6 +4,7 @@ import glob
 import json
 import logging
 import os
+import platform
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -546,36 +547,74 @@ Use the exact sample name '{sample_name}' for output directories.""",
         self, tool_name: str, tool_description: str = ""
     ) -> Dict[str, str]:
         """Use LLM to suggest appropriate resource profile for unknown tools."""
-        # First check if we have a predefined mapping for common tools
         common_tools = {
-            "fastqc": {
-                "profile": "minimal",
-                "reason": "FastQC is a lightweight QC tool",
-            },
-            "multiqc": {
-                "profile": "minimal",
-                "reason": "MultiQC aggregates reports with minimal resources",
-            },
-            "kallisto_index": {
-                "profile": "high_memory",
-                "reason": "Indexing requires significant memory",
-            },
-            "kallisto_quant": {
-                "profile": "multi_thread",
-                "reason": "Quantification benefits from parallelization",
-            },
-            "create_directories": {
-                "profile": "minimal",
-                "reason": "Basic file system operations",
-            },
+            # Bioinformatics tools
+            "fastqc": {"profile": "minimal", "reason": "Lightweight QC tool"},
+            "multiqc": {"profile": "minimal", "reason": "Report aggregation"},
+            "kallisto_index": {"profile": "high_memory", "reason": "Indexing requires memory"},
+            "kallisto_quant": {"profile": "multi_thread", "reason": "Quantification benefits from parallelization"},
+            "kallisto": {"profile": "multi_thread", "reason": "Quantification benefits from parallelization"},
+            "salmon": {"profile": "multi_thread", "reason": "Quasi-mapping is CPU-intensive"},
+            "hisat2": {"profile": "multi_thread", "reason": "Read alignment is CPU-intensive"},
+            "star": {"profile": "high_memory_parallel", "reason": "STAR requires large memory for genome index"},
+            "bwa": {"profile": "multi_thread", "reason": "Alignment is CPU-intensive"},
+            "bowtie2": {"profile": "multi_thread", "reason": "Alignment is CPU-intensive"},
+            "samtools": {"profile": "default", "reason": "BAM processing"},
+            "bedtools": {"profile": "default", "reason": "Interval operations"},
+            "picard": {"profile": "high_memory", "reason": "Java-based, needs heap"},
+            "gatk": {"profile": "high_memory_parallel", "reason": "Variant calling is resource-intensive"},
+            "bcftools": {"profile": "default", "reason": "VCF processing"},
+            "macs2": {"profile": "high_memory", "reason": "Peak calling"},
+            "trimmomatic": {"profile": "multi_thread", "reason": "Read trimming"},
+            "trim_galore": {"profile": "default", "reason": "Lightweight trimming wrapper"},
+            "cutadapt": {"profile": "default", "reason": "Adapter trimming"},
+            "featurecounts": {"profile": "multi_thread", "reason": "Read counting"},
+            "htseq": {"profile": "default", "reason": "Read counting"},
+            "deseq2": {"profile": "high_memory", "reason": "Statistical testing in R"},
+            "cellranger": {"profile": "high_memory_parallel", "reason": "Single-cell pipeline"},
+            "prefetch": {"profile": "minimal", "reason": "SRA download utility"},
+            "fasterq-dump": {"profile": "multi_thread", "reason": "Parallel FASTQ conversion"},
+            # Shell / filesystem primitives -- never need an LLM call
+            "mkdir": {"profile": "minimal", "reason": "Filesystem operation"},
+            "ls": {"profile": "minimal", "reason": "Filesystem operation"},
+            "find": {"profile": "minimal", "reason": "Filesystem operation"},
+            "cat": {"profile": "minimal", "reason": "Filesystem operation"},
+            "cp": {"profile": "minimal", "reason": "Filesystem operation"},
+            "mv": {"profile": "minimal", "reason": "Filesystem operation"},
+            "rm": {"profile": "minimal", "reason": "Filesystem operation"},
+            "ln": {"profile": "minimal", "reason": "Filesystem operation"},
+            "chmod": {"profile": "minimal", "reason": "Filesystem operation"},
+            "head": {"profile": "minimal", "reason": "Filesystem operation"},
+            "tail": {"profile": "minimal", "reason": "Filesystem operation"},
+            "wc": {"profile": "minimal", "reason": "Filesystem operation"},
+            "grep": {"profile": "minimal", "reason": "Text search"},
+            "awk": {"profile": "minimal", "reason": "Text processing"},
+            "sed": {"profile": "minimal", "reason": "Text processing"},
+            "sort": {"profile": "minimal", "reason": "Text processing"},
+            "cut": {"profile": "minimal", "reason": "Text processing"},
+            "echo": {"profile": "minimal", "reason": "Shell built-in"},
+            "touch": {"profile": "minimal", "reason": "Filesystem operation"},
+            "tar": {"profile": "minimal", "reason": "Archive operation"},
+            "gzip": {"profile": "minimal", "reason": "Compression"},
+            "gunzip": {"profile": "minimal", "reason": "Decompression"},
+            "wget": {"profile": "minimal", "reason": "File download"},
+            "curl": {"profile": "minimal", "reason": "File download"},
+            "create_directories": {"profile": "minimal", "reason": "Filesystem operation"},
+            "create": {"profile": "minimal", "reason": "Filesystem operation"},
+            "download": {"profile": "minimal", "reason": "File download"},
+            "install": {"profile": "minimal", "reason": "Package installation"},
         }
 
-        # Check if it's a common tool
-        tool_base = tool_name.split("_")[0] if "_" in tool_name else tool_name
-        if tool_base in common_tools:
+        # Match by exact name first, then by the base (before first underscore)
+        tool_lower = tool_name.lower()
+        match = common_tools.get(tool_lower)
+        if not match:
+            tool_base = tool_lower.split("_")[0] if "_" in tool_lower else tool_lower
+            match = common_tools.get(tool_base)
+        if match:
             return {
-                "profile_name": common_tools[tool_base]["profile"],
-                "reasoning": common_tools[tool_base]["reason"],
+                "profile_name": match["profile"],
+                "reasoning": match["reason"],
                 "suggested_time_min": 60,
             }
 
@@ -824,10 +863,16 @@ Resource Management Rules:
 {resource_instructions}
 
 """
+            _os_hint = ""
+            if platform.system() == "Darwin":
+                _os_hint = " The host is macOS; use BSD-compatible shell commands (no GNU extensions like find -printf)."
+            elif platform.system() == "Linux":
+                _os_hint = " The host is Linux."
+
             messages = [
                 {
                     "role": "system",
-                    "content": "You are a bioinformatics workflow expert. Return only valid JSON.",
+                    "content": f"You are a bioinformatics workflow expert. Return only valid JSON.{_os_hint}",
                 },
                 {"role": "user", "content": enhanced_prompt},
             ]
