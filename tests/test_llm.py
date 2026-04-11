@@ -83,6 +83,9 @@ async def test_generate_workflow_plan_basic(llm_interface, mock_file_pattern_res
     llm_interface.provider.chat = AsyncMock(
         side_effect=[mock_file_pattern_response, mock_workflow_response]
     )
+    llm_interface.provider.chat_structured = AsyncMock(
+        side_effect=NotImplementedError("structured output not available")
+    )
     with patch('glob.glob', return_value=['test1.fastq.gz', 'test2.fastq.gz']):
         result = await llm_interface.generate_workflow_plan("Process RNA-seq data")
         assert result is not None
@@ -149,6 +152,9 @@ async def test_generate_workflow_plan_with_steps(llm_interface, mock_file_patter
     """Test workflow plan generation returns expected steps."""
     llm_interface.provider.chat = AsyncMock(
         side_effect=[mock_file_pattern_response, mock_workflow_response]
+    )
+    llm_interface.provider.chat_structured = AsyncMock(
+        side_effect=NotImplementedError("structured output not available")
     )
     with patch('glob.glob', return_value=['test1.fastq.gz', 'test2.fastq.gz']):
         result = await llm_interface.generate_workflow_plan("Process RNA-seq data")
