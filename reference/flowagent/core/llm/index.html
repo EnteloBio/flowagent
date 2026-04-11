@@ -1657,8 +1657,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">  24</span>
-<span class="normal">  25</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">  25</span>
 <span class="normal">  26</span>
 <span class="normal">  27</span>
 <span class="normal">  28</span>
@@ -3305,7 +3304,52 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1669</span>
 <span class="normal">1670</span>
 <span class="normal">1671</span>
-<span class="normal">1672</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">1672</span>
+<span class="normal">1673</span>
+<span class="normal">1674</span>
+<span class="normal">1675</span>
+<span class="normal">1676</span>
+<span class="normal">1677</span>
+<span class="normal">1678</span>
+<span class="normal">1679</span>
+<span class="normal">1680</span>
+<span class="normal">1681</span>
+<span class="normal">1682</span>
+<span class="normal">1683</span>
+<span class="normal">1684</span>
+<span class="normal">1685</span>
+<span class="normal">1686</span>
+<span class="normal">1687</span>
+<span class="normal">1688</span>
+<span class="normal">1689</span>
+<span class="normal">1690</span>
+<span class="normal">1691</span>
+<span class="normal">1692</span>
+<span class="normal">1693</span>
+<span class="normal">1694</span>
+<span class="normal">1695</span>
+<span class="normal">1696</span>
+<span class="normal">1697</span>
+<span class="normal">1698</span>
+<span class="normal">1699</span>
+<span class="normal">1700</span>
+<span class="normal">1701</span>
+<span class="normal">1702</span>
+<span class="normal">1703</span>
+<span class="normal">1704</span>
+<span class="normal">1705</span>
+<span class="normal">1706</span>
+<span class="normal">1707</span>
+<span class="normal">1708</span>
+<span class="normal">1709</span>
+<span class="normal">1710</span>
+<span class="normal">1711</span>
+<span class="normal">1712</span>
+<span class="normal">1713</span>
+<span class="normal">1714</span>
+<span class="normal">1715</span>
+<span class="normal">1716</span>
+<span class="normal">1717</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -3830,36 +3874,74 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="bp">self</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">tool_description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Use LLM to suggest appropriate resource profile for unknown tools.&quot;&quot;&quot;</span>
-        <span class="c1"># First check if we have a predefined mapping for common tools</span>
         <span class="n">common_tools</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">&quot;fastqc&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;FastQC is a lightweight QC tool&quot;</span><span class="p">,</span>
-            <span class="p">},</span>
-            <span class="s2">&quot;multiqc&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;MultiQC aggregates reports with minimal resources&quot;</span><span class="p">,</span>
-            <span class="p">},</span>
-            <span class="s2">&quot;kallisto_index&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Indexing requires significant memory&quot;</span><span class="p">,</span>
-            <span class="p">},</span>
-            <span class="s2">&quot;kallisto_quant&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Quantification benefits from parallelization&quot;</span><span class="p">,</span>
-            <span class="p">},</span>
-            <span class="s2">&quot;create_directories&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Basic file system operations&quot;</span><span class="p">,</span>
-            <span class="p">},</span>
+            <span class="c1"># Bioinformatics tools</span>
+            <span class="s2">&quot;fastqc&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Lightweight QC tool&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;multiqc&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Report aggregation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;kallisto_index&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Indexing requires memory&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;kallisto_quant&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Quantification benefits from parallelization&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;kallisto&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Quantification benefits from parallelization&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;salmon&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Quasi-mapping is CPU-intensive&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;hisat2&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Read alignment is CPU-intensive&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;star&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory_parallel&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;STAR requires large memory for genome index&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;bwa&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Alignment is CPU-intensive&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;bowtie2&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Alignment is CPU-intensive&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;samtools&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;BAM processing&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;bedtools&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Interval operations&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;picard&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Java-based, needs heap&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;gatk&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory_parallel&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Variant calling is resource-intensive&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;bcftools&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;VCF processing&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;macs2&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Peak calling&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;trimmomatic&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Read trimming&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;trim_galore&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Lightweight trimming wrapper&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;cutadapt&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Adapter trimming&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;featurecounts&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Read counting&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;htseq&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Read counting&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;deseq2&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Statistical testing in R&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;cellranger&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory_parallel&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Single-cell pipeline&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;prefetch&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;SRA download utility&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;fasterq-dump&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Parallel FASTQ conversion&quot;</span><span class="p">},</span>
+            <span class="c1"># Shell / filesystem primitives -- never need an LLM call</span>
+            <span class="s2">&quot;mkdir&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;ls&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;find&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;cat&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;cp&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;mv&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;rm&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;ln&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;chmod&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;head&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;tail&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;wc&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;grep&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Text search&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;awk&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Text processing&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;sed&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Text processing&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;sort&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Text processing&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;cut&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Text processing&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;echo&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Shell built-in&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;touch&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;tar&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Archive operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;gzip&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Compression&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;gunzip&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Decompression&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;wget&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;File download&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;curl&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;File download&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;create_directories&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;create&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Filesystem operation&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;download&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;File download&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;install&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Package installation&quot;</span><span class="p">},</span>
         <span class="p">}</span>
 
-        <span class="c1"># Check if it&#39;s a common tool</span>
-        <span class="n">tool_base</span> <span class="o">=</span> <span class="n">tool_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;_&quot;</span> <span class="ow">in</span> <span class="n">tool_name</span> <span class="k">else</span> <span class="n">tool_name</span>
-        <span class="k">if</span> <span class="n">tool_base</span> <span class="ow">in</span> <span class="n">common_tools</span><span class="p">:</span>
+        <span class="c1"># Match by exact name first, then by the base (before first underscore)</span>
+        <span class="n">tool_lower</span> <span class="o">=</span> <span class="n">tool_name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">common_tools</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tool_lower</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">match</span><span class="p">:</span>
+            <span class="n">tool_base</span> <span class="o">=</span> <span class="n">tool_lower</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;_&quot;</span> <span class="ow">in</span> <span class="n">tool_lower</span> <span class="k">else</span> <span class="n">tool_lower</span>
+            <span class="n">match</span> <span class="o">=</span> <span class="n">common_tools</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tool_base</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">{</span>
-                <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="n">common_tools</span><span class="p">[</span><span class="n">tool_base</span><span class="p">][</span><span class="s2">&quot;profile&quot;</span><span class="p">],</span>
-                <span class="s2">&quot;reasoning&quot;</span><span class="p">:</span> <span class="n">common_tools</span><span class="p">[</span><span class="n">tool_base</span><span class="p">][</span><span class="s2">&quot;reason&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="n">match</span><span class="p">[</span><span class="s2">&quot;profile&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;reasoning&quot;</span><span class="p">:</span> <span class="n">match</span><span class="p">[</span><span class="s2">&quot;reason&quot;</span><span class="p">],</span>
                 <span class="s2">&quot;suggested_time_min&quot;</span><span class="p">:</span> <span class="mi">60</span><span class="p">,</span>
             <span class="p">}</span>
 
@@ -4108,10 +4190,16 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="si">{</span><span class="n">resource_instructions</span><span class="si">}</span>
 
 <span class="s2">&quot;&quot;&quot;</span>
+            <span class="n">_os_hint</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Darwin&quot;</span><span class="p">:</span>
+                <span class="n">_os_hint</span> <span class="o">=</span> <span class="s2">&quot; The host is macOS; use BSD-compatible shell commands (no GNU extensions like find -printf).&quot;</span>
+            <span class="k">elif</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Linux&quot;</span><span class="p">:</span>
+                <span class="n">_os_hint</span> <span class="o">=</span> <span class="s2">&quot; The host is Linux.&quot;</span>
+
             <span class="n">messages</span> <span class="o">=</span> <span class="p">[</span>
                 <span class="p">{</span>
                     <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;system&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;You are a bioinformatics workflow expert. Return only valid JSON.&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;You are a bioinformatics workflow expert. Return only valid JSON.</span><span class="si">{</span><span class="n">_os_hint</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
                 <span class="p">},</span>
                 <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">enhanced_prompt</span><span class="p">},</span>
             <span class="p">]</span>
@@ -4986,8 +5074,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">31</span>
-<span class="normal">32</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">32</span>
 <span class="normal">33</span>
 <span class="normal">34</span>
 <span class="normal">35</span>
@@ -5033,7 +5120,8 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">75</span>
 <span class="normal">76</span>
 <span class="normal">77</span>
-<span class="normal">78</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">78</span>
+<span class="normal">79</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize LLM interface.&quot;&quot;&quot;</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
@@ -5107,49 +5195,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1599</span>
-<span class="normal">1600</span>
-<span class="normal">1601</span>
-<span class="normal">1602</span>
-<span class="normal">1603</span>
-<span class="normal">1604</span>
-<span class="normal">1605</span>
-<span class="normal">1606</span>
-<span class="normal">1607</span>
-<span class="normal">1608</span>
-<span class="normal">1609</span>
-<span class="normal">1610</span>
-<span class="normal">1611</span>
-<span class="normal">1612</span>
-<span class="normal">1613</span>
-<span class="normal">1614</span>
-<span class="normal">1615</span>
-<span class="normal">1616</span>
-<span class="normal">1617</span>
-<span class="normal">1618</span>
-<span class="normal">1619</span>
-<span class="normal">1620</span>
-<span class="normal">1621</span>
-<span class="normal">1622</span>
-<span class="normal">1623</span>
-<span class="normal">1624</span>
-<span class="normal">1625</span>
-<span class="normal">1626</span>
-<span class="normal">1627</span>
-<span class="normal">1628</span>
-<span class="normal">1629</span>
-<span class="normal">1630</span>
-<span class="normal">1631</span>
-<span class="normal">1632</span>
-<span class="normal">1633</span>
-<span class="normal">1634</span>
-<span class="normal">1635</span>
-<span class="normal">1636</span>
-<span class="normal">1637</span>
-<span class="normal">1638</span>
-<span class="normal">1639</span>
-<span class="normal">1640</span>
-<span class="normal">1641</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1644</span>
+<span class="normal">1645</span>
+<span class="normal">1646</span>
+<span class="normal">1647</span>
+<span class="normal">1648</span>
+<span class="normal">1649</span>
+<span class="normal">1650</span>
+<span class="normal">1651</span>
+<span class="normal">1652</span>
+<span class="normal">1653</span>
+<span class="normal">1654</span>
+<span class="normal">1655</span>
+<span class="normal">1656</span>
+<span class="normal">1657</span>
+<span class="normal">1658</span>
+<span class="normal">1659</span>
+<span class="normal">1660</span>
+<span class="normal">1661</span>
+<span class="normal">1662</span>
+<span class="normal">1663</span>
+<span class="normal">1664</span>
+<span class="normal">1665</span>
+<span class="normal">1666</span>
+<span class="normal">1667</span>
+<span class="normal">1668</span>
+<span class="normal">1669</span>
+<span class="normal">1670</span>
+<span class="normal">1671</span>
+<span class="normal">1672</span>
+<span class="normal">1673</span>
+<span class="normal">1674</span>
+<span class="normal">1675</span>
+<span class="normal">1676</span>
+<span class="normal">1677</span>
+<span class="normal">1678</span>
+<span class="normal">1679</span>
+<span class="normal">1680</span>
+<span class="normal">1681</span>
+<span class="normal">1682</span>
+<span class="normal">1683</span>
+<span class="normal">1684</span>
+<span class="normal">1685</span>
+<span class="normal">1686</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -5218,52 +5306,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1037</span>
-<span class="normal">1038</span>
-<span class="normal">1039</span>
-<span class="normal">1040</span>
-<span class="normal">1041</span>
-<span class="normal">1042</span>
-<span class="normal">1043</span>
-<span class="normal">1044</span>
-<span class="normal">1045</span>
-<span class="normal">1046</span>
-<span class="normal">1047</span>
-<span class="normal">1048</span>
-<span class="normal">1049</span>
-<span class="normal">1050</span>
-<span class="normal">1051</span>
-<span class="normal">1052</span>
-<span class="normal">1053</span>
-<span class="normal">1054</span>
-<span class="normal">1055</span>
-<span class="normal">1056</span>
-<span class="normal">1057</span>
-<span class="normal">1058</span>
-<span class="normal">1059</span>
-<span class="normal">1060</span>
-<span class="normal">1061</span>
-<span class="normal">1062</span>
-<span class="normal">1063</span>
-<span class="normal">1064</span>
-<span class="normal">1065</span>
-<span class="normal">1066</span>
-<span class="normal">1067</span>
-<span class="normal">1068</span>
-<span class="normal">1069</span>
-<span class="normal">1070</span>
-<span class="normal">1071</span>
-<span class="normal">1072</span>
-<span class="normal">1073</span>
-<span class="normal">1074</span>
-<span class="normal">1075</span>
-<span class="normal">1076</span>
-<span class="normal">1077</span>
-<span class="normal">1078</span>
-<span class="normal">1079</span>
-<span class="normal">1080</span>
-<span class="normal">1081</span>
-<span class="normal">1082</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1082</span>
 <span class="normal">1083</span>
 <span class="normal">1084</span>
 <span class="normal">1085</span>
@@ -5350,7 +5393,52 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1166</span>
 <span class="normal">1167</span>
 <span class="normal">1168</span>
-<span class="normal">1169</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">1169</span>
+<span class="normal">1170</span>
+<span class="normal">1171</span>
+<span class="normal">1172</span>
+<span class="normal">1173</span>
+<span class="normal">1174</span>
+<span class="normal">1175</span>
+<span class="normal">1176</span>
+<span class="normal">1177</span>
+<span class="normal">1178</span>
+<span class="normal">1179</span>
+<span class="normal">1180</span>
+<span class="normal">1181</span>
+<span class="normal">1182</span>
+<span class="normal">1183</span>
+<span class="normal">1184</span>
+<span class="normal">1185</span>
+<span class="normal">1186</span>
+<span class="normal">1187</span>
+<span class="normal">1188</span>
+<span class="normal">1189</span>
+<span class="normal">1190</span>
+<span class="normal">1191</span>
+<span class="normal">1192</span>
+<span class="normal">1193</span>
+<span class="normal">1194</span>
+<span class="normal">1195</span>
+<span class="normal">1196</span>
+<span class="normal">1197</span>
+<span class="normal">1198</span>
+<span class="normal">1199</span>
+<span class="normal">1200</span>
+<span class="normal">1201</span>
+<span class="normal">1202</span>
+<span class="normal">1203</span>
+<span class="normal">1204</span>
+<span class="normal">1205</span>
+<span class="normal">1206</span>
+<span class="normal">1207</span>
+<span class="normal">1208</span>
+<span class="normal">1209</span>
+<span class="normal">1210</span>
+<span class="normal">1211</span>
+<span class="normal">1212</span>
+<span class="normal">1213</span>
+<span class="normal">1214</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to determine the action and extract options.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Extract file patterns and relationships using LLM</span>
@@ -5509,58 +5597,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1546</span>
-<span class="normal">1547</span>
-<span class="normal">1548</span>
-<span class="normal">1549</span>
-<span class="normal">1550</span>
-<span class="normal">1551</span>
-<span class="normal">1552</span>
-<span class="normal">1553</span>
-<span class="normal">1554</span>
-<span class="normal">1555</span>
-<span class="normal">1556</span>
-<span class="normal">1557</span>
-<span class="normal">1558</span>
-<span class="normal">1559</span>
-<span class="normal">1560</span>
-<span class="normal">1561</span>
-<span class="normal">1562</span>
-<span class="normal">1563</span>
-<span class="normal">1564</span>
-<span class="normal">1565</span>
-<span class="normal">1566</span>
-<span class="normal">1567</span>
-<span class="normal">1568</span>
-<span class="normal">1569</span>
-<span class="normal">1570</span>
-<span class="normal">1571</span>
-<span class="normal">1572</span>
-<span class="normal">1573</span>
-<span class="normal">1574</span>
-<span class="normal">1575</span>
-<span class="normal">1576</span>
-<span class="normal">1577</span>
-<span class="normal">1578</span>
-<span class="normal">1579</span>
-<span class="normal">1580</span>
-<span class="normal">1581</span>
-<span class="normal">1582</span>
-<span class="normal">1583</span>
-<span class="normal">1584</span>
-<span class="normal">1585</span>
-<span class="normal">1586</span>
-<span class="normal">1587</span>
-<span class="normal">1588</span>
-<span class="normal">1589</span>
-<span class="normal">1590</span>
-<span class="normal">1591</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1591</span>
 <span class="normal">1592</span>
 <span class="normal">1593</span>
 <span class="normal">1594</span>
 <span class="normal">1595</span>
 <span class="normal">1596</span>
-<span class="normal">1597</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">1597</span>
+<span class="normal">1598</span>
+<span class="normal">1599</span>
+<span class="normal">1600</span>
+<span class="normal">1601</span>
+<span class="normal">1602</span>
+<span class="normal">1603</span>
+<span class="normal">1604</span>
+<span class="normal">1605</span>
+<span class="normal">1606</span>
+<span class="normal">1607</span>
+<span class="normal">1608</span>
+<span class="normal">1609</span>
+<span class="normal">1610</span>
+<span class="normal">1611</span>
+<span class="normal">1612</span>
+<span class="normal">1613</span>
+<span class="normal">1614</span>
+<span class="normal">1615</span>
+<span class="normal">1616</span>
+<span class="normal">1617</span>
+<span class="normal">1618</span>
+<span class="normal">1619</span>
+<span class="normal">1620</span>
+<span class="normal">1621</span>
+<span class="normal">1622</span>
+<span class="normal">1623</span>
+<span class="normal">1624</span>
+<span class="normal">1625</span>
+<span class="normal">1626</span>
+<span class="normal">1627</span>
+<span class="normal">1628</span>
+<span class="normal">1629</span>
+<span class="normal">1630</span>
+<span class="normal">1631</span>
+<span class="normal">1632</span>
+<span class="normal">1633</span>
+<span class="normal">1634</span>
+<span class="normal">1635</span>
+<span class="normal">1636</span>
+<span class="normal">1637</span>
+<span class="normal">1638</span>
+<span class="normal">1639</span>
+<span class="normal">1640</span>
+<span class="normal">1641</span>
+<span class="normal">1642</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
@@ -5638,38 +5726,38 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">888</span>
-<span class="normal">889</span>
-<span class="normal">890</span>
-<span class="normal">891</span>
-<span class="normal">892</span>
-<span class="normal">893</span>
-<span class="normal">894</span>
-<span class="normal">895</span>
-<span class="normal">896</span>
-<span class="normal">897</span>
-<span class="normal">898</span>
-<span class="normal">899</span>
-<span class="normal">900</span>
-<span class="normal">901</span>
-<span class="normal">902</span>
-<span class="normal">903</span>
-<span class="normal">904</span>
-<span class="normal">905</span>
-<span class="normal">906</span>
-<span class="normal">907</span>
-<span class="normal">908</span>
-<span class="normal">909</span>
-<span class="normal">910</span>
-<span class="normal">911</span>
-<span class="normal">912</span>
-<span class="normal">913</span>
-<span class="normal">914</span>
-<span class="normal">915</span>
-<span class="normal">916</span>
-<span class="normal">917</span>
-<span class="normal">918</span>
-<span class="normal">919</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_analysis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">933</span>
+<span class="normal">934</span>
+<span class="normal">935</span>
+<span class="normal">936</span>
+<span class="normal">937</span>
+<span class="normal">938</span>
+<span class="normal">939</span>
+<span class="normal">940</span>
+<span class="normal">941</span>
+<span class="normal">942</span>
+<span class="normal">943</span>
+<span class="normal">944</span>
+<span class="normal">945</span>
+<span class="normal">946</span>
+<span class="normal">947</span>
+<span class="normal">948</span>
+<span class="normal">949</span>
+<span class="normal">950</span>
+<span class="normal">951</span>
+<span class="normal">952</span>
+<span class="normal">953</span>
+<span class="normal">954</span>
+<span class="normal">955</span>
+<span class="normal">956</span>
+<span class="normal">957</span>
+<span class="normal">958</span>
+<span class="normal">959</span>
+<span class="normal">960</span>
+<span class="normal">961</span>
+<span class="normal">962</span>
+<span class="normal">963</span>
+<span class="normal">964</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_analysis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate analysis of workflow outputs.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Prepare the prompt for analysis</span>
@@ -5727,30 +5815,30 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">863</span>
-<span class="normal">864</span>
-<span class="normal">865</span>
-<span class="normal">866</span>
-<span class="normal">867</span>
-<span class="normal">868</span>
-<span class="normal">869</span>
-<span class="normal">870</span>
-<span class="normal">871</span>
-<span class="normal">872</span>
-<span class="normal">873</span>
-<span class="normal">874</span>
-<span class="normal">875</span>
-<span class="normal">876</span>
-<span class="normal">877</span>
-<span class="normal">878</span>
-<span class="normal">879</span>
-<span class="normal">880</span>
-<span class="normal">881</span>
-<span class="normal">882</span>
-<span class="normal">883</span>
-<span class="normal">884</span>
-<span class="normal">885</span>
-<span class="normal">886</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">908</span>
+<span class="normal">909</span>
+<span class="normal">910</span>
+<span class="normal">911</span>
+<span class="normal">912</span>
+<span class="normal">913</span>
+<span class="normal">914</span>
+<span class="normal">915</span>
+<span class="normal">916</span>
+<span class="normal">917</span>
+<span class="normal">918</span>
+<span class="normal">919</span>
+<span class="normal">920</span>
+<span class="normal">921</span>
+<span class="normal">922</span>
+<span class="normal">923</span>
+<span class="normal">924</span>
+<span class="normal">925</span>
+<span class="normal">926</span>
+<span class="normal">927</span>
+<span class="normal">928</span>
+<span class="normal">929</span>
+<span class="normal">930</span>
+<span class="normal">931</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a command for a workflow step.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="c1"># If command is already provided, use it</span>
@@ -5800,46 +5888,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">672</span>
-<span class="normal">673</span>
-<span class="normal">674</span>
-<span class="normal">675</span>
-<span class="normal">676</span>
-<span class="normal">677</span>
-<span class="normal">678</span>
-<span class="normal">679</span>
-<span class="normal">680</span>
-<span class="normal">681</span>
-<span class="normal">682</span>
-<span class="normal">683</span>
-<span class="normal">684</span>
-<span class="normal">685</span>
-<span class="normal">686</span>
-<span class="normal">687</span>
-<span class="normal">688</span>
-<span class="normal">689</span>
-<span class="normal">690</span>
-<span class="normal">691</span>
-<span class="normal">692</span>
-<span class="normal">693</span>
-<span class="normal">694</span>
-<span class="normal">695</span>
-<span class="normal">696</span>
-<span class="normal">697</span>
-<span class="normal">698</span>
-<span class="normal">699</span>
-<span class="normal">700</span>
-<span class="normal">701</span>
-<span class="normal">702</span>
-<span class="normal">703</span>
-<span class="normal">704</span>
-<span class="normal">705</span>
-<span class="normal">706</span>
-<span class="normal">707</span>
-<span class="normal">708</span>
-<span class="normal">709</span>
-<span class="normal">710</span>
-<span class="normal">711</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">711</span>
 <span class="normal">712</span>
 <span class="normal">713</span>
 <span class="normal">714</span>
@@ -5989,7 +6038,52 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">858</span>
 <span class="normal">859</span>
 <span class="normal">860</span>
-<span class="normal">861</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_workflow_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">861</span>
+<span class="normal">862</span>
+<span class="normal">863</span>
+<span class="normal">864</span>
+<span class="normal">865</span>
+<span class="normal">866</span>
+<span class="normal">867</span>
+<span class="normal">868</span>
+<span class="normal">869</span>
+<span class="normal">870</span>
+<span class="normal">871</span>
+<span class="normal">872</span>
+<span class="normal">873</span>
+<span class="normal">874</span>
+<span class="normal">875</span>
+<span class="normal">876</span>
+<span class="normal">877</span>
+<span class="normal">878</span>
+<span class="normal">879</span>
+<span class="normal">880</span>
+<span class="normal">881</span>
+<span class="normal">882</span>
+<span class="normal">883</span>
+<span class="normal">884</span>
+<span class="normal">885</span>
+<span class="normal">886</span>
+<span class="normal">887</span>
+<span class="normal">888</span>
+<span class="normal">889</span>
+<span class="normal">890</span>
+<span class="normal">891</span>
+<span class="normal">892</span>
+<span class="normal">893</span>
+<span class="normal">894</span>
+<span class="normal">895</span>
+<span class="normal">896</span>
+<span class="normal">897</span>
+<span class="normal">898</span>
+<span class="normal">899</span>
+<span class="normal">900</span>
+<span class="normal">901</span>
+<span class="normal">902</span>
+<span class="normal">903</span>
+<span class="normal">904</span>
+<span class="normal">905</span>
+<span class="normal">906</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_workflow_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a workflow plan from a prompt.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Check for invalid prompt type</span>
@@ -6144,10 +6238,16 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="si">{</span><span class="n">resource_instructions</span><span class="si">}</span>
 
 <span class="s2">&quot;&quot;&quot;</span>
+            <span class="n">_os_hint</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Darwin&quot;</span><span class="p">:</span>
+                <span class="n">_os_hint</span> <span class="o">=</span> <span class="s2">&quot; The host is macOS; use BSD-compatible shell commands (no GNU extensions like find -printf).&quot;</span>
+            <span class="k">elif</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Linux&quot;</span><span class="p">:</span>
+                <span class="n">_os_hint</span> <span class="o">=</span> <span class="s2">&quot; The host is Linux.&quot;</span>
+
             <span class="n">messages</span> <span class="o">=</span> <span class="p">[</span>
                 <span class="p">{</span>
                     <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;system&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;You are a bioinformatics workflow expert. Return only valid JSON.&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;You are a bioinformatics workflow expert. Return only valid JSON.</span><span class="si">{</span><span class="n">_os_hint</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
                 <span class="p">},</span>
                 <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">enhanced_prompt</span><span class="p">},</span>
             <span class="p">]</span>

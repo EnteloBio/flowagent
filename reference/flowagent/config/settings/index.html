@@ -1657,7 +1657,14 @@
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>flowagent/config/settings.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 32</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 25</span>
+<span class="normal"> 26</span>
+<span class="normal"> 27</span>
+<span class="normal"> 28</span>
+<span class="normal"> 29</span>
+<span class="normal"> 30</span>
+<span class="normal"> 31</span>
+<span class="normal"> 32</span>
 <span class="normal"> 33</span>
 <span class="normal"> 34</span>
 <span class="normal"> 35</span>
@@ -1751,166 +1758,57 @@
 <span class="normal">123</span>
 <span class="normal">124</span>
 <span class="normal">125</span>
-<span class="normal">126</span>
-<span class="normal">127</span>
-<span class="normal">128</span>
-<span class="normal">129</span>
-<span class="normal">130</span>
-<span class="normal">131</span>
-<span class="normal">132</span>
-<span class="normal">133</span>
-<span class="normal">134</span>
-<span class="normal">135</span>
-<span class="normal">136</span>
-<span class="normal">137</span>
-<span class="normal">138</span>
-<span class="normal">139</span>
-<span class="normal">140</span>
-<span class="normal">141</span>
-<span class="normal">142</span>
-<span class="normal">143</span>
-<span class="normal">144</span>
-<span class="normal">145</span>
-<span class="normal">146</span>
-<span class="normal">147</span>
-<span class="normal">148</span>
-<span class="normal">149</span>
-<span class="normal">150</span>
-<span class="normal">151</span>
-<span class="normal">152</span>
-<span class="normal">153</span>
-<span class="normal">154</span>
-<span class="normal">155</span>
-<span class="normal">156</span>
-<span class="normal">157</span>
-<span class="normal">158</span>
-<span class="normal">159</span>
-<span class="normal">160</span>
-<span class="normal">161</span>
-<span class="normal">162</span>
-<span class="normal">163</span>
-<span class="normal">164</span>
-<span class="normal">165</span>
-<span class="normal">166</span>
-<span class="normal">167</span>
-<span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span>
-<span class="normal">181</span>
-<span class="normal">182</span>
-<span class="normal">183</span>
-<span class="normal">184</span>
-<span class="normal">185</span>
-<span class="normal">186</span>
-<span class="normal">187</span>
-<span class="normal">188</span>
-<span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">Settings</span><span class="p">(</span><span class="n">BaseSettings</span><span class="p">):</span>
+<span class="normal">126</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">Settings</span><span class="p">(</span><span class="n">BaseSettings</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Settings class for FlowAgent.&quot;&quot;&quot;</span>
 
-    <span class="n">model_config</span> <span class="o">=</span> <span class="n">SettingsConfigDict</span><span class="p">(</span><span class="n">env_file</span><span class="o">=</span><span class="s1">&#39;.env&#39;</span><span class="p">,</span> <span class="n">env_file_encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">case_sensitive</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">model_config</span> <span class="o">=</span> <span class="n">SettingsConfigDict</span><span class="p">(</span>
+        <span class="n">env_file</span><span class="o">=</span><span class="s2">&quot;.env&quot;</span><span class="p">,</span> <span class="n">env_file_encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">,</span>
+        <span class="n">extra</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">case_sensitive</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
 
-    <span class="c1"># Application Settings</span>
-    <span class="n">APP_NAME</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;FlowAgent&quot;</span>
-    <span class="n">APP_VERSION</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;1.0.0&quot;</span>
-    <span class="n">DEBUG</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="n">ENVIRONMENT</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;development&quot;</span>
-
-    <span class="c1"># Security</span>
-    <span class="n">SECRET_KEY</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SecretStr</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">API_KEY_HEADER</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;X-API-Key&quot;</span>
-    <span class="n">ACCESS_TOKEN_EXPIRE_MINUTES</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3000</span>
-
-    <span class="c1"># LLM Provider Settings (multi-provider)</span>
+    <span class="c1"># ── LLM Provider ─────────────────────────────────────────</span>
     <span class="n">LLM_PROVIDER</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;LLM provider: openai | anthropic | google | ollama&quot;</span><span class="p">)</span>
-    <span class="n">LLM_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;gpt-4.1&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Primary model (provider/model or bare name)&quot;</span><span class="p">)</span>
+    <span class="n">LLM_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;gpt-5.4-mini&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Primary model&quot;</span><span class="p">)</span>
     <span class="n">LLM_FALLBACK_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;gpt-4.1-mini&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Fallback model if primary unavailable&quot;</span><span class="p">)</span>
     <span class="n">LLM_BASE_URL</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Custom endpoint URL (for Ollama/vLLM)&quot;</span><span class="p">)</span>
 
-    <span class="c1"># Provider API keys</span>
     <span class="n">OPENAI_API_KEY</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;OpenAI API Key&quot;</span><span class="p">)</span>
     <span class="n">ANTHROPIC_API_KEY</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Anthropic API Key&quot;</span><span class="p">)</span>
     <span class="n">GOOGLE_API_KEY</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Google Gemini API Key&quot;</span><span class="p">)</span>
 
-    <span class="c1"># Legacy OpenAI settings (still read for backwards compatibility)</span>
+    <span class="c1"># Legacy OpenAI settings (backwards compatibility)</span>
     <span class="n">OPENAI_BASE_URL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;https://api.openai.com/v1&quot;</span>
-    <span class="n">OPENAI_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s1">&#39;gpt-4.1&#39;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;OpenAI Model to use (legacy, prefer LLM_MODEL)&quot;</span><span class="p">)</span>
-    <span class="n">OPENAI_FALLBACK_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s1">&#39;gpt-4.1-mini&#39;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Fallback model (legacy, prefer LLM_FALLBACK_MODEL)&quot;</span><span class="p">)</span>
+    <span class="n">OPENAI_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;gpt-5.4-mini&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Legacy: prefer LLM_MODEL&quot;</span><span class="p">)</span>
+    <span class="n">OPENAI_FALLBACK_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;gpt-4.1-mini&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Legacy: prefer LLM_FALLBACK_MODEL&quot;</span><span class="p">)</span>
 
-    <span class="nd">@field_validator</span><span class="p">(</span><span class="s1">&#39;OPENAI_API_KEY&#39;</span><span class="p">)</span>
+    <span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;OPENAI_API_KEY&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">validate_openai_key</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">v</span><span class="p">:</span>
-            <span class="c1"># Try to get from environment directly</span>
-            <span class="n">v</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s1">&#39;OPENAI_API_KEY&#39;</span><span class="p">)</span>
-
+            <span class="n">v</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;OPENAI_API_KEY&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">v</span><span class="p">:</span>
-            <span class="n">env_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s1">&#39;.env&#39;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">env_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">⚠️  No .env file found in the current directory.&quot;</span>
-                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">   Please create a .env file with your OpenAI API key:&quot;</span>
-                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">   OPENAI_API_KEY=your-api-key-here&quot;</span>
-                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">   OPENAI_MODEL=gpt-4 (optional)&quot;</span>
-                <span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">⚠️  OPENAI_API_KEY not found in environment variables or .env file.&quot;</span>
-                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">   Please add your OpenAI API key to the .env file:&quot;</span>
-                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">   OPENAI_API_KEY=your-api-key-here&quot;</span>
-                <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;No OPENAI_API_KEY found. Set it in .env or environment variables.&quot;</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="n">v</span>
 
-    <span class="c1"># Rate Limiting Settings</span>
+    <span class="c1"># ── Rate Limiting ────────────────────────────────────────</span>
     <span class="n">MAX_RETRIES</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span>
     <span class="n">RETRY_DELAY</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.0</span>
     <span class="n">TIMEOUT</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">60.0</span>
-    <span class="n">REQUEST_INTERVAL</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span>
 
-    <span class="c1"># Database Settings</span>
-    <span class="n">VECTOR_DB_PATH</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;data/vector_store&quot;</span><span class="p">)</span>
-    <span class="n">SQLITE_DB_PATH</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;data/flowagent.db&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Agent Settings</span>
+    <span class="c1"># ── Workflow ─────────────────────────────────────────────</span>
     <span class="n">MAX_CONCURRENT_WORKFLOWS</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span>
     <span class="n">WORKFLOW_TIMEOUT</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3600</span>
-    <span class="n">AGENT_TIMEOUT</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">30.0</span>
-    <span class="n">AGENT_MAX_RETRIES</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span>
-    <span class="n">AGENT_RETRY_DELAY</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span>
-
-    <span class="c1"># Workflow Settings</span>
     <span class="n">DEFAULT_WORKFLOW_PARAMS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;threads&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
-        <span class="s2">&quot;memory&quot;</span><span class="p">:</span> <span class="s2">&quot;16G&quot;</span>
+        <span class="s2">&quot;memory&quot;</span><span class="p">:</span> <span class="s2">&quot;16G&quot;</span><span class="p">,</span>
     <span class="p">}</span>
 
-    <span class="c1"># Pipeline generation settings</span>
-    <span class="n">PIPELINE_FORMAT</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;shell&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Pipeline format: shell | nextflow | snakemake&quot;</span><span class="p">)</span>
-    <span class="n">PIPELINE_PROFILE</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Nextflow profile&quot;</span><span class="p">)</span>
-    <span class="n">CONTAINER_ENGINE</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;docker&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Container engine: docker | singularity | conda&quot;</span><span class="p">)</span>
-    <span class="n">AUTO_EXECUTE_PIPELINE</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Auto-execute generated pipelines&quot;</span><span class="p">)</span>
+    <span class="c1"># ── Pipeline Generation ──────────────────────────────────</span>
+    <span class="n">PIPELINE_FORMAT</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;shell&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;shell | nextflow | snakemake&quot;</span><span class="p">)</span>
+    <span class="n">PIPELINE_PROFILE</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Nextflow profile (local, docker, singularity, slurm)&quot;</span><span class="p">)</span>
 
-    <span class="c1"># Executor settings</span>
+    <span class="c1"># ── Executor ─────────────────────────────────────────────</span>
     <span class="n">EXECUTOR_TYPE</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;local&quot;</span>
     <span class="n">HPC_SYSTEM</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;slurm&quot;</span>
     <span class="n">HPC_QUEUE</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;all.q&quot;</span>
@@ -1918,7 +1816,12 @@
     <span class="n">HPC_DEFAULT_CPUS</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
     <span class="n">HPC_DEFAULT_TIME</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">60</span>
 
-    <span class="c1"># Kubernetes Settings</span>
+    <span class="c1"># Aliases used by CGATExecutor</span>
+    <span class="n">SLURM_QUEUE</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;all.q&quot;</span>
+    <span class="n">SLURM_DEFAULT_MEMORY</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;4G&quot;</span>
+    <span class="n">SLURM_DEFAULT_CPUS</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="c1"># ── Kubernetes ───────────────────────────────────────────</span>
     <span class="n">KUBERNETES_ENABLED</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">KUBERNETES_NAMESPACE</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;default&quot;</span>
     <span class="n">KUBERNETES_SERVICE_ACCOUNT</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;default&quot;</span>
@@ -1929,32 +1832,19 @@
     <span class="n">KUBERNETES_MEMORY_LIMIT</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;1Gi&quot;</span>
     <span class="n">KUBERNETES_JOB_TTL</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3600</span>
 
-    <span class="c1"># Tool Settings</span>
-    <span class="n">REQUIRED_TOOLS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="s2">&quot;kallisto&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;fastqc&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;multiqc&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;cellranger&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;seurat&quot;</span>
-    <span class="p">]</span>
-    <span class="n">TOOL_VERSIONS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;kallisto&quot;</span><span class="p">:</span> <span class="s2">&quot;0.46.1&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;fastqc&quot;</span><span class="p">:</span> <span class="s2">&quot;0.11.9&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;multiqc&quot;</span><span class="p">:</span> <span class="s2">&quot;1.11&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;cellranger&quot;</span><span class="p">:</span> <span class="s2">&quot;7.0.0&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;seurat&quot;</span><span class="p">:</span> <span class="s2">&quot;4.3.0&quot;</span>
-    <span class="p">}</span>
-
-    <span class="c1"># Monitoring</span>
+    <span class="c1"># ── Monitoring ───────────────────────────────────────────</span>
     <span class="n">ENABLE_MONITORING</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">METRICS_PORT</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">9090</span>
     <span class="n">LOG_LEVEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;INFO&quot;</span>
-    <span class="n">LOG_FORMAT</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2"> - </span><span class="si">%(name)s</span><span class="s2"> - </span><span class="si">%(levelname)s</span><span class="s2"> - </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
 
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">openai_api_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get OpenAI API key.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">OPENAI_API_KEY</span>
+    <span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;LOG_LEVEL&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_log_level</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">valid_levels</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;DEBUG&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;WARNING&quot;</span><span class="p">,</span> <span class="s2">&quot;ERROR&quot;</span><span class="p">,</span> <span class="s2">&quot;CRITICAL&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid_levels</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid log level. Must be one of: </span><span class="si">{</span><span class="n">valid_levels</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">v</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+    <span class="c1"># ── Properties ───────────────────────────────────────────</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">active_api_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
@@ -1966,32 +1856,6 @@
             <span class="s2">&quot;ollama&quot;</span><span class="p">:</span> <span class="s2">&quot;ollama&quot;</span><span class="p">,</span>
         <span class="p">}</span>
         <span class="k">return</span> <span class="n">key_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">LLM_PROVIDER</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">is_development</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if running in development environment.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ENVIRONMENT</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;development&quot;</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">is_production</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if running in production environment.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ENVIRONMENT</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;production&quot;</span>
-
-    <span class="nd">@field_validator</span><span class="p">(</span><span class="s1">&#39;LOG_LEVEL&#39;</span><span class="p">)</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">validate_log_level</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate log level.&quot;&quot;&quot;</span>
-        <span class="n">valid_levels</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;DEBUG&#39;</span><span class="p">,</span> <span class="s1">&#39;INFO&#39;</span><span class="p">,</span> <span class="s1">&#39;WARNING&#39;</span><span class="p">,</span> <span class="s1">&#39;ERROR&#39;</span><span class="p">,</span> <span class="s1">&#39;CRITICAL&#39;</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid_levels</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid log level. Must be one of: </span><span class="si">{</span><span class="n">valid_levels</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">v</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_tool_version</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get required version for a tool.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">TOOL_VERSIONS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tool_name</span><span class="p">,</span> <span class="s2">&quot;latest&quot;</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">is_tool_required</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a tool is required.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">tool_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">REQUIRED_TOOLS</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_workflow_param</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">param_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Get default workflow parameter.&quot;&quot;&quot;</span>
@@ -2031,101 +1895,8 @@
 
 </div>
 
-<div class="doc doc-object doc-attribute">
-
-
-
-<h6 id="flowagent.config.settings.Settings.is_development" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">is_development</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#flowagent.config.settings.Settings.is_development" class="headerlink" title="Permanent link">&para;</a></h6>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Check if running in development environment.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h6 id="flowagent.config.settings.Settings.is_production" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">is_production</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#flowagent.config.settings.Settings.is_production" class="headerlink" title="Permanent link">&para;</a></h6>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Check if running in production environment.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h6 id="flowagent.config.settings.Settings.openai_api_key" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">openai_api_key</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#flowagent.config.settings.Settings.openai_api_key" class="headerlink" title="Permanent link">&para;</a></h6>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Get OpenAI API key.</p>
-
-    </div>
-
-</div>
-
 
 <h5 id="flowagent.config.settings.Settings-functions">Functions<a href="#flowagent.config.settings.Settings-functions" class="headerlink" title="Permanent link">&para;</a></h5>
-
-<div class="doc doc-object doc-function">
-
-
-<h6 id="flowagent.config.settings.Settings.get_tool_version" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">get_tool_version</span><span class="p">(</span><span class="n">tool_name</span><span class="p">)</span></code>
-
-<a href="#flowagent.config.settings.Settings.get_tool_version" class="headerlink" title="Permanent link">&para;</a></h6>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Get required version for a tool.</p>
-
-
-            <details class="mkdocstrings-source">
-              <summary>Source code in <code>flowagent/config/settings.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_tool_version</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get required version for a tool.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">TOOL_VERSIONS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tool_name</span><span class="p">,</span> <span class="s2">&quot;latest&quot;</span><span class="p">)</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
 
 <div class="doc doc-object doc-function">
 
@@ -2143,73 +1914,11 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/config/settings.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_workflow_param</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">param_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_workflow_param</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">param_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Get default workflow parameter.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_WORKFLOW_PARAMS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">param_name</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h6 id="flowagent.config.settings.Settings.is_tool_required" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">is_tool_required</span><span class="p">(</span><span class="n">tool_name</span><span class="p">)</span></code>
-
-<a href="#flowagent.config.settings.Settings.is_tool_required" class="headerlink" title="Permanent link">&para;</a></h6>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Check if a tool is required.</p>
-
-
-            <details class="mkdocstrings-source">
-              <summary>Source code in <code>flowagent/config/settings.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">is_tool_required</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if a tool is required.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">tool_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">REQUIRED_TOOLS</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h6 id="flowagent.config.settings.Settings.validate_log_level" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">validate_log_level</span><span class="p">(</span><span class="n">v</span><span class="p">)</span></code>
-
-<a href="#flowagent.config.settings.Settings.validate_log_level" class="headerlink" title="Permanent link">&para;</a></h6>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Validate log level.</p>
-
-
-            <details class="mkdocstrings-source">
-              <summary>Source code in <code>flowagent/config/settings.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">183</span>
-<span class="normal">184</span>
-<span class="normal">185</span>
-<span class="normal">186</span>
-<span class="normal">187</span>
-<span class="normal">188</span>
-<span class="normal">189</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@field_validator</span><span class="p">(</span><span class="s1">&#39;LOG_LEVEL&#39;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">validate_log_level</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate log level.&quot;&quot;&quot;</span>
-    <span class="n">valid_levels</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;DEBUG&#39;</span><span class="p">,</span> <span class="s1">&#39;INFO&#39;</span><span class="p">,</span> <span class="s1">&#39;WARNING&#39;</span><span class="p">,</span> <span class="s1">&#39;ERROR&#39;</span><span class="p">,</span> <span class="s1">&#39;CRITICAL&#39;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid_levels</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid log level. Must be one of: </span><span class="si">{</span><span class="n">valid_levels</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">v</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

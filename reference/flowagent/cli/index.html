@@ -1634,7 +1634,7 @@
 
 
 <h4 id="flowagent.cli.main" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">main</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">resume</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">force_resume</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">checkpoint_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">analysis_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">pipeline_format</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">no_execute</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">executor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">hpc_system</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">preset</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">main</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -1650,43 +1650,7 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/cli.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">132</span>
-<span class="normal">133</span>
-<span class="normal">134</span>
-<span class="normal">135</span>
-<span class="normal">136</span>
-<span class="normal">137</span>
-<span class="normal">138</span>
-<span class="normal">139</span>
-<span class="normal">140</span>
-<span class="normal">141</span>
-<span class="normal">142</span>
-<span class="normal">143</span>
-<span class="normal">144</span>
-<span class="normal">145</span>
-<span class="normal">146</span>
-<span class="normal">147</span>
-<span class="normal">148</span>
-<span class="normal">149</span>
-<span class="normal">150</span>
-<span class="normal">151</span>
-<span class="normal">152</span>
-<span class="normal">153</span>
-<span class="normal">154</span>
-<span class="normal">155</span>
-<span class="normal">156</span>
-<span class="normal">157</span>
-<span class="normal">158</span>
-<span class="normal">159</span>
-<span class="normal">160</span>
-<span class="normal">161</span>
-<span class="normal">162</span>
-<span class="normal">163</span>
-<span class="normal">164</span>
-<span class="normal">165</span>
-<span class="normal">166</span>
-<span class="normal">167</span>
-<span class="normal">168</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
 <span class="normal">169</span>
 <span class="normal">170</span>
 <span class="normal">171</span>
@@ -1779,33 +1743,24 @@
 <span class="normal">258</span>
 <span class="normal">259</span>
 <span class="normal">260</span>
-<span class="normal">261</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span>
+<span class="normal">261</span>
+<span class="normal">262</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span>
     <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">resume</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-    <span class="n">force_resume</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-    <span class="n">checkpoint_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">analysis_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">pipeline_format</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">profile</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">no_execute</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-    <span class="n">executor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">hpc_system</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">preset</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">args</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Main entry point for the CLI.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="c1"># Preset workflow shortcut</span>
-        <span class="k">if</span> <span class="n">preset</span><span class="p">:</span>
+        <span class="c1"># --preset shortcut</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">preset</span><span class="p">:</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">.presets.catalog</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_preset</span><span class="p">,</span> <span class="n">list_presets</span>
-            <span class="n">plan</span> <span class="o">=</span> <span class="n">get_preset</span><span class="p">(</span><span class="n">preset</span><span class="p">)</span>
+            <span class="n">plan</span> <span class="o">=</span> <span class="n">get_preset</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">preset</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">available</span> <span class="o">=</span> <span class="n">list_presets</span><span class="p">()</span>
-                <span class="n">names</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">available</span><span class="p">)</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown preset &#39;</span><span class="si">{</span><span class="n">preset</span><span class="si">}</span><span class="s2">&#39;. Available: </span><span class="si">{</span><span class="n">names</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">names</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">list_presets</span><span class="p">())</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown preset &#39;</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">preset</span><span class="si">}</span><span class="s2">&#39;. Available: </span><span class="si">{</span><span class="n">names</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Using preset workflow: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">plan</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">.core.workflow_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorkflowManager</span>
-            <span class="n">wm</span> <span class="o">=</span> <span class="n">WorkflowManager</span><span class="p">(</span><span class="n">executor_type</span><span class="o">=</span><span class="n">executor</span> <span class="ow">or</span> <span class="n">Settings</span><span class="p">()</span><span class="o">.</span><span class="n">EXECUTOR_TYPE</span><span class="p">)</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">.core.agent_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">Workflow</span><span class="p">,</span> <span class="n">WorkflowStep</span>
+            <span class="n">wm</span> <span class="o">=</span> <span class="n">WorkflowManager</span><span class="p">(</span><span class="n">executor_type</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">executor</span> <span class="ow">or</span> <span class="n">Settings</span><span class="p">()</span><span class="o">.</span><span class="n">EXECUTOR_TYPE</span><span class="p">)</span>
             <span class="n">steps</span> <span class="o">=</span> <span class="p">[</span><span class="n">WorkflowStep</span><span class="p">(</span>
                 <span class="n">name</span><span class="o">=</span><span class="n">s</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">command</span><span class="o">=</span><span class="n">s</span><span class="p">[</span><span class="s2">&quot;command&quot;</span><span class="p">],</span>
                 <span class="n">dependencies</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;dependencies&quot;</span><span class="p">,</span> <span class="p">[]),</span>
@@ -1818,96 +1773,71 @@
                 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;output_dir&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">return</span>
 
-        <span class="k">if</span> <span class="n">analysis_dir</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Analyzing workflow results in </span><span class="si">{</span><span class="n">analysis_dir</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">analyze_workflow</span><span class="p">(</span><span class="n">analysis_dir</span><span class="p">)</span>
-
+        <span class="c1"># --analysis-dir shortcut</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">analysis_dir</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.workflow</span><span class="w"> </span><span class="kn">import</span> <span class="n">analyze_workflow</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Analyzing workflow results in </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">analysis_dir</span><span class="p">)</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">analyze_workflow</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">analysis_dir</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;success&quot;</span><span class="p">:</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Standard Analysis Report:&quot;</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">80</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="s2">&quot;report&quot;</span><span class="p">])</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">80</span><span class="p">)</span>
-
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Agentic Analysis Report:&quot;</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">80</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="s2">&quot;agentic_report&quot;</span><span class="p">])</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">80</span><span class="p">)</span>
-
-                <span class="k">if</span> <span class="n">results</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;report_files&quot;</span><span class="p">):</span>
-                    <span class="nb">print</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Analysis reports saved to: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="s1">&#39;report_files&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
-                    <span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;report&quot;</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">results</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;agentic_report&quot;</span><span class="p">):</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;agentic_report&quot;</span><span class="p">])</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Analysis failed: </span><span class="si">{</span><span class="n">results</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;error&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;Unknown error&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
 
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">resume</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">checkpoint_dir</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="s2">&quot;Checkpoint directory must be provided if resume is set to True&quot;</span>
-                <span class="p">)</span>
-
-            <span class="c1"># Apply CLI overrides to settings</span>
+        <span class="c1"># --pipeline-format shortcut</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">pipeline_format</span><span class="p">:</span>
             <span class="n">s</span> <span class="o">=</span> <span class="n">Settings</span><span class="p">()</span>
-            <span class="n">fmt</span> <span class="o">=</span> <span class="n">pipeline_format</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">PIPELINE_FORMAT</span>
-            <span class="n">exec_type</span> <span class="o">=</span> <span class="n">executor</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">EXECUTOR_TYPE</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">pipeline_format</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Generating </span><span class="si">%s</span><span class="s2"> pipeline from prompt&quot;</span><span class="p">,</span> <span class="n">fmt</span><span class="p">)</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.core.llm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMInterface</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.core.pipeline_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">NextflowGenerator</span><span class="p">,</span> <span class="n">SnakemakeGenerator</span>
 
-            <span class="c1"># Pipeline generation path</span>
-            <span class="k">if</span> <span class="n">fmt</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;nextflow&quot;</span><span class="p">,</span> <span class="s2">&quot;snakemake&quot;</span><span class="p">):</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Generating </span><span class="si">%s</span><span class="s2"> pipeline from prompt…&quot;</span><span class="p">,</span> <span class="n">fmt</span><span class="p">)</span>
-                <span class="kn">from</span><span class="w"> </span><span class="nn">.core.llm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMInterface</span>
-                <span class="kn">from</span><span class="w"> </span><span class="nn">.core.pipeline_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">NextflowGenerator</span><span class="p">,</span> <span class="n">SnakemakeGenerator</span>
+            <span class="n">llm</span> <span class="o">=</span> <span class="n">LLMInterface</span><span class="p">()</span>
+            <span class="n">workflow_plan</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate_workflow_plan</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+            <span class="n">output_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;flowagent_pipeline_output&quot;</span><span class="p">)</span>
+            <span class="n">gen</span> <span class="o">=</span> <span class="n">NextflowGenerator</span><span class="p">()</span> <span class="k">if</span> <span class="n">fmt</span> <span class="o">==</span> <span class="s2">&quot;nextflow&quot;</span> <span class="k">else</span> <span class="n">SnakemakeGenerator</span><span class="p">()</span>
+            <span class="n">gen</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">workflow_plan</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Generated </span><span class="si">{</span><span class="n">gen</span><span class="o">.</span><span class="n">default_filename</span><span class="p">()</span><span class="si">}</span><span class="s2"> in </span><span class="si">{</span><span class="n">output_dir</span><span class="si">}</span><span class="s2">/&quot;</span><span class="p">)</span>
 
-                <span class="n">llm</span> <span class="o">=</span> <span class="n">LLMInterface</span><span class="p">()</span>
-                <span class="n">workflow_plan</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate_workflow_plan</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+            <span class="n">vresult</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">gen</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">workflow_plan</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">),</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">err</span> <span class="ow">in</span> <span class="n">vresult</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;errors&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Validation: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
 
-                <span class="n">output_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;flowagent_pipeline_output&quot;</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">fmt</span> <span class="o">==</span> <span class="s2">&quot;nextflow&quot;</span><span class="p">:</span>
-                    <span class="n">gen</span> <span class="o">=</span> <span class="n">NextflowGenerator</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_execute</span> <span class="ow">and</span> <span class="n">vresult</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;valid&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">.core.executor_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorFactory</span>
+                <span class="n">executor</span> <span class="o">=</span> <span class="n">ExecutorFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">profile</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">PIPELINE_PROFILE</span><span class="p">)</span>
+                <span class="n">step</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">fmt</span><span class="si">}</span><span class="s2">_run&quot;</span><span class="p">,</span> <span class="s2">&quot;pipeline_file&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">output_dir</span> <span class="o">/</span> <span class="n">gen</span><span class="o">.</span><span class="n">default_filename</span><span class="p">()),</span> <span class="s2">&quot;cwd&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">output_dir</span><span class="p">)}</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">executor</span><span class="o">.</span><span class="n">execute_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;completed&quot;</span><span class="p">:</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Pipeline completed successfully&quot;</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="n">gen</span> <span class="o">=</span> <span class="n">SnakemakeGenerator</span><span class="p">()</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Pipeline failed:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">no_execute</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Pipeline generated (--no-execute). Run it manually.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
 
-                <span class="n">code</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">workflow_plan</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Generated </span><span class="si">{</span><span class="n">gen</span><span class="o">.</span><span class="n">default_filename</span><span class="p">()</span><span class="si">}</span><span class="s2"> in </span><span class="si">{</span><span class="n">output_dir</span><span class="si">}</span><span class="s2">/&quot;</span><span class="p">)</span>
-
-                <span class="c1"># Validate</span>
-                <span class="n">vresult</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">vresult</span><span class="p">[</span><span class="s2">&quot;errors&quot;</span><span class="p">]:</span>
-                    <span class="k">for</span> <span class="n">err</span> <span class="ow">in</span> <span class="n">vresult</span><span class="p">[</span><span class="s2">&quot;errors&quot;</span><span class="p">]:</span>
-                        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Validation error: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">vresult</span><span class="p">[</span><span class="s2">&quot;warnings&quot;</span><span class="p">]:</span>
-                    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">vresult</span><span class="p">[</span><span class="s2">&quot;warnings&quot;</span><span class="p">]:</span>
-                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Validation: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>
-
-                <span class="c1"># Execute unless --no-execute</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">no_execute</span> <span class="ow">and</span> <span class="n">vresult</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;valid&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
-                    <span class="kn">from</span><span class="w"> </span><span class="nn">.core.executor_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorFactory</span>
-                    <span class="n">pipeline_executor</span> <span class="o">=</span> <span class="n">ExecutorFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
-                        <span class="n">fmt</span><span class="p">,</span>
-                        <span class="n">profile</span><span class="o">=</span><span class="n">profile</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">PIPELINE_PROFILE</span><span class="p">,</span>
-                    <span class="p">)</span>
-                    <span class="n">step</span> <span class="o">=</span> <span class="p">{</span>
-                        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">fmt</span><span class="si">}</span><span class="s2">_run&quot;</span><span class="p">,</span>
-                        <span class="s2">&quot;pipeline_file&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">output_dir</span> <span class="o">/</span> <span class="n">gen</span><span class="o">.</span><span class="n">default_filename</span><span class="p">()),</span>
-                        <span class="s2">&quot;cwd&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">output_dir</span><span class="p">),</span>
-                    <span class="p">}</span>
-                    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipeline_executor</span><span class="o">.</span><span class="n">execute_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;completed&quot;</span><span class="p">:</span>
-                        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Pipeline execution completed successfully&quot;</span><span class="p">)</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Pipeline execution failed:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
-                <span class="k">elif</span> <span class="n">no_execute</span><span class="p">:</span>
-                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Pipeline generated (--no-execute). Run it manually.&quot;</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="c1"># Classic shell-command workflow — WorkflowManager reads EXECUTOR_TYPE / HPC_SYSTEM from env</span>
-                <span class="k">if</span> <span class="n">executor</span><span class="p">:</span>
-                    <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;EXECUTOR_TYPE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">executor</span>
-                <span class="k">if</span> <span class="n">hpc_system</span><span class="p">:</span>
-                    <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;HPC_SYSTEM&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_system</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting workflow (executor=</span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="n">exec_type</span><span class="p">)</span>
-                <span class="k">await</span> <span class="n">run_workflow</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">checkpoint_dir</span><span class="p">,</span> <span class="n">resume</span><span class="p">,</span> <span class="n">force_resume</span><span class="p">)</span>
+        <span class="c1"># Smart routing: agent loop vs workflow manager</span>
+        <span class="k">if</span> <span class="n">_should_use_workflow</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+            <span class="c1"># Workflow path</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">resume</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">checkpoint_dir</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;--checkpoint-dir is required with --resume&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">executor</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;EXECUTOR_TYPE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">executor</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">hpc_system</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;HPC_SYSTEM&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">hpc_system</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">Settings</span><span class="p">()</span>
+            <span class="n">exec_type</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">executor</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">EXECUTOR_TYPE</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Workflow mode (executor=</span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="n">exec_type</span><span class="p">)</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.workflow</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_workflow</span>
+            <span class="k">await</span> <span class="n">run_workflow</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">checkpoint_dir</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">resume</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">force_resume</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Agent loop (default)</span>
+            <span class="k">await</span> <span class="n">_run_agent_cli</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
 
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Operation failed: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Operation failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
         <span class="k">raise</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -1931,213 +1861,145 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/cli.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 25</span>
-<span class="normal"> 26</span>
-<span class="normal"> 27</span>
-<span class="normal"> 28</span>
-<span class="normal"> 29</span>
-<span class="normal"> 30</span>
-<span class="normal"> 31</span>
-<span class="normal"> 32</span>
-<span class="normal"> 33</span>
-<span class="normal"> 34</span>
-<span class="normal"> 35</span>
-<span class="normal"> 36</span>
-<span class="normal"> 37</span>
-<span class="normal"> 38</span>
-<span class="normal"> 39</span>
-<span class="normal"> 40</span>
-<span class="normal"> 41</span>
-<span class="normal"> 42</span>
-<span class="normal"> 43</span>
-<span class="normal"> 44</span>
-<span class="normal"> 45</span>
-<span class="normal"> 46</span>
-<span class="normal"> 47</span>
-<span class="normal"> 48</span>
-<span class="normal"> 49</span>
-<span class="normal"> 50</span>
-<span class="normal"> 51</span>
-<span class="normal"> 52</span>
-<span class="normal"> 53</span>
-<span class="normal"> 54</span>
-<span class="normal"> 55</span>
-<span class="normal"> 56</span>
-<span class="normal"> 57</span>
-<span class="normal"> 58</span>
-<span class="normal"> 59</span>
-<span class="normal"> 60</span>
-<span class="normal"> 61</span>
-<span class="normal"> 62</span>
-<span class="normal"> 63</span>
-<span class="normal"> 64</span>
-<span class="normal"> 65</span>
-<span class="normal"> 66</span>
-<span class="normal"> 67</span>
-<span class="normal"> 68</span>
-<span class="normal"> 69</span>
-<span class="normal"> 70</span>
-<span class="normal"> 71</span>
-<span class="normal"> 72</span>
-<span class="normal"> 73</span>
-<span class="normal"> 74</span>
-<span class="normal"> 75</span>
-<span class="normal"> 76</span>
-<span class="normal"> 77</span>
-<span class="normal"> 78</span>
-<span class="normal"> 79</span>
-<span class="normal"> 80</span>
-<span class="normal"> 81</span>
-<span class="normal"> 82</span>
-<span class="normal"> 83</span>
-<span class="normal"> 84</span>
-<span class="normal"> 85</span>
-<span class="normal"> 86</span>
-<span class="normal"> 87</span>
-<span class="normal"> 88</span>
-<span class="normal"> 89</span>
-<span class="normal"> 90</span>
-<span class="normal"> 91</span>
-<span class="normal"> 92</span>
-<span class="normal"> 93</span>
-<span class="normal"> 94</span>
-<span class="normal"> 95</span>
-<span class="normal"> 96</span>
-<span class="normal"> 97</span>
-<span class="normal"> 98</span>
-<span class="normal"> 99</span>
-<span class="normal">100</span>
-<span class="normal">101</span>
-<span class="normal">102</span>
-<span class="normal">103</span>
-<span class="normal">104</span>
-<span class="normal">105</span>
-<span class="normal">106</span>
-<span class="normal">107</span>
-<span class="normal">108</span>
-<span class="normal">109</span>
-<span class="normal">110</span>
-<span class="normal">111</span>
-<span class="normal">112</span>
-<span class="normal">113</span>
-<span class="normal">114</span>
-<span class="normal">115</span>
-<span class="normal">116</span>
-<span class="normal">117</span>
-<span class="normal">118</span>
-<span class="normal">119</span>
-<span class="normal">120</span>
-<span class="normal">121</span>
-<span class="normal">122</span>
-<span class="normal">123</span>
-<span class="normal">124</span>
-<span class="normal">125</span>
-<span class="normal">126</span>
-<span class="normal">127</span>
-<span class="normal">128</span>
-<span class="normal">129</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">parse_args</span><span class="p">():</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">parse_args</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse command line arguments.&quot;&quot;&quot;</span>
     <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
-        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;FlowAgent: Multi-agent framework for automating bioinformatics workflows.&quot;</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;FlowAgent: AI-powered bioinformatics workflow assistant.&quot;</span><span class="p">,</span>
         <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">,</span>
         <span class="n">epilog</span><span class="o">=</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">Examples:</span>
-<span class="s2">    1. Run a workflow (shell commands, local):</span>
-<span class="s2">       flowagent prompt &quot;Analyze RNA-seq data using Kallisto...&quot;</span>
+<span class="s2">    # Ask the agent anything (default -- smart routing)</span>
+<span class="s2">    flowagent prompt &quot;Check which bioinformatics tools are installed&quot;</span>
+<span class="s2">    flowagent prompt &quot;Run RNA-seq analysis on FASTQ files in data/&quot;</span>
 
-<span class="s2">    2. Generate a Nextflow pipeline and execute it:</span>
-<span class="s2">       flowagent prompt &quot;Run RNA-seq with HISAT2&quot; --pipeline-format nextflow --profile docker</span>
+<span class="s2">    # Force a specific mode</span>
+<span class="s2">    flowagent prompt &quot;Run kallisto on my data&quot; --workflow</span>
+<span class="s2">    flowagent prompt &quot;What files are here?&quot; --agent</span>
 
-<span class="s2">    3. Generate a Snakemake pipeline (no auto-execute):</span>
-<span class="s2">       flowagent prompt &quot;Variant calling pipeline&quot; --pipeline-format snakemake --no-execute</span>
+<span class="s2">    # Use a preset (skips LLM planning)</span>
+<span class="s2">    flowagent prompt &quot;run it&quot; --preset rnaseq-kallisto</span>
 
-<span class="s2">    4. Use cgat-core for HPC execution:</span>
-<span class="s2">       flowagent prompt &quot;Process ChIP-seq data&quot; --executor cgat</span>
+<span class="s2">    # Generate a pipeline file</span>
+<span class="s2">    flowagent prompt &quot;RNA-seq with HISAT2&quot; --pipeline-format nextflow --no-execute</span>
 
-<span class="s2">    5. Analyze results:</span>
-<span class="s2">       flowagent prompt &quot;analyze workflow results&quot; --analysis-dir results</span>
+<span class="s2">    # Analyze results</span>
+<span class="s2">    flowagent prompt &quot;analyze&quot; --analysis-dir results/</span>
 
-<span class="s2">    6. Start web interface:</span>
-<span class="s2">       flowagent serve --host 0.0.0.0 --port 8000</span>
+<span class="s2">    # Web interface</span>
+<span class="s2">    flowagent serve</span>
 <span class="s2">    &quot;&quot;&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="n">subparsers</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_subparsers</span><span class="p">(</span><span class="n">dest</span><span class="o">=</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Command to run&quot;</span><span class="p">)</span>
 
-    <span class="c1"># Prompt command</span>
     <span class="n">prompt_parser</span> <span class="o">=</span> <span class="n">subparsers</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span>
-        <span class="s2">&quot;prompt&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Execute a workflow or analyze results&quot;</span>
+        <span class="s2">&quot;prompt&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Send a prompt to FlowAgent&quot;</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;prompt&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Workflow prompt&quot;</span><span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--resume&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Resume workflow from checkpoint&quot;</span><span class="p">,</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;prompt&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Natural language prompt&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Mode overrides (mutually exclusive)</span>
+    <span class="n">mode_group</span> <span class="o">=</span> <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">()</span>
+    <span class="n">mode_group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--agent&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Force agent mode (interactive tool-calling loop)&quot;</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--force-resume&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Force resuming workflow and run all steps, regardless of completion status&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--checkpoint-dir&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Directory for workflow checkpoints&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--analysis-dir&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Directory containing workflow results to analyze&quot;</span><span class="p">,</span>
+    <span class="n">mode_group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--workflow&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Force workflow mode (plan-then-execute pipeline)&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
-    <span class="c1"># Pipeline generation options</span>
+    <span class="c1"># Workflow options</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--resume&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Resume from checkpoint&quot;</span><span class="p">)</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--force-resume&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Resume and re-run all steps&quot;</span><span class="p">)</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--checkpoint-dir&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Checkpoint directory&quot;</span><span class="p">)</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--analysis-dir&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Directory to analyze&quot;</span><span class="p">)</span>
     <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--pipeline-format&quot;</span><span class="p">,</span>
-        <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;shell&quot;</span><span class="p">,</span> <span class="s2">&quot;nextflow&quot;</span><span class="p">,</span> <span class="s2">&quot;snakemake&quot;</span><span class="p">],</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Pipeline output format (default: from settings or &#39;shell&#39;)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;--pipeline-format&quot;</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;nextflow&quot;</span><span class="p">,</span> <span class="s2">&quot;snakemake&quot;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Export as Nextflow or Snakemake pipeline&quot;</span><span class="p">,</span>
     <span class="p">)</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--profile&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Nextflow profile&quot;</span><span class="p">)</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--no-execute&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Generate pipeline without running&quot;</span><span class="p">)</span>
     <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--profile&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Nextflow profile (local, docker, singularity, slurm)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;--executor&quot;</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="s2">&quot;cgat&quot;</span><span class="p">,</span> <span class="s2">&quot;hpc&quot;</span><span class="p">,</span> <span class="s2">&quot;kubernetes&quot;</span><span class="p">,</span> <span class="s2">&quot;nextflow&quot;</span><span class="p">,</span> <span class="s2">&quot;snakemake&quot;</span><span class="p">],</span>
+        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Execution backend&quot;</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--no-execute&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Generate pipeline files without executing them&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-
-    <span class="c1"># Executor options</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--executor&quot;</span><span class="p">,</span>
-        <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="s2">&quot;cgat&quot;</span><span class="p">,</span> <span class="s2">&quot;hpc&quot;</span><span class="p">,</span> <span class="s2">&quot;kubernetes&quot;</span><span class="p">,</span> <span class="s2">&quot;nextflow&quot;</span><span class="p">,</span> <span class="s2">&quot;snakemake&quot;</span><span class="p">],</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Execution backend (default: from settings or &#39;local&#39;)&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--hpc-system&quot;</span><span class="p">,</span>
-        <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;slurm&quot;</span><span class="p">,</span> <span class="s2">&quot;sge&quot;</span><span class="p">,</span> <span class="s2">&quot;torque&quot;</span><span class="p">],</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;HPC scheduler (used with --executor hpc)&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--preset&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Use a pre-built workflow preset instead of LLM planning (e.g. rnaseq-kallisto, rnaseq-star, chipseq, atacseq)&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--hpc-system&quot;</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;slurm&quot;</span><span class="p">,</span> <span class="s2">&quot;sge&quot;</span><span class="p">,</span> <span class="s2">&quot;torque&quot;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">prompt_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--preset&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Use a preset workflow (e.g. rnaseq-kallisto)&quot;</span><span class="p">)</span>
 
     <span class="c1"># Serve command</span>
     <span class="n">serve_parser</span> <span class="o">=</span> <span class="n">subparsers</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;serve&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Start the web interface&quot;</span><span class="p">)</span>
-    <span class="n">serve_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--host&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Host to bind the server to&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">serve_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--port&quot;</span><span class="p">,</span>
-        <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="mi">8000</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Port to bind the server to&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
+    <span class="n">serve_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--host&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">)</span>
+    <span class="n">serve_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--port&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">8000</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">parser</span><span class="p">,</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
 </code></pre></div></td></tr></table></div>
@@ -2162,8 +2024,7 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/cli.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">264</span>
-<span class="normal">265</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">265</span>
 <span class="normal">266</span>
 <span class="normal">267</span>
 <span class="normal">268</span>
@@ -2190,72 +2051,33 @@
 <span class="normal">289</span>
 <span class="normal">290</span>
 <span class="normal">291</span>
-<span class="normal">292</span>
-<span class="normal">293</span>
-<span class="normal">294</span>
-<span class="normal">295</span>
-<span class="normal">296</span>
-<span class="normal">297</span>
-<span class="normal">298</span>
-<span class="normal">299</span>
-<span class="normal">300</span>
-<span class="normal">301</span>
-<span class="normal">302</span>
-<span class="normal">303</span>
-<span class="normal">304</span>
-<span class="normal">305</span>
-<span class="normal">306</span>
-<span class="normal">307</span>
-<span class="normal">308</span>
-<span class="normal">309</span>
-<span class="normal">310</span>
-<span class="normal">311</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">():</span>
+<span class="normal">292</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Run the CLI.&quot;&quot;&quot;</span>
     <span class="n">parser</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">parse_args</span><span class="p">()</span>
 
     <span class="k">try</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">command</span> <span class="o">==</span> <span class="s2">&quot;prompt&quot;</span><span class="p">:</span>
-            <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>
-                <span class="n">main</span><span class="p">(</span>
-                    <span class="n">prompt</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">prompt</span><span class="p">,</span>
-                    <span class="n">resume</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">resume</span><span class="p">,</span>
-                    <span class="n">force_resume</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">force_resume</span><span class="p">,</span>
-                    <span class="n">checkpoint_dir</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">checkpoint_dir</span><span class="p">,</span>
-                    <span class="n">analysis_dir</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">analysis_dir</span><span class="p">,</span>
-                    <span class="n">pipeline_format</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">pipeline_format</span><span class="p">,</span>
-                    <span class="n">profile</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">profile</span><span class="p">,</span>
-                    <span class="n">no_execute</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">no_execute</span><span class="p">,</span>
-                    <span class="n">executor</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">executor</span><span class="p">,</span>
-                    <span class="n">hpc_system</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">hpc_system</span><span class="p">,</span>
-                    <span class="n">preset</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">preset</span><span class="p">,</span>
-                <span class="p">)</span>
-            <span class="p">)</span>
+            <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">(</span><span class="n">prompt</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">prompt</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">))</span>
+
         <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">command</span> <span class="o">==</span> <span class="s2">&quot;serve&quot;</span><span class="p">:</span>
             <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;USER_EXECUTION_DIR&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
-
             <span class="k">try</span><span class="p">:</span>
                 <span class="kn">import</span><span class="w"> </span><span class="nn">uvicorn</span>
             <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;uvicorn is required for the web UI: pip install &#39;flowagent[web]&#39;&quot;</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;uvicorn required: pip install &#39;flowagent[web]&#39;&quot;</span><span class="p">)</span>
                 <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting FlowAgent web UI on </span><span class="si">%s</span><span class="s2">:</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">uvicorn</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>
-                    <span class="s2">&quot;flowagent.web:app&quot;</span><span class="p">,</span>
-                    <span class="n">host</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">host</span><span class="p">),</span>
-                    <span class="n">port</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">port</span><span class="p">),</span>
-                    <span class="n">log_level</span><span class="o">=</span><span class="s2">&quot;info&quot;</span><span class="p">,</span>
-                <span class="p">)</span>
+                <span class="n">uvicorn</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;flowagent.web:app&quot;</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">host</span><span class="p">),</span> <span class="n">port</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">port</span><span class="p">),</span> <span class="n">log_level</span><span class="o">=</span><span class="s2">&quot;info&quot;</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Shutting down web interface...&quot;</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Shutting down...&quot;</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># Show help if no command specified</span>
             <span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
             <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Operation failed: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Operation failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
         <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
