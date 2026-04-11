@@ -6,6 +6,158 @@ Anthropic and Google providers normalise this automatically.
 
 from typing import Any, Dict, List
 
+
+# ── Workflow-aware tools (plan / execute / export / analyze) ──
+
+WORKFLOW_TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_workflow",
+            "description": (
+                "Generate a bioinformatics workflow plan from a natural-language "
+                "description. Returns the plan JSON with steps, commands, and "
+                "dependencies. Does NOT execute anything."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Natural-language description of the desired analysis",
+                    },
+                },
+                "required": ["prompt"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_workflow",
+            "description": (
+                "Execute a previously generated workflow plan. Runs each step "
+                "sequentially, manages dependencies, and streams logs. "
+                "Returns execution results with status per step."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The original prompt or plan description to execute",
+                    },
+                    "checkpoint_dir": {
+                        "type": "string",
+                        "description": "Directory for checkpoints (enables resume)",
+                    },
+                    "resume": {
+                        "type": "boolean",
+                        "description": "Resume from last checkpoint if True",
+                    },
+                },
+                "required": ["prompt"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_pipeline",
+            "description": (
+                "Export a workflow plan as a Nextflow or Snakemake pipeline file. "
+                "Returns the path to the generated file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Natural-language description of the pipeline",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["nextflow", "snakemake"],
+                        "description": "Pipeline format to generate",
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "Directory to write the pipeline file",
+                    },
+                },
+                "required": ["prompt", "format"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_results",
+            "description": (
+                "Analyze workflow output in a given directory. Uses both "
+                "rule-based and LLM analysis to produce a report."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Path to the workflow results directory",
+                    },
+                },
+                "required": ["directory"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_preset",
+            "description": (
+                "Load a pre-built workflow preset by ID. Available presets: "
+                "rnaseq-kallisto, rnaseq-star, chipseq, atacseq. "
+                "Returns the full plan JSON."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preset_id": {
+                        "type": "string",
+                        "description": "Preset identifier e.g. 'rnaseq-kallisto'",
+                    },
+                },
+                "required": ["preset_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_workflow_status",
+            "description": (
+                "Read a workflow checkpoint to see which steps have completed. "
+                "Returns the checkpoint data including completed steps list."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "checkpoint_dir": {
+                        "type": "string",
+                        "description": "Directory containing checkpoint.json",
+                    },
+                },
+                "required": ["checkpoint_dir"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+
 AGENT_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
@@ -147,3 +299,6 @@ AGENT_TOOLS: List[Dict[str, Any]] = [
         },
     },
 ]
+
+# Combine: agent gets both low-level and workflow-aware tools
+AGENT_TOOLS.extend(WORKFLOW_TOOLS)

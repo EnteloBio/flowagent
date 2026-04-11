@@ -106,6 +106,11 @@ Examples:
         default=None,
         help="HPC scheduler (used with --executor hpc)",
     )
+    prompt_parser.add_argument(
+        "--preset",
+        default=None,
+        help="Use a pre-built workflow preset instead of LLM planning (e.g. rnaseq-kallisto, rnaseq-star, chipseq, atacseq)",
+    )
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start the web interface")
@@ -135,9 +140,34 @@ async def main(
     no_execute: bool = False,
     executor: Optional[str] = None,
     hpc_system: Optional[str] = None,
+    preset: Optional[str] = None,
 ):
     """Main entry point for the CLI."""
     try:
+        # Preset workflow shortcut
+        if preset:
+            from .presets.catalog import get_preset, list_presets
+            plan = get_preset(preset)
+            if plan is None:
+                available = list_presets()
+                names = ", ".join(p["id"] for p in available)
+                raise ValueError(f"Unknown preset '{preset}'. Available: {names}")
+            logger.info("Using preset workflow: %s", plan["name"])
+            from .core.workflow_manager import WorkflowManager
+            wm = WorkflowManager(executor_type=executor or Settings().EXECUTOR_TYPE)
+            from .core.agent_types import Workflow, WorkflowStep
+            steps = [WorkflowStep(
+                name=s["name"], command=s["command"],
+                dependencies=s.get("dependencies", []),
+                description=s.get("description", ""),
+            ) for s in plan["steps"]]
+            wf = Workflow(name=plan["name"], description=plan.get("description", ""), steps=steps)
+            result = await wm.execute_workflow(wf)
+            print(f"\nWorkflow '{plan['name']}' finished: {result.get('status', 'unknown')}")
+            if result.get("output_dir"):
+                print(f"Output: {result['output_dir']}")
+            return
+
         if analysis_dir:
             logger.info(f"Analyzing workflow results in {analysis_dir}")
             results = await analyze_workflow(analysis_dir)
@@ -249,6 +279,7 @@ def run():
                     no_execute=args.no_execute,
                     executor=args.executor,
                     hpc_system=args.hpc_system,
+                    preset=args.preset,
                 )
             )
         elif args.command == "serve":

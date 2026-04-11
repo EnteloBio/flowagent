@@ -13,6 +13,7 @@ from openai import AsyncOpenAI
 from ..config.settings import Settings
 from ..utils.logging import get_logger
 from .providers import create_provider, LLMProvider
+from .schemas import WorkflowPlanSchema, to_json_schema
 
 # Initialize settings
 settings = Settings()
@@ -831,28 +832,29 @@ Resource Management Rules:
                 {"role": "user", "content": enhanced_prompt},
             ]
 
-            response = await self._call_openai(messages)
-
+            # Try structured output first, fall back to plain JSON parsing
             try:
+                schema = to_json_schema(WorkflowPlanSchema)
+                resp = await self.provider.chat_structured(messages, schema)
+                workflow_plan = json.loads(resp.content) if isinstance(resp.content, str) else resp.content
+            except Exception as structured_err:
+                self.logger.debug("Structured output failed (%s), falling back to plain chat", structured_err)
+                response = await self._call_openai(messages)
                 workflow_plan = json.loads(self._clean_llm_response(response))
-                # Log workflow plan
-                self.logger.info("Generated workflow plan:")
-                self.logger.info(f"Workflow type: {workflow_plan['workflow_type']}")
-                for step in workflow_plan["steps"]:
-                    self.logger.info(f"  Step: {step['name']}")
-                    self.logger.info(f"    Command: {step['command']}")
-                    self.logger.info(f"    Dependencies: {step['dependencies']}")
 
-                # Update resources for each rule
-                for i, step in enumerate(workflow_plan["steps"]):
-                    workflow_plan["steps"][i] = await self._update_rule_resources(step)
+            # Log workflow plan
+            self.logger.info("Generated workflow plan:")
+            self.logger.info(f"Workflow type: {workflow_plan.get('workflow_type', 'unknown')}")
+            for step in workflow_plan.get("steps", []):
+                self.logger.info(f"  Step: {step.get('name', '?')}")
+                self.logger.info(f"    Command: {step.get('command', '?')}")
+                self.logger.info(f"    Dependencies: {step.get('dependencies', [])}")
 
-                return workflow_plan
+            # Update resources for each rule
+            for i, step in enumerate(workflow_plan.get("steps", [])):
+                workflow_plan["steps"][i] = await self._update_rule_resources(step)
 
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse workflow plan: {str(e)}")
-                self.logger.error(f"Raw response: {response}")
-                raise
+            return workflow_plan
 
         except Exception as e:
             self.logger.error(f"Failed to generate workflow plan: {str(e)}")
