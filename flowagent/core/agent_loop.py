@@ -19,6 +19,20 @@ logger = get_logger(__name__)
 
 MAX_ITERATIONS = 25
 
+# Tools that require user confirmation before execution
+DANGEROUS_TOOLS = {"execute_command", "install_dependency", "write_file", "run_workflow"}
+
+
+async def _default_confirm(tool_name: str, arguments: Dict[str, Any]) -> bool:
+    """CLI confirmation gate -- prompts on stdin."""
+    summary = json.dumps(arguments, indent=2)[:300]
+    print(f"\n[FlowAgent] Tool '{tool_name}' wants to run:\n{summary}")
+    try:
+        answer = input("Allow? [y/N] ").strip().lower()
+        return answer in ("y", "yes")
+    except EOFError:
+        return True  # non-interactive environments auto-approve
+
 
 # ── Tool implementations ──────────────────────────────────────
 
@@ -107,6 +121,87 @@ async def _tool_write_file(path: str, content: str) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
+async def _tool_plan_workflow(prompt: str) -> str:
+    """Generate a workflow plan from natural-language prompt."""
+    try:
+        from .llm import LLMInterface
+        llm = LLMInterface()
+        plan = await llm.generate_workflow_plan(prompt)
+        return json.dumps(plan, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def _tool_run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = False) -> str:
+    """Execute a workflow from a prompt."""
+    try:
+        from ..workflow import run_workflow as _run
+        await _run(prompt, checkpoint_dir, resume)
+        return json.dumps({"success": True, "message": "Workflow completed"})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
+async def _tool_export_pipeline(prompt: str, format: str = "nextflow", output_dir: str = "flowagent_pipeline_output") -> str:
+    """Export a workflow plan as a Nextflow or Snakemake pipeline."""
+    try:
+        from .llm import LLMInterface
+        from .pipeline_generator import NextflowGenerator, SnakemakeGenerator
+
+        llm = LLMInterface()
+        plan = await llm.generate_workflow_plan(prompt)
+        out = Path(output_dir)
+        gen = NextflowGenerator() if format == "nextflow" else SnakemakeGenerator()
+        code = gen.generate(plan, output_dir=out)
+        filename = gen.default_filename()
+        return json.dumps({"success": True, "file": str(out / filename), "format": format})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
+async def _tool_analyze_results(directory: str) -> str:
+    """Analyze workflow output in a directory."""
+    try:
+        from ..workflow import analyze_workflow
+        result = await analyze_workflow(directory)
+        summary = result.get("report", result.get("message", "Analysis complete"))
+        if isinstance(summary, str) and len(summary) > 3000:
+            summary = summary[:3000] + "...(truncated)"
+        return json.dumps({"status": result.get("status", "unknown"), "summary": str(summary)})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def _tool_load_preset(preset_id: str) -> str:
+    """Load a workflow preset by ID."""
+    try:
+        from ..presets.catalog import get_preset, list_presets
+        plan = get_preset(preset_id)
+        if plan is None:
+            available = list_presets()
+            return json.dumps({"error": f"Preset '{preset_id}' not found", "available": available})
+        return json.dumps(plan, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def _tool_check_workflow_status(checkpoint_dir: str) -> str:
+    """Read checkpoint.json and return completion status."""
+    cp = Path(checkpoint_dir) / "checkpoint.json"
+    if not cp.exists():
+        return json.dumps({"error": f"No checkpoint found at {cp}"})
+    try:
+        data = json.loads(cp.read_text())
+        return json.dumps({
+            "completed_steps": data.get("completed_steps", []),
+            "total_steps": len(data.get("workflow_plan", {}).get("steps", [])),
+            "timestamp": data.get("timestamp"),
+            "output_dir": data.get("output_dir"),
+        })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 TOOL_DISPATCH: Dict[str, Callable] = {
     "list_files": _tool_list_files,
     "check_tool": _tool_check_tool,
@@ -114,6 +209,12 @@ TOOL_DISPATCH: Dict[str, Callable] = {
     "execute_command": _tool_execute_command,
     "read_file": _tool_read_file,
     "write_file": _tool_write_file,
+    "plan_workflow": _tool_plan_workflow,
+    "run_workflow": _tool_run_workflow,
+    "export_pipeline": _tool_export_pipeline,
+    "analyze_results": _tool_analyze_results,
+    "load_preset": _tool_load_preset,
+    "check_workflow_status": _tool_check_workflow_status,
 }
 
 
@@ -125,13 +226,12 @@ async def run_agent_loop(
     *,
     system_prompt: Optional[str] = None,
     on_token: Optional[Callable[[str], None]] = None,
+    on_tool_call: Optional[Callable[[str, Dict[str, Any], str], None]] = None,
+    confirm_fn: Optional[Callable] = None,
+    require_confirmation: bool = False,
     max_iterations: int = MAX_ITERATIONS,
 ) -> Dict[str, Any]:
     """Run an interactive agent loop with tool calling.
-
-    The LLM receives the user prompt plus access to ``AGENT_TOOLS``.
-    It can call tools, observe results, and iterate until it produces
-    a final text response (no more tool calls).
 
     Parameters
     ----------
@@ -143,6 +243,15 @@ async def run_agent_loop(
         Override the default system prompt.
     on_token : callable, optional
         Callback for streaming tokens to a UI.
+    on_tool_call : callable, optional
+        Callback ``(name, arguments, result)`` fired after each tool call.
+    confirm_fn : callable, optional
+        Async callable ``(tool_name, arguments) -> bool`` used to gate
+        dangerous tool calls. If None and require_confirmation is True,
+        falls back to CLI stdin prompt.
+    require_confirmation : bool
+        When True, dangerous tools (execute_command, install_dependency,
+        write_file, run_workflow) will be gated by confirm_fn.
     max_iterations : int
         Safety cap on the number of tool-call rounds.
 
@@ -169,9 +278,21 @@ async def run_agent_loop(
         resp = await provider.chat_with_tools(messages, AGENT_TOOLS)
 
         if not resp.tool_calls:
+            # Stream final response token-by-token if callback is provided
+            content = resp.content or ""
+            if on_token and content:
+                try:
+                    async for token in provider.stream(messages):
+                        on_token(token)
+                    content = resp.content  # keep original for return
+                except Exception:
+                    # Streaming not supported or failed; push content in chunks
+                    for i in range(0, len(content), 40):
+                        on_token(content[i:i+40])
+
             logger.info("Agent loop finished after %d iterations", iteration + 1)
             return {
-                "response": resp.content,
+                "response": content,
                 "tool_calls": all_tool_calls,
                 "iterations": iteration + 1,
             }
@@ -200,6 +321,19 @@ async def run_agent_loop(
             tc_id = tc.get("id", f"call_{fn_name}_{iteration}")
             logger.info("Tool call: %s(%s)", fn_name, json.dumps(fn_args)[:200])
 
+            # Confirmation gate for dangerous tools
+            if require_confirmation and fn_name in DANGEROUS_TOOLS:
+                gate = confirm_fn or _default_confirm
+                try:
+                    approved = await gate(fn_name, fn_args) if asyncio.iscoroutinefunction(gate) else gate(fn_name, fn_args)
+                except Exception:
+                    approved = False
+                if not approved:
+                    result = json.dumps({"error": f"User denied execution of {fn_name}"})
+                    all_tool_calls.append({"name": fn_name, "arguments": fn_args, "result": result})
+                    messages.append({"role": "tool", "tool_call_id": tc_id, "content": result})
+                    continue
+
             handler = TOOL_DISPATCH.get(fn_name)
             if handler:
                 try:
@@ -212,6 +346,11 @@ async def run_agent_loop(
                 result = json.dumps({"error": f"Unknown tool: {fn_name}"})
 
             all_tool_calls.append({"name": fn_name, "arguments": fn_args, "result": result})
+            if on_tool_call:
+                try:
+                    on_tool_call(fn_name, fn_args, result)
+                except Exception:
+                    pass
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc_id,

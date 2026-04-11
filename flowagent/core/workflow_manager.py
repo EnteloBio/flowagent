@@ -4,10 +4,13 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 import logging
 import asyncio
+import hashlib
 import networkx as nx
 import json
 import os
 import sys
+import time
+from datetime import datetime, timezone
 from flowagent.config.settings import Settings
 
 from ..utils.logging import get_logger
@@ -60,7 +63,73 @@ class WorkflowManager:
         self.logger.info(f"Using {self.executor_type} executor (via ExecutorFactory)")
             
         self.analysis_system = AgenticAnalysisSystem()
-        
+
+    @staticmethod
+    def _file_checksum(filepath: str) -> str:
+        """Compute SHA-256 checksum for a file (first 10 MB)."""
+        h = hashlib.sha256()
+        try:
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+                    if f.tell() > 10 * (1 << 20):
+                        break
+            return h.hexdigest()
+        except Exception:
+            return "unavailable"
+
+    def _write_manifest(self, output_dir: str, prompt: Optional[str],
+                        workflow_plan: Dict[str, Any],
+                        results: List[Dict[str, Any]]):
+        """Emit workflow_manifest.json for reproducibility."""
+        settings = self.settings
+
+        # Collect input file checksums from the plan
+        input_checksums = {}
+        for step in workflow_plan.get("steps", []):
+            for output_pattern in step.get("outputs", []):
+                import glob as _glob
+                for f in _glob.glob(os.path.join(output_dir, output_pattern)):
+                    if os.path.isfile(f):
+                        input_checksums[os.path.relpath(f, output_dir)] = self._file_checksum(f)
+
+        manifest = {
+            "flowagent_version": "0.2.0",
+            "prompt": prompt,
+            "llm_provider": settings.LLM_PROVIDER,
+            "llm_model": settings.LLM_MODEL,
+            "executor_type": self.executor_type,
+            "workflow_plan": workflow_plan,
+            "step_results": [
+                {"name": r.get("step_name", "?"), "status": r.get("status", "?")}
+                for r in results
+            ],
+            "output_checksums": input_checksums,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        manifest_path = os.path.join(output_dir, "workflow_manifest.json")
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+        self.logger.info("Manifest written to %s", manifest_path)
+
+    def _write_checkpoint(self, checkpoint_dir: str, workflow_plan: Dict[str, Any],
+                          output_dir: str, completed_steps: List[str],
+                          prompt: Optional[str] = None):
+        """Persist checkpoint.json so that resume_workflow can reload state."""
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        checkpoint = {
+            "workflow_plan": workflow_plan,
+            "output_dir": output_dir,
+            "completed_steps": completed_steps,
+            "prompt": prompt,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        path = os.path.join(checkpoint_dir, "checkpoint.json")
+        with open(path, "w") as f:
+            json.dump(checkpoint, f, indent=2)
+        self.logger.debug("Checkpoint written: %s (%d steps done)", path, len(completed_steps))
+
     async def execute_workflow(self, prompt_or_workflow: Union[str, Workflow]) -> Dict[str, Any]:
         """Execute workflow from prompt or workflow object."""
         try:
@@ -171,9 +240,36 @@ class WorkflowManager:
             
             # Execute workflow steps
             self.logger.info(f"Executing workflow: {workflow_name}")
+
+            # Use DAG-parallel execution when steps declare dependencies
+            has_deps = any(step.get("dependencies") for step in workflow_steps)
+            if has_deps and len(workflow_steps) > 1:
+                try:
+                    dag = WorkflowDAG(executor_type=self.executor_type)
+                    for step in workflow_steps:
+                        dag.add_step(step, dependencies=step.get("dependencies", []))
+                    self.logger.info("Using DAG-parallel execution (%d steps)", len(workflow_steps))
+                    dag_results = await dag.execute_parallel(self._step_executor.execute_step)
+                    results = list(dag_results.values()) if isinstance(dag_results, dict) else dag_results
+                    # Normalise results to list-of-dicts with step_name
+                    for r in results:
+                        if isinstance(r, dict) and "step_name" not in r:
+                            r["step_name"] = r.get("step_id", r.get("name", "unknown"))
+                    # Write final checkpoint
+                    completed = [r.get("step_name", "") for r in results if r.get("status") not in ("error", "failed")]
+                    ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
+                    self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
+                except (ValueError, Exception) as dag_err:
+                    self.logger.warning("DAG-parallel execution failed (%s), falling back to sequential", dag_err)
+                    results = []
+                    has_deps = False  # fall through to sequential
+
+            if not has_deps or not results:
+                results = []
             
-            results = []
             for i, step in enumerate(workflow_steps):
+                if results:
+                    break  # already executed via DAG
                 step_name = step.get("name", f"Step {i+1}")
                 self.logger.info(f"Executing step {i+1}/{len(workflow_steps)}: {step_name}")
                 
@@ -210,9 +306,15 @@ class WorkflowManager:
                 step_result["step_name"] = step_name
                 
                 results.append(step_result)
+
+                # Write checkpoint after every step
+                completed = [r["step_name"] for r in results if r.get("status") not in ("error", "failed")]
+                ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
+                self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
                 
-                # Check if step failed
-                if step_result.get("status") == "error":
+                # Check if step failed (accept both legacy "error" and canonical "failed")
+                step_status = step_result.get("status", "")
+                if step_status in ("error", "failed"):
                     error_msg = step_result.get('error', '')
                     stderr = step_result.get('stderr', '')
                     
@@ -220,7 +322,6 @@ class WorkflowManager:
                     if stderr:
                         self.logger.error(f"STDERR: {stderr}")
                     
-                    # Check if this is a critical step
                     if step.get("critical", False):
                         self.logger.error(f"Critical step {step_name} failed, but continuing with workflow")
                     else:
@@ -234,8 +335,7 @@ class WorkflowManager:
             # Determine overall workflow status
             workflow_status = "success"
             for result in results:
-                if result.get("status") == "error":
-                    # Check if this is a critical step
+                if result.get("status") in ("error", "failed"):
                     step_name = result.get("step_name", "unknown")
                     for step in workflow_steps:
                         if step.get("name") == step_name and step.get("critical", True):
@@ -278,6 +378,12 @@ class WorkflowManager:
             
             dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
             
+            # Write workflow manifest for reproducibility
+            try:
+                self._write_manifest(output_dir, prompt, workflow_plan, results)
+            except Exception as manifest_err:
+                self.logger.warning("Failed to write manifest: %s", manifest_err)
+
             # Return results
             result_dict = {
                 "status": workflow_status,

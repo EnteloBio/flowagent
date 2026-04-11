@@ -22,6 +22,7 @@ from flowagent.config.settings import Settings
 from flowagent.core.agent_loop import run_agent_loop
 from flowagent.core.llm import LLMInterface
 from flowagent.core.providers import create_provider
+from flowagent.presets.catalog import list_presets, get_preset
 from flowagent.workflow import analyze_workflow, run_workflow
 
 logger = logging.getLogger(__name__)
@@ -84,19 +85,35 @@ async def _run_agent(queue: asyncio.Queue, prompt: str):
 
     queue.put_nowait(("phase", json.dumps({"label": "Agent is thinking..."})))
 
-    result = await run_agent_loop(provider, prompt)
-
-    for tc in result.get("tool_calls", []):
+    def _on_tool_call(name, arguments, result):
         queue.put_nowait(("tool_call", json.dumps({
-            "name": tc.get("name"),
-            "arguments": tc.get("arguments"),
-            "result": tc.get("result", "")[:500],
+            "name": name,
+            "arguments": arguments,
+            "result": (result or "")[:500],
         })))
 
-    content = result.get("response", "") or ""
-    for i in range(0, len(content), 40):
-        queue.put_nowait(("token", json.dumps({"content": content[i:i+40]})))
-        await asyncio.sleep(0.01)
+    def _on_token(token: str):
+        queue.put_nowait(("token", json.dumps({"content": token})))
+
+    streamed = {"sent": False}
+    _orig_on_token = _on_token
+
+    def _tracking_on_token(token: str):
+        streamed["sent"] = True
+        _orig_on_token(token)
+
+    result = await run_agent_loop(
+        provider, prompt,
+        on_token=_tracking_on_token,
+        on_tool_call=_on_tool_call,
+    )
+
+    # Fallback: if streaming didn't fire, push the full response in chunks
+    if not streamed["sent"]:
+        content = result.get("response", "") or ""
+        for i in range(0, len(content), 40):
+            queue.put_nowait(("token", json.dumps({"content": content[i:i+40]})))
+            await asyncio.sleep(0.01)
 
     queue.put_nowait(("done", json.dumps({"iterations": result.get("iterations", 0)})))
 
@@ -162,6 +179,19 @@ async def index():
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "cwd": os.getcwd(), "time": _now_iso()}
+
+
+@app.get("/api/presets")
+async def get_presets():
+    return {"presets": list_presets()}
+
+
+@app.get("/api/presets/{preset_id}")
+async def get_preset_detail(preset_id: str):
+    plan = get_preset(preset_id)
+    if not plan:
+        return JSONResponse({"error": f"Preset '{preset_id}' not found"}, status_code=404)
+    return plan
 
 
 # ---------------------------------------------------------------------------

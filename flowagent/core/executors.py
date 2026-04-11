@@ -2,20 +2,68 @@
 
 from typing import Dict, Any, List, Optional
 import asyncio
+import enum
 import logging
 from pathlib import Path
 import subprocess
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 
 try:
     from cgatcore import pipeline as P
 except ImportError:
     P = None
 
+try:
+    from kubernetes import client as k8s_client, config as k8s_config
+except ImportError:
+    k8s_client = None
+    k8s_config = None
+
 from ..utils.logging import get_logger
 from flowagent.config.settings import Settings
 
 logger = get_logger(__name__)
+
+
+class StepStatus(str, enum.Enum):
+    """Canonical status values for workflow step execution."""
+    PENDING = "pending"
+    SUBMITTED = "submitted"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+    # Legacy aliases
+    SUCCESS = "completed"
+    ERROR = "failed"
+
+
+@dataclass
+class StepResult:
+    """Standardised result from any executor."""
+    step_id: str
+    status: StepStatus
+    returncode: int = 0
+    stdout: str = ""
+    stderr: str = ""
+    error: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = {
+            "step_id": self.step_id,
+            "status": self.status.value,
+            "returncode": self.returncode,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+        }
+        if self.error:
+            d["error"] = self.error
+        d.update(self.metadata)
+        return d
+
 
 class BaseExecutor(ABC):
     """Base class for workflow executors."""
@@ -43,13 +91,14 @@ class LocalExecutor(BaseExecutor):
             )
             stdout, stderr = await process.communicate()
             
-            return {
-                "step_id": step["name"],
-                "status": "completed" if process.returncode == 0 else "failed",
-                "returncode": process.returncode,
-                "stdout": stdout.decode(),
-                "stderr": stderr.decode()
-            }
+            result = StepResult(
+                step_id=step["name"],
+                status=StepStatus.COMPLETED if process.returncode == 0 else StepStatus.FAILED,
+                returncode=process.returncode,
+                stdout=stdout.decode(),
+                stderr=stderr.decode(),
+            )
+            return result.to_dict()
         except Exception as e:
             logger.error(f"Error executing step {step['name']}: {str(e)}")
             raise
@@ -307,20 +356,19 @@ class KubernetesExecutor(BaseExecutor):
     
     def __init__(self):
         """Initialize Kubernetes executor."""
+        if k8s_client is None:
+            raise ImportError("kubernetes is required for KubernetesExecutor: pip install 'flowagent[kubernetes]'")
+
         self.settings = Settings()
         
-        # Load Kubernetes configuration
         try:
-            from kubernetes import client, config
-            # Try to load from kube config file first
             try:
-                config.load_kube_config()
-            except:
-                # If running inside cluster, load service account config
-                config.load_incluster_config()
+                k8s_config.load_kube_config()
+            except Exception:
+                k8s_config.load_incluster_config()
             
-            self.k8s_batch = client.BatchV1Api()
-            self.k8s_core = client.CoreV1Api()
+            self.k8s_batch = k8s_client.BatchV1Api()
+            self.k8s_core = k8s_client.CoreV1Api()
             
             logger.info(
                 f"Initialized Kubernetes executor with settings:\n"
@@ -336,7 +384,7 @@ class KubernetesExecutor(BaseExecutor):
     
     def _prepare_job_spec(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare Kubernetes Job specification."""
-        from kubernetes import client
+        client = k8s_client
         
         # Get resource requirements from step
         resources = step.get("resources", {})
@@ -460,7 +508,7 @@ class KubernetesExecutor(BaseExecutor):
                     self.k8s_batch.delete_namespaced_job(
                         name=job_name,
                         namespace=self.settings.KUBERNETES_NAMESPACE,
-                        body=client.V1DeleteOptions(
+                        body=k8s_client.V1DeleteOptions(
                             propagation_policy='Background'
                         )
                     )
