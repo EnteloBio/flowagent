@@ -2,160 +2,186 @@
 
 import argparse
 import asyncio
+import json
 import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-from .workflow import analyze_workflow, run_workflow
 from .config.settings import Settings
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(name)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-
 logger = logging.getLogger(__name__)
 
 
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="FlowAgent: Multi-agent framework for automating bioinformatics workflows.",
+        description="FlowAgent: AI-powered bioinformatics workflow assistant.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    1. Run a workflow (shell commands, local):
-       flowagent prompt "Analyze RNA-seq data using Kallisto..."
+    # Ask the agent anything (default -- smart routing)
+    flowagent prompt "Check which bioinformatics tools are installed"
+    flowagent prompt "Run RNA-seq analysis on FASTQ files in data/"
 
-    2. Generate a Nextflow pipeline and execute it:
-       flowagent prompt "Run RNA-seq with HISAT2" --pipeline-format nextflow --profile docker
+    # Force a specific mode
+    flowagent prompt "Run kallisto on my data" --workflow
+    flowagent prompt "What files are here?" --agent
 
-    3. Generate a Snakemake pipeline (no auto-execute):
-       flowagent prompt "Variant calling pipeline" --pipeline-format snakemake --no-execute
+    # Use a preset (skips LLM planning)
+    flowagent prompt "run it" --preset rnaseq-kallisto
 
-    4. Use cgat-core for HPC execution:
-       flowagent prompt "Process ChIP-seq data" --executor cgat
+    # Generate a pipeline file
+    flowagent prompt "RNA-seq with HISAT2" --pipeline-format nextflow --no-execute
 
-    5. Analyze results:
-       flowagent prompt "analyze workflow results" --analysis-dir results
+    # Analyze results
+    flowagent prompt "analyze" --analysis-dir results/
 
-    6. Start web interface:
-       flowagent serve --host 0.0.0.0 --port 8000
+    # Web interface
+    flowagent serve
     """,
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # Prompt command
     prompt_parser = subparsers.add_parser(
-        "prompt", help="Execute a workflow or analyze results"
+        "prompt", help="Send a prompt to FlowAgent",
     )
-    prompt_parser.add_argument("prompt", help="Workflow prompt")
-    prompt_parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume workflow from checkpoint",
+    prompt_parser.add_argument("prompt", help="Natural language prompt")
+
+    # Mode overrides (mutually exclusive)
+    mode_group = prompt_parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--agent", action="store_true",
+        help="Force agent mode (interactive tool-calling loop)",
     )
-    prompt_parser.add_argument(
-        "--force-resume",
-        action="store_true",
-        help="Force resuming workflow and run all steps, regardless of completion status",
-    )
-    prompt_parser.add_argument(
-        "--checkpoint-dir",
-        help="Directory for workflow checkpoints",
-    )
-    prompt_parser.add_argument(
-        "--analysis-dir",
-        help="Directory containing workflow results to analyze",
+    mode_group.add_argument(
+        "--workflow", action="store_true",
+        help="Force workflow mode (plan-then-execute pipeline)",
     )
 
-    # Pipeline generation options
+    # Workflow options
+    prompt_parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    prompt_parser.add_argument("--force-resume", action="store_true", help="Resume and re-run all steps")
+    prompt_parser.add_argument("--checkpoint-dir", help="Checkpoint directory")
+    prompt_parser.add_argument("--analysis-dir", help="Directory to analyze")
     prompt_parser.add_argument(
-        "--pipeline-format",
-        choices=["shell", "nextflow", "snakemake"],
-        default=None,
-        help="Pipeline output format (default: from settings or 'shell')",
+        "--pipeline-format", choices=["nextflow", "snakemake"], default=None,
+        help="Export as Nextflow or Snakemake pipeline",
     )
+    prompt_parser.add_argument("--profile", default=None, help="Nextflow profile")
+    prompt_parser.add_argument("--no-execute", action="store_true", help="Generate pipeline without running")
     prompt_parser.add_argument(
-        "--profile",
-        default=None,
-        help="Nextflow profile (local, docker, singularity, slurm)",
+        "--executor", choices=["local", "cgat", "hpc", "kubernetes", "nextflow", "snakemake"],
+        default=None, help="Execution backend",
     )
-    prompt_parser.add_argument(
-        "--no-execute",
-        action="store_true",
-        help="Generate pipeline files without executing them",
-    )
-
-    # Executor options
-    prompt_parser.add_argument(
-        "--executor",
-        choices=["local", "cgat", "hpc", "kubernetes", "nextflow", "snakemake"],
-        default=None,
-        help="Execution backend (default: from settings or 'local')",
-    )
-    prompt_parser.add_argument(
-        "--hpc-system",
-        choices=["slurm", "sge", "torque"],
-        default=None,
-        help="HPC scheduler (used with --executor hpc)",
-    )
-    prompt_parser.add_argument(
-        "--preset",
-        default=None,
-        help="Use a pre-built workflow preset instead of LLM planning (e.g. rnaseq-kallisto, rnaseq-star, chipseq, atacseq)",
-    )
+    prompt_parser.add_argument("--hpc-system", choices=["slurm", "sge", "torque"], default=None)
+    prompt_parser.add_argument("--preset", default=None, help="Use a preset workflow (e.g. rnaseq-kallisto)")
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start the web interface")
-    serve_parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Host to bind the server to",
-    )
-    serve_parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port to bind the server to",
-    )
+    serve_parser.add_argument("--host", default="0.0.0.0")
+    serve_parser.add_argument("--port", type=int, default=8000)
 
     return parser, parser.parse_args()
 
 
+def _should_use_workflow(prompt: str, args) -> bool:
+    """Decide whether a prompt should go through the workflow manager.
+
+    Returns True when the prompt clearly describes a multi-step bioinformatics
+    pipeline that should be planned and executed as a batch workflow.
+    Returns False for exploratory, conversational, or single-action prompts
+    which are better handled by the agent loop.
+    """
+    # Explicit flags always win
+    if args.workflow:
+        return True
+    if args.agent:
+        return False
+    # These flags imply workflow mode
+    if args.preset or args.pipeline_format or args.resume or args.checkpoint_dir:
+        return True
+    if args.analysis_dir:
+        return False  # analysis is its own path
+
+    p = prompt.lower()
+
+    # Strong workflow indicators: the user is describing a pipeline to execute
+    workflow_phrases = [
+        "run rna-seq", "run rnaseq", "run chipseq", "run chip-seq",
+        "run atacseq", "run atac-seq", "run variant calling",
+        "run fastqc", "run kallisto", "run hisat", "run star ",
+        "run salmon", "run bowtie", "run bwa ", "run cellranger",
+        "execute pipeline", "execute workflow", "run pipeline",
+        "run workflow", "process fastq", "align reads",
+        "quantify transcripts", "call peaks", "call variants",
+        "download from geo", "download from sra",
+    ]
+    if any(phrase in p for phrase in workflow_phrases):
+        return True
+
+    # Default: use the agent loop -- it's smarter and can invoke
+    # plan_workflow / run_workflow itself if needed
+    return False
+
+
+async def _run_agent_cli(prompt: str):
+    """Run the agent loop from the CLI, printing results to stdout."""
+    from .core.agent_loop import run_agent_loop
+    from .core.providers import create_provider
+
+    s = Settings()
+    api_key = s.active_api_key or s.OPENAI_API_KEY
+    if not api_key:
+        logger.error("No API key configured. Set OPENAI_API_KEY in .env")
+        sys.exit(1)
+
+    provider = create_provider(
+        s.LLM_PROVIDER, model=s.LLM_MODEL,
+        api_key=api_key, base_url=s.LLM_BASE_URL,
+    )
+
+    def on_token(token: str):
+        print(token, end="", flush=True)
+
+    logger.info("Agent mode (tool-calling loop)")
+    result = await run_agent_loop(provider, prompt, on_token=on_token)
+
+    # If streaming didn't fire, print the full response
+    if result.get("response") and not any(
+        tc.get("name") for tc in result.get("tool_calls", [])
+    ):
+        print(result["response"])
+
+    tool_calls = result.get("tool_calls", [])
+    if tool_calls:
+        print(f"\n\n[Agent used {len(tool_calls)} tool call(s) over {result.get('iterations', 0)} iteration(s)]")
+
+
 async def main(
     prompt: str,
-    resume: bool = False,
-    force_resume: bool = False,
-    checkpoint_dir: Optional[str] = None,
-    analysis_dir: Optional[str] = None,
-    pipeline_format: Optional[str] = None,
-    profile: Optional[str] = None,
-    no_execute: bool = False,
-    executor: Optional[str] = None,
-    hpc_system: Optional[str] = None,
-    preset: Optional[str] = None,
+    args,
 ):
     """Main entry point for the CLI."""
     try:
-        # Preset workflow shortcut
-        if preset:
+        # --preset shortcut
+        if args.preset:
             from .presets.catalog import get_preset, list_presets
-            plan = get_preset(preset)
+            plan = get_preset(args.preset)
             if plan is None:
-                available = list_presets()
-                names = ", ".join(p["id"] for p in available)
-                raise ValueError(f"Unknown preset '{preset}'. Available: {names}")
+                names = ", ".join(p["id"] for p in list_presets())
+                raise ValueError(f"Unknown preset '{args.preset}'. Available: {names}")
             logger.info("Using preset workflow: %s", plan["name"])
             from .core.workflow_manager import WorkflowManager
-            wm = WorkflowManager(executor_type=executor or Settings().EXECUTOR_TYPE)
             from .core.agent_types import Workflow, WorkflowStep
+            wm = WorkflowManager(executor_type=args.executor or Settings().EXECUTOR_TYPE)
             steps = [WorkflowStep(
                 name=s["name"], command=s["command"],
                 dependencies=s.get("dependencies", []),
@@ -168,96 +194,71 @@ async def main(
                 print(f"Output: {result['output_dir']}")
             return
 
-        if analysis_dir:
-            logger.info(f"Analyzing workflow results in {analysis_dir}")
-            results = await analyze_workflow(analysis_dir)
-
+        # --analysis-dir shortcut
+        if args.analysis_dir:
+            from .workflow import analyze_workflow
+            logger.info("Analyzing workflow results in %s", args.analysis_dir)
+            results = await analyze_workflow(args.analysis_dir)
             if results["status"] == "success":
-                print("\nStandard Analysis Report:")
-                print("=" * 80)
-                print(results["report"])
-                print("=" * 80)
-
-                print("\nAgentic Analysis Report:")
-                print("=" * 80)
-                print(results["agentic_report"])
-                print("=" * 80)
-
-                if results.get("report_files"):
-                    print(
-                        f"\nAnalysis reports saved to: {', '.join(results['report_files'].values())}"
-                    )
+                print("\n" + results["report"])
+                if results.get("agentic_report"):
+                    print("\n" + results["agentic_report"])
             else:
                 print(f"Analysis failed: {results.get('error', 'Unknown error')}")
+            return
 
-        else:
-            if resume and not checkpoint_dir:
-                raise ValueError(
-                    "Checkpoint directory must be provided if resume is set to True"
-                )
-
-            # Apply CLI overrides to settings
+        # --pipeline-format shortcut
+        if args.pipeline_format:
             s = Settings()
-            fmt = pipeline_format or s.PIPELINE_FORMAT
-            exec_type = executor or s.EXECUTOR_TYPE
+            fmt = args.pipeline_format
+            logger.info("Generating %s pipeline from prompt", fmt)
+            from .core.llm import LLMInterface
+            from .core.pipeline_generator import NextflowGenerator, SnakemakeGenerator
 
-            # Pipeline generation path
-            if fmt in ("nextflow", "snakemake"):
-                logger.info("Generating %s pipeline from prompt…", fmt)
-                from .core.llm import LLMInterface
-                from .core.pipeline_generator import NextflowGenerator, SnakemakeGenerator
+            llm = LLMInterface()
+            workflow_plan = await llm.generate_workflow_plan(prompt)
+            output_dir = Path("flowagent_pipeline_output")
+            gen = NextflowGenerator() if fmt == "nextflow" else SnakemakeGenerator()
+            gen.generate(workflow_plan, output_dir=output_dir)
+            print(f"\nGenerated {gen.default_filename()} in {output_dir}/")
 
-                llm = LLMInterface()
-                workflow_plan = await llm.generate_workflow_plan(prompt)
+            vresult = gen.validate(gen.generate(workflow_plan, output_dir=output_dir), output_dir=output_dir)
+            for err in vresult.get("errors", []):
+                logger.error("Validation: %s", err)
 
-                output_dir = Path("flowagent_pipeline_output")
-                if fmt == "nextflow":
-                    gen = NextflowGenerator()
+            if not args.no_execute and vresult.get("valid", True):
+                from .core.executor_factory import ExecutorFactory
+                executor = ExecutorFactory.create(fmt, profile=args.profile or s.PIPELINE_PROFILE)
+                step = {"name": f"{fmt}_run", "pipeline_file": str(output_dir / gen.default_filename()), "cwd": str(output_dir)}
+                result = await executor.execute_step(step)
+                if result["status"] == "completed":
+                    logger.info("Pipeline completed successfully")
                 else:
-                    gen = SnakemakeGenerator()
+                    logger.error("Pipeline failed:\n%s", result.get("stderr", ""))
+            elif args.no_execute:
+                print("Pipeline generated (--no-execute). Run it manually.")
+            return
 
-                code = gen.generate(workflow_plan, output_dir=output_dir)
-                print(f"\nGenerated {gen.default_filename()} in {output_dir}/")
-
-                # Validate
-                vresult = gen.validate(code, output_dir=output_dir)
-                if vresult["errors"]:
-                    for err in vresult["errors"]:
-                        logger.error("Validation error: %s", err)
-                if vresult["warnings"]:
-                    for w in vresult["warnings"]:
-                        logger.warning("Validation: %s", w)
-
-                # Execute unless --no-execute
-                if not no_execute and vresult.get("valid", True):
-                    from .core.executor_factory import ExecutorFactory
-                    pipeline_executor = ExecutorFactory.create(
-                        fmt,
-                        profile=profile or s.PIPELINE_PROFILE,
-                    )
-                    step = {
-                        "name": f"{fmt}_run",
-                        "pipeline_file": str(output_dir / gen.default_filename()),
-                        "cwd": str(output_dir),
-                    }
-                    result = await pipeline_executor.execute_step(step)
-                    if result["status"] == "completed":
-                        logger.info("Pipeline execution completed successfully")
-                    else:
-                        logger.error("Pipeline execution failed:\n%s", result.get("stderr", ""))
-                elif no_execute:
-                    print("Pipeline generated (--no-execute). Run it manually.")
-            else:
-                # Classic shell-command workflow — WorkflowManager reads EXECUTOR_TYPE / HPC_SYSTEM from env
-                if executor:
-                    os.environ["EXECUTOR_TYPE"] = executor
-                if hpc_system:
-                    os.environ["HPC_SYSTEM"] = hpc_system
-                logger.info("Starting workflow (executor=%s)", exec_type)
-                await run_workflow(prompt, checkpoint_dir, resume, force_resume)
+        # Smart routing: agent loop vs workflow manager
+        if _should_use_workflow(prompt, args):
+            # Workflow path
+            if args.resume and not args.checkpoint_dir:
+                raise ValueError("--checkpoint-dir is required with --resume")
+            if args.executor:
+                os.environ["EXECUTOR_TYPE"] = args.executor
+            if args.hpc_system:
+                os.environ["HPC_SYSTEM"] = args.hpc_system
+            s = Settings()
+            exec_type = args.executor or s.EXECUTOR_TYPE
+            logger.info("Workflow mode (executor=%s)", exec_type)
+            from .workflow import run_workflow
+            await run_workflow(prompt, args.checkpoint_dir, args.resume, args.force_resume)
+        else:
+            # Agent loop (default)
+            await _run_agent_cli(prompt)
 
     except Exception as e:
-        logger.error(f"Operation failed: {str(e)}")
+        logger.error("Operation failed: %s", e)
         raise
 
 
@@ -267,47 +268,27 @@ def run():
 
     try:
         if args.command == "prompt":
-            asyncio.run(
-                main(
-                    prompt=args.prompt,
-                    resume=args.resume,
-                    force_resume=args.force_resume,
-                    checkpoint_dir=args.checkpoint_dir,
-                    analysis_dir=args.analysis_dir,
-                    pipeline_format=args.pipeline_format,
-                    profile=args.profile,
-                    no_execute=args.no_execute,
-                    executor=args.executor,
-                    hpc_system=args.hpc_system,
-                    preset=args.preset,
-                )
-            )
+            asyncio.run(main(prompt=args.prompt, args=args))
+
         elif args.command == "serve":
             os.environ["USER_EXECUTION_DIR"] = os.getcwd()
-
             try:
                 import uvicorn
             except ImportError:
-                logger.error("uvicorn is required for the web UI: pip install 'flowagent[web]'")
+                logger.error("uvicorn required: pip install 'flowagent[web]'")
                 sys.exit(1)
 
             logger.info("Starting FlowAgent web UI on %s:%s", args.host, args.port)
             try:
-                uvicorn.run(
-                    "flowagent.web:app",
-                    host=str(args.host),
-                    port=int(args.port),
-                    log_level="info",
-                )
+                uvicorn.run("flowagent.web:app", host=str(args.host), port=int(args.port), log_level="info")
             except KeyboardInterrupt:
-                logger.info("Shutting down web interface...")
+                logger.info("Shutting down...")
         else:
-            # Show help if no command specified
             parser.print_help()
             sys.exit(1)
 
     except Exception as e:
-        logger.error(f"Operation failed: {str(e)}")
+        logger.error("Operation failed: %s", e)
         sys.exit(1)
 
 
