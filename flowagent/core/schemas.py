@@ -10,8 +10,40 @@ OpenAI strict mode requirements:
   - All fields must be ``required``
 """
 
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+
+
+# ── Pipeline planning context ─────────────────────────────────
+
+@dataclass
+class PipelineContext:
+    """Everything the planning phase discovers or asks the user.
+
+    Produced by ``gather_pipeline_context()`` and consumed by
+    ``generate_workflow_plan()`` so the LLM receives concrete reference
+    paths / download URLs instead of guessing.
+    """
+    input_files: List[str] = field(default_factory=list)
+    paired_end: bool = True
+    organism: str = "human"
+    genome_build: str = "GRCh38"
+    reference_fasta: Optional[str] = None
+    annotation_gtf: Optional[str] = None
+    reference_source: str = "ensembl"
+    reference_url: Optional[str] = None
+    annotation_url: Optional[str] = None
+    workflow_type: str = ""
+    extra_params: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def needs_reference_download(self) -> bool:
+        return self.reference_fasta is None
+
+    @property
+    def needs_annotation_download(self) -> bool:
+        return self.annotation_gtf is None
 
 
 # ── Workflow planning ──────────────────────────────────────────

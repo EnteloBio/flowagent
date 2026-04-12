@@ -14,7 +14,7 @@ from openai import AsyncOpenAI
 from ..config.settings import Settings
 from ..utils.logging import get_logger
 from .providers import create_provider, LLMProvider
-from .schemas import WorkflowPlanSchema, to_json_schema
+from .schemas import PipelineContext, WorkflowPlanSchema, to_json_schema
 
 # Initialize settings
 settings = Settings()
@@ -791,8 +791,18 @@ Return a JSON object in this EXACT format:
                     "suggested_time_min": 60,
                 }
 
-    async def generate_workflow_plan(self, prompt: str) -> Dict[str, Any]:
-        """Generate a workflow plan from a prompt."""
+    async def generate_workflow_plan(
+        self, prompt: str, *, context: Optional[PipelineContext] = None,
+    ) -> Dict[str, Any]:
+        """Generate a workflow plan from a prompt.
+
+        Parameters
+        ----------
+        context : PipelineContext, optional
+            Pre-gathered planning context (organism, references, input files).
+            When supplied the method skips its own file-scanning and injects
+            reference information (including download steps) into the plan.
+        """
         try:
             # Check for invalid prompt type
             if not isinstance(prompt, str):
@@ -803,31 +813,35 @@ Return a JSON object in this EXACT format:
             
             # Check if this is a GEO download request
             geo_accession = file_info.get("geo_accession")
-            
-            # Find files matching the patterns
-            matched_files = []
-            for pattern in file_info["patterns"]:
-                matched_files.extend(glob.glob(pattern))
 
-            # Fallback: if LLM patterns found nothing, scan cwd for
-            # bioinformatics files with common (and uncommon) extensions.
-            if not matched_files and not geo_accession:
-                _fallback_globs = [
-                    "*.fastq.gz", "*.fq.gz", "*.fastq.bz2", "*.fq.bz2",
-                    "*.fastq.*.gz",   # e.g. sample.fastq.1.gz
-                    "*.fq.*.gz",
-                    "*.fastq", "*.fq",
-                    "*.bam", "*.sam", "*.cram",
-                    "*.sra",
-                ]
-                for pat in _fallback_globs:
-                    matched_files.extend(glob.glob(pat))
-                if matched_files:
-                    matched_files = sorted(set(matched_files))
-                    self.logger.info(
-                        "LLM patterns missed files; fallback scan found %d file(s): %s",
-                        len(matched_files), matched_files[:6],
-                    )
+            # If a PipelineContext was provided, prefer its input_files
+            if context and context.input_files:
+                matched_files = list(context.input_files)
+            else:
+                # Find files matching the patterns
+                matched_files = []
+                for pattern in file_info["patterns"]:
+                    matched_files.extend(glob.glob(pattern))
+
+                # Fallback: if LLM patterns found nothing, scan cwd for
+                # bioinformatics files with common (and uncommon) extensions.
+                if not matched_files and not geo_accession:
+                    _fallback_globs = [
+                        "*.fastq.gz", "*.fq.gz", "*.fastq.bz2", "*.fq.bz2",
+                        "*.fastq.*.gz",   # e.g. sample.fastq.1.gz
+                        "*.fq.*.gz",
+                        "*.fastq", "*.fq",
+                        "*.bam", "*.sam", "*.cram",
+                        "*.sra",
+                    ]
+                    for pat in _fallback_globs:
+                        matched_files.extend(glob.glob(pat))
+                    if matched_files:
+                        matched_files = sorted(set(matched_files))
+                        self.logger.info(
+                            "LLM patterns missed files; fallback scan found %d file(s): %s",
+                            len(matched_files), matched_files[:6],
+                        )
 
             # If no files found and we have a GEO accession, we'll create a download workflow
             if not matched_files and geo_accession:
@@ -846,11 +860,7 @@ Return a JSON object in this EXACT format:
             # If no files found and no GEO accession, raise an error
             # Special case for empty prompt in test environment
             if not matched_files:
-                # If prompt is empty and we're likely in a test environment, proceed to LLM call
-                # This will lead to JSONDecodeError as expected by the test
                 if not prompt or prompt.strip() == "":
-                    # This will proceed to the LLM call which should return an empty response
-                    # causing a JSONDecodeError when trying to parse it
                     enhanced_prompt = ""
                     messages = [
                         {
@@ -959,12 +969,18 @@ Resource Management Rules:
    - Large FASTQ files (>20GB): 1.2x memory, 1.5x time
 """
 
+            # Inject reference context so the LLM uses correct paths
+            _ref_supplement = ""
+            if context:
+                from .pipeline_planner import context_to_prompt_supplement
+                _ref_supplement = "\nReference files:\n" + context_to_prompt_supplement(context)
+
             # Update the enhanced prompt with resource instructions
             enhanced_prompt = f"""
 {enhanced_prompt}
 
 {resource_instructions}
-
+{_ref_supplement}
 """
             _os_hint = ""
             if platform.system() == "Darwin":
@@ -1022,6 +1038,34 @@ Resource Management Rules:
                 except Exception as retry_err:
                     self.logger.error("All JSON parse attempts failed")
                     raise last_err or retry_err
+
+            # Prepend reference download steps if the context indicates
+            # that references need to be fetched.
+            if context:
+                from .pipeline_planner import build_reference_download_steps
+                dl_steps = build_reference_download_steps(context)
+                if dl_steps:
+                    dl_names = {s["name"] for s in dl_steps}
+                    existing = workflow_plan.get("steps", [])
+                    # Remove any LLM-generated steps whose name collides
+                    # with the download steps we are about to prepend.
+                    existing = [s for s in existing if s.get("name") not in dl_names]
+                    # Wire index/align steps to depend on downloads
+                    for step in existing:
+                        cmd_lower = (step.get("command") or "").lower()
+                        name_lower = (step.get("name") or "").lower()
+                        needs_ref = any(kw in cmd_lower for kw in [
+                            "index", "genome", "reference/", "transcriptome", "genes.gtf",
+                        ]) or any(kw in name_lower for kw in [
+                            "index", "genome",
+                        ])
+                        if needs_ref:
+                            deps = step.get("dependencies", [])
+                            for dl_name in dl_names:
+                                if dl_name not in deps:
+                                    deps.append(dl_name)
+                            step["dependencies"] = deps
+                    workflow_plan["steps"] = dl_steps + existing
 
             # Log workflow plan
             self.logger.info("Generated workflow plan:")
