@@ -2,6 +2,12 @@
 
 These schemas are used for structured-output calls (JSON mode) across
 all providers, eliminating fragile ``_clean_llm_response`` regex parsing.
+
+OpenAI strict mode requirements:
+  - Every object must have ``additionalProperties: false``
+  - No ``anyOf``/``oneOf`` with ``$ref`` + ``null``
+  - No ``default`` values on optional fields
+  - All fields must be ``required``
 """
 
 from typing import Any, Dict, List, Optional
@@ -10,28 +16,23 @@ from pydantic import BaseModel, Field
 
 # ── Workflow planning ──────────────────────────────────────────
 
-class ResourceSpec(BaseModel):
-    """Resource requirements for a single workflow step."""
-    memory: str = Field("4G", description="Memory allocation e.g. '8G'")
-    cpus: int = Field(1, description="Number of CPU cores")
-    time_min: int = Field(60, description="Time limit in minutes")
-    profile: str = Field("default", description="Resource profile name")
-
-
 class WorkflowStepSchema(BaseModel):
     """A single step in a workflow plan."""
     name: str = Field(..., description="Short unique name for the step")
     command: str = Field(..., description="Shell command to execute")
-    parameters: Dict[str, Any] = Field(default_factory=dict)
     dependencies: List[str] = Field(default_factory=list, description="Names of prerequisite steps")
     outputs: List[str] = Field(default_factory=list, description="Expected output file patterns")
-    resources: Optional[ResourceSpec] = None
+    description: str = Field("", description="Brief description of the step")
+
+    model_config = {"extra": "forbid"}
 
 
 class WorkflowPlanSchema(BaseModel):
     """Complete workflow plan returned by the LLM."""
     workflow_type: str = Field(..., description="Type of workflow e.g. rna_seq_kallisto")
     steps: List[WorkflowStepSchema]
+
+    model_config = {"extra": "forbid"}
 
 
 # ── File pattern extraction ────────────────────────────────────
@@ -100,8 +101,35 @@ class AnalysisReport(BaseModel):
 
 # ── Helper: convert Pydantic model → JSON Schema dict ─────────
 
-def to_json_schema(model_class: type[BaseModel]) -> Dict[str, Any]:
-    """Return the JSON Schema dict suitable for ``response_format`` / ``response_schema``."""
-    schema = model_class.model_json_schema()
-    schema.setdefault("additionalProperties", False)
+def _make_strict(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively enforce OpenAI strict-mode constraints on a JSON Schema."""
+    if schema.get("type") == "object":
+        schema["additionalProperties"] = False
+        props = schema.get("properties", {})
+        # Strict mode requires every property in "required"
+        schema["required"] = list(props.keys())
+        for prop in props.values():
+            _make_strict(prop)
+            prop.pop("default", None)
+    if "items" in schema:
+        _make_strict(schema["items"])
+    if "$ref" in schema:
+        pass  # $ref is resolved at the top level via $defs
+    for key in ("anyOf", "oneOf", "allOf"):
+        if key in schema:
+            for sub in schema[key]:
+                _make_strict(sub)
+    # Process $defs
+    for defn in schema.get("$defs", {}).values():
+        _make_strict(defn)
     return schema
+
+
+def to_json_schema(model_class: type[BaseModel]) -> Dict[str, Any]:
+    """Return the JSON Schema dict suitable for ``response_format`` / ``response_schema``.
+
+    Applies strict-mode transformations so the schema is accepted by
+    OpenAI's ``json_schema`` response format with ``"strict": true``.
+    """
+    schema = model_class.model_json_schema()
+    return _make_strict(schema)

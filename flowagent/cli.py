@@ -219,24 +219,42 @@ async def main(
             workflow_plan = await llm.generate_workflow_plan(prompt)
             output_dir = Path("flowagent_pipeline_output")
             gen = NextflowGenerator() if fmt == "nextflow" else SnakemakeGenerator()
-            gen.generate(workflow_plan, output_dir=output_dir)
+            code = gen.generate(workflow_plan, output_dir=output_dir)
             print(f"\nGenerated {gen.default_filename()} in {output_dir}/")
 
-            vresult = gen.validate(gen.generate(workflow_plan, output_dir=output_dir), output_dir=output_dir)
+            vresult = gen.validate(code, output_dir=output_dir)
+            for warn in vresult.get("warnings", []):
+                logger.warning("Validation: %s", warn)
             for err in vresult.get("errors", []):
                 logger.error("Validation: %s", err)
 
-            if not args.no_execute and vresult.get("valid", True):
-                from .core.executor_factory import ExecutorFactory
-                executor = ExecutorFactory.create(fmt, profile=args.profile or s.PIPELINE_PROFILE)
-                step = {"name": f"{fmt}_run", "pipeline_file": str(output_dir / gen.default_filename()), "cwd": str(output_dir)}
-                result = await executor.execute_step(step)
-                if result["status"] == "completed":
-                    logger.info("Pipeline completed successfully")
-                else:
-                    logger.error("Pipeline failed:\n%s", result.get("stderr", ""))
-            elif args.no_execute:
+            if args.no_execute:
                 print("Pipeline generated (--no-execute). Run it manually.")
+            else:
+                import shutil
+                runner = "nextflow" if fmt == "nextflow" else "snakemake"
+                if not shutil.which(runner):
+                    print(f"\n{runner} is not installed. Install it to execute the pipeline:")
+                    if runner == "snakemake":
+                        print(f"  conda install -c bioconda -c conda-forge snakemake")
+                    else:
+                        print(f"  conda install -c bioconda nextflow")
+                    print(f"\nOr re-run with --no-execute to just generate the file.")
+                else:
+                    from .core.executor_factory import ExecutorFactory
+                    executor = ExecutorFactory.create(fmt, profile=args.profile or s.PIPELINE_PROFILE)
+                    # Run from the user's cwd (where input files are), not the output dir
+                    pipeline_file = str(output_dir.resolve() / gen.default_filename())
+                    step = {"name": f"{fmt}_run", "pipeline_file": pipeline_file, "cwd": os.getcwd()}
+                    logger.info("Executing %s pipeline: %s", fmt, pipeline_file)
+                    result = await executor.execute_step(step)
+                    if result["status"] == "completed":
+                        logger.info("Pipeline completed successfully")
+                        if result.get("stdout"):
+                            print(result["stdout"][-2000:])
+                    else:
+                        error_detail = result.get("stderr", "") or result.get("stdout", "")
+                        logger.error("Pipeline failed:\n%s", error_detail[-2000:])
             return
 
         # Smart routing: agent loop vs workflow manager
