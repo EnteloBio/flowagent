@@ -140,6 +140,55 @@ async def _run_workflow_task(queue: asyncio.Queue, prompt: str,
         queue.put_nowait(("done", json.dumps({})))
 
 
+async def _run_pipeline_task(queue: asyncio.Queue, prompt: str,
+                             pipeline_format: str = "nextflow",
+                             context_answers: Optional[Dict[str, str]] = None):
+    """Run the planning + pipeline generation flow, streaming events."""
+    from flowagent.core.pipeline_planner import gather_pipeline_context
+    from flowagent.core.pipeline_generator import NextflowGenerator, SnakemakeGenerator
+
+    queue.put_nowait(("phase", json.dumps({"label": "Planning pipeline..."})))
+
+    ctx = await gather_pipeline_context(
+        prompt,
+        interactive=False,
+        answers=context_answers or {},
+    )
+
+    queue.put_nowait(("token", json.dumps({
+        "content": (
+            f"**Pipeline context resolved**\n"
+            f"- Organism: {ctx.organism} ({ctx.genome_build})\n"
+            f"- Reference source: {ctx.reference_source}\n"
+            f"- Input files: {len(ctx.input_files)} found\n"
+            f"- Reference: {'local' if ctx.reference_fasta else ('download' if ctx.reference_url else 'none')}\n\n"
+        ),
+    })))
+
+    queue.put_nowait(("phase", json.dumps({"label": "Generating workflow plan..."})))
+    llm = LLMInterface()
+    plan = await llm.generate_workflow_plan(prompt, context=ctx)
+
+    gen = NextflowGenerator() if pipeline_format == "nextflow" else SnakemakeGenerator()
+    from pathlib import Path
+    output_dir = Path(os.environ.get("USER_EXECUTION_DIR", ".")) / "flowagent_pipeline_output"
+    code = gen.generate(plan, output_dir=output_dir)
+
+    queue.put_nowait(("token", json.dumps({
+        "content": (
+            f"Generated `{gen.default_filename()}` in `{output_dir}/`\n\n"
+            f"**Steps:** {len(plan.get('steps', []))}\n"
+        ),
+    })))
+    for step in plan.get("steps", []):
+        queue.put_nowait(("token", json.dumps({
+            "content": f"- `{step.get('name')}`: {step.get('command', '')[:80]}\n",
+        })))
+        await asyncio.sleep(0.01)
+
+    queue.put_nowait(("done", json.dumps({"pipeline_file": str(output_dir / gen.default_filename())})))
+
+
 async def _run_analyse_task(queue: asyncio.Queue, analysis_dir: str,
                             save_report: bool = True):
     """Run analysis, capturing logs via SSELogHandler."""
@@ -272,6 +321,12 @@ async def submit_chat(request: Request):
             queue, prompt,
             checkpoint_dir=body.get("checkpoint_dir"),
             resume=body.get("resume", False),
+        )))
+    elif mode == "pipeline":
+        asyncio.create_task(_agent_wrapper(chat_id, _run_pipeline_task(
+            queue, prompt,
+            pipeline_format=body.get("pipeline_format", "nextflow"),
+            context_answers=body.get("context_answers"),
         )))
     elif mode == "analyse":
         asyncio.create_task(_agent_wrapper(chat_id, _run_analyse_task(

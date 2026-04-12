@@ -2,9 +2,18 @@
 
 Each preset is a valid WorkflowPlan dict that can be passed directly to
 pipeline generators or the executor without needing an LLM call.
+
+Presets reference files under ``reference/`` (e.g. ``reference/transcriptome.fa``).
+When no local reference is found, ``apply_context_to_preset()`` prepends
+download steps using URLs resolved from the reference registry.
 """
 
+from __future__ import annotations
+
+import copy
 from typing import Any, Dict, List, Optional
+
+from flowagent.core.schemas import PipelineContext
 
 
 PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
@@ -12,6 +21,7 @@ PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
         "name": "RNA-seq (Kallisto pseudoalignment)",
         "description": "Standard RNA-seq quantification using FastQC, Kallisto, and MultiQC.",
         "workflow_type": "rna_seq_kallisto",
+        "reference_needs": {"cdna": True, "genome": False, "gtf": False},
         "steps": [
             {
                 "name": "create_directories",
@@ -55,6 +65,7 @@ PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
         "name": "RNA-seq (STAR + featureCounts)",
         "description": "RNA-seq alignment with STAR and gene counting with featureCounts.",
         "workflow_type": "rna_seq_star",
+        "reference_needs": {"cdna": False, "genome": True, "gtf": True},
         "steps": [
             {
                 "name": "create_directories",
@@ -105,6 +116,7 @@ PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
         "name": "ChIP-seq (Bowtie2 + MACS2)",
         "description": "ChIP-seq alignment and peak calling.",
         "workflow_type": "chip_seq",
+        "reference_needs": {"cdna": False, "genome": True, "gtf": False},
         "steps": [
             {
                 "name": "create_directories",
@@ -128,9 +140,16 @@ PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
                 "resources": {"cpus": 4, "memory": "4G", "time_min": 60},
             },
             {
+                "name": "bowtie2_index",
+                "command": "bowtie2-build reference/genome.fa reference/genome",
+                "dependencies": ["create_directories"],
+                "outputs": ["reference/genome.1.bt2"],
+                "resources": {"cpus": 4, "memory": "16G", "time_min": 60},
+            },
+            {
                 "name": "bowtie2_align",
                 "command": "for f in results/trimmed/*_trimmed.fq.gz; do base=$(basename $f _trimmed.fq.gz); bowtie2 -x reference/genome -U $f -S results/aligned/${base}.sam -p 8; samtools sort -@ 4 results/aligned/${base}.sam -o results/aligned/${base}.bam; samtools index results/aligned/${base}.bam; rm results/aligned/${base}.sam; done",
-                "dependencies": ["trim_galore"],
+                "dependencies": ["trim_galore", "bowtie2_index"],
                 "outputs": ["results/aligned/*.bam"],
                 "resources": {"cpus": 8, "memory": "16G", "time_min": 120},
             },
@@ -155,6 +174,7 @@ PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
         "name": "ATAC-seq (Bowtie2 + MACS2)",
         "description": "ATAC-seq analysis with alignment, filtering, and peak calling.",
         "workflow_type": "atac_seq",
+        "reference_needs": {"cdna": False, "genome": True, "gtf": False},
         "steps": [
             {
                 "name": "create_directories",
@@ -178,9 +198,16 @@ PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
                 "resources": {"cpus": 4, "memory": "4G", "time_min": 60},
             },
             {
+                "name": "bowtie2_index",
+                "command": "bowtie2-build reference/genome.fa reference/genome",
+                "dependencies": ["create_directories"],
+                "outputs": ["reference/genome.1.bt2"],
+                "resources": {"cpus": 4, "memory": "16G", "time_min": 60},
+            },
+            {
                 "name": "bowtie2_align",
                 "command": "for f in results/trimmed/*_R1_val_1.fq.gz; do base=$(basename $f _R1_val_1.fq.gz); bowtie2 -x reference/genome -1 results/trimmed/${base}_R1_val_1.fq.gz -2 results/trimmed/${base}_R2_val_2.fq.gz --very-sensitive -X 2000 -p 8 | samtools sort -@ 4 -o results/aligned/${base}.bam; samtools index results/aligned/${base}.bam; done",
-                "dependencies": ["trim_galore"],
+                "dependencies": ["trim_galore", "bowtie2_index"],
                 "outputs": ["results/aligned/*.bam"],
                 "resources": {"cpus": 8, "memory": "16G", "time_min": 120},
             },
@@ -210,6 +237,8 @@ PRESET_CATALOG: Dict[str, Dict[str, Any]] = {
 }
 
 
+# ── Public helpers ────────────────────────────────────────────
+
 def list_presets() -> List[Dict[str, str]]:
     """Return summary of available presets."""
     return [
@@ -221,3 +250,62 @@ def list_presets() -> List[Dict[str, str]]:
 def get_preset(preset_id: str) -> Optional[Dict[str, Any]]:
     """Return a preset workflow plan by ID, or None."""
     return PRESET_CATALOG.get(preset_id)
+
+
+def apply_context_to_preset(
+    preset: Dict[str, Any],
+    ctx: PipelineContext,
+) -> Dict[str, Any]:
+    """Return a copy of *preset* with reference download steps prepended
+    when the context indicates no local references are available.
+
+    Steps that reference files under ``reference/`` automatically gain
+    dependencies on the download steps.
+    """
+    plan = copy.deepcopy(preset)
+    needs = plan.get("reference_needs", {})
+    download_steps: List[Dict[str, Any]] = []
+
+    # Determine which downloads are needed
+    need_genome = needs.get("genome", False) and ctx.needs_reference_download
+    need_cdna = needs.get("cdna", False) and ctx.needs_reference_download
+    need_gtf = needs.get("gtf", False) and ctx.needs_annotation_download
+
+    if (need_genome or need_cdna) and ctx.reference_url:
+        target = "reference/transcriptome.fa" if need_cdna else "reference/genome.fa"
+        download_steps.append({
+            "name": "download_reference",
+            "command": f"mkdir -p reference && wget -q -O {target}.gz {ctx.reference_url} && gunzip -f {target}.gz",
+            "dependencies": [],
+            "outputs": [target],
+            "description": f"Download {ctx.organism} reference from {ctx.reference_source}",
+            "resources": {"cpus": 1, "memory": "2G", "time_min": 30},
+        })
+
+    if need_gtf and ctx.annotation_url:
+        download_steps.append({
+            "name": "download_annotation",
+            "command": f"mkdir -p reference && wget -q -O reference/genes.gtf.gz {ctx.annotation_url} && gunzip -f reference/genes.gtf.gz",
+            "dependencies": [],
+            "outputs": ["reference/genes.gtf"],
+            "description": f"Download {ctx.organism} annotation from {ctx.reference_source}",
+            "resources": {"cpus": 1, "memory": "2G", "time_min": 30},
+        })
+
+    if download_steps:
+        dl_names = {s["name"] for s in download_steps}
+        for step in plan["steps"]:
+            cmd_lower = (step.get("command") or "").lower()
+            references_ref = any(kw in cmd_lower for kw in [
+                "reference/", "genome.fa", "transcriptome.fa", "genes.gtf",
+                "index", "genomegenerate", "bowtie2-build",
+            ])
+            if references_ref:
+                deps = step.get("dependencies", [])
+                for dl_name in dl_names:
+                    if dl_name not in deps:
+                        deps.append(dl_name)
+                step["dependencies"] = deps
+        plan["steps"] = download_steps + plan["steps"]
+
+    return plan

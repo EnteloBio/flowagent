@@ -83,6 +83,10 @@ Examples:
     )
     prompt_parser.add_argument("--hpc-system", choices=["slurm", "sge", "torque"], default=None)
     prompt_parser.add_argument("--preset", default=None, help="Use a preset workflow (e.g. rnaseq-kallisto)")
+    prompt_parser.add_argument(
+        "--non-interactive", action="store_true",
+        help="Skip interactive questions; use defaults (human/GRCh38/Ensembl)",
+    )
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start the web interface")
@@ -173,12 +177,21 @@ async def main(
     try:
         # --preset shortcut
         if args.preset:
-            from .presets.catalog import get_preset, list_presets
+            from .presets.catalog import get_preset, list_presets, apply_context_to_preset
+            from .core.pipeline_planner import gather_pipeline_context
             plan = get_preset(args.preset)
             if plan is None:
                 names = ", ".join(p["id"] for p in list_presets())
                 raise ValueError(f"Unknown preset '{args.preset}'. Available: {names}")
             logger.info("Using preset workflow: %s", plan["name"])
+
+            # Run planning phase to resolve references
+            ctx = await gather_pipeline_context(
+                prompt,
+                interactive=not getattr(args, "non_interactive", False),
+            )
+            plan = apply_context_to_preset(plan, ctx)
+
             from .core.workflow_manager import WorkflowManager
             from .core.agent_types import Workflow, WorkflowStep
             wm = WorkflowManager(executor_type=args.executor or Settings().EXECUTOR_TYPE)
@@ -214,9 +227,14 @@ async def main(
             logger.info("Generating %s pipeline from prompt", fmt)
             from .core.llm import LLMInterface
             from .core.pipeline_generator import NextflowGenerator, SnakemakeGenerator
+            from .core.pipeline_planner import gather_pipeline_context
 
             llm = LLMInterface()
-            workflow_plan = await llm.generate_workflow_plan(prompt)
+            context = await gather_pipeline_context(
+                prompt,
+                interactive=not getattr(args, "non_interactive", False),
+            )
+            workflow_plan = await llm.generate_workflow_plan(prompt, context=context)
             output_dir = Path("flowagent_pipeline_output")
             gen = NextflowGenerator() if fmt == "nextflow" else SnakemakeGenerator()
             code = gen.generate(workflow_plan, output_dir=output_dir)
