@@ -1744,7 +1744,25 @@
 <span class="normal">259</span>
 <span class="normal">260</span>
 <span class="normal">261</span>
-<span class="normal">262</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span>
     <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">args</span><span class="p">,</span>
 <span class="p">):</span>
@@ -1798,24 +1816,42 @@
             <span class="n">workflow_plan</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate_workflow_plan</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
             <span class="n">output_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;flowagent_pipeline_output&quot;</span><span class="p">)</span>
             <span class="n">gen</span> <span class="o">=</span> <span class="n">NextflowGenerator</span><span class="p">()</span> <span class="k">if</span> <span class="n">fmt</span> <span class="o">==</span> <span class="s2">&quot;nextflow&quot;</span> <span class="k">else</span> <span class="n">SnakemakeGenerator</span><span class="p">()</span>
-            <span class="n">gen</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">workflow_plan</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
+            <span class="n">code</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">workflow_plan</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Generated </span><span class="si">{</span><span class="n">gen</span><span class="o">.</span><span class="n">default_filename</span><span class="p">()</span><span class="si">}</span><span class="s2"> in </span><span class="si">{</span><span class="n">output_dir</span><span class="si">}</span><span class="s2">/&quot;</span><span class="p">)</span>
 
-            <span class="n">vresult</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">gen</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">workflow_plan</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">),</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
+            <span class="n">vresult</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">warn</span> <span class="ow">in</span> <span class="n">vresult</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;warnings&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Validation: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">warn</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">err</span> <span class="ow">in</span> <span class="n">vresult</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;errors&quot;</span><span class="p">,</span> <span class="p">[]):</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Validation: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
 
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_execute</span> <span class="ow">and</span> <span class="n">vresult</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;valid&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
-                <span class="kn">from</span><span class="w"> </span><span class="nn">.core.executor_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorFactory</span>
-                <span class="n">executor</span> <span class="o">=</span> <span class="n">ExecutorFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">profile</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">PIPELINE_PROFILE</span><span class="p">)</span>
-                <span class="n">step</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">fmt</span><span class="si">}</span><span class="s2">_run&quot;</span><span class="p">,</span> <span class="s2">&quot;pipeline_file&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">output_dir</span> <span class="o">/</span> <span class="n">gen</span><span class="o">.</span><span class="n">default_filename</span><span class="p">()),</span> <span class="s2">&quot;cwd&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">output_dir</span><span class="p">)}</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">executor</span><span class="o">.</span><span class="n">execute_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;completed&quot;</span><span class="p">:</span>
-                    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Pipeline completed successfully&quot;</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Pipeline failed:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
-            <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">no_execute</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">no_execute</span><span class="p">:</span>
                 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Pipeline generated (--no-execute). Run it manually.&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+                <span class="n">runner</span> <span class="o">=</span> <span class="s2">&quot;nextflow&quot;</span> <span class="k">if</span> <span class="n">fmt</span> <span class="o">==</span> <span class="s2">&quot;nextflow&quot;</span> <span class="k">else</span> <span class="s2">&quot;snakemake&quot;</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="n">runner</span><span class="p">):</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">runner</span><span class="si">}</span><span class="s2"> is not installed. Install it to execute the pipeline:&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">runner</span> <span class="o">==</span> <span class="s2">&quot;snakemake&quot;</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  conda install -c bioconda -c conda-forge snakemake&quot;</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  conda install -c bioconda nextflow&quot;</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Or re-run with --no-execute to just generate the file.&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="kn">from</span><span class="w"> </span><span class="nn">.core.executor_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorFactory</span>
+                    <span class="n">executor</span> <span class="o">=</span> <span class="n">ExecutorFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">profile</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">PIPELINE_PROFILE</span><span class="p">)</span>
+                    <span class="c1"># Run from the user&#39;s cwd (where input files are), not the output dir</span>
+                    <span class="n">pipeline_file</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">output_dir</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span> <span class="o">/</span> <span class="n">gen</span><span class="o">.</span><span class="n">default_filename</span><span class="p">())</span>
+                    <span class="n">step</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">fmt</span><span class="si">}</span><span class="s2">_run&quot;</span><span class="p">,</span> <span class="s2">&quot;pipeline_file&quot;</span><span class="p">:</span> <span class="n">pipeline_file</span><span class="p">,</span> <span class="s2">&quot;cwd&quot;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()}</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Executing </span><span class="si">%s</span><span class="s2"> pipeline: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">fmt</span><span class="p">,</span> <span class="n">pipeline_file</span><span class="p">)</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">executor</span><span class="o">.</span><span class="n">execute_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;completed&quot;</span><span class="p">:</span>
+                        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Pipeline completed successfully&quot;</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stdout&quot;</span><span class="p">):</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;stdout&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">2000</span><span class="p">:])</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">error_detail</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Pipeline failed:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">error_detail</span><span class="p">[</span><span class="o">-</span><span class="mi">2000</span><span class="p">:])</span>
             <span class="k">return</span>
 
         <span class="c1"># Smart routing: agent loop vs workflow manager</span>
@@ -2024,25 +2060,7 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/cli.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">265</span>
-<span class="normal">266</span>
-<span class="normal">267</span>
-<span class="normal">268</span>
-<span class="normal">269</span>
-<span class="normal">270</span>
-<span class="normal">271</span>
-<span class="normal">272</span>
-<span class="normal">273</span>
-<span class="normal">274</span>
-<span class="normal">275</span>
-<span class="normal">276</span>
-<span class="normal">277</span>
-<span class="normal">278</span>
-<span class="normal">279</span>
-<span class="normal">280</span>
-<span class="normal">281</span>
-<span class="normal">282</span>
-<span class="normal">283</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">283</span>
 <span class="normal">284</span>
 <span class="normal">285</span>
 <span class="normal">286</span>
@@ -2051,7 +2069,25 @@
 <span class="normal">289</span>
 <span class="normal">290</span>
 <span class="normal">291</span>
-<span class="normal">292</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">():</span>
+<span class="normal">292</span>
+<span class="normal">293</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Run the CLI.&quot;&quot;&quot;</span>
     <span class="n">parser</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">parse_args</span><span class="p">()</span>
 
