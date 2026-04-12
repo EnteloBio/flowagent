@@ -528,20 +528,103 @@ Use the exact sample name '{sample_name}' for output directories.""",
             yield token
 
     def _clean_llm_response(self, response: str) -> str:
-        """Clean LLM response by removing markdown formatting."""
-        # Remove markdown code block if present
-        if response.startswith("```"):
-            # Find the first and last ``` and extract content
-            start = response.find("\n", response.find("```")) + 1
-            end = response.rfind("```")
-            if end > start:
-                response = response[start:end].strip()
+        """Clean LLM response and attempt to repair truncated JSON.
 
-        # Remove any "json" language identifier
-        if response.lower().startswith("json"):
-            response = response[4:].strip()
+        Handles markdown fences, language identifiers, trailing garbage,
+        and truncated JSON (missing closing brackets/braces).
+        """
+        text = response.strip()
 
-        return response.strip()
+        # Strip markdown code fences
+        if "```" in text:
+            # Extract content between first and last ```
+            first = text.find("```")
+            after_first_nl = text.find("\n", first)
+            last = text.rfind("```")
+            if after_first_nl != -1 and last > after_first_nl:
+                text = text[after_first_nl + 1:last].strip()
+            elif after_first_nl != -1:
+                text = text[after_first_nl + 1:].strip()
+
+        # Strip leading language tag (json, JSON, etc.)
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+
+        # Find the outermost JSON object
+        brace_start = text.find("{")
+        if brace_start == -1:
+            return text
+        text = text[brace_start:]
+
+        # Try parsing as-is first
+        try:
+            json.loads(text)
+            return text
+        except json.JSONDecodeError:
+            pass
+
+        # Trim trailing garbage after the last } or ]
+        for i in range(len(text) - 1, -1, -1):
+            if text[i] in ('}', ']'):
+                candidate = text[:i + 1]
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    break
+
+        # Repair truncated JSON by closing open brackets/braces
+        repaired = self._repair_truncated_json(text)
+        try:
+            json.loads(repaired)
+            self.logger.warning("Repaired truncated JSON from LLM response")
+            return repaired
+        except json.JSONDecodeError:
+            pass
+
+        return text
+
+    @staticmethod
+    def _repair_truncated_json(text: str) -> str:
+        """Best-effort repair of JSON truncated mid-stream.
+
+        Walks the string tracking open braces/brackets and string state,
+        then appends the necessary closing tokens.
+        """
+        stack: list[str] = []
+        in_string = False
+        escape = False
+
+        for ch in text:
+            if escape:
+                escape = False
+                continue
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch in ('{', '['):
+                stack.append('}' if ch == '{' else ']')
+            elif ch in ('}', ']'):
+                if stack and stack[-1] == ch:
+                    stack.pop()
+
+        # If we're inside a string, close it
+        if in_string:
+            text += '"'
+
+        # Strip trailing comma (invalid before a closing bracket)
+        stripped = text.rstrip()
+        if stripped.endswith(','):
+            text = stripped[:-1]
+
+        # Append missing closers in reverse order
+        text += ''.join(reversed(stack))
+        return text
 
     async def _suggest_tool_resources(
         self, tool_name: str, tool_description: str = ""
@@ -725,7 +808,27 @@ Return a JSON object in this EXACT format:
             matched_files = []
             for pattern in file_info["patterns"]:
                 matched_files.extend(glob.glob(pattern))
-            
+
+            # Fallback: if LLM patterns found nothing, scan cwd for
+            # bioinformatics files with common (and uncommon) extensions.
+            if not matched_files and not geo_accession:
+                _fallback_globs = [
+                    "*.fastq.gz", "*.fq.gz", "*.fastq.bz2", "*.fq.bz2",
+                    "*.fastq.*.gz",   # e.g. sample.fastq.1.gz
+                    "*.fq.*.gz",
+                    "*.fastq", "*.fq",
+                    "*.bam", "*.sam", "*.cram",
+                    "*.sra",
+                ]
+                for pat in _fallback_globs:
+                    matched_files.extend(glob.glob(pat))
+                if matched_files:
+                    matched_files = sorted(set(matched_files))
+                    self.logger.info(
+                        "LLM patterns missed files; fallback scan found %d file(s): %s",
+                        len(matched_files), matched_files[:6],
+                    )
+
             # If no files found and we have a GEO accession, we'll create a download workflow
             if not matched_files and geo_accession:
                 self.logger.info(f"No local files found. Creating GEO download workflow for {geo_accession}")
@@ -877,15 +980,48 @@ Resource Management Rules:
                 {"role": "user", "content": enhanced_prompt},
             ]
 
-            # Try structured output first, fall back to plain JSON parsing
+            # Try structured output first, then plain chat, repairing JSON if needed
+            workflow_plan = None
+            last_err = None
+
+            # Attempt 1: structured output (guaranteed JSON schema)
             try:
                 schema = to_json_schema(WorkflowPlanSchema)
                 resp = await self.provider.chat_structured(messages, schema)
                 workflow_plan = json.loads(resp.content) if isinstance(resp.content, str) else resp.content
             except Exception as structured_err:
-                self.logger.debug("Structured output failed (%s), falling back to plain chat", structured_err)
-                response = await self._call_openai(messages)
-                workflow_plan = json.loads(self._clean_llm_response(response))
+                self.logger.debug("Structured output failed (%s), trying plain chat", structured_err)
+                last_err = structured_err
+
+            # Attempt 2: plain chat + clean/repair
+            if workflow_plan is None:
+                try:
+                    response = await self._call_openai(messages)
+                    cleaned = self._clean_llm_response(response)
+                    workflow_plan = json.loads(cleaned)
+                except (json.JSONDecodeError, Exception) as parse_err:
+                    self.logger.debug("First plain-chat parse failed (%s), retrying", parse_err)
+                    last_err = parse_err
+
+            # Attempt 3: retry with a shorter prompt asking for fewer details
+            if workflow_plan is None:
+                try:
+                    retry_messages = [
+                        messages[0],
+                        {"role": "user", "content": (
+                            f"Generate a workflow plan as a JSON object for: {prompt}\n"
+                            f"Input files: {matched_files}\n"
+                            "Return JSON with keys: workflow_type (string), "
+                            "steps (array of objects with name, command, dependencies). "
+                            "Return ONLY valid JSON, no markdown."
+                        )},
+                    ]
+                    response = await self._call_openai(retry_messages)
+                    cleaned = self._clean_llm_response(response)
+                    workflow_plan = json.loads(cleaned)
+                except Exception as retry_err:
+                    self.logger.error("All JSON parse attempts failed")
+                    raise last_err or retry_err
 
             # Log workflow plan
             self.logger.info("Generated workflow plan:")

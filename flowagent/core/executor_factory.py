@@ -42,17 +42,26 @@ class NextflowExecutor(BaseExecutor):
         proc = await asyncio.create_subprocess_exec(
             "bash", "-c", cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
             cwd=work_dir,
         )
-        stdout, stderr = await proc.communicate()
+        stdout, _ = await proc.communicate()
+        output = stdout.decode()[-5000:]
+
+        if not output.strip() and proc.returncode != 0:
+            nf_log = Path(work_dir) / ".nextflow.log"
+            if nf_log.exists():
+                try:
+                    output = nf_log.read_text()[-5000:]
+                except OSError:
+                    pass
 
         return {
             "step_id": step.get("name", "nextflow_run"),
             "status": "completed" if proc.returncode == 0 else "failed",
             "returncode": proc.returncode,
-            "stdout": stdout.decode()[-3000:],
-            "stderr": stderr.decode()[-3000:],
+            "stdout": output,
+            "stderr": output,
         }
 
     async def wait_for_completion(self, jobs: Dict[str, Any]) -> Dict[str, Any]:
@@ -70,10 +79,14 @@ class SnakemakeExecutor(BaseExecutor):
         logger.info("Initialized SnakemakeExecutor (cores=%d, conda=%s)", cores, use_conda)
 
     async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
-        snakefile = step.get("pipeline_file", step.get("command", "Snakefile"))
+        snakefile = Path(step.get("pipeline_file", step.get("command", "Snakefile")))
         parts = ["snakemake", f"--cores {self.cores}", f"-s {shlex.quote(str(snakefile))}"]
         if self.use_conda:
             parts.append("--use-conda")
+        # Point to the config.yaml next to the Snakefile
+        config_yaml = snakefile.parent / "config.yaml"
+        if config_yaml.exists():
+            parts.append(f"--configfile {shlex.quote(str(config_yaml))}")
         cmd = " ".join(parts)
 
         work_dir = step.get("cwd", ".")
@@ -82,17 +95,18 @@ class SnakemakeExecutor(BaseExecutor):
         proc = await asyncio.create_subprocess_exec(
             "bash", "-c", cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
             cwd=work_dir,
         )
-        stdout, stderr = await proc.communicate()
+        stdout, _ = await proc.communicate()
+        output = stdout.decode()[-5000:]
 
         return {
             "step_id": step.get("name", "snakemake_run"),
             "status": "completed" if proc.returncode == 0 else "failed",
             "returncode": proc.returncode,
-            "stdout": stdout.decode()[-3000:],
-            "stderr": stderr.decode()[-3000:],
+            "stdout": output,
+            "stderr": output,
         }
 
     async def wait_for_completion(self, jobs: Dict[str, Any]) -> Dict[str, Any]:
