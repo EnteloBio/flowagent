@@ -8,6 +8,7 @@ Replaces the disconnect where ``WorkflowManager`` created the basic
 import asyncio
 import logging
 import shlex
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -32,6 +33,10 @@ class NextflowExecutor(BaseExecutor):
         """For Nextflow, 'step' is expected to carry a ``pipeline_file`` key.
 
         If not present, fall back to running ``step['command']`` directly.
+
+        Stdout/stderr are connected directly to the terminal so the user
+        sees Nextflow's live ANSI progress display.  On failure the output
+        is recovered from ``.nextflow.log`` for the error-recovery loop.
         """
         pipeline_file = step.get("pipeline_file", step.get("command", "main.nf"))
         cmd = f"nextflow run {shlex.quote(str(pipeline_file))} -profile {shlex.quote(self.profile)} -resume"
@@ -39,22 +44,26 @@ class NextflowExecutor(BaseExecutor):
         work_dir = step.get("cwd", ".")
         logger.info("Running Nextflow: %s (cwd=%s)", cmd, work_dir)
 
+        # Connect directly to the terminal for live progress display.
+        # Nextflow uses ANSI escape codes (\r, cursor movement) that only
+        # render correctly when attached to a real TTY / unbuffered stdout.
         proc = await asyncio.create_subprocess_exec(
             "bash", "-c", cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stdout=None,   # inherit parent stdout (live display)
+            stderr=None,   # inherit parent stderr
             cwd=work_dir,
         )
-        stdout, _ = await proc.communicate()
-        output = stdout.decode()[-5000:]
+        await proc.wait()
 
-        if not output.strip() and proc.returncode != 0:
-            nf_log = Path(work_dir) / ".nextflow.log"
-            if nf_log.exists():
-                try:
-                    output = nf_log.read_text()[-5000:]
-                except OSError:
-                    pass
+        # Recover output for the result dict (needed by the recovery loop).
+        # Since we didn't capture stdout, read .nextflow.log instead.
+        output = ""
+        nf_log = Path(work_dir) / ".nextflow.log"
+        if nf_log.exists():
+            try:
+                output = nf_log.read_text()[-5000:]
+            except OSError:
+                pass
 
         return {
             "step_id": step.get("name", "nextflow_run"),
@@ -92,14 +101,24 @@ class SnakemakeExecutor(BaseExecutor):
         work_dir = step.get("cwd", ".")
         logger.info("Running Snakemake: %s (cwd=%s)", cmd, work_dir)
 
+        # Write Snakemake's log to a file while streaming to the terminal
+        log_file = snakefile.parent / "snakemake.log"
+
         proc = await asyncio.create_subprocess_exec(
-            "bash", "-c", cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            "bash", "-c", f"set -o pipefail; {cmd} 2>&1 | tee {shlex.quote(str(log_file))}",
+            stdout=None,   # inherit parent stdout (live display)
+            stderr=None,   # inherit parent stderr
             cwd=work_dir,
         )
-        stdout, _ = await proc.communicate()
-        output = stdout.decode()[-5000:]
+        await proc.wait()
+
+        # Read captured log for the result dict (needed by the recovery loop)
+        output = ""
+        if log_file.exists():
+            try:
+                output = log_file.read_text()[-5000:]
+            except OSError:
+                pass
 
         return {
             "step_id": step.get("name", "snakemake_run"),

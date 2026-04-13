@@ -197,15 +197,23 @@ class WorkflowDAG:
 
         return batches
 
-    async def execute_parallel(self, execute_fn: Optional[Callable] = None) -> Dict[str, Any]:
+    async def execute_parallel(
+        self,
+        execute_fn: Optional[Callable] = None,
+        recovery_fn: Optional[Callable] = None,
+    ) -> Dict[str, Any]:
         """Execute workflow steps in parallel respecting dependencies.
-        
+
         Steps within the same topological level run concurrently via
         asyncio.gather; levels are processed sequentially.
-        
+
         Args:
             execute_fn: Optional function to execute steps. If not provided,
                        uses the configured executor.
+            recovery_fn: Optional async callback ``(step, result) -> result|None``
+                        called when a step fails.  If it returns a successful
+                        result the step is treated as recovered and execution
+                        continues.
         """
         try:
             execute = execute_fn or self.executor.execute_step
@@ -240,13 +248,32 @@ class WorkflowDAG:
                         error_msg = result.get("stderr", "")
                         cmd = self.graph.nodes[step_name]["step"].get("command", "")
                         logger.error(f"Step {step_name} failed:\nCommand: {cmd}\nError: {error_msg}")
-                        if "command not found" in error_msg:
-                            logger.error(f"Tool '{cmd.split()[0]}' not found. Please ensure it is installed and in your PATH")
-                        elif "permission denied" in error_msg.lower():
-                            logger.error("Permission denied. Check file/directory permissions")
-                        elif "no such file" in error_msg.lower():
-                            logger.error("Required input file not found. Check file paths and names")
-                        raise Exception(f"Step {step_name} failed: {error_msg}")
+
+                        # Attempt LLM-driven recovery if a callback was provided
+                        recovered = False
+                        if recovery_fn is not None:
+                            step_data = self.graph.nodes[step_name]["step"]
+                            try:
+                                recovery_result = await recovery_fn(step_data, result)
+                                if recovery_result and recovery_result.get("status") not in ("error", "failed"):
+                                    logger.info(f"Step {step_name} recovered successfully via LLM")
+                                    jobs[step_name] = recovery_result
+                                    self.graph.nodes[step_name]["step"]["status"] = "completed"
+                                    # Update the command in the graph so downstream steps see the fix
+                                    if recovery_result.get("fixed_command"):
+                                        self.graph.nodes[step_name]["step"]["command"] = recovery_result["fixed_command"]
+                                    recovered = True
+                            except Exception as rec_err:
+                                logger.warning(f"Recovery callback failed for {step_name}: {rec_err}")
+
+                        if not recovered:
+                            if "command not found" in error_msg:
+                                logger.error(f"Tool '{cmd.split()[0]}' not found. Please ensure it is installed and in your PATH")
+                            elif "permission denied" in error_msg.lower():
+                                logger.error("Permission denied. Check file/directory permissions")
+                            elif "no such file" in error_msg.lower():
+                                logger.error("Required input file not found. Check file paths and names")
+                            raise Exception(f"Step {step_name} failed: {error_msg}")
 
             results = await self.executor.wait_for_completion(jobs)
             for step_name, result in results.items():

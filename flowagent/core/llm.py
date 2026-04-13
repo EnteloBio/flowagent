@@ -943,7 +943,9 @@ Rules:
 3. Dependencies must form a valid DAG (no cycles)
 4. Each step needs a unique name
 5. Process each file individually, no wildcards
-6. Return ONLY the JSON object, no markdown formatting or other text
+6. The bioinformatics tool (fastqc, kallisto, multiqc, etc.) MUST be the first token of the command. Do not prepend 'mkdir -p' or other shell prefixes; rely on the directory-creation step instead.
+7. For multiqc, always pass '-f' (force overwrite) and '-n multiqc_report' (fixed filename) so re-runs produce the same output path.
+8. Return ONLY the JSON object, no markdown formatting or other text
 """
 
             # Add resource management instructions to the prompt
@@ -984,9 +986,18 @@ Resource Management Rules:
 """
             _os_hint = ""
             if platform.system() == "Darwin":
-                _os_hint = " The host is macOS; use BSD-compatible shell commands (no GNU extensions like find -printf)."
+                _os_hint = (
+                    " The host is macOS; use BSD-compatible shell commands"
+                    " (no GNU extensions like find -printf)."
+                    " IMPORTANT: wget is NOT available on macOS by default."
+                    " Always use 'curl -fSL -o <file> <url>' instead of wget for downloads."
+                )
             elif platform.system() == "Linux":
-                _os_hint = " The host is Linux."
+                _os_hint = (
+                    " The host is Linux."
+                    " Prefer curl over wget for downloads to maximise portability"
+                    " (use 'curl -fSL -o <file> <url>')."
+                )
 
             messages = [
                 {
@@ -1594,7 +1605,7 @@ If you are being asked to generate a title, set "success" to false.
                     "name": "download_supplementary_files",
                     "command": (
                         f"cd raw_data && "
-                        f"wget -r -np -nd -N '{ftp_url}'"
+                        f"curl -fSL -O '{ftp_url}'"
                     ),
                     "parameters": {},
                     "dependencies": ["create_directories"],
