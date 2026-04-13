@@ -266,13 +266,73 @@ async def main(
                     step = {"name": f"{fmt}_run", "pipeline_file": pipeline_file, "cwd": os.getcwd()}
                     logger.info("Executing %s pipeline: %s", fmt, pipeline_file)
                     result = await executor.execute_step(step)
+
+                    # ── Error recovery loop for pipeline execution ────
+                    max_recovery = 3
+                    for recovery_attempt in range(1, max_recovery + 1):
+                        if result["status"] == "completed":
+                            break
+
+                        error_detail = result.get("stderr", "") or result.get("stdout", "")
+                        logger.error("Pipeline failed (attempt %d/%d):\n%s",
+                                     recovery_attempt, max_recovery, error_detail[-2000:])
+                        logger.info("Attempting LLM error recovery...")
+
+                        recovery_prompt = (
+                            f"A {fmt} pipeline failed during execution. "
+                            "Analyse the error and return a corrected workflow plan.\n\n"
+                            f"Error output:\n{error_detail[-3000:]}\n\n"
+                            f"Original workflow plan:\n{json.dumps(workflow_plan, indent=2)}\n\n"
+                            "Fix ONLY the failing step command. Keep the primary "
+                            "bioinformatics tool (fastqc, kallisto, multiqc, etc.) as "
+                            "the FIRST token of the command so the pipeline generator "
+                            "can route to the correct conda environment / container. "
+                            "Do not prepend 'mkdir -p' to commands whose tool does not "
+                            "create its output directory itself — rely on the existing "
+                            "create_results_dirs step instead.\n\n"
+                            "Common fixes:\n"
+                            "- 'command not found' (exit 127): substitute an equivalent "
+                            "tool (curl -fSL -o <file> <url> for wget, etc.)\n"
+                            "- 'No such file or directory' for an OUTPUT dir: depend on "
+                            "the directory-creation step rather than prepending mkdir.\n"
+                            "- 'Specified output directory does not exist' (FastQC): "
+                            "the output directory must exist before FastQC runs — add "
+                            "a dependency on the directory-creation step.\n"
+                            "- multiqc missing output / created _1.html / _2.html: add "
+                            "'-f' flag so it overwrites existing files, and use '-n "
+                            "multiqc_report' to force the exact output name.\n"
+                            "Return the COMPLETE corrected workflow plan as JSON (same "
+                            "schema as above). Return ONLY the JSON, no other text."
+                        )
+                        try:
+                            raw = await llm._call_openai([
+                                {"role": "system", "content": (
+                                    "You are a bioinformatics pipeline debugging expert. "
+                                    "Return only valid JSON."
+                                )},
+                                {"role": "user", "content": recovery_prompt},
+                            ])
+                            fixed_plan = json.loads(llm._clean_llm_response(raw))
+
+                            # Regenerate and re-run
+                            code = gen.generate(fixed_plan, output_dir=output_dir)
+                            logger.info("Regenerated %s with LLM fix (attempt %d)",
+                                        gen.default_filename(), recovery_attempt)
+                            workflow_plan = fixed_plan
+                            result = await executor.execute_step(step)
+                        except Exception as rec_err:
+                            logger.warning("Recovery attempt %d failed: %s",
+                                           recovery_attempt, rec_err)
+                            break
+
                     if result["status"] == "completed":
                         logger.info("Pipeline completed successfully")
                         if result.get("stdout"):
                             print(result["stdout"][-2000:])
                     else:
                         error_detail = result.get("stderr", "") or result.get("stdout", "")
-                        logger.error("Pipeline failed:\n%s", error_detail[-2000:])
+                        logger.error("Pipeline failed after %d recovery attempts:\n%s",
+                                     max_recovery, error_detail[-2000:])
             return
 
         # Smart routing: agent loop vs workflow manager

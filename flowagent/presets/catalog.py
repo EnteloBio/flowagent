@@ -275,7 +275,7 @@ def apply_context_to_preset(
         target = "reference/transcriptome.fa" if need_cdna else "reference/genome.fa"
         download_steps.append({
             "name": "download_reference",
-            "command": f"mkdir -p reference && wget -q -O {target}.gz {ctx.reference_url} && gunzip -f {target}.gz",
+            "command": f"mkdir -p reference && curl -fSL -o {target}.gz {ctx.reference_url} && gunzip -f {target}.gz",
             "dependencies": [],
             "outputs": [target],
             "description": f"Download {ctx.organism} reference from {ctx.reference_source}",
@@ -285,7 +285,7 @@ def apply_context_to_preset(
     if need_gtf and ctx.annotation_url:
         download_steps.append({
             "name": "download_annotation",
-            "command": f"mkdir -p reference && wget -q -O reference/genes.gtf.gz {ctx.annotation_url} && gunzip -f reference/genes.gtf.gz",
+            "command": f"mkdir -p reference && curl -fSL -o reference/genes.gtf.gz {ctx.annotation_url} && gunzip -f reference/genes.gtf.gz",
             "dependencies": [],
             "outputs": ["reference/genes.gtf"],
             "description": f"Download {ctx.organism} annotation from {ctx.reference_source}",

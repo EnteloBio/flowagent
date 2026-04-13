@@ -206,8 +206,38 @@ class SnakemakeGenerator(PipelineGenerator):
             return 4096
 
     @staticmethod
-    def _resolve_container(command: str) -> str:
-        tool = command.strip().split()[0].split("/")[-1] if command.strip() else ""
+    def _primary_tool(command: str, known_tools) -> str:
+        """Find the primary bioinformatics tool in a (possibly chained) command.
+
+        The LLM (and our recovery loop) can generate commands like
+        ``mkdir -p foo && fastqc bar.fq -o foo``. Picking the first token
+        returns ``mkdir`` and misroutes the conda env / container lookup.
+        Instead, tokenise and return the first token that matches a known
+        tool, falling back to the first non-shell token.
+        """
+        if not command or not command.strip():
+            return ""
+        # Tokenise, splitting on shell operators that introduce sub-commands
+        import re
+        tokens = re.split(r'[\s;|&()<>]+', command.strip())
+        shell_words = {
+            "mkdir", "cd", "rm", "mv", "cp", "ln", "touch", "test", "[", "[[",
+            "set", "export", "echo", "true", "false", "for", "do", "done",
+            "if", "then", "else", "fi", "while", "source", "bash", "sh",
+        }
+        first_non_shell = ""
+        for tok in tokens:
+            if not tok or "=" in tok:
+                continue
+            name = tok.split("/")[-1]
+            if name in known_tools:
+                return name
+            if not first_non_shell and name not in shell_words and "-" not in name[:1]:
+                first_non_shell = name
+        return first_non_shell
+
+    @classmethod
+    def _resolve_container(cls, command: str) -> str:
         containers = {
             "fastqc": "docker://biocontainers/fastqc:0.12.1--hdfd78af_0",
             "multiqc": "docker://ewels/multiqc:latest",
@@ -229,16 +259,20 @@ class SnakemakeGenerator(PipelineGenerator):
             "bcftools": "docker://biocontainers/bcftools:1.19--h8b25389_1",
             "bedtools": "docker://biocontainers/bedtools:2.31.1--hf5e1c6e_1",
         }
+        tool = cls._primary_tool(command, containers.keys())
         return containers.get(tool, "")
 
-    @staticmethod
-    def _resolve_conda_env(command: str) -> str:
+    @classmethod
+    def _resolve_conda_env(cls, command: str) -> str:
         """Map the primary tool in a command to a conda environment YAML.
 
         Returns ``envs/base.yaml`` for shell built-ins so that every rule
         has a conda directive (required by ``snakemake --lint``).
+
+        Uses ``_primary_tool`` to locate the real bioinformatics tool even
+        when the command chains with shell prefixes like
+        ``mkdir -p foo && fastqc ...``.
         """
-        tool = command.strip().split()[0].split("/")[-1] if command.strip() else ""
         conda_envs = {
             "fastqc": "envs/fastqc.yaml",
             "multiqc": "envs/multiqc.yaml",
@@ -260,6 +294,7 @@ class SnakemakeGenerator(PipelineGenerator):
             "bcftools": "envs/bcftools.yaml",
             "bedtools": "envs/bedtools.yaml",
         }
+        tool = cls._primary_tool(command, conda_envs.keys())
         return conda_envs.get(tool, "envs/base.yaml")
 
     @staticmethod
@@ -278,27 +313,30 @@ class SnakemakeGenerator(PipelineGenerator):
         envs_dir = output_dir / "envs"
         envs_dir.mkdir(exist_ok=True)
 
+        # Version pins are intentionally relaxed so conda can solve for
+        # the best available build on any platform (especially osx-arm64
+        # where many bioconda packages lag behind or have different builds).
         tool_specs = {
             "base": ("base", "conda-forge::coreutils"),
-            "fastqc": ("fastqc", "bioconda::fastqc=0.12.1"),
-            "multiqc": ("multiqc", "bioconda::multiqc=1.21"),
-            "kallisto": ("kallisto", "bioconda::kallisto=0.50.1"),
-            "samtools": ("samtools", "bioconda::samtools=1.19.2"),
-            "hisat2": ("hisat2", "bioconda::hisat2=2.2.1"),
-            "star": ("star", "bioconda::star=2.7.11b"),
-            "salmon": ("salmon", "bioconda::salmon=1.10.3"),
-            "bowtie2": ("bowtie2", "bioconda::bowtie2=2.5.3"),
-            "bwa": ("bwa", "bioconda::bwa=0.7.18"),
-            "macs2": ("macs2", "bioconda::macs2=2.2.9.1"),
-            "trim_galore": ("trim_galore", "bioconda::trim-galore=0.6.10"),
-            "trimmomatic": ("trimmomatic", "bioconda::trimmomatic=0.39"),
-            "cutadapt": ("cutadapt", "bioconda::cutadapt=4.6"),
-            "subread": ("subread", "bioconda::subread=2.0.6"),
-            "htseq": ("htseq", "bioconda::htseq=2.0.5"),
-            "picard": ("picard", "bioconda::picard=3.1.1"),
-            "gatk": ("gatk", "bioconda::gatk4=4.5.0.0"),
-            "bcftools": ("bcftools", "bioconda::bcftools=1.19"),
-            "bedtools": ("bedtools", "bioconda::bedtools=2.31.1"),
+            "fastqc": ("fastqc", "bioconda::fastqc"),
+            "multiqc": ("multiqc", "bioconda::multiqc"),
+            "kallisto": ("kallisto", "bioconda::kallisto"),
+            "samtools": ("samtools", "bioconda::samtools"),
+            "hisat2": ("hisat2", "bioconda::hisat2"),
+            "star": ("star", "bioconda::star"),
+            "salmon": ("salmon", "bioconda::salmon"),
+            "bowtie2": ("bowtie2", "bioconda::bowtie2"),
+            "bwa": ("bwa", "bioconda::bwa"),
+            "macs2": ("macs2", "bioconda::macs2"),
+            "trim_galore": ("trim_galore", "bioconda::trim-galore"),
+            "trimmomatic": ("trimmomatic", "bioconda::trimmomatic"),
+            "cutadapt": ("cutadapt", "bioconda::cutadapt"),
+            "subread": ("subread", "bioconda::subread"),
+            "htseq": ("htseq", "bioconda::htseq"),
+            "picard": ("picard", "bioconda::picard"),
+            "gatk": ("gatk", "bioconda::gatk4"),
+            "bcftools": ("bcftools", "bioconda::bcftools"),
+            "bedtools": ("bedtools", "bioconda::bedtools"),
         }
 
         for name, (tool_name, spec) in tool_specs.items():

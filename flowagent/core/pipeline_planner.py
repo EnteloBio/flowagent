@@ -277,7 +277,7 @@ def build_reference_download_steps(ctx: PipelineContext) -> List[Dict[str, Any]]
         out_name = "reference/transcriptome.fa" if _needs_cdna(ctx.workflow_type) else "reference/genome.fa"
         steps.append({
             "name": "download_reference",
-            "command": f"mkdir -p reference && wget -q -O {out_name}.gz {ctx.reference_url} && gunzip -f {out_name}.gz",
+            "command": f"mkdir -p reference && curl -fSL -o {out_name}.gz {ctx.reference_url} && gunzip -f {out_name}.gz",
             "dependencies": [],
             "outputs": [out_name],
             "description": f"Download {ctx.organism} reference from {ctx.reference_source}",
@@ -287,7 +287,7 @@ def build_reference_download_steps(ctx: PipelineContext) -> List[Dict[str, Any]]
     if ctx.annotation_url:
         steps.append({
             "name": "download_annotation",
-            "command": f"mkdir -p reference && wget -q -O reference/genes.gtf.gz {ctx.annotation_url} && gunzip -f reference/genes.gtf.gz",
+            "command": f"mkdir -p reference && curl -fSL -o reference/genes.gtf.gz {ctx.annotation_url} && gunzip -f reference/genes.gtf.gz",
             "dependencies": [],
             "outputs": ["reference/genes.gtf"],
             "description": f"Download {ctx.organism} annotation from {ctx.reference_source}",

@@ -8,6 +8,8 @@ import hashlib
 import networkx as nx
 import json
 import os
+import re
+import shutil
 import sys
 import time
 from datetime import datetime, timezone
@@ -130,6 +132,155 @@ class WorkflowManager:
             json.dump(checkpoint, f, indent=2)
         self.logger.debug("Checkpoint written: %s (%d steps done)", path, len(completed_steps))
 
+    # ── LLM error recovery ────────────────────────────────────
+
+    @staticmethod
+    def _extract_executables(command: str) -> List[str]:
+        """Extract executable names from a shell command string."""
+        SHELL_BUILTINS = frozenset({
+            "for", "do", "done", "if", "then", "else", "fi", "while",
+            "until", "case", "esac", "in", "export", "cd", "echo",
+            "true", "false", "test", "[", "[[", "set", "unset",
+            "local", "return", "break", "continue", "shift",
+        })
+        segments = re.split(r'\s*[|;&]+\s*', command)
+        executables = []
+        for seg in segments:
+            tokens = seg.strip().split()
+            if not tokens:
+                continue
+            first = tokens[0]
+            # Skip builtins, variable assignments, sub-shell parens
+            if first in SHELL_BUILTINS or "=" in first or first.startswith("("):
+                continue
+            # Strip leading path (e.g. /usr/bin/env)
+            executables.append(os.path.basename(first))
+        return list(dict.fromkeys(executables))  # dedupe, preserve order
+
+    async def _attempt_error_recovery(
+        self,
+        step: Dict[str, Any],
+        step_result: Dict[str, Any],
+        output_dir: str,
+        attempt: int = 1,
+        max_attempts: int = 3,
+    ) -> Optional[Dict[str, Any]]:
+        """Feed a step failure to the LLM to get a fixed command, then retry.
+
+        Returns the successful step result, or None if recovery is not possible.
+        """
+        if attempt > max_attempts:
+            self.logger.error(
+                "Max recovery attempts (%d) reached for step '%s'",
+                max_attempts, step.get("name"),
+            )
+            return None
+
+        # Build tool-availability context
+        executables = self._extract_executables(step.get("command", ""))
+        tool_availability = {cmd: shutil.which(cmd) is not None for cmd in executables}
+
+        error_context = {
+            "step_name": step.get("name"),
+            "original_command": step.get("command"),
+            "exit_code": step_result.get("exit_code") or step_result.get("returncode"),
+            "stderr": (step_result.get("stderr") or "")[:2000],
+            "stdout": (step_result.get("stdout") or "")[:1000],
+            "platform": "macOS" if sys.platform == "darwin" else "Linux",
+            "tool_availability": tool_availability,
+            "attempt": attempt,
+        }
+
+        prompt = (
+            "A bioinformatics pipeline step failed during execution. "
+            "Diagnose the error and return a fixed shell command.\n\n"
+            f"Step name: {error_context['step_name']}\n"
+            f"Original command:\n  {error_context['original_command']}\n"
+            f"Exit code: {error_context['exit_code']}\n"
+            f"stderr:\n  {error_context['stderr']}\n"
+            f"Platform: {error_context['platform']}\n"
+            f"Tool availability: {json.dumps(error_context['tool_availability'])}\n"
+            f"Recovery attempt: {attempt}/{max_attempts}\n\n"
+            "Common fixes:\n"
+            "- Exit code 127 (command not found): substitute an equivalent tool "
+            "(e.g. curl -fSL -o <file> <url> instead of wget, pigz instead of gzip).\n"
+            "- 'No such file or directory': add mkdir -p for missing directories.\n"
+            "- Permission denied: check paths and permissions.\n\n"
+            "Return ONLY a JSON object with this structure:\n"
+            '{"diagnosis": "short explanation", '
+            '"fixed_command": "the corrected shell command or null if unrecoverable", '
+            '"explanation": "what you changed and why"}'
+        )
+
+        try:
+            response = await self.llm._call_openai([
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert at diagnosing and fixing bioinformatics "
+                        "pipeline failures. Return valid JSON only, no markdown."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ])
+
+            cleaned = self.llm._clean_llm_response(response)
+            fix = json.loads(cleaned)
+
+            fixed_command = fix.get("fixed_command")
+            diagnosis = fix.get("diagnosis", "")
+            explanation = fix.get("explanation", "")
+
+            if not fixed_command:
+                self.logger.warning(
+                    "LLM determined step '%s' is unrecoverable: %s",
+                    step.get("name"), diagnosis,
+                )
+                return None
+
+            self.logger.info(
+                "LLM recovery attempt %d for '%s': %s",
+                attempt, step.get("name"), explanation,
+            )
+            self.logger.info("Fixed command: %s", fixed_command)
+
+            # Build a patched step and re-execute
+            fixed_step = {**step, "command": fixed_command}
+            new_result = await self._step_executor.execute_step(
+                fixed_step, output_dir, cwd=self.initial_cwd,
+            )
+            new_result["step_name"] = step.get("name", "unknown")
+            new_result["recovery_attempt"] = attempt
+            new_result["recovery_diagnosis"] = diagnosis
+            new_result["original_command"] = step.get("command")
+            new_result["fixed_command"] = fixed_command
+
+            if new_result.get("status") in ("error", "failed"):
+                # Recurse with the fixed step so subsequent attempts build on each fix
+                return await self._attempt_error_recovery(
+                    fixed_step, new_result, output_dir,
+                    attempt=attempt + 1, max_attempts=max_attempts,
+                )
+
+            self.logger.info(
+                "Step '%s' recovered successfully on attempt %d",
+                step.get("name"), attempt,
+            )
+            return new_result
+
+        except (json.JSONDecodeError, KeyError) as parse_err:
+            self.logger.warning(
+                "Failed to parse LLM recovery response (attempt %d): %s",
+                attempt, parse_err,
+            )
+            return None
+        except Exception as exc:
+            self.logger.warning(
+                "Error during recovery attempt %d for '%s': %s",
+                attempt, step.get("name"), exc,
+            )
+            return None
+
     async def execute_workflow(self, prompt_or_workflow: Union[str, Workflow]) -> Dict[str, Any]:
         """Execute workflow from prompt or workflow object."""
         try:
@@ -249,7 +400,14 @@ class WorkflowManager:
                     for step in workflow_steps:
                         dag.add_step(step, dependencies=step.get("dependencies", []))
                     self.logger.info("Using DAG-parallel execution (%d steps)", len(workflow_steps))
-                    dag_results = await dag.execute_parallel(self._step_executor.execute_step)
+                    # Build a recovery callback for the DAG executor
+                    async def _dag_recovery(step, result):
+                        return await self._attempt_error_recovery(step, result, output_dir)
+
+                    dag_results = await dag.execute_parallel(
+                        self._step_executor.execute_step,
+                        recovery_fn=_dag_recovery,
+                    )
                     results = list(dag_results.values()) if isinstance(dag_results, dict) else dag_results
                     # Normalise results to list-of-dicts with step_name
                     for r in results:
@@ -317,15 +475,23 @@ class WorkflowManager:
                 if step_status in ("error", "failed"):
                     error_msg = step_result.get('error', '')
                     stderr = step_result.get('stderr', '')
-                    
+
                     self.logger.error(f"Step {step_name} failed: {error_msg}")
                     if stderr:
                         self.logger.error(f"STDERR: {stderr}")
-                    
-                    if step.get("critical", False):
-                        self.logger.error(f"Critical step {step_name} failed, but continuing with workflow")
+
+                    # Attempt LLM-driven error recovery
+                    self.logger.info(f"Attempting LLM error recovery for step '{step_name}'...")
+                    recovery_result = await self._attempt_error_recovery(
+                        step, step_result, output_dir,
+                    )
+                    if recovery_result and recovery_result.get("status") not in ("error", "failed"):
+                        self.logger.info(f"Step '{step_name}' recovered successfully")
+                        results[-1] = recovery_result  # replace failed result
+                    elif step.get("critical", False):
+                        self.logger.error(f"Critical step {step_name} failed and could not be recovered")
                     else:
-                        self.logger.warning(f"Non-critical step {step_name} failed, continuing workflow")
+                        self.logger.warning(f"Non-critical step {step_name} failed and could not be recovered, continuing workflow")
                 else:
                     self.logger.info(f"Step {step_name} completed successfully")
             
