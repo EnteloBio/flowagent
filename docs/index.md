@@ -1,397 +1,137 @@
-# FlowAgent 1.0
+# FlowAgent
 
-An advanced multi-agent framework for automating complex bioinformatics workflows.
+**FlowAgent** is a multi-agent framework for automating bioinformatics
+workflows. It uses large language models (LLMs) to plan pipelines from
+plain-English prompts, generates **Nextflow** or **Snakemake** code,
+executes shell steps across **six backends** (local, cgat-core, HPC,
+Kubernetes, Nextflow, Snakemake), and **self-heals** failures by feeding
+the error back to the LLM and patching the workflow on the fly.
 
-## Features
+---
 
-- **Workflow Automation**: Seamlessly automate RNA-seq, ChIP-seq, single-cell analysis, and Hi-C processing
-- **Multi-Agent Architecture**: Distributed, fault-tolerant system with specialized agents
-- **Dynamic Adaptation**: Real-time workflow optimization and error recovery
-- **Enterprise-Grade Security**: Robust authentication, encryption, and audit logging
-- **Advanced Monitoring**: Real-time metrics, alerts, and performance tracking
-- **Scalable Performance**: Distributed processing and efficient resource management
-- **Extensible Design**: Easy integration of new tools and workflows
-- **Comprehensive Logging**: Detailed audit trails and debugging information
+## What FlowAgent does
 
-## Installation
+| Stage | Capability |
+|---|---|
+| **Plan** | Natural-language prompt → structured workflow DAG via OpenAI / Anthropic / Google Gemini / Ollama |
+| **Generate** | DAG → DSL2 `main.nf` (Nextflow) or `Snakefile` (Snakemake) |
+| **Execute** | Plan dict → run via `local`, `cgat`, `hpc` (SLURM/SGE/TORQUE), `kubernetes`, `nextflow`, or `snakemake` |
+| **Recover** | On step failure, ask the LLM to diagnose + fix, then retry (up to 3 attempts) |
+| **Report** | LLM-driven analysis report linking outputs to biological interpretation |
+
+---
+
+## Key features
+
+- **Natural-language workflows** — Describe the analysis; the LLM proposes structured steps with commands, dependencies, and resources.
+- **Multi-provider LLMs** — Switch between OpenAI, Anthropic Claude, Google Gemini, and local models via Ollama with one env var.
+- **Pipeline code generation** — Emit valid, container-aware Nextflow DSL2 or Snakemake `Snakefile` for reproducibility and HPC submission.
+- **Six execution backends** — Local subprocess, CGAT-core, native SLURM/SGE/TORQUE, Kubernetes Jobs, Nextflow runtime, Snakemake runtime.
+- **LLM-driven error recovery** — When a step fails, FlowAgent automatically asks the LLM to diagnose the error and produce a fixed command. Recovers from missing tools, wrong flags, output-collision bugs, and shell-escaping issues.
+- **Workflow presets** — Curated, version-controlled plans for common pipelines (`rnaseq-kallisto`, `rnaseq-star`, `chipseq`, `atacseq`).
+- **Smart resume + checkpoints** — Skip completed steps on re-run via output detection; full checkpoint/resume from any failure point.
+- **Web UI** — `flowagent serve` launches a Chainlit-based chat interface.
+- **Reproducible benchmarks** — A `benchmarks/` suite with prompt corpus, fault catalogue, and figure generation.
+
+---
+
+## Quick install
 
 ```bash
-# Clone the repository
 git clone https://github.com/cribbslab/flowagent.git
 cd flowagent
+pip install -e .
 
-# Create and activate the conda environment:
-conda env create -f conda/environment/environment.yml
-conda activate flowagent
-
-# Verify installation of key components
-kallisto version
-fastqc --version
-multiqc --version
-
-# Add bioinformatics tools
-mamba install -c bioconda fastqc=0.12.1
-mamba install -c bioconda trim-galore=0.6.10
-mamba install -c bioconda star=2.7.10b
-mamba install -c bioconda subread=2.0.6
-mamba install -c conda-forge r-base=4.2
-mamba install -c bioconda bioconductor-deseq2
-mamba install -c bioconda samtools=1.17
-mamba install -c bioconda multiqc=1.14
+# Optional dependency groups
+pip install -e ".[hpc]"          # cgatcore, DRMAA
+pip install -e ".[kubernetes]"   # kubernetes client
+pip install -e ".[dev]"          # pytest, mypy, ruff
 ```
 
-## Quick Start
+See [Installation](getting-started/installation.md) for full instructions
+and [LLM Providers](user-guide/llm-providers.md) for API-key configuration.
 
-1. Set up your environment:
-```bash
-# Copy the environment template
-cp .env.example .env
+---
 
-# Edit .env with your settings
-# Required:
-# - SECRET_KEY: Generate a secure random key (e.g., using: python -c "import secrets; print(secrets.token_hex(32))")
-# - OPENAI_API_KEY: Your OpenAI API key (if using LLM features)
-```
-
-2. Run a workflow:
-```bash
-# Basic workflow execution
-flowagent "run rna-seq analysis" --checkpoint-dir=workflow_state
-
-# Resume a failed workflow
-flowagent "run rna-seq analysis" --checkpoint-dir=workflow_state --resume
-```
-
-3. Analyze workflow results:
-```bash
-# Generate analysis report
-flowagent "analyze workflow results" --analysis-dir=results
-
-# Generate report without saving to file
-flowagent "analyze workflow results" --analysis-dir=results --no-save-report
-```
-
-## API Key Configuration
-
-FlowAgent requires several API keys for full functionality. You can configure these using environment variables or a `.env` file in the project root directory.
-
-### Required API Keys
-
-1. **Secret Key** (for JWT token generation):
-```bash
-SECRET_KEY=your-secure-secret-key
-```
-
-2. **OpenAI API Key** (for LLM functionality):
-```bash
-OPENAI_API_KEY=your-openai-api-key
-```
-
-### Setting Up OpenAI API Keys
-
-There are two ways to configure your API keys:
-
-1. **Using Environment Variables**:
-```bash
-export SECRET_KEY=your-secure-secret-key
-export OPENAI_API_KEY=your-openai-api-key
-```
-
-2. **Using a .env File**:
-Create a `.env` file in the project root directory:
-```bash
-# .env
-SECRET_KEY=your-secure-secret-key
-OPENAI_API_KEY=your-openai-api-key
-
-# Optional Settings
-OPENAI_BASE_URL=https://api.openai.com/v1  # Default OpenAI API URL
-OPENAI_MODEL=gpt-4                         # Default LLM model
-```
-
-### Security Best Practices
-
-1. Never commit your `.env` file to version control
-2. Use strong, unique keys for each environment (development, staging, production)
-3. Regularly rotate your API keys
-4. Keep your API keys secure and never share them in public repositories
-
-The `.env` file is automatically loaded by the application when it starts. All sensitive information is handled securely using Pydantic's `SecretStr` type to prevent accidental exposure in logs or error messages.
-
-## Security Configuration
-
-### Setting up the Secret Key
-
-The `SECRET_KEY` is a crucial security element in FlowAgent used for:
-- Generating and validating JSON Web Tokens (JWTs) for API authentication
-- Securing session data
-- Protecting against cross-site request forgery (CSRF) attacks
-
-To generate a secure random key, run:
-```bash
-# Generate a secure random key using Python
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-Add the generated key to your `.env` file:
-```bash
-# Copy the example environment file
-cp env.example /path/to/your/.env
-
-# Edit .env and update the SECRET_KEY
-SECRET_KEY=your-generated-key-here
-```
-
-### Security Best Practices
-
-1. **Secret Key Management**:
-   - Never commit your `.env` file to version control
-   - Use different secret keys for development and production
-   - Regenerate the secret key if it's ever compromised
-   - Keep your secret key at least 32 characters long
-
-2. **Token Configuration**:
-   - `ACCESS_TOKEN_EXPIRE_MINUTES`: Controls how long API tokens remain valid
-   - Default is 30 minutes
-   - Shorter duration (15 mins) = More secure
-   - Longer duration (60 mins) = More convenient
-   - Adjust based on your security requirements
-
-3. **API Key Header**:
-   - `API_KEY_HEADER`: Default is `X-API-Key`
-   - This header is used for API authentication
-   - Keep the default unless you have specific requirements
-
-Example security configuration in `.env`:
-```bash
-# Security Settings
-SECRET_KEY=r39pR2XJXhRLEt8rb4GlkTA5snI971VO5c2vF2FSzL0  # Generated secure key
-API_KEY_HEADER=X-API-Key                                  # Default header
-ACCESS_TOKEN_EXPIRE_MINUTES=30                            # Token lifetime
-```
-
-## SLURM Configuration
-
-FlowAgent supports SLURM cluster execution. To configure SLURM, create a `.cgat.yml` file in the project root directory:
-
-```yaml
-cluster:
-  queue_manager: slurm
-  queue: your_queue
-  parallel_environment: smp
-
-slurm:
-  account: your_account
-  partition: your_partition
-  mail_user: your.email@example.com
-
-tools:
-  kallisto_index:
-    memory: 16G
-    threads: 8
-    queue: short
-```
-
-### SLURM Integration
-
-FlowAgent uses CGATCore for SLURM integration, which provides:
-
-1. **Job Management**
-   - Automatic job submission and dependency tracking
-   - Resource allocation (memory, CPUs, time limits)
-   - Queue selection and prioritization
-
-2. **Resource Configuration**
-   - Tool-specific resource requirements in `.cgat.yml`
-   - Queue-specific limits and settings
-   - Default resource allocations
-
-3. **Error Handling**
-   - Automatic job resubmission on failure
-   - Detailed error logging
-   - Email notifications for job completion/failure
-
-### SLURM Usage
-
-To execute a workflow on a SLURM cluster, use the `--executor cgat` option:
+## Quick start (CLI)
 
 ```bash
-python -m flowagent.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto. The fastq files are in current directory and I want to use Homo_sapiens.GRCh38.cdna.all.fa as reference. The data is single ended. Generate QC reports and save everything in results/rna_seq_analysis." --workflow rnaseq --input data/ --executor cgat
+# Set your provider + key
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+
+# Generate + run a Kallisto RNA-seq pipeline as Nextflow
+flowagent prompt "RNA-seq analysis with Kallisto" --pipeline-format nextflow
+
+# Use a preset (skips LLM planning entirely — deterministic + free)
+flowagent prompt "run it" --preset rnaseq-kallisto
+
+# Generate the pipeline file but don't execute it
+flowagent prompt "ChIP-seq with Bowtie2 + MACS2" \
+    --pipeline-format snakemake --no-execute
+
+# Resume from a checkpoint after a previous failure
+flowagent prompt "Continue RNA-seq" --checkpoint-dir workflow_state --resume
 ```
 
-## Analysis Reports
+The full flag reference is in the [CLI Reference](user-guide/cli-reference.md).
 
-The FlowAgent analysis report functionality provides comprehensive insights into your workflow outputs. It analyzes quality metrics, alignment statistics, and expression data to generate actionable recommendations.
+---
 
-### Running Analysis Reports
+## How it fits together
 
-```bash
-# Basic analysis
-flowagent "analyze workflow results" --analysis-dir=/path/to/workflow/output
-
-# Focus on specific aspects
-flowagent "analyze quality metrics" --analysis-dir=/path/to/workflow/output
-flowagent "analyze alignment rates" --analysis-dir=/path/to/workflow/output
-flowagent "analyze expression data" --analysis-dir=/path/to/workflow/output
+```
+                  ┌──────────────────────────┐
+   user prompt ──▶│  PipelinePlanner +       │
+                  │  LLMInterface (any LLM)  │
+                  └────────────┬─────────────┘
+                               │  WorkflowPlan dict
+            ┌──────────────────┼──────────────────────┐
+            ▼                  ▼                      ▼
+   ┌─────────────────┐  ┌────────────────┐  ┌──────────────────┐
+   │ NextflowGen.    │  │ SnakemakeGen.  │  │ Direct execution │
+   │ → main.nf       │  │ → Snakefile    │  │ via plan dict    │
+   └────────┬────────┘  └────────┬───────┘  └────────┬─────────┘
+            │                    │                    │
+            ▼                    ▼                    ▼
+   ┌─────────────────────────────────────────────────────────┐
+   │       ExecutorFactory.create(executor_type)             │
+   │  local | cgat | hpc | kubernetes | nextflow | snakemake │
+   └────────────────────────┬────────────────────────────────┘
+                            │  step result
+                            ▼
+                  ┌─────────────────────┐
+                  │  Error recovery     │
+                  │  loop (LLM-driven)  │
+                  └─────────────────────┘
 ```
 
-The analyzer will recursively search for relevant files in your analysis directory, including:
-- FastQC outputs
-- MultiQC reports
-- Kallisto results
-- Log files
+---
 
-### Report Components
+## Where to next
 
-The analysis report includes:
+- **Just trying it out?** → [Quick Start](getting-started/quickstart.md)
+- **Switching LLM providers?** → [LLM Providers](user-guide/llm-providers.md)
+- **Need an HPC pipeline?** → [HPC Configuration](user-guide/hpc.md) + [Execution Backends](user-guide/executors.md)
+- **Want to skip the LLM?** → [Workflow Presets](user-guide/presets.md)
+- **Generating Nextflow / Snakemake?** → [Pipeline Generation](user-guide/pipeline-generation.md)
+- **Worried about reliability?** → [Error Recovery](user-guide/error-recovery.md)
+- **Reproducing the manuscript figures?** → [Benchmarking](benchmarking.md)
+- **Adding custom analysis steps?** → [Custom Scripts](custom_scripts/index.md)
 
-1. **Summary**
-   - Number of files analyzed
-   - QC metrics processed
-   - Issues found
-   - Recommendations
-
-2. **Quality Control Analysis**
-   - FastQC metrics and potential issues
-   - Read quality distribution
-   - Adapter contamination levels
-   - Sequence duplication rates
-
-3. **Alignment Analysis**
-   - Overall alignment rates
-   - Unique vs multi-mapped reads
-   - Read distribution statistics
-
-4. **Expression Analysis**
-   - Gene expression levels
-   - TPM distributions
-   - Sample correlations
-
-5. **Recommendations**
-   - Quality improvement suggestions
-   - Parameter optimization tips
-   - Technical issue resolutions
-
-### Report Output
-
-By default, the analysis report is:
-1. Displayed in the console
-2. Saved as a markdown file (`analysis_report.md`) in your analysis directory
-
-To only view the report without saving:
-```bash
-flowagent "analyze workflow results" --analysis-dir=results --no-save-report
-```
-
-## Architecture
-
-FlowAgent 1.0 implements a modern, distributed architecture:
-
-- **Core Engine**: Orchestrates workflow execution and agent coordination
-- **Agent System**: Specialized agents for planning, execution, and monitoring
-- **Knowledge Base**: Vector database for storing and retrieving domain knowledge
-- **Security Layer**: Comprehensive security features and access control
-- **API Layer**: RESTful and GraphQL APIs for integration
-- **Monitoring System**: Real-time metrics and alerting
-
-## Development
-
-```bash
-# Run tests
-python -m pytest
-
-# Run type checking
-python -m mypy .
-
-# Run linting
-python -m ruff check .
-
-# Format code
-python -m black .
-python -m isort .
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+---
 
 ## License
 
-MIT License - see LICENSE file for details
+GPL-3.0 — see [LICENSE](https://github.com/cribbslab/flowagent/blob/main/LICENSE).
 
 ## Citation
 
-If you use FlowAgent in your research, please cite:
-
 ```bibtex
 @software{flowagent2025,
-  title={FlowAgent: An Advanced Multi-Agent Framework for Bioinformatics Workflows},
-  author={Cribbs Lab},
-  year={2025},
-  url={https://github.com/cribbslab/flowagent}
+  title  = {FlowAgent: A Multi-Agent Framework for Bioinformatics Workflows},
+  author = {Cribbs Lab},
+  year   = {2025},
+  url    = {https://github.com/cribbslab/flowagent}
 }
-
-```
-
-## Version Compatibility
-
-FlowAgent automatically handles version compatibility for Kallisto indices:
-
-1. **Version Checking**
-   - Checks Kallisto version before index creation
-   - Validates index compatibility using `kallisto inspect`
-   - Stores version information in workflow metadata
-
-2. **Error Prevention**
-   - Detects version mismatches before execution
-   - Provides detailed error messages for incompatible indices
-   - Suggests resolution steps for version conflicts
-
-3. **Metadata Management**
-   - Tracks index versions across workflows
-   - Maintains compatibility information
-   - Enables reproducible analyses
-
-### Updating the Environment
-
-To update your conda environment with new dependencies:
-
-```bash
-conda env update -f conda/environment/environment.yml
-```
-
-### Managing Multiple Environments
-
-For development or testing, you can create a separate environment:
-
-```bash
-conda env create -f conda/environment/environment.yml -n flowagent-dev
-
-```
-
-### Basic Usage
-
-```bash
-# Local execution
-python -m flowagent.cli "Analyze RNA-seq data in my fastq.gz files using Kallisto"
-
-# SLURM cluster execution
-python -m flowagent.cli --executor cgat "Analyze RNA-seq data in my fastq.gz files using Kallisto"
-```
-
-### Advanced Usage
-
-1. Resume a failed workflow:
-```bash
-python -m flowagent.cli --resume --checkpoint-dir workflow_state "Your workflow prompt"
-```
-
-2. Specify custom resource requirements:
-```bash
-python -m flowagent.cli --executor cgat --memory 32G --threads 16 "Your workflow prompt"
-
 ```

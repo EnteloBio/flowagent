@@ -24,8 +24,9 @@ FlowAgent is a multi-agent framework for automating bioinformatics workflows. It
 14. [HPC and cluster notes](#hpc-and-cluster-notes)
 15. [Architecture](#architecture)
 16. [Development](#development)
-17. [Documentation (MkDocs)](#documentation-mkdocs)
-18. [Contributing and license](#contributing-and-license)
+17. [Benchmarking](#benchmarking)
+18. [Documentation (MkDocs)](#documentation-mkdocs)
+19. [Contributing and license](#contributing-and-license)
 
 ---
 
@@ -346,6 +347,116 @@ python -m pytest tests/ -v
 ```
 
 Optional: `mypy`, `ruff`, `black`, `isort` as in your team conventions.
+
+---
+
+## Benchmarking
+
+FlowAgent ships with a reproducible benchmark suite under [`benchmarks/`](benchmarks/)
+that measures the four core claims of the tool: planning correctness,
+LLM-driven error recovery, generator fidelity, and executor coverage. Each
+benchmark writes timestamped results (JSON + CSV + `manifest.json`) and the
+`make report` target renders publication-ready figures.
+
+### The four benchmarks
+
+| ID | Claim tested | API key? | Extra infra? |
+|---|---|---|---|
+| **A** | FlowAgent generates valid plans from natural-language prompts | required | none |
+| **B** | FlowAgent self-heals realistic pipeline faults | required | none |
+| **C** | Generated Nextflow/Snakemake code is valid and preserves plan intent | no | `nextflow`/`snakemake` improve validation |
+| **D** | All six execution backends (local, cgat, hpc, kubernetes, nextflow, snakemake) function | no | best-effort; uses mocks when infra absent |
+
+### Install benchmark-only dependencies
+
+```bash
+pip install pandas matplotlib pyyaml networkx tabulate
+```
+
+### Quick start — smoke test (no API key, ~3 s)
+
+```bash
+cd benchmarks
+make smoke          # runs every benchmark in --mock mode
+```
+
+This verifies the harness is wired correctly and produces non-empty CSVs for
+every benchmark, without making any LLM calls.
+
+### Full runs
+
+Every target runs inside `benchmarks/`; results land in
+`benchmarks/results/<benchmark>/<timestamp>/`.
+
+```bash
+cd benchmarks
+
+# Benchmark A — planning correctness (needs OPENAI_API_KEY or equivalent)
+make plan MODEL=gpt-4.1 REPLICATES=3
+
+# Benchmark B — error recovery (needs API key)
+make recovery MODEL=gpt-4.1 SEEDS=5
+
+# Benchmark C — generator fidelity (deterministic, no API key)
+make gen
+
+# Benchmark D — executor coverage (no API key)
+make exec
+
+# Run all four, then regenerate figures
+make all
+make report
+```
+
+Figures are written to `benchmarks/results/figures/` as both `.pdf`
+(for manuscripts) and `.png` (for READMEs).
+
+### Switching LLM providers
+
+The `MODEL` variable accepts any model ID from `benchmarks/config/models.yaml`
+(currently `gpt-4.1`, `gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-flash`).
+Make sure the matching API-key environment variable is set (see the `env_var`
+field in that YAML). To add a local Ollama model, append an entry to that
+YAML — see the comment at the top of the file.
+
+```bash
+export OPENAI_API_KEY=sk-...
+make plan MODEL=gpt-4.1
+
+export ANTHROPIC_API_KEY=sk-ant-...
+make plan MODEL=claude-sonnet-4-20250514
+```
+
+### Python interpreter selection
+
+The Makefile auto-detects `python` or `python3`. Pin a specific interpreter
+(e.g. a conda env) with:
+
+```bash
+make plan PY=$(which python) MODEL=gpt-4.1
+```
+
+### Rough cost and wall-time estimates
+
+| Benchmark | Wall time | Estimated API cost |
+|---|---|---|
+| `make plan` (24 prompts × 1 model × 3 replicates, GPT-4.1) | ~20 min | ~$2 |
+| `make recovery` (10 faults × 5 seeds × 1 model, GPT-4.1) | ~15 min | ~$1 |
+| `make gen` | <1 min | $0 |
+| `make exec` | <1 min | $0 |
+
+### Reproducibility
+
+Every run emits a `manifest.json` with:
+
+- Git SHA at run time
+- Python version + full `pip freeze` snapshot
+- Model IDs used (redacted env var names)
+- Random seeds per cell
+- Timestamp
+
+See [`benchmarks/README.md`](benchmarks/README.md) for the full catalogue of
+prompts (`corpus/prompts.yaml`) and faults (`config/faults.yaml`).
 
 ---
 

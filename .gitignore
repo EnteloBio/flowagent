@@ -102,3 +102,6 @@ wheels/
 
 # cognomics custom:
 .webui_secret_key
+
+# Benchmark outputs (generated; corpus/ and config/ are checked in)
+benchmarks/results/

@@ -1,0 +1,193 @@
+# Benchmark A prompt corpus.
+#
+# Each entry is scored against:
+#   expected_workflow_type - must match plan["workflow_type"] exactly
+#   expected_tools         - every tool must appear in some step command
+#   forbidden_tools        - none may appear anywhere (portability-critical)
+#   expected_min_steps     - plan must have >= this many steps
+#   gold_preset (optional) - use the named preset in PRESET_CATALOG as
+#                            a gold reference for Jaccard/F1 concordance
+#
+# Prompts are written the way a bench scientist or analyst would phrase them.
+
+prompts:
+
+  # ── RNA-seq (8) ────────────────────────────────────────────────
+
+  - id: rnaseq_kallisto_basic
+    prompt: "Run an RNA-seq quantification pipeline with Kallisto on the paired-end FASTQ files"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [fastqc, kallisto, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+    gold_preset: rnaseq-kallisto
+
+  - id: rnaseq_kallisto_explicit_ref
+    prompt: "Quantify bulk RNA-seq reads with kallisto against Homo_sapiens.GRCh38.cdna.all.fa and aggregate QC with MultiQC"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [kallisto, multiqc]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+    gold_preset: rnaseq-kallisto
+
+  - id: rnaseq_star_featurecounts
+    prompt: "Align RNA-seq reads with STAR to the human genome and count reads per gene with featureCounts"
+    expected_workflow_type: rna_seq_star
+    expected_tools: [star, featurecounts]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+    gold_preset: rnaseq-star
+
+  - id: rnaseq_salmon
+    prompt: "Run RNA-seq quantification with Salmon in selective-alignment mode"
+    expected_workflow_type: rna_seq_salmon
+    expected_tools: [salmon]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+
+  - id: rnaseq_hisat2_htseq
+    prompt: "Align RNA-seq reads with HISAT2 and produce per-gene counts with htseq-count"
+    expected_workflow_type: rna_seq_hisat2
+    expected_tools: [hisat2, htseq-count]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+
+  - id: rnaseq_with_trim
+    prompt: "Trim paired-end reads with Trim Galore then run a Kallisto quantification pipeline"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [trim_galore, kallisto]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+
+  - id: rnaseq_mouse
+    prompt: "Quantify mouse RNA-seq reads using kallisto with the GRCm39 cDNA reference"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [kallisto]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+
+  - id: rnaseq_geo
+    prompt: "Download GSE186412 from GEO and run an RNA-seq kallisto pipeline on the bulk samples"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [kallisto]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+
+  # ── ChIP-seq (3) ───────────────────────────────────────────────
+
+  - id: chipseq_macs2
+    prompt: "Run ChIP-seq analysis: align reads with Bowtie2, call peaks with MACS2, aggregate with MultiQC"
+    expected_workflow_type: chip_seq
+    expected_tools: [bowtie2, macs2, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+    gold_preset: chipseq
+
+  - id: chipseq_single_end
+    prompt: "ChIP-seq pipeline with Bowtie2 alignment for single-end reads and MACS2 peak calling"
+    expected_workflow_type: chip_seq
+    expected_tools: [bowtie2, macs2]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+
+  - id: chipseq_with_qc
+    prompt: "ChIP-seq pipeline with FastQC, adapter trimming, Bowtie2 alignment, and MACS2 peak calling"
+    expected_workflow_type: chip_seq
+    expected_tools: [fastqc, bowtie2, macs2]
+    expected_min_steps: 5
+    forbidden_tools: [wget]
+
+  # ── ATAC-seq (2) ───────────────────────────────────────────────
+
+  - id: atacseq_basic
+    prompt: "ATAC-seq pipeline: align with Bowtie2, filter duplicates, call peaks with MACS2"
+    expected_workflow_type: atac_seq
+    expected_tools: [bowtie2, samtools, macs2]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+    gold_preset: atacseq
+
+  - id: atacseq_paired
+    prompt: "Paired-end ATAC-seq analysis using Bowtie2 and MACS2 with BAMPE mode"
+    expected_workflow_type: atac_seq
+    expected_tools: [bowtie2, macs2]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+
+  # ── Variant calling (3) ────────────────────────────────────────
+
+  - id: variant_bwa_gatk
+    prompt: "Variant calling: align with BWA, sort and deduplicate with Picard, call variants with GATK HaplotypeCaller"
+    expected_workflow_type: variant_calling
+    expected_tools: [bwa, gatk]
+    expected_min_steps: 4
+    forbidden_tools: [wget]
+
+  - id: variant_bwa_bcftools
+    prompt: "BWA-MEM alignment followed by bcftools mpileup + call for SNV discovery"
+    expected_workflow_type: variant_calling
+    expected_tools: [bwa, bcftools]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+
+  - id: variant_whole_genome
+    prompt: "Whole-genome variant calling workflow: BWA alignment, mark duplicates, GATK BQSR, call variants"
+    expected_workflow_type: variant_calling
+    expected_tools: [bwa, gatk]
+    expected_min_steps: 5
+    forbidden_tools: [wget]
+
+  # ── scRNA-seq (2) ──────────────────────────────────────────────
+
+  - id: scrna_kb
+    prompt: "Run single-cell RNA-seq quantification with kb-python using a 10x Chromium protocol"
+    expected_workflow_type: sc_rna_seq
+    expected_tools: [kb]
+    expected_min_steps: 2
+    forbidden_tools: [wget]
+
+  - id: scrna_starsolo
+    prompt: "Single-cell RNA-seq alignment and quantification with STARsolo"
+    expected_workflow_type: sc_rna_seq
+    expected_tools: [star]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+
+  # ── Reference download + QC (2) ────────────────────────────────
+
+  - id: ref_download_qc
+    prompt: "Download the human GRCh38 cDNA reference from Ensembl and run FastQC on a paired FASTQ set"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [fastqc]
+    expected_min_steps: 2
+    forbidden_tools: [wget]
+
+  - id: fastqc_only
+    prompt: "Just run FastQC on all paired-end FASTQ files and summarise with MultiQC"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [fastqc, multiqc]
+    expected_min_steps: 2
+    forbidden_tools: [wget]
+
+  # ── Adversarial / edge cases (3) ──────────────────────────────
+
+  - id: adv_single_end_kallisto
+    prompt: "Quantify SINGLE-END RNA-seq reads with kallisto (you must specify --single with fragment length parameters)"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [kallisto]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+
+  - id: adv_cross_species
+    prompt: "Run RNA-seq kallisto quantification on zebrafish reads against the Danio_rerio transcriptome"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [kallisto]
+    expected_min_steps: 3
+    forbidden_tools: [wget]
+
+  - id: adv_multi_sample
+    prompt: "Run a kallisto RNA-seq pipeline on four paired-end samples and combine QC into one MultiQC report"
+    expected_workflow_type: rna_seq_kallisto
+    expected_tools: [kallisto, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget]

@@ -48,7 +48,11 @@ plugins:
       default_handler: python
       handlers:
         python:
-          paths: [flowagent]
+          # mkdocstrings inserts each path on sys.path. We want
+          # ``flowagent`` to be importable, so we add the REPO ROOT
+          # (which contains the ``flowagent/`` package), not the package
+          # directory itself.
+          paths: ["."]
           options:
             show_source: true
             show_root_heading: true
@@ -87,9 +91,20 @@ nav:
     - ChIP-seq: workflows/chip-seq.md
     - Hi-C: workflows/hi-c.md
     - ATAC-seq: workflows/atac-seq.md
-    - Bisulfite-seq: workflows/bisulfite-seq.md
-    - Single-cell Multi-omics: workflows/sc-multiomics.md
     - Example Prompts: workflows/example-prompts.md
+  - User Guide:
+    - Concepts: user-guide/concepts.md
+    - CLI Reference: user-guide/cli-reference.md
+    - LLM Providers: user-guide/llm-providers.md
+    - Workflow Presets: user-guide/presets.md
+    - Pipeline Generation: user-guide/pipeline-generation.md
+    - Execution Backends: user-guide/executors.md
+    - Error Recovery: user-guide/error-recovery.md
+    - State Management: user-guide/state-management.md
+    - HPC Configuration: user-guide/hpc.md
+    - Web Interface: user-guide/web-interface.md
+    - Analysis Reports: user-guide/analysis.md
+    - Version Compatibility: user-guide/version-compatibility.md
   - Custom Scripts:
     - Overview: custom_scripts/index.md
     - Adding Scripts: custom_scripts/adding-scripts.md
@@ -98,15 +113,28 @@ nav:
       - RNA-seq Normalization: custom_scripts/examples/rna-seq-norm.md
       - ChIP-seq Peak Analysis: custom_scripts/examples/chip-seq-peaks.md
       - Data Cleanup: custom_scripts/examples/data-cleanup.md
-  - User Guide:
-    - Concepts: user-guide/concepts.md
-    - HPC Configuration: user-guide/hpc.md
-    - Analysis Reports: user-guide/analysis.md
-    - State Management: user-guide/state-management.md
-    - Version Compatibility: user-guide/version-compatibility.md
+  - Benchmarking: benchmarking.md
   - API Reference:
     - Overview: reference/index.md
     - Script Manager: api/script-manager.md
     - Workflow Executor: api/workflow-executor.md
+    - Auto-generated:
+      - CLI: reference/flowagent/cli.md
+      - Settings: reference/flowagent/config/settings.md
+      - LLM Interface: reference/flowagent/core/llm.md
+      - Workflow Manager: reference/flowagent/core/workflow_manager.md
+      - Workflow DAG: reference/flowagent/core/workflow_dag.md
+      - Workflow State: reference/flowagent/core/workflow_state.md
+      - Agent System: reference/flowagent/core/agent_system.md
+      - Agent Types: reference/flowagent/core/agent_types.md
+      - Executors: reference/flowagent/core/executors.md
+      - Knowledge Base: reference/flowagent/core/knowledge.md
+      - Tool Tracker: reference/flowagent/core/tool_tracker.md
+      - LLM Agent: reference/flowagent/agents/llm_agent.md
+      - Report Generator: reference/flowagent/analysis/report_generator.md
+      - Metrics: reference/flowagent/monitoring/metrics.md
+      - Command Utils: reference/flowagent/utils/command.md
+      - File Utils: reference/flowagent/utils/file_utils.md
+      - Logging: reference/flowagent/utils/logging.md
   - Contributing: contributing.md
   - Changelog: changelog.md

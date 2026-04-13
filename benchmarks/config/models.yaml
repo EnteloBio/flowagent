@@ -1,0 +1,45 @@
+# LLM providers and models to sweep across during Benchmark A.
+#
+# Pricing is USD per 1,000 tokens; update when provider pricing changes.
+# Add a model entry only if you have the corresponding API key — the harness
+# raises a clear error if the env_var listed below is unset.
+#
+# To add a local Ollama model, append:
+#     - id: llama3.1:70b
+#       provider: ollama
+#       env_var: null
+#       base_url: http://localhost:11434
+#       pricing: {input_per_1k: 0.0, output_per_1k: 0.0}
+
+defaults:
+  timeout_seconds: 300
+  max_retries: 3
+
+models:
+  - id: gpt-4.1
+    provider: openai
+    env_var: OPENAI_API_KEY
+    pricing:
+      input_per_1k: 0.002
+      output_per_1k: 0.008
+
+  - id: gpt-4o
+    provider: openai
+    env_var: OPENAI_API_KEY
+    pricing:
+      input_per_1k: 0.0025
+      output_per_1k: 0.01
+
+  - id: claude-sonnet-4-20250514
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    pricing:
+      input_per_1k: 0.003
+      output_per_1k: 0.015
+
+  - id: gemini-2.5-flash
+    provider: google
+    env_var: GOOGLE_API_KEY
+    pricing:
+      input_per_1k: 0.00015
+      output_per_1k: 0.0006

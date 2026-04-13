@@ -60,4 +60,7 @@ graph TD
 
 - [Adding Scripts](adding-scripts.md): Learn how to add your own custom scripts
 - [Script Requirements](requirements.md): Understand the requirements for custom scripts
-- [Examples](examples/): See example implementations in different languages
+- Examples in different languages:
+    - [RNA-seq normalization (R / DESeq2)](examples/rna-seq-norm.md)
+    - [ChIP-seq peak analysis (Python)](examples/chip-seq-peaks.md)
+    - [Data cleanup (Bash)](examples/data-cleanup.md)

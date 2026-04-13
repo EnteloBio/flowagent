@@ -1,0 +1,63 @@
+# Fault catalogue for Benchmark B.
+#
+# Each fault has:
+#   id:              unique identifier used in results CSV
+#   class:           human-readable category (for figure grouping)
+#   description:     short documentation
+#   diagnosis_regex: regex that the LLM's recovery diagnosis SHOULD match
+#                    if the recovery is on the right track
+#
+# The actual fault-application logic lives in harness/fault_inject.py.
+# This file is the single source of truth for the catalogue used in the
+# manuscript figure; adding a fault here requires implementing it there.
+
+faults:
+  - id: missing_wget
+    class: missing_binary
+    description: Replace tool with wget on a host where wget is not in PATH
+    diagnosis_regex: '(?i)wget|not found|command not found|curl'
+
+  - id: tool_typo
+    class: typo
+    description: Mutate the tool name to a plausible typo (kalisto, fastq_c)
+    diagnosis_regex: '(?i)typo|not found|misspell|command not found'
+
+  - id: wrong_flag
+    class: wrong_flag
+    description: Swap a required flag for one that looks similar (e.g. -x for -i)
+    diagnosis_regex: '(?i)flag|option|argument|usage'
+
+  - id: missing_output_dir
+    class: missing_path
+    description: Point FastQC at an output directory that does not exist
+    diagnosis_regex: '(?i)directory.*exist|mkdir|no such'
+
+  - id: paired_single_mismatch
+    class: data_shape_mismatch
+    description: Feed paired-end reads to a single-end kallisto quant command
+    diagnosis_regex: '(?i)paired|single|fragment|length'
+
+  - id: corrupt_fastq
+    class: corrupt_input
+    description: Truncate a gzipped FASTQ to trigger a parse error
+    diagnosis_regex: '(?i)truncat|invalid|corrupt|gzip'
+
+  - id: readonly_output
+    class: permission
+    description: Output directory is not writable
+    diagnosis_regex: '(?i)permission|readonly|not writable'
+
+  - id: path_with_spaces
+    class: shell_escaping
+    description: Unquoted ${launchDir} containing parentheses (regression test)
+    diagnosis_regex: '(?i)quote|escape|syntax|space|unexpected token'
+
+  - id: multiqc_collision
+    class: output_collision
+    description: Pre-existing multiqc_report.html causes _1 / _2 suffix collision
+    diagnosis_regex: '(?i)-f|force|overwrite|exist'
+
+  - id: stale_conda_pin
+    class: env_mismatch
+    description: Conda spec pins a version that does not exist on osx-arm64
+    diagnosis_regex: '(?i)not available|pin|version|package.*found'

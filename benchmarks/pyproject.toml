@@ -1,0 +1,19 @@
+[project]
+name = "flowagent-benchmarks"
+version = "0.1.0"
+description = "Reproducible benchmarks for FlowAgent (not part of the installable library)"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+    "networkx>=3.0",
+    "tabulate>=0.9",
+    "flowagent",
+]
+
+[tool.setuptools]
+# This package is intentionally not installed into site-packages. The pyproject
+# exists only to declare benchmark-specific dependencies separately from the
+# library itself. Run benchmarks from inside the benchmarks/ directory.
+py-modules = []
