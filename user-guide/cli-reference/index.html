@@ -13,10 +13,10 @@
       
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../concepts/">
       
       
-        <link rel="next" href="../requirements/">
+        <link rel="next" href="../llm-providers/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Adding Scripts - FlowAgent Documentation</title>
+        <title>CLI Reference - FlowAgent Documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#adding-custom-scripts" class="md-skip">
+        <a href="#cli-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Adding Scripts
+              CLI Reference
             
           </span>
         </div>
@@ -286,11 +286,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../user-guide/concepts/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../concepts/" class="md-tabs__link">
           
   
   
@@ -306,13 +308,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../custom_scripts/" class="md-tabs__link">
           
   
   
@@ -853,403 +853,6 @@
       
   
   
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    User Guide
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    User Guide
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/concepts/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Concepts
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/cli-reference/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CLI Reference
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/llm-providers/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LLM Providers
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/presets/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Workflow Presets
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/pipeline-generation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Pipeline Generation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/executors/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Execution Backends
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/error-recovery/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Error Recovery
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/state-management/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    State Management
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/hpc/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    HPC Configuration
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/web-interface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Web Interface
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/analysis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Analysis Reports
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/version-compatibility/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Version Compatibility
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
     
   
   
@@ -1271,17 +874,17 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
             
   
   
   <span class="md-ellipsis">
     
   
-    Custom Scripts
+    User Guide
   
 
     
@@ -1292,12 +895,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
   
-    Custom Scripts
+    User Guide
   
 
           </label>
@@ -1310,14 +913,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../concepts/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Overview
+    Concepts
   
 
     
@@ -1354,7 +957,7 @@
   <span class="md-ellipsis">
     
   
-    Adding Scripts
+    CLI Reference
   
 
     
@@ -1372,7 +975,7 @@
   <span class="md-ellipsis">
     
   
-    Adding Scripts
+    CLI Reference
   
 
     
@@ -1398,33 +1001,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#step-1-choose-location" class="md-nav__link">
+  <a href="#flowagent-prompt" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Choose Location
+        flowagent prompt
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-2-create-script" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 2: Create Script
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Step 2: Create Script">
+    <nav class="md-nav" aria-label="flowagent prompt">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#input-handling" class="md-nav__link">
+  <a href="#mode-selection-mutually-exclusive" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Input Handling
+        Mode selection (mutually exclusive)
       
     </span>
   </a>
@@ -1432,10 +1024,54 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#output-format" class="md-nav__link">
+  <a href="#workflow-planning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Output Format
+        Workflow planning
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pipeline-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pipeline generation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resume-checkpointing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resume / checkpointing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analysis
       
     </span>
   </a>
@@ -1448,10 +1084,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-create-metadata" class="md-nav__link">
+  <a href="#flowagent-serve" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Create Metadata
+        flowagent serve
       
     </span>
   </a>
@@ -1459,10 +1095,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-4-test-integration" class="md-nav__link">
+  <a href="#smart-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4: Test Integration
+        Smart routing
       
     </span>
   </a>
@@ -1470,10 +1106,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#best-practices" class="md-nav__link">
+  <a href="#environment-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Best Practices
+        Environment variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#llm-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
       
     </span>
   </a>
@@ -1496,7 +1182,404 @@
   
   
     <li class="md-nav__item">
-      <a href="../requirements/" class="md-nav__link">
+      <a href="../llm-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pipeline Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../executors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Execution Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../error-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Error Recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../state-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    State Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hpc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPC Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../web-interface/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web Interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysis Reports
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../version-compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Scripts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Custom Scripts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../custom_scripts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../custom_scripts/adding-scripts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding Scripts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../custom_scripts/requirements/" class="md-nav__link">
         
   
   
@@ -1530,13 +1613,10 @@
       
       
         
-          
-          
-        
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
@@ -1545,7 +1625,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5_4" >
         
           
-          <label class="md-nav__link" for="__nav_5_4" id="__nav_5_4_label" tabindex="">
+          <label class="md-nav__link" for="__nav_5_4" id="__nav_5_4_label" tabindex="0">
             
   
   
@@ -1581,7 +1661,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/rna-seq-norm/" class="md-nav__link">
+      <a href="../../custom_scripts/examples/rna-seq-norm/" class="md-nav__link">
         
   
   
@@ -1609,7 +1689,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/chip-seq-peaks/" class="md-nav__link">
+      <a href="../../custom_scripts/examples/chip-seq-peaks/" class="md-nav__link">
         
   
   
@@ -1637,7 +1717,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/data-cleanup/" class="md-nav__link">
+      <a href="../../custom_scripts/examples/data-cleanup/" class="md-nav__link">
         
   
   
@@ -2457,145 +2537,265 @@
   
 
 
-<h1 id="adding-custom-scripts">Adding Custom Scripts<a class="headerlink" href="#adding-custom-scripts" title="Permanent link">&para;</a></h1>
-<p>This guide walks you through the process of adding custom scripts to FlowAgent.</p>
-<h2 id="step-1-choose-location">Step 1: Choose Location<a class="headerlink" href="#step-1-choose-location" title="Permanent link">&para;</a></h2>
-<ol>
-<li>Identify the appropriate directory:</li>
-<li><code>rna_seq/</code> for RNA-seq specific scripts</li>
-<li><code>chip_seq/</code> for ChIP-seq specific scripts</li>
-<li>
-<p><code>common/</code> for scripts usable across workflows</p>
-</li>
-<li>
-<p>Create a new directory with a descriptive name:
-   <div class="highlight"><pre><span></span><code>mkdir<span class="w"> </span>-p<span class="w"> </span>custom_scripts/rna_seq/my_analysis
-</code></pre></div></p>
-</li>
-</ol>
-<h2 id="step-2-create-script">Step 2: Create Script<a class="headerlink" href="#step-2-create-script" title="Permanent link">&para;</a></h2>
-<ol>
-<li>Create your script file (e.g., <code>my_analysis.R</code>, <code>my_analysis.py</code>)</li>
-<li>Follow these requirements:</li>
-</ol>
-<h3 id="input-handling">Input Handling<a class="headerlink" href="#input-handling" title="Permanent link">&para;</a></h3>
-<p><div class="highlight"><pre><span></span><code><span class="c1"># Python example</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">argparse</span>
-<span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">()</span>
-<span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--input_name&#39;</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+<h1 id="cli-reference">CLI Reference<a class="headerlink" href="#cli-reference" title="Permanent link">&para;</a></h1>
+<p>The full surface area of the <code>flowagent</code> command. There are two
+sub-commands: <strong><code>prompt</code></strong> (the one you'll use 99% of the time) and
+<strong><code>serve</code></strong> (Chainlit web UI).</p>
+<h2 id="flowagent-prompt"><code>flowagent prompt</code><a class="headerlink" href="#flowagent-prompt" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>flowagent prompt &quot;&lt;text&gt;&quot; [options]
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><span class="c1"># R example</span>
-<span class="n">args</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="nf">commandArgs</span><span class="p">(</span><span class="n">trailingOnly</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">TRUE</span><span class="p">)</span>
-<span class="n">args_dict</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="nf">list</span><span class="p">()</span>
-<span class="kr">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="kr">in</span><span class="w"> </span><span class="nf">seq</span><span class="p">(</span><span class="m">1</span><span class="p">,</span><span class="w"> </span><span class="nf">length</span><span class="p">(</span><span class="n">args</span><span class="p">),</span><span class="w"> </span><span class="m">2</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">args_dict</span><span class="p">[[</span><span class="nf">sub</span><span class="p">(</span><span class="s">&quot;^--&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">])]]</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="m">1</span><span class="p">]</span>
-<span class="p">}</span>
-</code></pre></div></p>
-<h3 id="output-format">Output Format<a class="headerlink" href="#output-format" title="Permanent link">&para;</a></h3>
-<p>All scripts must output JSON to stdout:
-<div class="highlight"><pre><span></span><code><span class="c1"># Python example</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">&quot;output_file&quot;</span><span class="p">:</span> <span class="s2">&quot;path/to/output.csv&quot;</span><span class="p">}))</span>
+<h3 id="mode-selection-mutually-exclusive">Mode selection (mutually exclusive)<a class="headerlink" href="#mode-selection-mutually-exclusive" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--workflow</code></td>
+<td>Force workflow mode (plan → execute pipeline)</td>
+</tr>
+<tr>
+<td><code>--agent</code></td>
+<td>Force agent mode (interactive tool-calling loop)</td>
+</tr>
+</tbody>
+</table>
+<p>If neither is supplied, FlowAgent inspects the prompt + other flags and
+routes automatically. See <a href="#smart-routing">Smart routing</a> below.</p>
+<h3 id="workflow-planning">Workflow planning<a class="headerlink" href="#workflow-planning" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--preset NAME</code></td>
+<td>string</td>
+<td>none</td>
+<td>Skip LLM planning; load a preset from the catalogue. Valid: <code>rnaseq-kallisto</code>, <code>rnaseq-star</code>, <code>chipseq</code>, <code>atacseq</code>.</td>
+</tr>
+<tr>
+<td><code>--non-interactive</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Don't prompt for organism/reference; use defaults (human / GRCh38 / Ensembl).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pipeline-generation">Pipeline generation<a class="headerlink" href="#pipeline-generation" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--pipeline-format FMT</code></td>
+<td><code>nextflow</code>/<code>snakemake</code></td>
+<td>none</td>
+<td>Generate a portable pipeline file. See <a href="../pipeline-generation/">Pipeline Generation</a>.</td>
+</tr>
+<tr>
+<td><code>--profile NAME</code></td>
+<td>string</td>
+<td><code>local</code></td>
+<td>Nextflow profile (<code>local</code>, <code>docker</code>, <code>singularity</code>, <code>slurm</code>).</td>
+</tr>
+<tr>
+<td><code>--no-execute</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Generate the pipeline file but don't run it.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="execution-backend">Execution backend<a class="headerlink" href="#execution-backend" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--executor TYPE</code></td>
+<td>enum</td>
+<td><code>local</code></td>
+<td>One of <code>local</code>, <code>cgat</code>, <code>hpc</code>, <code>kubernetes</code>, <code>nextflow</code>, <code>snakemake</code>. See <a href="../executors/">Executors</a>.</td>
+</tr>
+<tr>
+<td><code>--hpc-system NAME</code></td>
+<td>enum</td>
+<td>none</td>
+<td>One of <code>slurm</code>, <code>sge</code>, <code>torque</code> — only with <code>--executor hpc</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="resume-checkpointing">Resume / checkpointing<a class="headerlink" href="#resume-checkpointing" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--checkpoint-dir DIR</code></td>
+<td>path</td>
+<td><code>&lt;output&gt;/.checkpoint</code></td>
+<td>Where to write <code>checkpoint.json</code> after each step.</td>
+</tr>
+<tr>
+<td><code>--resume</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Resume from <code>--checkpoint-dir</code>; smart-resume skips steps whose outputs already exist.</td>
+</tr>
+<tr>
+<td><code>--force-resume</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Like <code>--resume</code> but re-runs every step regardless of completion state.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="analysis">Analysis<a class="headerlink" href="#analysis" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--analysis-dir DIR</code></td>
+<td>path</td>
+<td>none</td>
+<td>Run an LLM analysis report over an existing results directory. Forces agent mode.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="flowagent-serve"><code>flowagent serve</code><a class="headerlink" href="#flowagent-serve" title="Permanent link">&para;</a></h2>
+<p>Launch the Chainlit-based web interface.</p>
+<div class="highlight"><pre><span></span><code>flowagent serve [--host HOST] [--port PORT]
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><span class="c1"># R example</span>
-<span class="nf">library</span><span class="p">(</span><span class="n">jsonlite</span><span class="p">)</span>
-<span class="nf">cat</span><span class="p">(</span><span class="nf">toJSON</span><span class="p">(</span><span class="nf">list</span><span class="p">(</span><span class="n">output_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;path/to/output.csv&quot;</span><span class="p">)))</span>
-</code></pre></div></p>
-<h2 id="step-3-create-metadata">Step 3: Create Metadata<a class="headerlink" href="#step-3-create-metadata" title="Permanent link">&para;</a></h2>
-<p>Create <code>metadata.json</code> in your script directory:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_analysis&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Description of what the script does&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;script_file&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_analysis.R&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;R&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;input_requirements&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="p">{</span>
-<span class="w">            </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;input_name&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;file_type&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Description of input&quot;</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;output_types&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="p">{</span>
-<span class="w">            </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;output_name&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;file_type&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Description of output&quot;</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;workflow_types&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;rna_seq&quot;</span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;execution_order&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;before&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;step_names&quot;</span><span class="p">],</span>
-<span class="w">        </span><span class="nt">&quot;after&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;step_names&quot;</span><span class="p">]</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;requirements&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;r_packages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;required_packages&quot;</span><span class="p">],</span>
-<span class="w">        </span><span class="nt">&quot;python_packages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
-<span class="w">        </span><span class="nt">&quot;system_dependencies&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--host</code></td>
+<td><code>0.0.0.0</code></td>
+</tr>
+<tr>
+<td><code>--port</code></td>
+<td><code>8000</code></td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../web-interface/">Web Interface</a>.</p>
+<hr />
+<h2 id="smart-routing">Smart routing<a class="headerlink" href="#smart-routing" title="Permanent link">&para;</a></h2>
+<p>When neither <code>--workflow</code> nor <code>--agent</code> is given, the CLI picks a mode
+based on the prompt:</p>
+<ul>
+<li><strong>Workflow mode</strong> is forced by any of: <code>--preset</code>, <code>--pipeline-format</code>,
+  <code>--resume</code>, <code>--checkpoint-dir</code>, or strong workflow keywords ("run",
+  "execute", "kallisto", "chip-seq", "alignment", ...).</li>
+<li><strong>Agent mode</strong> is used for exploratory prompts ("check which tools are
+  installed", "what files are here?") or whenever <code>--analysis-dir</code> is set.</li>
+<li>Ambiguous prompts default to agent mode (safe — no side effects).</li>
+</ul>
+<p>To always be explicit, pass the flag yourself.</p>
+<hr />
+<h2 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<p>These supplement / override CLI flags. The CLI flag wins if both are set.</p>
+<h3 id="llm-provider">LLM provider<a class="headerlink" href="#llm-provider" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nv">LLM_PROVIDER</span><span class="o">=</span>openai<span class="w">          </span><span class="c1"># openai | anthropic | google | ollama</span>
+<span class="nv">LLM_MODEL</span><span class="o">=</span>gpt-4.1<span class="w">            </span><span class="c1"># see config/models.yaml or provider docs</span>
+<span class="nv">LLM_FALLBACK_MODEL</span><span class="o">=</span>gpt-4o<span class="w">    </span><span class="c1"># used if primary model fails</span>
+<span class="nv">LLM_BASE_URL</span><span class="o">=</span>...<span class="w">             </span><span class="c1"># custom endpoint (Ollama, vLLM, OpenAI-compatible)</span>
+
+<span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-...
+<span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-ant-...
+<span class="nv">GOOGLE_API_KEY</span><span class="o">=</span>...
 </code></pre></div>
-<h2 id="step-4-test-integration">Step 4: Test Integration<a class="headerlink" href="#step-4-test-integration" title="Permanent link">&para;</a></h2>
-<ol>
-<li>
-<p>Validate your script:
-   <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">flowagent.core.script_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScriptManager</span>
+<p>See <a href="../llm-providers/">LLM Providers</a>.</p>
+<h3 id="execution">Execution<a class="headerlink" href="#execution" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nv">EXECUTOR_TYPE</span><span class="o">=</span><span class="nb">local</span><span class="w">          </span><span class="c1"># default executor when --executor not given</span>
+<span class="nv">HPC_SYSTEM</span><span class="o">=</span>slurm<span class="w">             </span><span class="c1"># default for --executor hpc</span>
+<span class="nv">HPC_QUEUE</span><span class="o">=</span>all.q
+<span class="nv">HPC_DEFAULT_MEMORY</span><span class="o">=</span>4G
+<span class="nv">HPC_DEFAULT_CPUS</span><span class="o">=</span><span class="m">1</span>
+<span class="nv">HPC_DEFAULT_TIME</span><span class="o">=</span><span class="m">60</span>
+<span class="nv">PIPELINE_PROFILE</span><span class="o">=</span><span class="nb">local</span><span class="w">       </span><span class="c1"># default for --profile (Nextflow)</span>
+<span class="nv">KUBERNETES_ENABLED</span><span class="o">=</span><span class="nb">false</span><span class="w">     </span><span class="c1"># safety switch</span>
+<span class="nv">KUBERNETES_NAMESPACE</span><span class="o">=</span>default
+<span class="nv">KUBERNETES_JOB_TTL</span><span class="o">=</span><span class="m">3600</span>
+</code></pre></div>
+<h3 id="other">Other<a class="headerlink" href="#other" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nv">SECRET_KEY</span><span class="o">=</span>...<span class="w">                </span><span class="c1"># JWT signing for the web UI</span>
+<span class="nv">FLOWAGENT_DATA_DIR</span><span class="o">=</span>./data<span class="w">     </span><span class="c1"># default search path for input files</span>
+<span class="nv">LOG_LEVEL</span><span class="o">=</span>INFO<span class="w">                </span><span class="c1"># DEBUG | INFO | WARNING | ERROR</span>
+</code></pre></div>
+<p>See <a href="https://github.com/cribbslab/flowagent/blob/main/.env.example"><code>.env.example</code></a>
+for the authoritative list.</p>
+<hr />
+<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. Smart routing (workflow mode picked automatically)</span>
+flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;Run RNA-seq with Kallisto on data/*.fastq.gz&quot;</span>
 
-<span class="c1"># Initialize script manager</span>
-<span class="n">manager</span> <span class="o">=</span> <span class="n">ScriptManager</span><span class="p">(</span><span class="s2">&quot;path/to/custom_scripts&quot;</span><span class="p">)</span>
+<span class="c1"># 2. Skip LLM with a preset</span>
+flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;go&quot;</span><span class="w"> </span>--preset<span class="w"> </span>rnaseq-kallisto
 
-<span class="c1"># Get your script</span>
-<span class="n">script</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">get_script</span><span class="p">(</span><span class="s2">&quot;my_analysis&quot;</span><span class="p">)</span>
+<span class="c1"># 3. Generate Nextflow pipeline, don&#39;t run</span>
+flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;ChIP-seq with Bowtie2 + MACS2&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--pipeline-format<span class="w"> </span>nextflow<span class="w"> </span>--no-execute
 
-<span class="c1"># Validate requirements</span>
-<span class="k">assert</span> <span class="n">manager</span><span class="o">.</span><span class="n">validate_script_requirements</span><span class="p">(</span><span class="n">script</span><span class="p">)</span>
-</code></pre></div></p>
-</li>
-<li>
-<p>Test execution:
-   <div class="highlight"><pre><span></span><code><span class="c1"># Execute script</span>
-<span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">execute_script</span><span class="p">(</span>
-    <span class="n">script</span><span class="p">,</span>
-    <span class="p">{</span><span class="s2">&quot;input_name&quot;</span><span class="p">:</span> <span class="s2">&quot;path/to/input.txt&quot;</span><span class="p">}</span>
-<span class="p">)</span>
-</code></pre></div></p>
-</li>
-</ol>
-<h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Permanent link">&para;</a></h2>
-<ol>
-<li><strong>Error Handling</strong></li>
-<li>Exit with non-zero status on error</li>
-<li>
-<p>Write error messages to stderr
-   <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="k">if</span> <span class="n">error</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error message&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-</code></pre></div></p>
-</li>
-<li>
-<p><strong>Input Validation</strong></p>
-</li>
-<li>Check input file existence</li>
-<li>Validate input format</li>
-<li>
-<p>Verify required parameters</p>
-</li>
-<li>
-<p><strong>Output Management</strong></p>
-</li>
-<li>Use consistent output paths</li>
-<li>Clean up temporary files</li>
-<li>
-<p>Document output formats</p>
-</li>
-<li>
-<p><strong>Testing</strong></p>
-</li>
-<li>Include test data</li>
-<li>Document test procedures</li>
-<li>Add validation steps</li>
-</ol>
+<span class="c1"># 4. SLURM submission via the HPC executor</span>
+flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;RNA-seq with Kallisto&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--executor<span class="w"> </span>hpc<span class="w"> </span>--hpc-system<span class="w"> </span>slurm
+
+<span class="c1"># 5. Resume after a failure (smart-resume skips completed steps)</span>
+flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;Continue RNA-seq&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--checkpoint-dir<span class="w"> </span>wf_state<span class="w"> </span>--resume
+
+<span class="c1"># 6. Generate a Snakemake pipeline using Anthropic</span>
+<span class="nv">LLM_PROVIDER</span><span class="o">=</span>anthropic<span class="w"> </span><span class="nv">LLM_MODEL</span><span class="o">=</span>claude-sonnet-4-20250514<span class="w"> </span><span class="se">\</span>
+flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;ATAC-seq paired-end&quot;</span><span class="w"> </span>--pipeline-format<span class="w"> </span>snakemake
+
+<span class="c1"># 7. Analyze an existing results directory</span>
+flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;summarise QC&quot;</span><span class="w"> </span>--analysis-dir<span class="w"> </span>results/
+
+<span class="c1"># 8. Web interface</span>
+flowagent<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">8001</span>
+</code></pre></div>
 
 
 
