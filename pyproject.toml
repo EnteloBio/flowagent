@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flowagent"
+version = "0.2.0"
+description = "Multi-agent framework for automating bioinformatics workflows"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "openai>=1.0.0",
+    "anthropic>=0.40.0",
+    "google-genai>=1.0.0",
+    "networkx>=3.0",
+    "rich>=13.0.0",
+    "typing-extensions>=4.0.0",
+    "aiohttp>=3.8.0",
+    "click>=8.0.0",
+    "PyYAML>=6.0.0",
+    "Jinja2>=3.1.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.optional-dependencies]
+hpc = [
+    "cgatcore>=0.6.7",
+    "drmaa>=0.7.9",
+]
+kubernetes = [
+    "kubernetes>=28.1.0",
+]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sse-starlette>=2.0.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+all = [
+    "flowagent[hpc,kubernetes,web,dev]",
+]
+
+[project.scripts]
+flowagent = "flowagent.cli:run"
+
+[tool.setuptools.packages.find]
+include = ["flowagent*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

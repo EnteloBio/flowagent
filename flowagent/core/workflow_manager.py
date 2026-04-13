@@ -4,10 +4,15 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 import logging
 import asyncio
+import hashlib
 import networkx as nx
 import json
 import os
+import re
+import shutil
 import sys
+import time
+from datetime import datetime, timezone
 from flowagent.config.settings import Settings
 
 from ..utils.logging import get_logger
@@ -15,6 +20,7 @@ from ..utils import file_utils
 from ..utils.dependency_manager import DependencyManager
 from .llm import LLMInterface
 from .executor import Executor
+from .executor_factory import ExecutorFactory
 from .agent_types import WorkflowStep, Workflow
 from .workflow_dag import WorkflowDAG
 from .smart_resume import detect_completed_steps, filter_workflow_steps
@@ -35,29 +41,246 @@ class WorkflowManager:
         self.llm = LLMInterface()
         self.dependency_manager = DependencyManager()
         self.executor_type = executor_type
-        self.executor = Executor(executor_type)
-        
-        # Get initial working directory
-        self.initial_cwd = os.getcwd()
-        self.logger.info(f"Initial working directory: {self.initial_cwd}")
-        self.logger.info(f"Using {executor_type} executor")
-        
+
         # Get settings
         self.settings = Settings()
-        
-        # Validate executor type
-        valid_executors = ["local", "cgat", "kubernetes"]
-        if self.executor_type not in valid_executors:
-            self.logger.warning(f"Invalid executor type '{self.executor_type}'. Defaulting to 'local'")
-            self.executor_type = "local"
-        
+
         # Special handling for Kubernetes executor
         if self.executor_type == "kubernetes" and not self.settings.KUBERNETES_ENABLED:
             self.logger.warning("Kubernetes executor requested but not enabled in settings. Defaulting to 'local'")
             self.executor_type = "local"
+
+        # Factory executor for advanced backends (CGAT, HPC, Kubernetes, Nextflow, Snakemake)
+        self.executor = ExecutorFactory.create(self.executor_type)
+        # Legacy Executor wraps subprocess-based step execution for local/slurm
+        self._legacy_executor = Executor(executor_type if executor_type in ("local", "slurm") else "local")
+        # Prefer factory executor when it supports execute_step
+        self._step_executor = (
+            self.executor if hasattr(self.executor, "execute_step") else self._legacy_executor
+        )
+
+        # Get initial working directory
+        self.initial_cwd = os.getcwd()
+        self.logger.info(f"Initial working directory: {self.initial_cwd}")
+        self.logger.info(f"Using {self.executor_type} executor (via ExecutorFactory)")
             
         self.analysis_system = AgenticAnalysisSystem()
-        
+
+    @staticmethod
+    def _file_checksum(filepath: str) -> str:
+        """Compute SHA-256 checksum for a file (first 10 MB)."""
+        h = hashlib.sha256()
+        try:
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+                    if f.tell() > 10 * (1 << 20):
+                        break
+            return h.hexdigest()
+        except Exception:
+            return "unavailable"
+
+    def _write_manifest(self, output_dir: str, prompt: Optional[str],
+                        workflow_plan: Dict[str, Any],
+                        results: List[Dict[str, Any]]):
+        """Emit workflow_manifest.json for reproducibility."""
+        settings = self.settings
+
+        # Collect input file checksums from the plan
+        input_checksums = {}
+        for step in workflow_plan.get("steps", []):
+            for output_pattern in step.get("outputs", []):
+                import glob as _glob
+                for f in _glob.glob(os.path.join(output_dir, output_pattern)):
+                    if os.path.isfile(f):
+                        input_checksums[os.path.relpath(f, output_dir)] = self._file_checksum(f)
+
+        manifest = {
+            "flowagent_version": "0.2.0",
+            "prompt": prompt,
+            "llm_provider": settings.LLM_PROVIDER,
+            "llm_model": settings.LLM_MODEL,
+            "executor_type": self.executor_type,
+            "workflow_plan": workflow_plan,
+            "step_results": [
+                {"name": r.get("step_name", "?"), "status": r.get("status", "?")}
+                for r in results
+            ],
+            "output_checksums": input_checksums,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        manifest_path = os.path.join(output_dir, "workflow_manifest.json")
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+        self.logger.info("Manifest written to %s", manifest_path)
+
+    def _write_checkpoint(self, checkpoint_dir: str, workflow_plan: Dict[str, Any],
+                          output_dir: str, completed_steps: List[str],
+                          prompt: Optional[str] = None):
+        """Persist checkpoint.json so that resume_workflow can reload state."""
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        checkpoint = {
+            "workflow_plan": workflow_plan,
+            "output_dir": output_dir,
+            "completed_steps": completed_steps,
+            "prompt": prompt,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        path = os.path.join(checkpoint_dir, "checkpoint.json")
+        with open(path, "w") as f:
+            json.dump(checkpoint, f, indent=2)
+        self.logger.debug("Checkpoint written: %s (%d steps done)", path, len(completed_steps))
+
+    # ── LLM error recovery ────────────────────────────────────
+
+    @staticmethod
+    def _extract_executables(command: str) -> List[str]:
+        """Extract executable names from a shell command string."""
+        SHELL_BUILTINS = frozenset({
+            "for", "do", "done", "if", "then", "else", "fi", "while",
+            "until", "case", "esac", "in", "export", "cd", "echo",
+            "true", "false", "test", "[", "[[", "set", "unset",
+            "local", "return", "break", "continue", "shift",
+        })
+        segments = re.split(r'\s*[|;&]+\s*', command)
+        executables = []
+        for seg in segments:
+            tokens = seg.strip().split()
+            if not tokens:
+                continue
+            first = tokens[0]
+            # Skip builtins, variable assignments, sub-shell parens
+            if first in SHELL_BUILTINS or "=" in first or first.startswith("("):
+                continue
+            # Strip leading path (e.g. /usr/bin/env)
+            executables.append(os.path.basename(first))
+        return list(dict.fromkeys(executables))  # dedupe, preserve order
+
+    async def _attempt_error_recovery(
+        self,
+        step: Dict[str, Any],
+        step_result: Dict[str, Any],
+        output_dir: str,
+        attempt: int = 1,
+        max_attempts: int = 3,
+    ) -> Optional[Dict[str, Any]]:
+        """Feed a step failure to the LLM to get a fixed command, then retry.
+
+        Returns the successful step result, or None if recovery is not possible.
+        """
+        if attempt > max_attempts:
+            self.logger.error(
+                "Max recovery attempts (%d) reached for step '%s'",
+                max_attempts, step.get("name"),
+            )
+            return None
+
+        # Build tool-availability context
+        executables = self._extract_executables(step.get("command", ""))
+        tool_availability = {cmd: shutil.which(cmd) is not None for cmd in executables}
+
+        error_context = {
+            "step_name": step.get("name"),
+            "original_command": step.get("command"),
+            "exit_code": step_result.get("exit_code") or step_result.get("returncode"),
+            "stderr": (step_result.get("stderr") or "")[:2000],
+            "stdout": (step_result.get("stdout") or "")[:1000],
+            "platform": "macOS" if sys.platform == "darwin" else "Linux",
+            "tool_availability": tool_availability,
+            "attempt": attempt,
+        }
+
+        prompt = (
+            "A bioinformatics pipeline step failed during execution. "
+            "Diagnose the error and return a fixed shell command.\n\n"
+            f"Step name: {error_context['step_name']}\n"
+            f"Original command:\n  {error_context['original_command']}\n"
+            f"Exit code: {error_context['exit_code']}\n"
+            f"stderr:\n  {error_context['stderr']}\n"
+            f"Platform: {error_context['platform']}\n"
+            f"Tool availability: {json.dumps(error_context['tool_availability'])}\n"
+            f"Recovery attempt: {attempt}/{max_attempts}\n\n"
+            "Common fixes:\n"
+            "- Exit code 127 (command not found): substitute an equivalent tool "
+            "(e.g. curl -fSL -o <file> <url> instead of wget, pigz instead of gzip).\n"
+            "- 'No such file or directory': add mkdir -p for missing directories.\n"
+            "- Permission denied: check paths and permissions.\n\n"
+            "Return ONLY a JSON object with this structure:\n"
+            '{"diagnosis": "short explanation", '
+            '"fixed_command": "the corrected shell command or null if unrecoverable", '
+            '"explanation": "what you changed and why"}'
+        )
+
+        try:
+            response = await self.llm._call_openai([
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert at diagnosing and fixing bioinformatics "
+                        "pipeline failures. Return valid JSON only, no markdown."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ])
+
+            cleaned = self.llm._clean_llm_response(response)
+            fix = json.loads(cleaned)
+
+            fixed_command = fix.get("fixed_command")
+            diagnosis = fix.get("diagnosis", "")
+            explanation = fix.get("explanation", "")
+
+            if not fixed_command:
+                self.logger.warning(
+                    "LLM determined step '%s' is unrecoverable: %s",
+                    step.get("name"), diagnosis,
+                )
+                return None
+
+            self.logger.info(
+                "LLM recovery attempt %d for '%s': %s",
+                attempt, step.get("name"), explanation,
+            )
+            self.logger.info("Fixed command: %s", fixed_command)
+
+            # Build a patched step and re-execute
+            fixed_step = {**step, "command": fixed_command}
+            new_result = await self._step_executor.execute_step(
+                fixed_step, output_dir, cwd=self.initial_cwd,
+            )
+            new_result["step_name"] = step.get("name", "unknown")
+            new_result["recovery_attempt"] = attempt
+            new_result["recovery_diagnosis"] = diagnosis
+            new_result["original_command"] = step.get("command")
+            new_result["fixed_command"] = fixed_command
+
+            if new_result.get("status") in ("error", "failed"):
+                # Recurse with the fixed step so subsequent attempts build on each fix
+                return await self._attempt_error_recovery(
+                    fixed_step, new_result, output_dir,
+                    attempt=attempt + 1, max_attempts=max_attempts,
+                )
+
+            self.logger.info(
+                "Step '%s' recovered successfully on attempt %d",
+                step.get("name"), attempt,
+            )
+            return new_result
+
+        except (json.JSONDecodeError, KeyError) as parse_err:
+            self.logger.warning(
+                "Failed to parse LLM recovery response (attempt %d): %s",
+                attempt, parse_err,
+            )
+            return None
+        except Exception as exc:
+            self.logger.warning(
+                "Error during recovery attempt %d for '%s': %s",
+                attempt, step.get("name"), exc,
+            )
+            return None
+
     async def execute_workflow(self, prompt_or_workflow: Union[str, Workflow]) -> Dict[str, Any]:
         """Execute workflow from prompt or workflow object."""
         try:
@@ -91,12 +314,12 @@ class WorkflowManager:
             else:
                 # Generate workflow from prompt
                 prompt = prompt_or_workflow
-                workflow_data = await self.llm.generate_workflow(prompt)
+                workflow_data = await self.llm.generate_workflow_plan(prompt)
                 
                 # Extract workflow from response
-                workflow = workflow_data.get("workflow", {})
-                workflow_name = workflow.get("name", "Unnamed workflow")
-                workflow_steps = workflow.get("steps", [])
+                workflow_name = workflow_data.get("workflow_type", "Unnamed workflow")
+                workflow_steps = workflow_data.get("steps", [])
+                workflow = {"name": workflow_name, "steps": workflow_steps}
                 
                 self.logger.info(f"Generated workflow: {workflow_name} with {len(workflow_steps)} steps")
                 
@@ -168,9 +391,43 @@ class WorkflowManager:
             
             # Execute workflow steps
             self.logger.info(f"Executing workflow: {workflow_name}")
+
+            # Use DAG-parallel execution when steps declare dependencies
+            has_deps = any(step.get("dependencies") for step in workflow_steps)
+            if has_deps and len(workflow_steps) > 1:
+                try:
+                    dag = WorkflowDAG(executor_type=self.executor_type)
+                    for step in workflow_steps:
+                        dag.add_step(step, dependencies=step.get("dependencies", []))
+                    self.logger.info("Using DAG-parallel execution (%d steps)", len(workflow_steps))
+                    # Build a recovery callback for the DAG executor
+                    async def _dag_recovery(step, result):
+                        return await self._attempt_error_recovery(step, result, output_dir)
+
+                    dag_results = await dag.execute_parallel(
+                        self._step_executor.execute_step,
+                        recovery_fn=_dag_recovery,
+                    )
+                    results = list(dag_results.values()) if isinstance(dag_results, dict) else dag_results
+                    # Normalise results to list-of-dicts with step_name
+                    for r in results:
+                        if isinstance(r, dict) and "step_name" not in r:
+                            r["step_name"] = r.get("step_id", r.get("name", "unknown"))
+                    # Write final checkpoint
+                    completed = [r.get("step_name", "") for r in results if r.get("status") not in ("error", "failed")]
+                    ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
+                    self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
+                except (ValueError, Exception) as dag_err:
+                    self.logger.warning("DAG-parallel execution failed (%s), falling back to sequential", dag_err)
+                    results = []
+                    has_deps = False  # fall through to sequential
+
+            if not has_deps or not results:
+                results = []
             
-            results = []
             for i, step in enumerate(workflow_steps):
+                if results:
+                    break  # already executed via DAG
                 step_name = step.get("name", f"Step {i+1}")
                 self.logger.info(f"Executing step {i+1}/{len(workflow_steps)}: {step_name}")
                 
@@ -201,27 +458,40 @@ class WorkflowManager:
                     self.logger.warning(f"Attempting to execute step anyway...")
                 
                 # Execute step
-                step_result = await self.executor.execute_step(step, output_dir, cwd=self.initial_cwd)
+                step_result = await self._step_executor.execute_step(step, output_dir, cwd=self.initial_cwd)
                 
                 # Add step name to the result for easier reference
                 step_result["step_name"] = step_name
                 
                 results.append(step_result)
+
+                # Write checkpoint after every step
+                completed = [r["step_name"] for r in results if r.get("status") not in ("error", "failed")]
+                ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
+                self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
                 
-                # Check if step failed
-                if step_result.get("status") == "error":
+                # Check if step failed (accept both legacy "error" and canonical "failed")
+                step_status = step_result.get("status", "")
+                if step_status in ("error", "failed"):
                     error_msg = step_result.get('error', '')
                     stderr = step_result.get('stderr', '')
-                    
+
                     self.logger.error(f"Step {step_name} failed: {error_msg}")
                     if stderr:
                         self.logger.error(f"STDERR: {stderr}")
-                    
-                    # Check if this is a critical step
-                    if step.get("critical", False):
-                        self.logger.error(f"Critical step {step_name} failed, but continuing with workflow")
+
+                    # Attempt LLM-driven error recovery
+                    self.logger.info(f"Attempting LLM error recovery for step '{step_name}'...")
+                    recovery_result = await self._attempt_error_recovery(
+                        step, step_result, output_dir,
+                    )
+                    if recovery_result and recovery_result.get("status") not in ("error", "failed"):
+                        self.logger.info(f"Step '{step_name}' recovered successfully")
+                        results[-1] = recovery_result  # replace failed result
+                    elif step.get("critical", False):
+                        self.logger.error(f"Critical step {step_name} failed and could not be recovered")
                     else:
-                        self.logger.warning(f"Non-critical step {step_name} failed, continuing workflow")
+                        self.logger.warning(f"Non-critical step {step_name} failed and could not be recovered, continuing workflow")
                 else:
                     self.logger.info(f"Step {step_name} completed successfully")
             
@@ -231,8 +501,7 @@ class WorkflowManager:
             # Determine overall workflow status
             workflow_status = "success"
             for result in results:
-                if result.get("status") == "error":
-                    # Check if this is a critical step
+                if result.get("status") in ("error", "failed"):
                     step_name = result.get("step_name", "unknown")
                     for step in workflow_steps:
                         if step.get("name") == step_name and step.get("critical", True):
@@ -275,6 +544,12 @@ class WorkflowManager:
             
             dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
             
+            # Write workflow manifest for reproducibility
+            try:
+                self._write_manifest(output_dir, prompt, workflow_plan, results)
+            except Exception as manifest_err:
+                self.logger.warning("Failed to write manifest: %s", manifest_err)
+
             # Return results
             result_dict = {
                 "status": workflow_status,
@@ -322,9 +597,9 @@ class WorkflowManager:
                 def timeout_handler(signum, frame):
                     raise TimeoutError("Dependency checking timed out")
                 
-                # Set a 30-second timeout for dependency checking
+                # Set a 5-minute timeout for dependency checking (conda installs can be slow)
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(30)
+                signal.alarm(300)
                 
                 try:
                     all_installed, available_but_failed_install = await self.dependency_manager.ensure_workflow_dependencies(workflow_plan)
@@ -336,7 +611,7 @@ class WorkflowManager:
                     if available_but_failed_install:
                         # Some dependencies failed to install but are available in the environment
                         missing_deps = [dep for dep in workflow_plan.get("dependencies", {}).get("tools", []) 
-                                      if isinstance(dep, dict) and dep["name"] not in available_but_failed_install
+                                      if isinstance(dep, dict) and dep.get("name", "") not in available_but_failed_install
                                       or not isinstance(dep, dict) and dep not in available_but_failed_install]
                         if missing_deps:
                             self.logger.warning(f"Some dependencies could not be installed and are not available: {missing_deps}")
@@ -438,7 +713,8 @@ class WorkflowManager:
                 return None
             
             try:
-                checkpoint = load_json(checkpoint_path)
+                with open(checkpoint_path, "r") as f:
+                    checkpoint = json.load(f)
                 
                 workflow_plan = checkpoint.get("workflow_plan", {})
                 output_dir = checkpoint.get("output_dir", os.path.abspath("results"))

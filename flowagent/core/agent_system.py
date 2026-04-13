@@ -24,7 +24,8 @@ class PLAN_agent:
     async def plan(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Create a detailed execution plan for a task."""
         try:
-            return await self.llm.generate_workflow_plan(task)
+            prompt = task.get("prompt", "") if isinstance(task, dict) else str(task)
+            return await self.llm.generate_workflow_plan(prompt)
         except Exception as e:
             self.logger.error(f"Error in planning: {str(e)}")
             raise
@@ -65,7 +66,17 @@ class DEBUG_agent:
     async def analyze_error(self, error: str, context: Dict[str, Any]) -> str:
         """Analyze an error and provide debugging suggestions."""
         try:
-            return await self.llm.analyze_error(error, context)
+            prompt = (
+                f"Analyze this bioinformatics workflow error and suggest fixes:\n"
+                f"Error: {error}\n"
+                f"Context: {json.dumps(context, default=str)}\n"
+                f"Provide a concise diagnosis and recommended fix."
+            )
+            messages = [
+                {"role": "system", "content": "You are a bioinformatics workflow debugging expert."},
+                {"role": "user", "content": prompt},
+            ]
+            return await self.llm._call_openai(messages)
         except Exception as e:
             self.logger.error(f"Error in debugging: {str(e)}")
             raise
