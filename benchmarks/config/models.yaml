@@ -10,36 +10,100 @@
 #       env_var: null
 #       base_url: http://localhost:11434
 #       pricing: {input_per_1k: 0.0, output_per_1k: 0.0}
+#
+# Models are grouped into "tiers" so a manuscript figure can colour-code by
+# generation. The ``tier`` field is purely a label — the harness ignores it
+# but the figure code groups by it.
 
 defaults:
   timeout_seconds: 300
   max_retries: 3
 
 models:
-  - id: gpt-4.1
+
+  # ── OpenAI ────────────────────────────────────────────────────
+  - id: gpt-3.5-turbo                  # Released 2022; flagship of its day
     provider: openai
     env_var: OPENAI_API_KEY
-    pricing:
-      input_per_1k: 0.002
-      output_per_1k: 0.008
+    tier: legacy
+    pricing: {input_per_1k: 0.0005, output_per_1k: 0.0015}
 
-  - id: gpt-4o
+  - id: gpt-4                          # Released 2023
     provider: openai
     env_var: OPENAI_API_KEY
-    pricing:
-      input_per_1k: 0.0025
-      output_per_1k: 0.01
+    tier: legacy
+    pricing: {input_per_1k: 0.03, output_per_1k: 0.06}
 
-  - id: claude-sonnet-4-20250514
+  - id: gpt-4-turbo                    # 2023 Nov turbo update
+    provider: openai
+    env_var: OPENAI_API_KEY
+    tier: mid
+    pricing: {input_per_1k: 0.01, output_per_1k: 0.03}
+
+  - id: gpt-4o-mini                    # 2024 cheap option
+    provider: openai
+    env_var: OPENAI_API_KEY
+    tier: mid
+    pricing: {input_per_1k: 0.00015, output_per_1k: 0.0006}
+
+  - id: gpt-4o                         # 2024 flagship
+    provider: openai
+    env_var: OPENAI_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.0025, output_per_1k: 0.01}
+
+  - id: gpt-4.1                        # 2025 flagship
+    provider: openai
+    env_var: OPENAI_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.002, output_per_1k: 0.008}
+
+  # ── Anthropic ─────────────────────────────────────────────────
+  - id: claude-3-haiku-20240307        # Cheap legacy
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    pricing:
-      input_per_1k: 0.003
-      output_per_1k: 0.015
+    tier: legacy
+    pricing: {input_per_1k: 0.00025, output_per_1k: 0.00125}
 
-  - id: gemini-2.5-flash
+  - id: claude-3-sonnet-20240229       # Mid 2024 (deprecated but useful baseline)
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: legacy
+    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
+
+  - id: claude-3-5-sonnet-20241022     # Mid-tier 2024 update
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: mid
+    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
+
+  - id: claude-3-5-haiku-20241022      # Cheap mid
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: mid
+    pricing: {input_per_1k: 0.0008, output_per_1k: 0.004}
+
+  - id: claude-sonnet-4-20250514       # 2025 frontier
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
+
+  # ── Google ────────────────────────────────────────────────────
+  - id: gemini-1.5-flash               # 2024 cheap legacy
     provider: google
     env_var: GOOGLE_API_KEY
-    pricing:
-      input_per_1k: 0.00015
-      output_per_1k: 0.0006
+    tier: legacy
+    pricing: {input_per_1k: 0.000075, output_per_1k: 0.0003}
+
+  - id: gemini-1.5-pro                 # 2024 mid
+    provider: google
+    env_var: GOOGLE_API_KEY
+    tier: mid
+    pricing: {input_per_1k: 0.00125, output_per_1k: 0.005}
+
+  - id: gemini-2.5-flash               # 2025 frontier (cheap tier)
+    provider: google
+    env_var: GOOGLE_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.00015, output_per_1k: 0.0006}

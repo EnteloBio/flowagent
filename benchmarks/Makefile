@@ -16,17 +16,20 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all smoke plan recovery gen exec report clean help
+.PHONY: all smoke plan plan-all recovery gen exec rescore merge report clean help
 
 help:
 	@echo "FlowAgent benchmark targets:"
 	@echo "  make smoke      - run every benchmark in --mock mode (no API key)"
-	@echo "  make plan       - Benchmark A: planning correctness (needs API key)"
+	@echo "  make plan       - Benchmark A for one MODEL (default: $(MODEL))"
+	@echo "  make plan-all   - Benchmark A for ALL models in config/models.yaml"
 	@echo "  make recovery   - Benchmark B: error recovery (needs API key)"
 	@echo "  make gen        - Benchmark C: generator fidelity (no API key)"
 	@echo "  make exec       - Benchmark D: executor coverage (no API key)"
-	@echo "  make all        - run all four benchmarks"
-	@echo "  make report     - regenerate figures from latest results/"
+	@echo "  make rescore    - Re-evaluate the latest planning run with current scoring"
+	@echo "  make merge      - Combine all planning runs into one CSV under _merged/"
+	@echo "  make all        - run all four benchmarks then report"
+	@echo "  make report     - regenerate figures (uses _merged if present)"
 	@echo "  make clean      - delete results/"
 
 smoke:
@@ -37,6 +40,15 @@ smoke:
 
 plan:
 	$(PY) bench_planning.py --models=$(MODEL) --replicates=$(REPLICATES) --out=$(RESULTS_DIR)
+
+plan-all:
+	$(PY) bench_planning.py --replicates=$(REPLICATES) --out=$(RESULTS_DIR)
+
+rescore:
+	$(PY) rescore_planning.py --results-base=$(RESULTS_DIR)
+
+merge:
+	$(PY) merge_runs.py --results-base=$(RESULTS_DIR)
 
 recovery:
 	$(PY) bench_recovery.py --model=$(MODEL) --seeds=$(SEEDS) --out=$(RESULTS_DIR)

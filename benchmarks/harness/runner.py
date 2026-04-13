@@ -30,6 +30,40 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence
 import yaml
 
 
+# ── .env loading ──────────────────────────────────────────────────
+
+def _load_dotenv_once() -> Optional[Path]:
+    """Walk up from this file looking for a ``.env`` and merge it into
+    ``os.environ``. Shell-set values win (we don't override them).
+
+    Runs once at import time so every benchmark script picks up API keys
+    from the repo's ``.env`` file without the user having to ``source`` it.
+    Uses ``python-dotenv`` if available, otherwise a minimal parser.
+    """
+    start = Path(__file__).resolve()
+    for parent in [start.parent] + list(start.parents):
+        candidate = parent / ".env"
+        if candidate.is_file():
+            try:
+                from dotenv import load_dotenv  # type: ignore
+                load_dotenv(candidate, override=False)
+            except ImportError:
+                # Tiny fallback parser — KEY=VALUE per line, no interpolation.
+                for raw in candidate.read_text().splitlines():
+                    line = raw.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, val = line.partition("=")
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    os.environ.setdefault(key, val)
+            return candidate
+    return None
+
+
+_DOTENV_PATH = _load_dotenv_once()
+
+
 # ── Provider switching ────────────────────────────────────────────
 
 def set_provider(model_cfg: Dict[str, Any]) -> None:

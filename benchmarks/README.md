@@ -8,15 +8,26 @@ and **executor coverage**. Drive the manuscript figures.
 
 ```
 benchmarks/
-├── config/            # Model list + fault catalogue
-├── corpus/            # Benchmark prompts and gold plans
-├── harness/           # Shared helpers (runner, metrics, fault injection, plots)
-├── bench_planning.py  # Benchmark A: planning correctness across LLMs
-├── bench_recovery.py  # Benchmark B: error recovery (key manuscript figure)
-├── bench_generation.py# Benchmark C: Nextflow / Snakemake codegen fidelity
-├── bench_executors.py # Benchmark D: executor-coverage matrix
-├── Makefile           # Convenience orchestration
-└── results/           # Gitignored outputs (CSV, JSON, PDF)
+├── config/
+│   ├── models.yaml         # LLMs to sweep (OpenAI, Anthropic, Google, ...)
+│   └── faults.yaml         # Fault catalogue (for Benchmark B)
+├── corpus/
+│   └── prompts.yaml        # 23 benchmark prompts with expected properties
+├── harness/                # Shared helpers
+│   ├── runner.py           # Provider switching, sweep, .env loader
+│   ├── metrics.py          # Scoring functions
+│   ├── fault_inject.py     # Fault implementations
+│   ├── env_detect.py       # Which executor backends are live-testable
+│   ├── executor_probes.py  # Per-backend probes for Benchmark D
+│   └── plot.py             # Publication-ready figures
+├── bench_planning.py       # Benchmark A: planning correctness
+├── bench_recovery.py       # Benchmark B: error recovery (key manuscript figure)
+├── bench_generation.py     # Benchmark C: Nextflow/Snakemake codegen fidelity
+├── bench_executors.py      # Benchmark D: executor-coverage matrix
+├── rescore_planning.py     # Re-evaluate existing plans with updated metrics (no API calls)
+├── merge_runs.py           # Combine runs across models/sessions into one CSV
+├── Makefile                # Convenience orchestration
+└── results/                # Gitignored outputs (CSV, JSON, PDF)
 ```
 
 ## The four benchmarks
@@ -35,42 +46,163 @@ FlowAgent currently **generates** two pipeline formats (Nextflow, Snakemake) but
 snakemake). Benchmark C tests only the two generators; Benchmark D tests all
 six executors.
 
-## Running
+## API keys
+
+The harness auto-loads a `.env` file from the repo root (walks up from
+`benchmarks/`). Put your keys in there:
 
 ```bash
-# No API key needed for C or D (smoke test everything)
+# .env (repo root, already gitignored)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=...
+```
+
+No need to `source` or `export` — the harness picks them up automatically.
+Keys set in the shell win over `.env` (standard dotenv semantics).
+
+## Running
+
+### No API key needed (smoke test everything in ~3 s)
+
+```bash
 make smoke
+```
 
-# Needs OPENAI_API_KEY (or matching env var for your chosen provider)
-make plan      MODEL=gpt-4.1 REPLICATES=3
-make recovery  MODEL=gpt-4.1 SEEDS=5
+### Single model
 
-# Deterministic — no API key required
-make gen
-make exec
+```bash
+make plan     MODEL=gpt-4.1 REPLICATES=3    # Benchmark A, 1 model
+make recovery MODEL=gpt-4.1 SEEDS=5         # Benchmark B, 1 model
+```
 
-# Run every benchmark + build figures into results/figures/
-make all
+### All models at once
+
+```bash
+make plan-all REPLICATES=3
+```
+
+Sweeps every model in `config/models.yaml` concurrently (4 at a time).
+For the default config that's **4 models × 23 prompts × 3 replicates = 276 cells**,
+~30 min wall time, ~$6–8 total.
+
+### Deterministic benchmarks (no API key)
+
+```bash
+make gen      # Benchmark C: generator fidelity
+make exec     # Benchmark D: executor coverage
+```
+
+### Rescore without re-calling the LLM
+
+If the scoring code changes (e.g. after loosening a metric or adding synonym
+lists to `prompts.yaml`), you can re-evaluate an existing run without
+spending more API budget:
+
+```bash
+make rescore
+```
+
+This writes `results/planning/<run>/rescored_<ts>/{metrics.csv, results.json}`.
+
+### Combine runs from multiple sessions
+
+If you ran models incrementally (one at a time, different days, etc.),
+merge every `results/planning/<ts>/` into a single deduplicated CSV:
+
+```bash
+make merge
+```
+
+This writes `results/planning/_merged/<ts>/metrics.csv`. The merger prefers
+rescored subdirectories over the original results and deduplicates by
+`(model, input_id, replicate)` keeping the most recent value — so re-running
+a model to fix something cleanly replaces the stale rows.
+
+### Figures
+
+```bash
 make report
+```
+
+`harness/plot.py::_latest()` looks in this priority order when picking the
+data to plot:
+
+1. `results/planning/_merged/<latest>/` (multi-model aggregated)
+2. `results/planning/<latest>/rescored_<latest>/` (single run, rescored)
+3. `results/planning/<latest>/` (raw single run)
+
+Outputs go to `results/figures/{planning,recovery,generation,executors}.{pdf,png}`.
+
+### Everything at once
+
+```bash
+make all      # plan + recovery + gen + exec + report
+```
+
+## Typical multi-model workflow
+
+```bash
+# 1. Drop keys in .env (or export them)
+cat > ../.env <<'EOF'
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=...
+EOF
+
+# 2. Sweep all LLMs
+make plan-all REPLICATES=3      # ~30 min, ~$6–8
+
+# 3. (Optional) re-evaluate with current scoring logic
+make rescore
+
+# 4. Aggregate into a single CSV
+make merge
+
+# 5. Render the comparison figure
+make report
+
+# Figure lands at results/figures/planning.pdf
 ```
 
 ## Cost + wall-clock estimates
 
-Rough guide (GPT-4.1 as of 2026-04; rates as in `config/models.yaml`).
+Rough guide (GPT-4.1 rates per 1k tokens from `config/models.yaml`).
 
-| Benchmark | Wall time | API cost |
-|---|---|---|
-| Planning (24 prompts × 1 model × 3 replicates) | ~20 min | ~$2 |
-| Recovery (10 faults × 5 seeds × 1 model) | ~15 min | ~$1 |
-| Generation | <1 min | $0 |
-| Executors (mock mode) | <1 min | $0 |
+| Target | Models | Wall time | API cost |
+|---|---|---|---|
+| `make plan` | 1 | ~20 min | ~$2 |
+| `make plan-all` | 4 | ~30 min (concurrent) | ~$6–8 |
+| `make recovery` | 1 | ~15 min | ~$1 |
+| `make gen` | — | <1 min | $0 |
+| `make exec` | — | <1 min | $0 |
+| `make rescore` | — | ~5 s | $0 |
+| `make merge` | — | ~1 s | $0 |
 
 ## Reproducibility
 
-Every run writes a `manifest.json` with git SHA, Python version, installed
-package versions, model IDs, and a redacted env-var snapshot. Prompt corpus
-(`corpus/prompts.yaml`) and fault catalogue (`config/faults.yaml`) are version
-controlled and immutable per-release. Random seeds are logged per-cell.
+Every run writes a `manifest.json` with: git SHA, Python version, installed
+package versions, model IDs, timestamp, and a redacted env-var snapshot
+(API keys show as `<redacted>`). Prompt corpus (`corpus/prompts.yaml`) and
+fault catalogue (`config/faults.yaml`) are version-controlled and immutable
+per release. Random seeds are logged per-cell.
+
+## Troubleshooting
+
+**"All cells errored"** — check `metrics.csv`; if `error` contains
+`Environment variable ... is required`, the harness didn't find your `.env`.
+Verify with:
+
+```bash
+python -c "from harness.runner import _DOTENV_PATH; print(_DOTENV_PATH)"
+```
+
+If it prints `None`, add a `.env` file to the repo root with your keys.
+
+**`make report` crashes with "No objects to concatenate"** — fixed in the
+current version; if you're on an older checkout, pull latest.
+
+**Only 1 row per (model, prompt) in merged CSV even though I ran 3 replicates** — the deduplicator collapses rows only when `(model, input_id, replicate)` are identical. If your replicate numbers got reset, it's rerunning fresh. Check `_source_run` in `metrics.csv` to trace.
 
 ## Out of scope (documented explicitly)
 

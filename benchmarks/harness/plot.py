@@ -26,10 +26,28 @@ def planning_figure(df: pd.DataFrame) -> plt.Figure:
     """Grouped bar chart: models × {type_correct, tools_present, dag_valid}.
 
     Averaged across prompts and replicates; error bars = standard deviation.
+
+    Rows that errored out (harness exception, missing API key, ...) are
+    filtered out first so they don't collapse the aggregate to 0/NaN.
     """
     metrics = ["type_correct", "tools_present_fraction",
                "dag_valid", "no_forbidden_tools", "overall_pass"]
     metrics = [m for m in metrics if m in df.columns]
+
+    # Drop rows where the cell errored (no metrics were recorded).
+    if "error" in df.columns:
+        df = df[df["error"].isna()]
+    if "model" not in df.columns or df.empty or not metrics:
+        fig, ax = plt.subplots(figsize=(6, 3))
+        if "error" in df.columns:
+            reason = "All cells errored (likely missing API keys)."
+        else:
+            reason = "No planning metrics present in this run."
+        ax.text(0.5, 0.5, f"No usable planning data.\n{reason}",
+                ha="center", va="center", wrap=True)
+        ax.axis("off")
+        return fig
+
     agg = (df.groupby("model")[metrics]
              .agg(["mean", "std"])
              .reset_index())
@@ -174,10 +192,36 @@ def executor_matrix_figure(df: pd.DataFrame) -> plt.Figure:
 # ── CLI: regenerate all figures ──────────────────────────────────
 
 def _latest(run_dir: Path) -> Optional[Path]:
+    """Return the latest results dir for a given benchmark.
+
+    For ``planning``, prefer ``_merged/<latest>`` if it exists, then
+    ``<run>/rescored_<latest>``, then ``<run>`` itself. This way the
+    figure always reflects the freshest aggregated multi-model data.
+    """
     if not run_dir.exists():
         return None
-    subs = [p for p in run_dir.iterdir() if p.is_dir()]
-    return max(subs, key=lambda p: p.stat().st_mtime) if subs else None
+
+    # Prefer merged outputs (planning only)
+    merged = run_dir / "_merged"
+    if merged.exists():
+        merged_subs = [p for p in merged.iterdir() if p.is_dir()
+                       and (p / "metrics.csv").exists()]
+        if merged_subs:
+            return max(merged_subs, key=lambda p: p.stat().st_mtime)
+
+    # Otherwise, latest individual run; prefer its newest rescored_* if any
+    subs = [p for p in run_dir.iterdir() if p.is_dir()
+            and not p.name.startswith("_")]
+    if not subs:
+        return None
+    latest_run = max(subs, key=lambda p: p.stat().st_mtime)
+    rescored = sorted(
+        (sub for sub in latest_run.iterdir()
+         if sub.is_dir() and sub.name.startswith("rescored_")
+         and (sub / "metrics.csv").exists()),
+        key=lambda p: p.stat().st_mtime,
+    )
+    return rescored[-1] if rescored else latest_run
 
 
 def main():

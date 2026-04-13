@@ -370,8 +370,23 @@ benchmark writes timestamped results (JSON + CSV + `manifest.json`) and the
 ### Install benchmark-only dependencies
 
 ```bash
-pip install pandas matplotlib pyyaml networkx tabulate
+pip install pandas matplotlib pyyaml networkx tabulate python-dotenv
 ```
+
+### API keys (auto-loaded from `.env`)
+
+The harness reads a `.env` file from the repo root automatically — no
+`source` or `export` needed. Put your keys there:
+
+```bash
+# .env (already in .gitignore)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=...
+```
+
+Shell-set env vars still win over `.env` (standard dotenv semantics), so you
+can override a single key per run without editing the file.
 
 ### Quick start — smoke test (no API key, ~3 s)
 
@@ -379,9 +394,6 @@ pip install pandas matplotlib pyyaml networkx tabulate
 cd benchmarks
 make smoke          # runs every benchmark in --mock mode
 ```
-
-This verifies the harness is wired correctly and produces non-empty CSVs for
-every benchmark, without making any LLM calls.
 
 ### Full runs
 
@@ -391,41 +403,49 @@ Every target runs inside `benchmarks/`; results land in
 ```bash
 cd benchmarks
 
-# Benchmark A — planning correctness (needs OPENAI_API_KEY or equivalent)
-make plan MODEL=gpt-4.1 REPLICATES=3
+# ── Benchmark A — planning correctness ────────────────────
+make plan       MODEL=gpt-4.1 REPLICATES=3      # one model
+make plan-all   REPLICATES=3                     # every model in config/models.yaml
 
-# Benchmark B — error recovery (needs API key)
-make recovery MODEL=gpt-4.1 SEEDS=5
+# ── Benchmark B — error recovery ──────────────────────────
+make recovery   MODEL=gpt-4.1 SEEDS=5
 
-# Benchmark C — generator fidelity (deterministic, no API key)
+# ── Benchmark C — generator fidelity (no API key) ────────
 make gen
 
-# Benchmark D — executor coverage (no API key)
+# ── Benchmark D — executor coverage (no API key) ─────────
 make exec
 
-# Run all four, then regenerate figures
-make all
-make report
+# ── Post-processing (no API calls) ────────────────────────
+make rescore    # re-evaluate latest planning run with current scoring logic
+make merge      # combine all planning runs into a single deduplicated CSV
+
+# ── Figures ───────────────────────────────────────────────
+make report     # auto-uses merged/rescored data when present
+make all        # plan + recovery + gen + exec + report
 ```
 
 Figures are written to `benchmarks/results/figures/` as both `.pdf`
 (for manuscripts) and `.png` (for READMEs).
 
+### Typical multi-model workflow
+
+```bash
+cd benchmarks
+
+make plan-all REPLICATES=3      # sweep 4 LLMs, ~30 min, ~$6–8
+make rescore                     # (optional) apply current scoring
+make merge                       # collate into one CSV
+make report                      # figure → results/figures/planning.pdf
+```
+
 ### Switching LLM providers
 
 The `MODEL` variable accepts any model ID from `benchmarks/config/models.yaml`
 (currently `gpt-4.1`, `gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-flash`).
-Make sure the matching API-key environment variable is set (see the `env_var`
-field in that YAML). To add a local Ollama model, append an entry to that
-YAML — see the comment at the top of the file.
-
-```bash
-export OPENAI_API_KEY=sk-...
-make plan MODEL=gpt-4.1
-
-export ANTHROPIC_API_KEY=sk-ant-...
-make plan MODEL=claude-sonnet-4-20250514
-```
+Make sure the matching API-key environment variable is set (via `.env` or
+`export`). To add a local Ollama model, append an entry to that YAML — see the
+comment at the top of the file.
 
 ### Python interpreter selection
 
@@ -438,12 +458,15 @@ make plan PY=$(which python) MODEL=gpt-4.1
 
 ### Rough cost and wall-time estimates
 
-| Benchmark | Wall time | Estimated API cost |
-|---|---|---|
-| `make plan` (24 prompts × 1 model × 3 replicates, GPT-4.1) | ~20 min | ~$2 |
-| `make recovery` (10 faults × 5 seeds × 1 model, GPT-4.1) | ~15 min | ~$1 |
-| `make gen` | <1 min | $0 |
-| `make exec` | <1 min | $0 |
+| Target | Models | Wall time | API cost |
+|---|---|---|---|
+| `make plan` | 1 | ~20 min | ~$2 |
+| `make plan-all` | 4 | ~30 min (concurrent) | ~$6–8 |
+| `make recovery` | 1 | ~15 min | ~$1 |
+| `make gen` | — | <1 min | $0 |
+| `make exec` | — | <1 min | $0 |
+| `make rescore` | — | ~5 s | $0 |
+| `make merge` | — | ~1 s | $0 |
 
 ### Reproducibility
 
