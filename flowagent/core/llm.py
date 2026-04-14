@@ -1532,7 +1532,7 @@ If you are being asked to generate a title, set "success" to false.
                 result["reference"] = reference
                 
             # Add paired_end flag based on relationships
-            if "relationships" in result and result["relationships"]["type"] == "paired":
+            if "relationships" in result and isinstance(result["relationships"], dict) and result["relationships"].get("type") == "paired":
                 result["paired_end"] = True
             else:
                 result["paired_end"] = paired_end

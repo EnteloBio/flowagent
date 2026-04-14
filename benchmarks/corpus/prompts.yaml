@@ -197,3 +197,119 @@ prompts:
     expected_tools: [kallisto, multiqc]
     expected_min_steps: 4
     forbidden_tools: [wget]
+
+  # ── Hard / challenging benchmarks (8) ─────────────────────────
+  # Each one stresses one or more of:
+  #   (A) many required tools (4+) — tests omission
+  #   (B) long minimum step count (≥7)  — tests planning depth
+  #   (C) forbids the obvious shortcut  — tests instruction following
+  #   (D) niche/long-tail domain        — tests breadth
+
+  - id: hard_full_germline_pipeline
+    # A+B+C: must coordinate four tools across an end-to-end germline
+    # workflow and resist the temptation to drop in bowtie2/star.
+    prompt: >-
+      End-to-end germline short-variant pipeline on paired-end WGS reads:
+      align with BWA-MEM, sort and mark duplicates with Picard, recalibrate
+      base qualities with GATK BQSR, call variants with GATK HaplotypeCaller,
+      then hard-filter and normalise the resulting VCF with bcftools.
+    expected_workflow_type: [variant_calling, custom]
+    expected_tools: [bwa, picard, gatk, bcftools]
+    expected_min_steps: 8
+    forbidden_tools: [wget, kallisto, star, bowtie2, hisat2]
+
+  - id: hard_methylation_bismark_wgbs
+    # D+C: bisulfite-sequencing is a niche domain; LLMs tend to reach for
+    # bwa/bowtie2 by default, but those won't align bisulfite-converted reads.
+    prompt: >-
+      Whole-genome bisulfite sequencing (WGBS) analysis: trim adapters,
+      align bisulfite-converted paired-end reads with Bismark, deduplicate,
+      extract per-cytosine methylation calls, and aggregate QC with MultiQC.
+    expected_workflow_type: [methylation, custom]
+    expected_tools: [bismark, samtools, multiqc]
+    expected_min_steps: 6
+    forbidden_tools: [wget, bwa, bowtie2, hisat2, star, kallisto]
+
+  - id: hard_longread_nanopore_variants
+    # D+B+C: long-read variant calling — must pick minimap2 (not bwa) and a
+    # nanopore-aware caller (medaka/clair3), not GATK HaplotypeCaller.
+    prompt: >-
+      Oxford Nanopore long-read variant calling: align reads with minimap2
+      using the map-ont preset, sort and index with samtools, then call
+      small variants with a nanopore-aware caller (medaka or clair3) and
+      filter the VCF with bcftools.
+    expected_workflow_type: [variant_calling, long_read, custom]
+    expected_tools: [minimap2, samtools, bcftools]
+    expected_min_steps: 6
+    forbidden_tools: [wget, bwa, bowtie2, gatk]
+
+  - id: hard_strand_specific_rnaseq
+    # A+C: forbids the kallisto/salmon/star fast paths and demands an
+    # explicit splice-aware alignment + assembly + counting chain.
+    prompt: >-
+      Reverse-stranded paired-end RNA-seq pipeline: align with HISAT2 to the
+      human genome (with splice-site annotation), sort with samtools,
+      assemble transcripts with StringTie using the reverse-stranded flag,
+      and produce a per-gene count matrix with featureCounts in
+      strand-specific mode (-s 2).
+    expected_workflow_type: [rna_seq_hisat2, custom]
+    expected_tools: [hisat2, samtools, stringtie, featurecounts]
+    expected_min_steps: 6
+    forbidden_tools: [wget, kallisto, salmon, star]
+
+  - id: hard_sv_calling_manta
+    # A+B+C: structural-variant calling — Manta is the obvious tool but
+    # often skipped; bcftools/gatk are tempting but wrong for SV calling.
+    prompt: >-
+      Germline structural-variant discovery on paired-end WGS reads:
+      align with BWA-MEM, sort and mark duplicates with Picard, index with
+      samtools, run Manta in germline mode to produce a VCF of structural
+      variants, then convert and filter the VCF for PASS calls.
+    expected_workflow_type: [structural_variants, custom]
+    expected_tools: [bwa, picard, samtools, manta]
+    expected_min_steps: 7
+    forbidden_tools: [wget, gatk, bcftools, kallisto]
+
+  - id: hard_cutandrun_full
+    # A+B: CUT&RUN is ChIP-seq-adjacent but distinct — needs proper trimming
+    # and BAMPE-style peak calling. Forbidding trim_galore forces fastp.
+    prompt: >-
+      Full paired-end CUT&RUN analysis pipeline: QC raw reads with FastQC,
+      trim adapters and quality with fastp, align with Bowtie2 using
+      end-to-end --very-sensitive mode, filter and sort with samtools,
+      mark duplicates with Picard, call narrow peaks with MACS2 in BAMPE
+      mode, and aggregate every QC artefact into one MultiQC report.
+    expected_workflow_type: [chip_seq, cut_and_run, custom]
+    expected_tools: [fastqc, fastp, bowtie2, samtools, picard, macs2, multiqc]
+    expected_min_steps: 8
+    forbidden_tools: [wget, trim_galore, bwa, kallisto]
+
+  - id: hard_rnaseq_full_de_pipeline
+    # A+B+C: a complete bulk RNA-seq pipeline driven all the way to a
+    # gene-count matrix — must use STAR (not kallisto/salmon/hisat2).
+    prompt: >-
+      Complete bulk RNA-seq differential-expression preprocessing:
+      adapter-trim paired-end reads with Trim Galore, two-pass align with
+      STAR to the human genome, sort and index BAMs with samtools,
+      mark duplicates with Picard, count reads per gene with featureCounts
+      using a GTF annotation, and aggregate every step into a single
+      MultiQC report ready for downstream DESeq2.
+    expected_workflow_type: [rna_seq_star, custom]
+    expected_tools: [trim_galore, star, samtools, picard, featurecounts, multiqc]
+    expected_min_steps: 8
+    forbidden_tools: [wget, kallisto, salmon, hisat2]
+
+  - id: hard_metagenomics_kraken
+    # D+C: shotgun-metagenomics taxonomic profiling — niche enough that
+    # weaker models will reach for bwa/bowtie2 against a reference instead
+    # of using a k-mer classifier.
+    prompt: >-
+      Shotgun-metagenomics taxonomic profiling on paired-end reads:
+      QC with FastQC, host-decontaminate by removing human reads, classify
+      remaining reads with Kraken2 against a standard database, re-estimate
+      species-level abundances with Bracken, and combine all QC into a
+      MultiQC report.
+    expected_workflow_type: [metagenomics, custom]
+    expected_tools: [fastqc, kraken2, bracken, multiqc]
+    expected_min_steps: 5
+    forbidden_tools: [wget, bwa, bowtie2, kallisto, star]

@@ -89,6 +89,12 @@ models:
     tier: frontier
     pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
 
+  - id: claude-opus-4-5                # 2025 frontier (Opus tier — most capable)
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+
   # ── Google ────────────────────────────────────────────────────
   - id: gemini-1.5-flash               # 2024 cheap legacy
     provider: google
