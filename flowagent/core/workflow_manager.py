@@ -246,9 +246,7 @@ class WorkflowManager:
 
             # Build a patched step and re-execute
             fixed_step = {**step, "command": fixed_command}
-            new_result = await self._step_executor.execute_step(
-                fixed_step, output_dir, cwd=self.initial_cwd,
-            )
+            new_result = await self._step_executor.execute_step(fixed_step)
             new_result["step_name"] = step.get("name", "unknown")
             new_result["recovery_attempt"] = attempt
             new_result["recovery_diagnosis"] = diagnosis
@@ -268,6 +266,12 @@ class WorkflowManager:
             )
             return new_result
 
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "LLM recovery call timed out for step '%s' (attempt %d)",
+                step.get("name"), attempt,
+            )
+            return None
         except (json.JSONDecodeError, KeyError) as parse_err:
             self.logger.warning(
                 "Failed to parse LLM recovery response (attempt %d): %s",
@@ -458,7 +462,7 @@ class WorkflowManager:
                     self.logger.warning(f"Attempting to execute step anyway...")
                 
                 # Execute step
-                step_result = await self._step_executor.execute_step(step, output_dir, cwd=self.initial_cwd)
+                step_result = await self._step_executor.execute_step(step)
                 
                 # Add step name to the result for easier reference
                 step_result["step_name"] = step_name

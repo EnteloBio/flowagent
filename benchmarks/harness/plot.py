@@ -1,8 +1,15 @@
 """Figure generation for benchmark results.
 
-Produces the PDFs / PNGs referenced by the manuscript. Each function
-consumes a pandas.DataFrame (loaded from ``metrics.csv``) and returns a
-matplotlib Figure.
+Produces publication-ready PDFs + PNGs from benchmark metrics. Each plotting
+function consumes a pandas.DataFrame (loaded from ``metrics.csv``) and
+returns a matplotlib ``Figure``.
+
+Style goals:
+  * Colour-blind-safe palette (Okabe-Ito for providers)
+  * Consistent sans-serif typography (Arial / Helvetica / DejaVu Sans)
+  * 300 DPI PNG + vector PDF for every figure
+  * Tight, constrained layouts with no wasted whitespace
+  * Deterministic model ordering (legacy → mid → frontier)
 
 Usage:
     python -m harness.plot --results=results
@@ -11,140 +18,576 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")  # headless
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+
+
+# ── Publication-ready defaults ───────────────────────────────────
+
+def _set_publication_style() -> None:
+    """Apply matplotlib rcParams tuned for journal-figure quality."""
+    plt.rcParams.update({
+        # Typography: prefer Arial / Helvetica (widely accepted by journals)
+        "font.family":          "sans-serif",
+        "font.sans-serif":      ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size":             9.0,
+        "axes.titlesize":       10.5,
+        "axes.titleweight":     "bold",
+        "axes.labelsize":        9.0,
+        "xtick.labelsize":       8.0,
+        "ytick.labelsize":       8.0,
+        "legend.fontsize":       8.0,
+        "figure.titlesize":     11.0,
+        "figure.titleweight":   "bold",
+
+        # Axes & ticks
+        "axes.linewidth":        0.8,
+        "axes.edgecolor":       "#374151",
+        "axes.labelcolor":      "#111827",
+        "xtick.color":          "#374151",
+        "ytick.color":          "#374151",
+        "xtick.major.width":     0.8,
+        "ytick.major.width":     0.8,
+        "xtick.major.size":      3.0,
+        "ytick.major.size":      3.0,
+        "axes.spines.top":      False,
+        "axes.spines.right":    False,
+
+        # Grid: light, horizontal only by default
+        "axes.grid":             False,
+        "grid.color":           "#e5e7eb",
+        "grid.linewidth":        0.6,
+        "grid.alpha":            0.8,
+
+        # Figure
+        "figure.dpi":           150,
+        "savefig.dpi":          300,
+        "savefig.bbox":         "tight",
+        "savefig.pad_inches":    0.05,
+        "pdf.fonttype":         42,     # TrueType (editable in Illustrator)
+        "ps.fonttype":          42,
+
+        # Layout
+        "figure.constrained_layout.use":       True,
+        "figure.constrained_layout.h_pad":     0.04,
+        "figure.constrained_layout.w_pad":     0.04,
+
+        # Colours
+        "patch.edgecolor":      "white",
+        "patch.linewidth":       0.4,
+    })
+
+
+_set_publication_style()
+
+
+# ── Colour palettes ──────────────────────────────────────────────
+
+# Okabe–Ito — an 8-colour palette designed for colour-blind readability
+# (https://jfly.uni-koeln.de/color/). Used for provider grouping.
+_PROVIDER_COLOURS = {
+    "anthropic": "#E69F00",  # orange
+    "openai":    "#0072B2",  # blue
+    "google":    "#009E73",  # bluish-green
+    "ollama":    "#CC79A7",  # reddish-purple
+    "other":     "#6b7280",  # slate
+}
+
+_TIER_ORDER = {"legacy": 0, "mid": 1, "frontier": 2}
+
+# Custom divergent heat-map colormap: desaturated red → amber → green, tuned
+# for readability in greyscale and for protanopia. Values 0–1 map to
+# colours that remain distinguishable at 0.3 vs 0.7.
+_HEATMAP_CMAP = LinearSegmentedColormap.from_list(
+    "flowagent_rag",
+    [
+        (0.00, "#b91c1c"),  # deep red
+        (0.25, "#ea580c"),  # red-orange
+        (0.50, "#facc15"),  # amber
+        (0.75, "#65a30d"),  # yellow-green
+        (1.00, "#15803d"),  # deep green
+    ],
+    N=256,
+)
+
+
+def _provider_from_model(model: str) -> str:
+    """Guess provider from the model id string."""
+    m = model.lower()
+    if "claude" in m:  return "anthropic"
+    if "gpt" in m or m.startswith("o1") or m.startswith("o3") or m.startswith("o4"):
+        return "openai"
+    if "gemini" in m:  return "google"
+    if "llama" in m or "mistral" in m or "qwen" in m:
+        return "ollama"
+    return "other"
+
+
+def _short_name(model: str) -> str:
+    """Shorten model names for axis labels."""
+    replacements = [
+        ("claude-3-5-haiku-20241022",  "Haiku 3.5"),
+        ("claude-3-5-sonnet-20241022", "Sonnet 3.5"),
+        ("claude-3-haiku-20240307",    "Haiku 3"),
+        ("claude-3-sonnet-20240229",   "Sonnet 3"),
+        ("claude-sonnet-4-20250514",   "Sonnet 4"),
+        ("claude-opus-4-5",            "Opus 4.5"),
+        ("claude-opus-4-6",            "Opus 4.6"),
+        ("claude-opus-4-7",            "Opus 4.7"),
+        ("gemini-1.5-flash",           "Gemini 1.5 Flash"),
+        ("gemini-1.5-pro",             "Gemini 1.5 Pro"),
+        ("gemini-2.5-flash",           "Gemini 2.5 Flash"),
+        ("gpt-3.5-turbo",              "GPT-3.5"),
+        ("gpt-4-turbo",                "GPT-4 Turbo"),
+        ("gpt-4o-mini",                "GPT-4o mini"),
+        ("gpt-4o",                     "GPT-4o"),
+        ("gpt-4.1",                    "GPT-4.1"),
+        ("gpt-5.4-nano",               "GPT-5.4 nano"),
+        ("gpt-5.4-mini",               "GPT-5.4 mini"),
+        ("gpt-5.4",                    "GPT-5.4"),
+        ("gpt-4",                      "GPT-4"),
+    ]
+    for long, short in replacements:
+        if model == long:
+            return short
+    return model
+
+
+def _tier_of(model: str) -> str:
+    """Best-effort inference of which tier a model belongs to, for ordering.
+
+    Used only when the ``tier`` column is absent from the metrics CSV.
+    """
+    m = model.lower()
+    if any(k in m for k in ("3.5-turbo", "gpt-4\b", "claude-3-haiku",
+                             "claude-3-sonnet-2024", "gemini-1.5-flash")):
+        return "legacy"
+    if any(k in m for k in ("3-5-", "4-turbo", "4o-mini",
+                             "gemini-1.5-pro", "3-5-haiku", "3-5-sonnet")):
+        return "mid"
+    return "frontier"
+
+
+def _wilson_ci(k: int, n: int, z: float = 1.96) -> Tuple[float, float, float]:
+    """Wilson score 95% confidence interval for a proportion."""
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    margin = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return p, max(0, centre - margin), min(1, centre + margin)
+
+
+def _empty_figure(msg: str) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(4.5, 2.2))
+    ax.text(0.5, 0.5, msg, ha="center", va="center", wrap=True,
+            fontsize=9, color="#6b7280")
+    ax.set_axis_off()
+    return fig
+
+
+def _style_value_axis(ax, *, x: bool = True) -> None:
+    """Apply consistent grid + spine styling to a proportion/count axis."""
+    if x:
+        ax.xaxis.grid(True, linestyle="-", linewidth=0.6, alpha=0.35)
+    else:
+        ax.yaxis.grid(True, linestyle="-", linewidth=0.6, alpha=0.35)
+    ax.set_axisbelow(True)
 
 
 # ── Benchmark A: planning correctness ────────────────────────────
 
-def planning_figure(df: pd.DataFrame) -> plt.Figure:
-    """Grouped bar chart: models × {type_correct, tools_present, dag_valid}.
+def _pass_rate_panel(ax, df_slice: pd.DataFrame, title: str,
+                     show_xlabel: bool = True) -> None:
+    """Horizontal bar chart of overall_pass rate with Wilson CIs.
 
-    Averaged across prompts and replicates; error bars = standard deviation.
-
-    Rows that errored out (harness exception, missing API key, ...) are
-    filtered out first so they don't collapse the aggregate to 0/NaN.
+    Bars are coloured by provider. Order: lowest rate on the bottom, highest
+    on the top (so the strongest model is visually prominent).
     """
-    metrics = ["type_correct", "tools_present_fraction",
-               "dag_valid", "no_forbidden_tools", "overall_pass"]
-    metrics = [m for m in metrics if m in df.columns]
+    if df_slice.empty:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center",
+                transform=ax.transAxes, color="#6b7280")
+        ax.set_title(title, loc="left")
+        return
 
-    # Drop rows where the cell errored (no metrics were recorded).
+    agg = (df_slice.groupby("model")["overall_pass"]
+           .agg(["sum", "count"]).reset_index())
+    agg.columns = ["model", "k", "n"]
+    agg[["rate", "ci_lo", "ci_hi"]] = agg.apply(
+        lambda r: pd.Series(_wilson_ci(int(r["k"]), int(r["n"]))),
+        axis=1,
+    )
+    agg = agg.sort_values("rate", ascending=True).reset_index(drop=True)
+
+    y       = np.arange(len(agg))
+    colours = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+               for m in agg["model"]]
+    labels  = [_short_name(m) for m in agg["model"]]
+    # Clip to ≥0 — when a Wilson CI is hit by the [0, 1] boundary cap the
+    # subtraction can round to a tiny negative (e.g. -1e-17) and matplotlib
+    # then refuses the whole xerr array.
+    xerr_lo = np.clip((agg["rate"] - agg["ci_lo"]).values, 0.0, None)
+    xerr_hi = np.clip((agg["ci_hi"] - agg["rate"]).values, 0.0, None)
+
+    ax.barh(y, agg["rate"], color=colours, edgecolor="white",
+            linewidth=0.6, height=0.72,
+            xerr=[xerr_lo, xerr_hi], capsize=2.2,
+            error_kw={"elinewidth": 0.8, "capthick": 0.8, "color": "#1f2937"})
+
+    # Rate annotation: always just past the upper CI endpoint so it never
+    # collides with the error-bar cap.
+    for i, (rate, ci_hi) in enumerate(zip(agg["rate"], agg["ci_hi"])):
+        x = min(ci_hi + 0.015, 1.14)
+        ax.text(x, i, f"{rate:.0%}", va="center", ha="left",
+                fontsize=7.5, color="#1f2937")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels)
+    ax.set_xlim(0, 1.18)
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.set_title(title, loc="left")
+    _style_value_axis(ax, x=True)
+    if show_xlabel:
+        ax.set_xlabel("Pass rate  (95% Wilson CI)")
+
+
+def _add_provider_legend(fig: plt.Figure, providers_present: List[str],
+                         loc: str = "upper center",
+                         bbox_to_anchor=(0.5, 1.02)) -> None:
+    """Attach a compact provider legend to a figure."""
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, fc=_PROVIDER_COLOURS[p],
+                      ec="white", linewidth=0.4)
+        for p in providers_present
+    ]
+    _PROVIDER_DISPLAY = {
+        "anthropic": "Anthropic", "openai": "OpenAI",
+        "google": "Google", "ollama": "Ollama", "other": "Other",
+    }
+    labels = [_PROVIDER_DISPLAY.get(p, p.capitalize()) for p in providers_present]
+    fig.legend(handles, labels, loc=loc, ncol=len(labels),
+               frameon=False, bbox_to_anchor=bbox_to_anchor,
+               handlelength=1.2, handleheight=1.0, borderaxespad=0.0,
+               columnspacing=1.4)
+
+
+def planning_figure(df: pd.DataFrame) -> plt.Figure:
+    """Two-panel bar chart: standard prompts vs hard prompts.
+
+    Pass rate per model with 95% Wilson confidence intervals, bars coloured
+    by provider.  Rows with a non-null ``error`` column are filtered out so
+    they don't collapse the aggregate.
+    """
     if "error" in df.columns:
         df = df[df["error"].isna()]
-    if "model" not in df.columns or df.empty or not metrics:
-        fig, ax = plt.subplots(figsize=(6, 3))
-        if "error" in df.columns:
-            reason = "All cells errored (likely missing API keys)."
-        else:
-            reason = "No planning metrics present in this run."
-        ax.text(0.5, 0.5, f"No usable planning data.\n{reason}",
-                ha="center", va="center", wrap=True)
-        ax.axis("off")
-        return fig
+    if "model" not in df.columns or df.empty or "overall_pass" not in df.columns:
+        reason = ("all cells errored (likely missing API keys)"
+                  if "error" in df.columns
+                  else "no planning metrics present in this run")
+        return _empty_figure(f"No usable planning data.\n({reason})")
 
-    agg = (df.groupby("model")[metrics]
-             .agg(["mean", "std"])
-             .reset_index())
+    df = df.copy()
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    models = agg["model"].tolist()
-    n_metrics = len(metrics)
-    x = range(len(models))
-    width = 0.8 / max(n_metrics, 1)
+    has_hard = df["input_id"].str.startswith("hard_").any()
 
-    for i, metric in enumerate(metrics):
-        means = agg[(metric, "mean")].astype(float).tolist()
-        stds = agg[(metric, "std")].fillna(0).astype(float).tolist()
-        offsets = [xi + i * width - 0.4 + width / 2 for xi in x]
-        ax.bar(offsets, means, width, yerr=stds, label=metric, capsize=3)
+    n_models = df["model"].nunique()
+    panel_height = max(3.0, 0.28 * n_models + 1.2)
 
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(models, rotation=20, ha="right")
-    ax.set_ylim(0, 1.05)
-    ax.set_ylabel("Score (0–1)")
-    ax.set_title("Benchmark A — Planning correctness across LLMs")
-    ax.legend(loc="lower right", fontsize=8)
-    ax.grid(True, axis="y", alpha=0.3)
-    fig.tight_layout()
+    if has_hard:
+        orig = df[~df["input_id"].str.startswith("hard_")]
+        hard = df[ df["input_id"].str.startswith("hard_")]
+
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(7.2, panel_height), sharey=False,
+        )
+        _pass_rate_panel(ax1, orig, "a  Standard prompts")
+        _pass_rate_panel(ax2, hard, "b  Hard prompts")
+    else:
+        fig, ax = plt.subplots(figsize=(5.2, panel_height))
+        _pass_rate_panel(ax, df, "All prompts")
+
+    providers_present = sorted(
+        {_provider_from_model(m) for m in df["model"].unique()},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers_present,
+                         bbox_to_anchor=(0.5, 1.015))
+
+    fig.suptitle("Planning correctness across LLMs",
+                 fontsize=11, fontweight="bold", y=1.06)
+    return fig
+
+
+def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
+    """Per-prompt × per-model pass-rate heatmap (hard prompts only).
+
+    Models are ordered left-to-right by overall pass rate; prompts are
+    ordered top-to-bottom with the hardest (lowest mean) at the top. Cells
+    are annotated with the pass-rate percentage and outlined with a thin
+    white grid to aid readability.
+    """
+    if "error" in df.columns:
+        df = df[df["error"].isna()]
+    if "model" not in df.columns or df.empty or "overall_pass" not in df.columns:
+        return _empty_figure("No data for heatmap.")
+
+    df = df.copy()
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    if df["input_id"].str.startswith("hard_").any():
+        df = df[df["input_id"].str.startswith("hard_")]
+
+    pivot = df.pivot_table(
+        index="input_id", columns="model", values="overall_pass",
+        aggfunc="mean",
+    )
+    # Hardest prompts on top, best models on the right.
+    pivot = pivot.loc[pivot.mean(axis=1).sort_values().index,
+                      pivot.mean(axis=0).sort_values(ascending=True).index]
+
+    # Figure size: scale with matrix shape, clamp to journal widths.
+    fig_w = max(6.0, min(0.55 * pivot.shape[1] + 2.4, 11.5))
+    fig_h = max(3.2, min(0.42 * pivot.shape[0] + 1.4,  9.0))
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    im = ax.imshow(pivot.values, aspect="auto", cmap=_HEATMAP_CMAP,
+                   vmin=0, vmax=1, interpolation="nearest")
+
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels([_short_name(m) for m in pivot.columns],
+                       rotation=35, ha="right", fontsize=8)
+    display_names = [
+        n.removeprefix("hard_").replace("_", " ").title()
+        for n in pivot.index
+    ]
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels(display_names, fontsize=8.5)
+
+    # Thin white separators
+    ax.set_xticks(np.arange(-.5, pivot.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, pivot.shape[0], 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=0.8)
+    ax.tick_params(which="minor", length=0)
+    ax.tick_params(which="major", length=0)
+
+    # Annotate cells
+    for i in range(pivot.shape[0]):
+        for j in range(pivot.shape[1]):
+            v = pivot.iloc[i, j]
+            if np.isnan(v):
+                continue
+            # High-contrast text: dark over amber, white over deep red/green
+            colour = "#111827" if 0.35 < v < 0.75 else "white"
+            ax.text(j, i, f"{v:.0%}", ha="center", va="center",
+                    fontsize=7.5, color=colour, fontweight="semibold")
+
+    ax.set_title("Per-prompt pass rate (hard benchmarks)", loc="left",
+                 fontsize=10.5, fontweight="bold")
+
+    # Discrete colourbar for better scale perception
+    cbar = fig.colorbar(im, ax=ax, shrink=0.75, pad=0.015,
+                        ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
+    cbar.ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    cbar.outline.set_visible(False)
+    cbar.ax.tick_params(length=2, labelsize=7.5)
+    cbar.set_label("Pass rate", fontsize=8.5)
+
+    for spine in ("top", "right", "bottom", "left"):
+        ax.spines[spine].set_visible(False)
     return fig
 
 
 # ── Benchmark B: error recovery ──────────────────────────────────
 
-def recovery_figure(df: pd.DataFrame) -> plt.Figure:
-    """Stacked bar per fault: recovered@1 | recovered@2 | recovered@3 | failed."""
-    if "fault" not in df.columns:
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No recovery data", ha="center", va="center")
-        return fig
+_UNRECOVERABLE_FAULTS = {"corrupt_fastq", "paired_single_mismatch"}
 
-    def _bucket(row):
-        if not row.get("recovered"):
-            return "failed"
-        att = row.get("attempts")
-        if att in (1, "1", 1.0): return "recovered@1"
-        if att in (2, "2", 2.0): return "recovered@2"
-        if att in (3, "3", 3.0): return "recovered@3"
-        return "recovered@other"
+_FAULT_LABELS = {
+    "missing_wget":           "Missing binary (wget \u2192 curl)",
+    "tool_typo":              "Tool name typo (fastq_c)",
+    "wrong_flag":             "Wrong CLI flag (-x \u2192 -i)",
+    "missing_output_dir":     "Missing output directory",
+    "paired_single_mismatch": "Paired/single mode mismatch",
+    "corrupt_fastq":          "Corrupted input FASTQ",
+    "readonly_output":        "Read-only output directory",
+    "path_with_spaces":       "Unquoted path with spaces",
+    "multiqc_collision":      "Output file collision (no -f)",
+    "stale_conda_pin":        "Stale conda version pin",
+}
+
+
+def recovery_figure(df: pd.DataFrame) -> plt.Figure:
+    """Stacked bar chart showing recovery outcomes per fault.
+
+    Recoverable faults:    green = recovered, red = failed.
+    Unrecoverable faults:  slate = correctly rejected, red = incorrectly
+                           attempted.
+    """
+    if "fault" not in df.columns:
+        return _empty_figure("No recovery data.")
 
     df = df.copy()
-    df["bucket"] = df.apply(_bucket, axis=1)
-    pivot = (df.groupby(["fault", "bucket"]).size()
-               .unstack(fill_value=0))
-    # Normalise to fractions
-    pivot = pivot.div(pivot.sum(axis=1), axis=0)
+    df["recovered"] = df["recovered"].map(
+        lambda v: v if isinstance(v, bool)
+        else str(v).strip().lower() == "true"
+    )
 
-    order = ["recovered@1", "recovered@2", "recovered@3",
-             "recovered@other", "failed"]
-    pivot = pivot.reindex(columns=[c for c in order if c in pivot.columns],
-                          fill_value=0.0)
+    agg = (df.groupby("fault")["recovered"]
+           .agg(["sum", "count"]).reset_index())
+    agg.columns = ["fault", "n_recovered", "n_total"]
+    agg["n_failed"]      = agg["n_total"] - agg["n_recovered"]
+    agg["rate"]          = agg["n_recovered"] / agg["n_total"]
+    agg["unrecoverable"] = agg["fault"].isin(_UNRECOVERABLE_FAULTS)
+    agg["label"]         = agg["fault"].map(
+        lambda f: _FAULT_LABELS.get(f, f.replace("_", " ").title()))
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    pivot.plot(kind="bar", stacked=True, ax=ax,
-               color=["#2ecc71", "#f1c40f", "#e67e22",
-                      "#95a5a6", "#e74c3c"][: len(pivot.columns)])
-    ax.set_ylim(0, 1.05)
-    ax.set_ylabel("Fraction of runs")
-    ax.set_title("Benchmark B — LLM-driven recovery rate per fault class")
-    ax.legend(loc="lower right", fontsize=8)
-    ax.set_xticklabels(pivot.index, rotation=20, ha="right")
-    fig.tight_layout()
+    # Order: recoverable first (by descending rate), then unrecoverable
+    agg["sort_key"] = agg.apply(
+        lambda r: (0, -r["rate"]) if not r["unrecoverable"] else (1, -r["rate"]),
+        axis=1,
+    )
+    agg = agg.sort_values("sort_key").reset_index(drop=True)
+
+    n_rec = int((~agg["unrecoverable"]).sum())
+
+    # Palette
+    GREEN  = "#15803d"
+    RED    = "#b91c1c"
+    SLATE  = "#475569"
+
+    fig_h = max(2.6, 0.5 * len(agg) + 1.2)
+    fig, ax = plt.subplots(figsize=(7.2, fig_h))
+
+    y = np.arange(len(agg))
+    for i, row in agg.iterrows():
+        rate, fail = row["rate"], 1 - row["rate"]
+        if row["unrecoverable"]:
+            ax.barh(i, fail,  height=0.68, color=SLATE,
+                    edgecolor="white", linewidth=0.5)
+            if rate > 0:
+                ax.barh(i, rate, height=0.68, left=fail, color=RED,
+                        edgecolor="white", linewidth=0.5)
+        else:
+            ax.barh(i, rate,  height=0.68, color=GREEN,
+                    edgecolor="white", linewidth=0.5)
+            if fail > 0:
+                ax.barh(i, fail, height=0.68, left=rate, color=RED,
+                        edgecolor="white", linewidth=0.5)
+
+        ax.text(1.015, i, f"{int(row['n_recovered'])}/{int(row['n_total'])}",
+                va="center", fontsize=8, color="#1f2937")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(agg["label"])
+    ax.set_xlim(0, 1.12)
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.set_xlabel("Fraction of runs")
+    ax.invert_yaxis()
+    _style_value_axis(ax, x=True)
+
+    if 0 < n_rec < len(agg):
+        sep_y = n_rec - 0.5
+        ax.axhline(sep_y, color="#94a3b8", linewidth=0.7, linestyle="--")
+        ax.text(-0.01, (n_rec - 1) / 2, "Recoverable",
+                ha="right", va="center", fontsize=7.5, fontstyle="italic",
+                color=GREEN, transform=ax.get_yaxis_transform())
+        ax.text(-0.01, n_rec + (len(agg) - n_rec - 1) / 2, "Unrecoverable",
+                ha="right", va="center", fontsize=7.5, fontstyle="italic",
+                color=SLATE, transform=ax.get_yaxis_transform())
+
+    from matplotlib.patches import Patch
+    handles = [
+        Patch(facecolor=GREEN, edgecolor="white", label="Recovered (correct)"),
+        Patch(facecolor=SLATE, edgecolor="white", label="Correctly rejected"),
+        Patch(facecolor=RED,   edgecolor="white", label="Wrong outcome"),
+    ]
+    ax.legend(handles=handles, loc="lower right", fontsize=7.5,
+              framealpha=0.95, edgecolor="#d1d5db")
+
+    ax.set_title("LLM-driven error recovery", loc="left")
     return fig
 
 
-# ── Benchmark C: generation fidelity ─────────────────────────────
+# ── Benchmark C: generator fidelity ──────────────────────────────
 
 def generation_figure(df: pd.DataFrame) -> plt.Figure:
-    """Pass/fail table as a heatmap (preset × generator × check)."""
+    """Pass/fail matrix of (preset × generator × check)."""
     if "generator" not in df.columns or "plan_id" not in df.columns:
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No generation data", ha="center", va="center")
-        return fig
+        return _empty_figure("No generation data.")
 
     checks = [c for c in (
         "validation_ok", "step_count_matches", "dag_isomorphic",
-        "tools_preserved", "regression_launchdir_quoted"
+        "tools_preserved", "regression_launchdir_quoted",
     ) if c in df.columns]
+    if not checks:
+        return _empty_figure("No generator checks present.")
+
+    check_labels = {
+        "validation_ok":                "Plan validates",
+        "step_count_matches":           "Step count matches",
+        "dag_isomorphic":               "DAG isomorphic",
+        "tools_preserved":              "Tools preserved",
+        "regression_launchdir_quoted":  "Launch dir quoted",
+    }
 
     df = df.copy()
     df["row"] = df["plan_id"] + " × " + df["generator"]
     heat = df.set_index("row")[checks].astype(float)
 
-    fig, ax = plt.subplots(figsize=(8, max(3, 0.4 * len(heat))))
-    im = ax.imshow(heat.values, aspect="auto", cmap="RdYlGn", vmin=0, vmax=1)
+    fig_w = max(5.0, 0.7 * len(checks) + 3.4)
+    fig_h = max(2.4, 0.33 * len(heat) + 1.2)
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    im = ax.imshow(heat.values, aspect="auto", cmap=_HEATMAP_CMAP,
+                   vmin=0, vmax=1, interpolation="nearest")
+
     ax.set_xticks(range(len(checks)))
-    ax.set_xticklabels(checks, rotation=30, ha="right")
+    ax.set_xticklabels([check_labels.get(c, c) for c in checks],
+                       rotation=25, ha="right", fontsize=8)
     ax.set_yticks(range(len(heat)))
     ax.set_yticklabels(heat.index, fontsize=8)
-    ax.set_title("Benchmark C — Generator fidelity")
-    fig.colorbar(im, ax=ax, label="pass (1) / fail (0)")
-    fig.tight_layout()
+
+    # Cell markers — use glyphs present in Arial / Helvetica to avoid PDF
+    # font-embedding warnings ("●" U+25CF and "×" U+00D7 are in every core
+    # font; "✓" U+2713 is not in Arial).
+    for i in range(heat.shape[0]):
+        for j in range(heat.shape[1]):
+            v = heat.iloc[i, j]
+            if np.isnan(v):
+                continue
+            marker = "●" if v >= 0.5 else "×"
+            col = "white" if v < 0.35 or v > 0.75 else "#111827"
+            ax.text(j, i, marker, ha="center", va="center",
+                    fontsize=10, color=col, fontweight="bold")
+
+    ax.set_xticks(np.arange(-.5, heat.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, heat.shape[0], 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=0.8)
+    ax.tick_params(which="minor", length=0)
+    ax.tick_params(which="major", length=0)
+    for spine in ("top", "right", "bottom", "left"):
+        ax.spines[spine].set_visible(False)
+
+    ax.set_title("Generator fidelity", loc="left")
     return fig
 
 
@@ -152,15 +595,20 @@ def generation_figure(df: pd.DataFrame) -> plt.Figure:
 
 def executor_matrix_figure(df: pd.DataFrame) -> plt.Figure:
     if "executor" not in df.columns:
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No executor data", ha="center", va="center")
-        return fig
+        return _empty_figure("No executor data.")
 
-    levels = [c for c in ("interface_ok", "mock_ok", "live_ok") if c in df.columns]
+    levels = [c for c in ("interface_ok", "mock_ok", "live_ok")
+              if c in df.columns]
+    if not levels:
+        return _empty_figure("No executor levels present.")
+
+    level_labels = {
+        "interface_ok": "Interface",
+        "mock_ok":      "Mock run",
+        "live_ok":      "Live run",
+    }
     mat = df.set_index("executor")[levels]
-    # Map each cell: true → 1.0, false → 0.0, anything else (None/NaN) → 0.5.
-    # CSV round-trip means values can be bool, int, or the strings
-    # "True"/"False". ``applymap`` was removed in pandas 2.2 so use ``map``.
+
     def _score(v):
         if isinstance(v, str):
             s = v.strip().lower()
@@ -170,23 +618,541 @@ def executor_matrix_figure(df: pd.DataFrame) -> plt.Figure:
         if v is True or v == 1:  return 1.0
         if v is False or v == 0: return 0.0
         return 0.5
+
     mat_num = mat.map(_score) if hasattr(mat, "map") else mat.applymap(_score)
 
-    fig, ax = plt.subplots(figsize=(6, max(2, 0.5 * len(mat))))
-    im = ax.imshow(mat_num.values, aspect="auto", cmap="RdYlGn", vmin=0, vmax=1)
+    fig_h = max(2.2, 0.42 * len(mat) + 0.8)
+    fig, ax = plt.subplots(figsize=(5.0, fig_h))
+    im = ax.imshow(mat_num.values, aspect="auto", cmap=_HEATMAP_CMAP,
+                   vmin=0, vmax=1, interpolation="nearest")
+
     ax.set_xticks(range(len(levels)))
-    ax.set_xticklabels(levels)
+    ax.set_xticklabels([level_labels.get(l, l) for l in levels], fontsize=8.5)
     ax.set_yticks(range(len(mat)))
-    ax.set_yticklabels(mat.index)
+    ax.set_yticklabels(mat.index, fontsize=8.5)
+
     for i in range(mat_num.shape[0]):
         for j in range(mat_num.shape[1]):
             score = mat_num.iloc[i, j]
-            label = "✓" if score == 1.0 else ("✗" if score == 0.0 else "—")
+            # Arial-safe glyphs (see ``generation_figure`` for the rationale)
+            label = "●" if score == 1.0 else ("×" if score == 0.0 else "—")
+            col   = "white" if score != 0.5 else "#111827"
             ax.text(j, i, label, ha="center", va="center",
-                    color="white" if score != 0.5 else "black")
-    ax.set_title("Benchmark D — Executor coverage")
-    fig.tight_layout()
+                    fontsize=11, color=col, fontweight="bold")
+
+    ax.set_xticks(np.arange(-.5, mat_num.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, mat_num.shape[0], 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=0.8)
+    ax.tick_params(which="minor", length=0)
+    ax.tick_params(which="major", length=0)
+    for spine in ("top", "right", "bottom", "left"):
+        ax.spines[spine].set_visible(False)
+
+    ax.set_title("Executor coverage", loc="left")
     return fig
+
+
+# ── Cost analyses ────────────────────────────────────────────────
+
+def _per_model_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Aggregate per-model cost, token counts, pass-rate, cost-per-pass.
+
+    Returns ``None`` if the dataframe has no cost column (e.g. mock run or
+    pre-token-tracking data).
+    """
+    if "cost_usd" not in df.columns:
+        return None
+    df = df.copy()
+    for c in ("prompt_tokens", "completion_tokens", "cost_usd"):
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    g = (df.groupby("model")
+            .agg(n=("overall_pass", "count"),
+                 passes=("overall_pass", "sum"),
+                 total_cost=("cost_usd", "sum"),
+                 mean_cost=("cost_usd", "mean"),
+                 mean_in=("prompt_tokens", "mean"),
+                 mean_out=("completion_tokens", "mean"))
+            .reset_index())
+    if g.empty or g["total_cost"].sum() == 0:
+        return None
+
+    g["pass_rate"]         = g["passes"] / g["n"]
+    # Cost per successful plan (∞ if zero passes → use NaN)
+    g["cost_per_pass"] = g.apply(
+        lambda r: (r["total_cost"] / r["passes"]) if r["passes"] > 0 else float("nan"),
+        axis=1,
+    )
+    g["cost_per_100_plans"] = g["mean_cost"] * 100
+    g = g.sort_values("cost_per_pass").reset_index(drop=True)
+    return g
+
+
+def cost_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Two-panel cost view: (a) $ per 100 plans, (b) $ per successful plan.
+
+    Bars sorted by cost-per-pass (cheapest-per-successful-plan first) and
+    coloured by provider. Returns ``None`` if cost data is absent.
+    """
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+
+    n_models = len(table)
+    panel_h  = max(3.2, 0.28 * n_models + 1.2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, panel_h), sharey=True)
+
+    def _bar(ax, col: str, title: str, unit: str):
+        t = table.sort_values(col).reset_index(drop=True)
+        y = np.arange(len(t))
+        cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+                for m in t["model"]]
+        ax.barh(y, t[col], color=cols, edgecolor="white",
+                linewidth=0.6, height=0.72)
+        ax.set_yticks(y)
+        ax.set_yticklabels([_short_name(m) for m in t["model"]])
+        for i, v in enumerate(t[col]):
+            if pd.isna(v):
+                ax.text(0.005, i, "n/a", va="center", ha="left",
+                        fontsize=7.5, color="#9ca3af", transform=ax.get_yaxis_transform())
+                continue
+            label = (f"${v:,.3f}" if v < 1 else
+                     f"${v:,.2f}" if v < 100 else f"${v:,.0f}")
+            ax.text(v, i, f" {label}", va="center", ha="left",
+                    fontsize=7.5, color="#1f2937")
+        ax.set_xlabel(f"{title}  ({unit})")
+        ax.set_title(title, loc="left")
+        # Leave headroom for annotations
+        vmax = t[col].dropna().max() if t[col].dropna().size else 1
+        ax.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
+        _style_value_axis(ax, x=True)
+
+    _bar(ax1, "cost_per_100_plans", "a  Cost per 100 plans", "USD")
+    _bar(ax2, "cost_per_pass",      "b  Cost per successful plan", "USD")
+
+    providers = sorted(
+        {_provider_from_model(m) for m in table["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.015))
+    fig.suptitle("Per-model cost benchmark", fontsize=11,
+                 fontweight="bold", y=1.06)
+    return fig
+
+
+def cost_vs_quality_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Scatter of pass-rate vs. either mean wall time or mean cost.
+
+    Prefers cost on the x-axis when available (more actionable than
+    latency); falls back to wall time otherwise. Returns ``None`` if
+    neither column is present.
+    """
+    if "overall_pass" not in df.columns or df.empty:
+        return None
+
+    df = df.copy()
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    # Prefer cost on the x-axis if available and non-zero
+    use_cost = (
+        "cost_usd" in df.columns and
+        pd.to_numeric(df["cost_usd"], errors="coerce").fillna(0).sum() > 0
+    )
+    x_col    = "cost_usd" if use_cost else "wall_seconds"
+    x_label  = ("Mean cost per plan (USD)" if use_cost
+                else "Mean wall time per plan (s)")
+    if x_col not in df.columns or df[x_col].isna().all():
+        return None
+
+    df[x_col] = pd.to_numeric(df[x_col], errors="coerce").fillna(0.0)
+    g = (df.groupby("model")
+            .agg(rate=("overall_pass", "mean"),
+                 x=(x_col, "mean"),
+                 n=("overall_pass", "count"))
+            .reset_index())
+    if g.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.4))
+
+    for _, row in g.iterrows():
+        prov   = _provider_from_model(row["model"])
+        colour = _PROVIDER_COLOURS.get(prov, "#6b7280")
+        ax.scatter(row["x"], row["rate"], s=60, color=colour,
+                   edgecolor="white", linewidth=0.8, zorder=3)
+
+    # Pareto frontier: highest pass-rate at each cost/wall budget (left-to-right)
+    frontier = g.sort_values("x").copy()
+    best_rate = -1.0
+    is_frontier = []
+    for _, r in frontier.iterrows():
+        on = r["rate"] > best_rate
+        if on: best_rate = r["rate"]
+        is_frontier.append(on)
+    frontier["frontier"] = is_frontier
+
+    must_label = {
+        g.loc[g["x"].idxmin(), "model"],
+        g.loc[g["rate"].idxmax(), "model"],
+    }
+
+    placed: List[Tuple[float, float]] = []
+    x_range = max(g["x"].max() - g["x"].min(), 1e-9)
+    for _, row in frontier.iterrows():
+        if not (row["frontier"] or row["model"] in must_label):
+            continue
+        dy = 8
+        for px, _ in placed:
+            if abs(px - row["x"]) < 0.15 * x_range:
+                dy = -10 if dy > 0 else 12
+        ax.annotate(_short_name(row["model"]),
+                    (row["x"], row["rate"]),
+                    xytext=(6, dy), textcoords="offset points",
+                    fontsize=7.5, color="#1f2937",
+                    arrowprops=dict(arrowstyle="-", color="#9ca3af",
+                                    linewidth=0.6, shrinkA=0, shrinkB=3))
+        placed.append((row["x"], row["rate"]))
+
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Pass rate")
+
+    if use_cost:
+        ax.set_xscale("log")
+        # Format as USD on a log scale
+        import matplotlib.ticker as mtick
+        def _fmt(x, _):
+            if x <= 0: return ""
+            if x >= 0.01: return f"${x:.2f}"
+            if x >= 0.001: return f"${x:.3f}"
+            return f"${x:.4f}"
+        ax.xaxis.set_major_formatter(mtick.FuncFormatter(_fmt))
+
+    y_lo = max(0.0, g["rate"].min() - 0.08)
+    y_hi = min(1.02, g["rate"].max() + 0.06)
+    ax.set_ylim(y_lo, y_hi)
+    span  = y_hi - y_lo
+    step  = 0.05 if span < 0.3 else 0.1 if span < 0.6 else 0.25
+    ticks = np.arange(0, 1.01, step)
+    ax.set_yticks([t for t in ticks if y_lo <= t <= y_hi])
+    ax.set_yticklabels([f"{t:.0%}" for t in ticks if y_lo <= t <= y_hi])
+    ax.grid(True, linestyle="-", linewidth=0.6, alpha=0.35)
+    ax.set_axisbelow(True)
+
+    providers_present = sorted(
+        {_provider_from_model(m) for m in g["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers_present,
+                         loc="upper right",
+                         bbox_to_anchor=(0.985, 0.985))
+
+    ax.set_title("Pass rate vs cost" if use_cost else "Pass rate vs latency",
+                 loc="left")
+    return fig
+
+
+# ── Turns-to-completion ──────────────────────────────────────────
+
+def turns_to_completion_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Per-model bar chart of mean LLM calls per plan (with std bars).
+
+    Useful complement to pass-rate: two models can have identical pass
+    rates but very different turn counts, which dominate cost + latency.
+    """
+    if "llm_calls" not in df.columns or df.empty:
+        return None
+    df = df.copy()
+    df["llm_calls"] = pd.to_numeric(df["llm_calls"], errors="coerce")
+    df = df[df["llm_calls"].notna() & (df["llm_calls"] > 0)]
+    if df.empty:
+        return None
+
+    g = (df.groupby("model")["llm_calls"]
+           .agg(["mean", "std", "count"]).reset_index())
+    g = g.sort_values("mean").reset_index(drop=True)
+
+    fig_h = max(3.0, 0.26 * len(g) + 1.0)
+    fig, ax = plt.subplots(figsize=(6.0, fig_h))
+
+    y = np.arange(len(g))
+    cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+            for m in g["model"]]
+    ax.barh(y, g["mean"], xerr=g["std"].fillna(0),
+            color=cols, edgecolor="white", linewidth=0.6, height=0.72,
+            capsize=2, error_kw={"elinewidth": 0.8, "capthick": 0.8,
+                                 "color": "#1f2937"})
+    for i, (m, s) in enumerate(zip(g["mean"], g["std"].fillna(0))):
+        ax.text(m + s + 0.05, i, f"{m:.1f}", va="center", ha="left",
+                fontsize=7.5, color="#1f2937")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([_short_name(m) for m in g["model"]])
+    ax.set_xlabel("Mean LLM calls per plan (±1 SD)")
+    ax.set_title("Turns to completion", loc="left")
+    ax.set_xlim(0, (g["mean"] + g["std"].fillna(0)).max() * 1.22)
+    _style_value_axis(ax, x=True)
+
+    providers = sorted(
+        {_provider_from_model(m) for m in g["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.04))
+    return fig
+
+
+# ── Consistency across replicates ────────────────────────────────
+
+def consistency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Per-model agreement: fraction of (model, prompt) cells where all
+    replicates yield the same ``overall_pass`` outcome.
+
+    Low agreement at a given model indicates non-determinism / flakiness
+    even when the mean pass rate is high. Returns ``None`` if the run
+    only has one replicate per cell.
+    """
+    if df.empty or "overall_pass" not in df.columns or "replicate" not in df.columns:
+        return None
+
+    df = df.copy()
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    grp = df.groupby(["model", "input_id"])["overall_pass"]
+    stats = grp.agg(["nunique", "count"]).reset_index()
+    if (stats["count"] <= 1).all():
+        return None  # only one replicate per cell — consistency undefined
+
+    # ``nunique`` == 1 means all replicates agreed (either all pass or all fail)
+    stats["unanimous"] = (stats["nunique"] == 1).astype(int)
+    agree = (stats.groupby("model")["unanimous"]
+                  .agg(["sum", "count"]).reset_index())
+    agree["rate"] = agree["sum"] / agree["count"]
+    agree = agree.sort_values("rate", ascending=True).reset_index(drop=True)
+
+    fig_h = max(3.0, 0.26 * len(agree) + 1.0)
+    fig, ax = plt.subplots(figsize=(6.0, fig_h))
+    y = np.arange(len(agree))
+    cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+            for m in agree["model"]]
+    ax.barh(y, agree["rate"], color=cols, edgecolor="white",
+            linewidth=0.6, height=0.72)
+    for i, v in enumerate(agree["rate"]):
+        x = min(v + 0.015, 0.99)
+        ax.text(x, i, f"{v:.0%}", va="center", ha="left",
+                fontsize=7.5, color="#1f2937")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([_short_name(m) for m in agree["model"]])
+    ax.set_xlim(0, 1.08)
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.set_xlabel("Fraction of prompts with unanimous replicate outcome")
+    ax.set_title("Inter-replicate consistency", loc="left")
+    _style_value_axis(ax, x=True)
+
+    providers = sorted(
+        {_provider_from_model(m) for m in agree["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.04))
+    return fig
+
+
+# ── Hallucination rate ───────────────────────────────────────────
+
+def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Per-model hallucinated-tool fraction.
+
+    Two panels:
+      (a) fraction of plans with ≥1 hallucinated tool
+      (b) mean hallucination rate per plan (hallucinated / total tools)
+
+    Returns ``None`` if the hallucination metric is absent.
+    """
+    if "hallucination_rate" not in df.columns and "num_hallucinated_tools" not in df.columns:
+        return None
+
+    df = df.copy()
+    if "num_hallucinated_tools" in df.columns:
+        df["num_hallucinated_tools"] = pd.to_numeric(
+            df["num_hallucinated_tools"], errors="coerce").fillna(0)
+        df["any_hallucination"] = (df["num_hallucinated_tools"] > 0).astype(int)
+    else:
+        df["any_hallucination"] = 0
+    if "hallucination_rate" in df.columns:
+        df["hallucination_rate"] = pd.to_numeric(
+            df["hallucination_rate"], errors="coerce").fillna(0)
+    else:
+        df["hallucination_rate"] = 0
+
+    g = (df.groupby("model")
+            .agg(frac_plans=("any_hallucination", "mean"),
+                 mean_rate=("hallucination_rate", "mean"))
+            .reset_index())
+    if g.empty or (g["frac_plans"].sum() == 0 and g["mean_rate"].sum() == 0):
+        return None
+
+    g = g.sort_values("frac_plans").reset_index(drop=True)
+
+    fig_h = max(3.2, 0.26 * len(g) + 1.2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.4, fig_h), sharey=True)
+
+    y = np.arange(len(g))
+    cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+            for m in g["model"]]
+
+    ax1.barh(y, g["frac_plans"], color=cols, edgecolor="white",
+             linewidth=0.6, height=0.72)
+    for i, v in enumerate(g["frac_plans"]):
+        ax1.text(v + 0.005, i, f"{v:.0%}", va="center", ha="left",
+                 fontsize=7.5, color="#1f2937")
+    ax1.set_yticks(y)
+    ax1.set_yticklabels([_short_name(m) for m in g["model"]])
+    ax1.set_xlim(0, max(g["frac_plans"].max() * 1.35, 0.05))
+    ax1.set_xlabel("Fraction of plans with a hallucinated tool")
+    ax1.set_title("a  Any hallucination", loc="left")
+    _style_value_axis(ax1, x=True)
+
+    ax2.barh(y, g["mean_rate"], color=cols, edgecolor="white",
+             linewidth=0.6, height=0.72)
+    for i, v in enumerate(g["mean_rate"]):
+        ax2.text(v + 0.002, i, f"{v:.1%}", va="center", ha="left",
+                 fontsize=7.5, color="#1f2937")
+    ax2.set_xlim(0, max(g["mean_rate"].max() * 1.35, 0.02))
+    ax2.set_xlabel("Mean hallucinated-tool fraction per plan")
+    ax2.set_title("b  Mean rate per plan", loc="left")
+    _style_value_axis(ax2, x=True)
+
+    providers = sorted(
+        {_provider_from_model(m) for m in g["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.015))
+    fig.suptitle("Tool hallucination benchmark", fontsize=11,
+                 fontweight="bold", y=1.06)
+    return fig
+
+
+# ── Token usage ──────────────────────────────────────────────────
+
+def token_usage_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Per-model token spend: stacked input+output bars, sorted cheap→expensive.
+
+    The two-panel layout shows:
+      (a) mean prompt / completion tokens per plan (stacked)
+      (b) tokens per successful plan (dividing by pass rate)
+
+    Returns ``None`` if token columns are absent.
+    """
+    if "prompt_tokens" not in df.columns or "completion_tokens" not in df.columns:
+        return None
+
+    df = df.copy()
+    for c in ("prompt_tokens", "completion_tokens", "llm_calls"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    g = (df.groupby("model")
+            .agg(in_mean=("prompt_tokens", "mean"),
+                 out_mean=("completion_tokens", "mean"),
+                 n=("overall_pass", "count"),
+                 passes=("overall_pass", "sum"))
+            .reset_index())
+    if g.empty or (g["in_mean"].sum() == 0 and g["out_mean"].sum() == 0):
+        return None
+
+    g["total"]         = g["in_mean"] + g["out_mean"]
+    g["pass_rate"]     = g["passes"] / g["n"]
+    g["tokens_per_pass"] = g.apply(
+        lambda r: r["total"] / r["pass_rate"] if r["pass_rate"] > 0 else float("nan"),
+        axis=1,
+    )
+    g = g.sort_values("total").reset_index(drop=True)
+
+    fig_h = max(3.2, 0.26 * len(g) + 1.2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, fig_h), sharey=True)
+
+    y = np.arange(len(g))
+    labels = [_short_name(m) for m in g["model"]]
+
+    # Panel a: stacked input/output
+    IN_COL  = "#94a3b8"     # neutral slate for prompt tokens
+    OUT_COL = "#0f766e"     # teal for completion tokens
+    ax1.barh(y, g["in_mean"],  color=IN_COL, edgecolor="white", linewidth=0.5,
+             height=0.72, label="Prompt")
+    ax1.barh(y, g["out_mean"], left=g["in_mean"], color=OUT_COL,
+             edgecolor="white", linewidth=0.5, height=0.72, label="Completion")
+    for i, row in g.iterrows():
+        ax1.text(row["total"] + g["total"].max() * 0.01, i,
+                 f"{int(row['total']):,}", va="center", ha="left",
+                 fontsize=7.5, color="#1f2937")
+    ax1.set_yticks(y)
+    ax1.set_yticklabels(labels)
+    ax1.set_xlim(0, g["total"].max() * 1.22)
+    ax1.set_xlabel("Mean tokens per plan")
+    ax1.set_title("a  Tokens per plan (stacked)", loc="left")
+    ax1.legend(loc="lower right", fontsize=7.5, frameon=False)
+    _style_value_axis(ax1, x=True)
+
+    # Panel b: tokens per successful plan
+    t = g.sort_values("tokens_per_pass").reset_index(drop=True)
+    yb = np.arange(len(t))
+    cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+            for m in t["model"]]
+    ax2.barh(yb, t["tokens_per_pass"], color=cols, edgecolor="white",
+             linewidth=0.6, height=0.72)
+    for i, v in enumerate(t["tokens_per_pass"]):
+        if pd.isna(v):
+            ax2.text(0.005, i, "n/a", va="center", ha="left",
+                     fontsize=7.5, color="#9ca3af",
+                     transform=ax2.get_yaxis_transform())
+            continue
+        ax2.text(v + t["tokens_per_pass"].dropna().max() * 0.01, i,
+                 f"{int(v):,}", va="center", ha="left",
+                 fontsize=7.5, color="#1f2937")
+    # Show the model ordering from this panel (not shared with panel a)
+    ax2.set_yticks(yb)
+    ax2.set_yticklabels([_short_name(m) for m in t["model"]])
+    ax2.set_xlim(0, t["tokens_per_pass"].dropna().max() * 1.25)
+    ax2.set_xlabel("Tokens per successful plan")
+    ax2.set_title("b  Token efficiency (tokens ÷ pass rate)", loc="left")
+    _style_value_axis(ax2, x=True)
+
+    fig.suptitle("Token usage benchmark", fontsize=11,
+                 fontweight="bold", y=1.03)
+    return fig
+
+
+# ── Saving helpers ───────────────────────────────────────────────
+
+def _save(fig: plt.Figure, out_base: Path, *,
+          pdf: bool = True, png: bool = True, svg: bool = False) -> None:
+    """Save a figure in multiple vector / raster formats at publication DPI."""
+    out_base.parent.mkdir(parents=True, exist_ok=True)
+    if pdf:
+        fig.savefig(out_base.with_suffix(".pdf"), bbox_inches="tight")
+    if png:
+        fig.savefig(out_base.with_suffix(".png"), dpi=300, bbox_inches="tight")
+    if svg:
+        fig.savefig(out_base.with_suffix(".svg"), bbox_inches="tight")
 
 
 # ── CLI: regenerate all figures ──────────────────────────────────
@@ -195,13 +1161,10 @@ def _latest(run_dir: Path) -> Optional[Path]:
     """Return the latest results dir for a given benchmark.
 
     For ``planning``, prefer ``_merged/<latest>`` if it exists, then
-    ``<run>/rescored_<latest>``, then ``<run>`` itself. This way the
-    figure always reflects the freshest aggregated multi-model data.
+    ``<run>/rescored_<latest>``, then ``<run>`` itself.
     """
     if not run_dir.exists():
         return None
-
-    # Prefer merged outputs (planning only)
     merged = run_dir / "_merged"
     if merged.exists():
         merged_subs = [p for p in merged.iterdir() if p.is_dir()
@@ -209,7 +1172,6 @@ def _latest(run_dir: Path) -> Optional[Path]:
         if merged_subs:
             return max(merged_subs, key=lambda p: p.stat().st_mtime)
 
-    # Otherwise, latest individual run; prefer its newest rescored_* if any
     subs = [p for p in run_dir.iterdir() if p.is_dir()
             and not p.name.startswith("_")]
     if not subs:
@@ -224,11 +1186,15 @@ def _latest(run_dir: Path) -> Optional[Path]:
     return rescored[-1] if rescored else latest_run
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--results", default="results")
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--results", default="results",
+                    help="Root results directory (default: results)")
+    ap.add_argument("--svg", action="store_true",
+                    help="Also emit SVG alongside PDF/PNG")
     args = ap.parse_args()
-    root = Path(args.results)
+
+    root    = Path(args.results)
     fig_dir = root / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
 
@@ -250,11 +1216,50 @@ def main():
         if df.empty:
             print(f"[skip] empty dataframe for {bench_name}")
             continue
+
         fig = fn(df)
-        fig.savefig(fig_dir / f"{bench_name}.pdf")
-        fig.savefig(fig_dir / f"{bench_name}.png", dpi=150)
+        _save(fig, fig_dir / bench_name, svg=args.svg)
         plt.close(fig)
         print(f"[ok]   {bench_name} → {fig_dir/bench_name}.pdf")
+
+        # Planning bonus figures
+        if bench_name == "planning":
+            fig2 = planning_heatmap(df)
+            _save(fig2, fig_dir / "planning_heatmap", svg=args.svg)
+            plt.close(fig2)
+            print(f"[ok]   planning_heatmap → {fig_dir/'planning_heatmap'}.pdf")
+
+            fig3 = cost_vs_quality_figure(df)
+            if fig3 is not None:
+                _save(fig3, fig_dir / "planning_cost_quality", svg=args.svg)
+                plt.close(fig3)
+                print(f"[ok]   planning_cost_quality → "
+                      f"{fig_dir/'planning_cost_quality'}.pdf")
+
+            fig4 = cost_summary_figure(df)
+            if fig4 is not None:
+                _save(fig4, fig_dir / "planning_cost_summary", svg=args.svg)
+                plt.close(fig4)
+                print(f"[ok]   planning_cost_summary → "
+                      f"{fig_dir/'planning_cost_summary'}.pdf")
+
+                table = _per_model_cost_table(df)
+                if table is not None:
+                    out_tsv = fig_dir / "planning_cost_summary.tsv"
+                    out_tsv.write_text(table.to_csv(sep="\t", index=False))
+                    print(f"[ok]   planning_cost_summary → {out_tsv}")
+
+            for label, figfn in (
+                ("planning_turns",         turns_to_completion_figure),
+                ("planning_consistency",   consistency_figure),
+                ("planning_hallucination", hallucination_figure),
+                ("planning_tokens",        token_usage_figure),
+            ):
+                f = figfn(df)
+                if f is not None:
+                    _save(f, fig_dir / label, svg=args.svg)
+                    plt.close(f)
+                    print(f"[ok]   {label} → {fig_dir/label}.pdf")
 
 
 if __name__ == "__main__":

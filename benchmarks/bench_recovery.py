@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import sys
 import tempfile
@@ -39,6 +40,12 @@ async def _run_real(fault: Fault, seed: int, tmp: Path) -> Dict[str, Any]:
     step, env_ctx = fault.apply(preset=None, seed=seed, workdir=tmp)
     mgr = WorkflowManager(executor_type="local")
 
+    # Wrap the command with a cd so it runs in the expected working directory.
+    # LocalExecutor.execute_step() only accepts (step,) — no cwd kwarg.
+    cwd = env_ctx.cwd or str(tmp)
+    step["command"] = f"cd {shlex.quote(cwd)} && {step['command']}"
+    step["timeout"] = 60  # Kill hung commands after 60s
+
     # Apply any env-var overrides requested by the fault.
     env_backup = {}
     for k, v in (env_ctx.env or {}).items():
@@ -47,9 +54,7 @@ async def _run_real(fault: Fault, seed: int, tmp: Path) -> Dict[str, Any]:
 
     try:
         # 1. Provoke a real failure.
-        bad = await mgr._step_executor.execute_step(
-            step, env_ctx.out_dir, cwd=env_ctx.cwd,
-        )
+        bad = await mgr._step_executor.execute_step(step)
         bad_status = bad.get("status")
         provoked_failure = bad_status in ("error", "failed")
 
@@ -129,21 +134,36 @@ async def _drive(fault_ids: List[str], seeds: int, *,
     if not mock and model_cfg:
         set_provider(model_cfg)
 
+    total = len(fault_ids) * seeds
+    done = 0
     for fid in fault_ids:
         fault = FAULTS[fid]
         for seed in range(seeds):
+            done += 1
+            print(f"[{done}/{total}] fault={fid}  seed={seed} ...",
+                  flush=True, end="")
+            t0 = time.perf_counter()
             with tempfile.TemporaryDirectory(prefix=f"rec_{fid}_") as td:
                 try:
                     if mock:
                         row = _run_mock(fault, seed)
                     else:
-                        row = await _run_real(fault, seed, Path(td))
-                except Exception as exc:
+                        # Hard cap: 180s per fault/seed (covers LLM + cmd timeouts
+                        # even if asyncio cancellation doesn't propagate cleanly).
+                        row = await asyncio.wait_for(
+                            _run_real(fault, seed, Path(td)),
+                            timeout=180,
+                        )
+                except (Exception, asyncio.CancelledError) as exc:
                     row = {
                         "fault": fid, "seed": seed,
                         "error": f"{type(exc).__name__}: {exc}",
                         "recovered": False, "provoked_failure": False,
                     }
+                elapsed = time.perf_counter() - t0
+                status = "recovered" if row.get("recovered") else (
+                    row.get("error", "failed"))
+                print(f" {status} ({elapsed:.1f}s)", flush=True)
                 results.append(row)
 
     # Persist

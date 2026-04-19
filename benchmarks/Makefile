@@ -16,7 +16,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all smoke plan plan-all recovery gen exec rescore merge report clean help
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec rescore merge report clean help
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -28,7 +28,8 @@ help:
 	@echo "  make exec       - Benchmark D: executor coverage (no API key)"
 	@echo "  make rescore    - Re-evaluate the latest planning run with current scoring"
 	@echo "  make merge      - Combine all planning runs into one CSV under _merged/"
-	@echo "  make all        - run all four benchmarks then report"
+	@echo "  make all        - single MODEL end-to-end: plan + recovery + gen + exec + report"
+	@echo "  make all-sweep  - full multi-model sweep: plan-all + recovery + gen + exec + rescore + merge + report"
 	@echo "  make report     - regenerate figures (uses _merged if present)"
 	@echo "  make clean      - delete results/"
 
@@ -60,6 +61,9 @@ exec:
 	$(PY) bench_executors.py --out=$(RESULTS_DIR)
 
 all: plan recovery gen exec report
+
+# Full multi-model sweep end-to-end with rescore + merge in the right order.
+all-sweep: plan-all recovery gen exec rescore merge report
 
 report:
 	$(PY) -m harness.plot --results=$(RESULTS_DIR)

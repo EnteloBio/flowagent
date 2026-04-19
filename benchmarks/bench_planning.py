@@ -18,7 +18,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 # Allow ``python bench_planning.py`` to find both the harness package
 # and the flowagent package installed as a sibling of benchmarks/.
@@ -34,13 +34,43 @@ from harness.runner import (                       # noqa: E402
 HERE = Path(__file__).parent
 
 
-# ── Real LLM call ────────────────────────────────────────────────
+# ── Real LLM call with token tracking ────────────────────────────
 
-async def _real_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
+class _TokenTracker:
+    """Wraps a provider and tallies token usage across all calls.
+
+    FlowAgent's ``generate_workflow_plan`` makes several internal LLM
+    calls (pattern extraction, plan generation, optional JSON repair).
+    We intercept them by wrapping the provider so the benchmark sees
+    the true per-plan token cost, not just a single final call.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.call_count = 0
+
+    def _tally(self, resp):
+        u = getattr(resp, "usage", None) or {}
+        self.prompt_tokens     += int(u.get("prompt_tokens", 0) or 0)
+        self.completion_tokens += int(u.get("completion_tokens", 0) or 0)
+        self.call_count        += 1
+        return resp
+
+    async def chat(self, *a, **kw):            return self._tally(await self._inner.chat(*a, **kw))
+    async def chat_with_tools(self, *a, **kw): return self._tally(await self._inner.chat_with_tools(*a, **kw))
+    async def chat_structured(self, *a, **kw): return self._tally(await self._inner.chat_structured(*a, **kw))
+    async def stream(self, *a, **kw):          return await self._inner.stream(*a, **kw)
+
+    def __getattr__(self, name):  # passthrough for anything we missed
+        return getattr(self._inner, name)
+
+
+async def _real_plan(prompt_entry: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, int]]:
     from flowagent.core.llm import LLMInterface
     from flowagent.core.schemas import PipelineContext
 
-    # Minimal context: lets the LLM skip interactive reference resolution.
     ctx = PipelineContext(
         input_files=["HBR_Rep1_R1.fastq.gz", "HBR_Rep1_R2.fastq.gz"],
         paired_end=True,
@@ -49,7 +79,15 @@ async def _real_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
         workflow_type=prompt_entry.get("expected_workflow_type", ""),
     )
     llm = LLMInterface()
-    return await llm.generate_workflow_plan(prompt_entry["prompt"], context=ctx)
+    tracker = _TokenTracker(llm.provider)
+    llm.provider = tracker
+    plan = await llm.generate_workflow_plan(prompt_entry["prompt"], context=ctx)
+    usage = {
+        "prompt_tokens":     tracker.prompt_tokens,
+        "completion_tokens": tracker.completion_tokens,
+        "llm_calls":         tracker.call_count,
+    }
+    return plan, usage
 
 
 # ── Mock LLM response ────────────────────────────────────────────
@@ -90,13 +128,15 @@ def _mock_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
 
 async def run_one(model_cfg: Dict[str, Any], entry: Dict[str, Any],
                   replicate: int, *, mock: bool = False) -> Dict[str, Any]:
+    usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "llm_calls": 0}
     if not mock:
         set_provider(model_cfg)
-        plan = await _real_plan(entry)
+        plan, usage = await _real_plan(entry)
     else:
         plan = _mock_plan(entry)
 
     metrics = score_plan(plan, entry)
+    cost = cost_usd(usage["prompt_tokens"], usage["completion_tokens"], model_cfg)
     return {
         "model": model_cfg["id"],
         "provider": model_cfg.get("provider"),
@@ -104,6 +144,10 @@ async def run_one(model_cfg: Dict[str, Any], entry: Dict[str, Any],
         "prompt": entry["prompt"],
         "replicate": replicate,
         "plan": plan,
+        "prompt_tokens":     usage["prompt_tokens"],
+        "completion_tokens": usage["completion_tokens"],
+        "llm_calls":         usage["llm_calls"],
+        "cost_usd":          cost,
         **metrics,
     }
 

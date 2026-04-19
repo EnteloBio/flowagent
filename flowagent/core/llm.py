@@ -1,5 +1,6 @@
 """LLM interface for workflow generation and command creation."""
 
+import asyncio
 import glob
 import json
 import logging
@@ -7,7 +8,7 @@ import os
 import platform
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from openai import AsyncOpenAI
 
@@ -448,8 +449,77 @@ Use the exact sample name '{sample_name}' for output directories.""",
         },
     }
 
+    # Primary analysis tools whose explicit mention in a prompt signals that
+    # the user wants that specific tool, not a generic keyword-matched workflow.
+    # Generic/supporting tools (fastqc, multiqc, samtools, picard, etc.) are
+    # excluded because they appear across many workflow types.
+    _PRIMARY_TOOLS = {
+        # Aligners / quantifiers / callers — the tools that define a workflow
+        "kallisto", "salmon", "star", "starsolo", "hisat2", "bowtie2",
+        "bwa", "minimap2", "bismark", "cellranger",
+        "macs2", "gatk", "haplotypecaller", "bcftools",
+        "featurecounts", "htseq-count", "htseq", "stringtie", "cufflinks",
+        "kraken2", "bracken", "metaphlan",
+        "manta", "delly", "medaka", "clair3",
+        "kb-python", "fastp",
+    }
+
+    # Mapping of search patterns to canonical names (handles "trim galore" vs
+    # "trim_galore", "bwa-mem" vs "bwa", etc.)
+    _TOOL_ALIASES = {
+        "trim galore": "trim_galore",
+        "trim_galore": "trim_galore",
+        "bwa-mem": "bwa",
+        "haplotypecaller": "gatk",
+        "kb-python": "kb",
+        "htseq": "htseq-count",
+    }
+
+    def _detect_mentioned_tools(self, prompt: str) -> Set[str]:
+        """Extract primary bioinformatics tools explicitly named in *prompt*."""
+        prompt_lower = prompt.lower()
+        found: Set[str] = set()
+        # Check aliases first (multi-word patterns)
+        for pattern, canonical in self._TOOL_ALIASES.items():
+            if pattern in prompt_lower:
+                found.add(canonical)
+        # Check single-word primary tools
+        for tool in self._PRIMARY_TOOLS:
+            if tool in prompt_lower:
+                found.add(tool)
+        return found
+
+    def _custom_workflow_config(self) -> Dict[str, Any]:
+        """Return the template config used for custom (free-form) workflows."""
+        return {
+            "keywords": [],
+            "tools": [],
+            "dir_structure": [
+                "results/workflow/raw_data",
+                "results/workflow/processed_data",
+                "results/workflow/qc",
+                "results/workflow/analysis",
+                "results/workflow/output",
+            ],
+            "rules": [
+                "# This is a custom workflow. Consider the following guidelines:",
+                "1. Choose appropriate tools based on the specific analysis requirements",
+                "2. Include quality control steps suitable for the data type",
+                "3. Create a logical directory structure that matches the analysis flow",
+                "4. Store intermediate files in organized directories",
+                "5. Generate comprehensive QC reports",
+                "6. Document all parameters and decisions",
+            ],
+        }
+
     def _detect_workflow_type(self, prompt: str) -> Tuple[str, Dict[str, Any]]:
         """Detect workflow type from prompt.
+
+        Uses keyword scoring to pick the best predefined workflow, then
+        verifies that any primary tools explicitly named in the prompt are
+        compatible with that workflow's tool list.  If the user asked for
+        tools the matched workflow doesn't include, we fall back to a
+        "custom" workflow so the LLM has full freedom.
 
         Returns:
             Tuple containing:
@@ -470,41 +540,61 @@ Use the exact sample name '{sample_name}' for output directories.""",
 
         # If no strong match (score of 0 or 1), return custom workflow template
         if best_match[1] <= 1:
-            return "custom", {
-                "keywords": [],
-                "tools": [],
-                "dir_structure": [
-                    "results/workflow/raw_data",
-                    "results/workflow/processed_data",
-                    "results/workflow/qc",
-                    "results/workflow/analysis",
-                    "results/workflow/output",
-                ],
-                "rules": [
-                    "# This is a custom workflow. Consider the following guidelines:",
-                    "1. Choose appropriate tools based on the specific analysis requirements",
-                    "2. Include quality control steps suitable for the data type",
-                    "3. Create a logical directory structure that matches the analysis flow",
-                    "4. Store intermediate files in organized directories",
-                    "5. Generate comprehensive QC reports",
-                    "6. Document all parameters and decisions",
-                ],
-            }
+            return "custom", self._custom_workflow_config()
+
+        # ── Tool-compatibility guard ────────────────────────────────
+        # If the prompt explicitly names primary analysis tools that are NOT
+        # in the matched workflow's tool list, the keyword match is
+        # misleading (e.g. prompt says "align with STAR" but keyword scoring
+        # picked rna_seq_kallisto because of "RNA-seq").  Fall back to
+        # "custom" so the LLM can use the tools the user actually asked for.
+        mentioned = self._detect_mentioned_tools(prompt)
+        if mentioned:
+            wf_tools = {t.lower() for t in
+                        self.WORKFLOW_TYPES[best_match[0]].get("tools", [])}
+            # Only check primary/specific tools — ignore generic ones that
+            # appear in many workflows (fastqc, multiqc, samtools …)
+            _GENERIC = {"fastqc", "multiqc", "samtools", "picard", "bedtools",
+                        "deeptools", "trim_galore"}
+            specific_mentioned = mentioned - _GENERIC
+            specific_workflow = wf_tools - _GENERIC
+            if specific_mentioned and not specific_mentioned.issubset(specific_workflow):
+                self.logger.info(
+                    "Tool-compatibility guard: prompt mentions %s but %s "
+                    "only provides %s — falling back to custom",
+                    specific_mentioned, best_match[0], specific_workflow,
+                )
+                return "custom", self._custom_workflow_config()
 
         return best_match[0], self.WORKFLOW_TYPES[best_match[0]]
 
     async def _call_openai(
-        self, messages: List[Dict[str, str]], model: Optional[str] = None
+        self, messages: List[Dict[str, str]], model: Optional[str] = None,
+        timeout: float = 120,
     ) -> str:
         """Call the configured LLM provider with retry / fallback logic.
 
         Despite the legacy name, this now routes through whichever provider
         is configured (OpenAI, Anthropic, Google, Ollama).
+
+        Parameters
+        ----------
+        timeout : float
+            Maximum seconds to wait for the API response (default 120).
         """
         try:
-            resp = await self.provider.chat(messages, model=model)
+            resp = await asyncio.wait_for(
+                self.provider.chat(messages, model=model),
+                timeout=timeout,
+            )
             self.logger.info("LLM call succeeded (provider=%s)", settings.LLM_PROVIDER)
             return resp.content
+        except asyncio.TimeoutError:
+            self.logger.error(
+                "LLM API call timed out after %.0fs (provider=%s)",
+                timeout, settings.LLM_PROVIDER,
+            )
+            raise
         except Exception as e:
             error_msg = str(e)
             if "insufficient_quota" in error_msg:

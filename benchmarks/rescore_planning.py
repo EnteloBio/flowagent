@@ -31,15 +31,21 @@ _HERE_DIR = Path(__file__).parent
 sys.path.insert(0, str(_HERE_DIR))
 sys.path.insert(0, str(_HERE_DIR.parent))
 
-from harness.metrics import score_plan          # noqa: E402
-from harness.runner import _write_csv, load_yaml  # noqa: E402
+from harness.metrics import score_plan, cost_usd    # noqa: E402
+from harness.runner import _write_csv, load_yaml    # noqa: E402
 
 
 def _latest_planning_run(base: Path) -> Optional[Path]:
     pdir = base / "planning"
     if not pdir.exists():
         return None
-    runs = [p for p in pdir.iterdir() if p.is_dir() and not p.name.startswith("rescored")]
+    # Skip ``rescored_*`` (nested output) and ``_*`` dirs like ``_merged``
+    # which don't hold a top-level ``results.json``.
+    runs = [p for p in pdir.iterdir()
+            if p.is_dir()
+            and not p.name.startswith("rescored")
+            and not p.name.startswith("_")
+            and (p / "results.json").exists()]
     return max(runs, key=lambda p: p.stat().st_mtime) if runs else None
 
 
@@ -62,6 +68,10 @@ def main():
     rows = json.loads(src.read_text())
     prompts_by_id = {p["id"]: p for p in load_yaml(Path(args.prompts))["prompts"]}
 
+    # Model pricing lookup for cost re-computation
+    models_cfg = load_yaml(_HERE_DIR / "config" / "models.yaml")
+    pricing_by_id = {m["id"]: m for m in models_cfg.get("models", [])}
+
     rescored: List[Dict[str, Any]] = []
     for row in rows:
         plan = row.get("plan")
@@ -70,12 +80,23 @@ def main():
         if not (plan and expected):
             rescored.append(row)  # pass-through if we can't rescore
             continue
-        # Re-compute every metric, preserve identifiers + plan + timing
         new_metrics = score_plan(plan, expected)
+
+        # Preserve token counts (fixed at runtime) and re-compute cost using
+        # current pricing — handy when you update models.yaml rates.
+        prompt_tok     = int(row.get("prompt_tokens", 0) or 0)
+        completion_tok = int(row.get("completion_tokens", 0) or 0)
+        cost = cost_usd(prompt_tok, completion_tok,
+                        pricing_by_id.get(row.get("model"), {}))
+
         rescored.append({
             **{k: row[k] for k in
                ("model", "provider", "input_id", "prompt", "replicate",
                 "wall_seconds", "plan") if k in row},
+            "prompt_tokens":     prompt_tok,
+            "completion_tokens": completion_tok,
+            "llm_calls":         int(row.get("llm_calls", 0) or 0),
+            "cost_usd":          cost,
             **new_metrics,
         })
 

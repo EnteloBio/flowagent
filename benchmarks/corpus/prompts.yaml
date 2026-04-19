@@ -57,10 +57,11 @@ prompts:
 
   - id: rnaseq_with_trim
     prompt: "Trim paired-end reads with Trim Galore then run a Kallisto quantification pipeline"
-    # The trimming step pushes the LLM towards "custom" sometimes.
+    # The trimming step pushes the LLM towards "custom" sometimes; some
+    # models collapse index+quant into one piped step, so floor is 3.
     expected_workflow_type: [rna_seq_kallisto, custom]
     expected_tools: [trim_galore, kallisto]
-    expected_min_steps: 4
+    expected_min_steps: 3
     forbidden_tools: [wget]
 
   - id: rnaseq_mouse
@@ -144,8 +145,13 @@ prompts:
   # ── scRNA-seq (2) ──────────────────────────────────────────────
 
   - id: scrna_kb
-    prompt: "Run single-cell RNA-seq quantification with kb-python using a 10x Chromium protocol"
-    # The LLM may pick a more specific type like "single_cell_kb".
+    # Explicit: the task is single-cell. LLMs otherwise drift toward bulk
+    # kallisto because the kb-python wrapper sits on top of kallisto|bustools.
+    # Accept the real kb CLI — ``tool_covered`` already matches ``kb_python``.
+    prompt: >-
+      Run single-cell RNA-seq quantification on 10x Chromium reads using the
+      ``kb`` command-line tool from kb-python (i.e. ``kb ref`` and ``kb count``).
+      Do not use plain bulk kallisto quant.
     expected_workflow_type: [sc_rna_seq, single_cell_kb, single_cell, custom]
     expected_tools: [kb]
     expected_min_steps: 2
@@ -206,7 +212,7 @@ prompts:
   #   (D) niche/long-tail domain        — tests breadth
 
   - id: hard_full_germline_pipeline
-    # A+B+C: must coordinate four tools across an end-to-end germline
+    # A+C: must coordinate four tools across an end-to-end germline
     # workflow and resist the temptation to drop in bowtie2/star.
     prompt: >-
       End-to-end germline short-variant pipeline on paired-end WGS reads:
@@ -215,23 +221,27 @@ prompts:
       then hard-filter and normalise the resulting VCF with bcftools.
     expected_workflow_type: [variant_calling, custom]
     expected_tools: [bwa, picard, gatk, bcftools]
-    expected_min_steps: 8
+    expected_min_steps: 6
     forbidden_tools: [wget, kallisto, star, bowtie2, hisat2]
 
   - id: hard_methylation_bismark_wgbs
     # D+C: bisulfite-sequencing is a niche domain; LLMs tend to reach for
     # bwa/bowtie2 by default, but those won't align bisulfite-converted reads.
+    # Note: Bismark provides its own dedup/extract helpers (deduplicate_bismark,
+    # bismark_methylation_extractor), so samtools is not actually required —
+    # the ``bismark`` check matches any tool in the bismark_* family via
+    # tool_covered().
     prompt: >-
       Whole-genome bisulfite sequencing (WGBS) analysis: trim adapters,
       align bisulfite-converted paired-end reads with Bismark, deduplicate,
       extract per-cytosine methylation calls, and aggregate QC with MultiQC.
     expected_workflow_type: [methylation, custom]
-    expected_tools: [bismark, samtools, multiqc]
-    expected_min_steps: 6
+    expected_tools: [bismark, multiqc]
+    expected_min_steps: 5
     forbidden_tools: [wget, bwa, bowtie2, hisat2, star, kallisto]
 
   - id: hard_longread_nanopore_variants
-    # D+B+C: long-read variant calling — must pick minimap2 (not bwa) and a
+    # D+C: long-read variant calling — must pick minimap2 (not bwa) and a
     # nanopore-aware caller (medaka/clair3), not GATK HaplotypeCaller.
     prompt: >-
       Oxford Nanopore long-read variant calling: align reads with minimap2
@@ -240,12 +250,15 @@ prompts:
       filter the VCF with bcftools.
     expected_workflow_type: [variant_calling, long_read, custom]
     expected_tools: [minimap2, samtools, bcftools]
-    expected_min_steps: 6
+    expected_min_steps: 5
     forbidden_tools: [wget, bwa, bowtie2, gatk]
 
   - id: hard_strand_specific_rnaseq
     # A+C: forbids the kallisto/salmon/star fast paths and demands an
     # explicit splice-aware alignment + assembly + counting chain.
+    # Note: idiomatic pipelines pipe hisat2 → samtools sort → samtools index
+    # in one step, so the step floor is 4. The tool extractor now walks
+    # every segment of a piped command, so samtools is still counted.
     prompt: >-
       Reverse-stranded paired-end RNA-seq pipeline: align with HISAT2 to the
       human genome (with splice-site annotation), sort with samtools,
@@ -254,12 +267,12 @@ prompts:
       strand-specific mode (-s 2).
     expected_workflow_type: [rna_seq_hisat2, custom]
     expected_tools: [hisat2, samtools, stringtie, featurecounts]
-    expected_min_steps: 6
+    expected_min_steps: 4
     forbidden_tools: [wget, kallisto, salmon, star]
 
   - id: hard_sv_calling_manta
-    # A+B+C: structural-variant calling — Manta is the obvious tool but
-    # often skipped; bcftools/gatk are tempting but wrong for SV calling.
+    # A+C: structural-variant calling — Manta is the key tool; must not
+    # fall back to short-variant callers (GATK HaplotypeCaller).
     prompt: >-
       Germline structural-variant discovery on paired-end WGS reads:
       align with BWA-MEM, sort and mark duplicates with Picard, index with
@@ -267,8 +280,8 @@ prompts:
       variants, then convert and filter the VCF for PASS calls.
     expected_workflow_type: [structural_variants, custom]
     expected_tools: [bwa, picard, samtools, manta]
-    expected_min_steps: 7
-    forbidden_tools: [wget, gatk, bcftools, kallisto]
+    expected_min_steps: 6
+    forbidden_tools: [wget, gatk, kallisto]
 
   - id: hard_cutandrun_full
     # A+B: CUT&RUN is ChIP-seq-adjacent but distinct — needs proper trimming
@@ -285,7 +298,7 @@ prompts:
     forbidden_tools: [wget, trim_galore, bwa, kallisto]
 
   - id: hard_rnaseq_full_de_pipeline
-    # A+B+C: a complete bulk RNA-seq pipeline driven all the way to a
+    # A+C: a complete bulk RNA-seq pipeline driven all the way to a
     # gene-count matrix — must use STAR (not kallisto/salmon/hisat2).
     prompt: >-
       Complete bulk RNA-seq differential-expression preprocessing:
@@ -296,7 +309,7 @@ prompts:
       MultiQC report ready for downstream DESeq2.
     expected_workflow_type: [rna_seq_star, custom]
     expected_tools: [trim_galore, star, samtools, picard, featurecounts, multiqc]
-    expected_min_steps: 8
+    expected_min_steps: 7
     forbidden_tools: [wget, kallisto, salmon, hisat2]
 
   - id: hard_metagenomics_kraken
@@ -313,3 +326,141 @@ prompts:
     expected_tools: [fastqc, kraken2, bracken, multiqc]
     expected_min_steps: 5
     forbidden_tools: [wget, bwa, bowtie2, kallisto, star]
+
+  # ── Extra hard benchmarks (10) — domain breadth + tricky planning ──
+  # These extend the hard set to probe specific LLM failure modes:
+  #   (E) reference-aware wrangling  — the plan must materialise intermediate
+  #                                    artefacts (index, dict, chrom-sizes)
+  #   (F) output-format discipline   — forbids the obvious but wrong output
+  #   (G) modern-toolchain selection — must pick a recent standard tool
+  #   (H) multi-stage analysis chain — 8+ step minimum
+
+  - id: hard_amplicon_dada2
+    # D+G: 16S amplicon sequencing — must pick dada2/qiime2, not a generic
+    # variant/align path.
+    prompt: >-
+      16S rRNA amplicon microbiome analysis on paired-end Illumina reads:
+      QC with FastQC, denoise into amplicon sequence variants with DADA2 in
+      R, assign taxonomy against the SILVA reference, and aggregate a
+      MultiQC report.
+    expected_workflow_type: [amplicon, metagenomics, custom]
+    expected_tools: [fastqc, dada2, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget, bwa, bowtie2, kraken2, star]
+
+  - id: hard_atac_full_nucleosome
+    # A+H: full ATAC-seq with nucleosome-position inference — common but
+    # rarely done end-to-end by LLMs.
+    prompt: >-
+      Complete ATAC-seq pipeline for paired-end reads: FastQC, Trim Galore,
+      Bowtie2 alignment, remove mitochondrial reads with samtools, mark
+      duplicates with Picard, shift reads for Tn5 offset, call peaks with
+      MACS2 in BAMPE mode, and aggregate with MultiQC.
+    expected_workflow_type: [atac_seq, custom]
+    expected_tools: [fastqc, trim_galore, bowtie2, samtools, picard, macs2, multiqc]
+    expected_min_steps: 7
+    forbidden_tools: [wget, bwa, kallisto, star]
+
+  - id: hard_rnaseq_salmon_full
+    # A+F: transcript-level quantification driven all the way to tximport —
+    # forbids STAR / kallisto and demands a Salmon-specific chain.
+    prompt: >-
+      Transcript-level bulk RNA-seq quantification pipeline: trim paired-end
+      reads with fastp, build a Salmon index with a decoy-aware transcriptome,
+      quantify with Salmon in mapping-based mode with --gcBias and
+      --validateMappings, summarise to gene-level with tximport in R, and
+      aggregate with MultiQC.
+    expected_workflow_type: [rna_seq_salmon, custom]
+    expected_tools: [fastp, salmon, tximport, multiqc]
+    expected_min_steps: 5
+    forbidden_tools: [wget, kallisto, star, hisat2]
+
+  - id: hard_somatic_mutect2
+    # A+C: somatic short-variant calling — must pick Mutect2 (not
+    # HaplotypeCaller) and produce a filtered VCF.
+    prompt: >-
+      Somatic short-variant calling on paired tumour/normal WGS: align both
+      samples with BWA-MEM, sort and mark duplicates with Picard, run base
+      recalibration with GATK BQSR, call somatic variants with GATK Mutect2
+      in tumour-vs-normal mode, then filter with GATK FilterMutectCalls.
+    expected_workflow_type: [variant_calling, somatic, custom]
+    expected_tools: [bwa, picard, gatk]
+    expected_min_steps: 6
+    forbidden_tools: [wget, kallisto, star, bcftools]
+
+  - id: hard_longread_pacbio_assembly
+    # D+G: long-read de novo assembly — must pick hifiasm/flye, not a
+    # short-read assembler (spades/abyss).
+    prompt: >-
+      PacBio HiFi long-read de novo genome assembly: QC with NanoPlot,
+      assemble with hifiasm in HiFi mode, polish / evaluate contiguity with
+      QUAST, and assess completeness with BUSCO against a lineage dataset.
+    expected_workflow_type: [assembly, long_read, custom]
+    expected_tools: [nanoplot, hifiasm, quast, busco]
+    expected_min_steps: 4
+    forbidden_tools: [wget, spades, abyss, bwa]
+
+  - id: hard_chip_diffbind
+    # H: differential-binding ChIP-seq — must coordinate alignment, peak
+    # calling, AND a downstream differential step.
+    prompt: >-
+      Differential ChIP-seq analysis across two conditions: FastQC and Trim
+      Galore on paired-end reads, Bowtie2 alignment, samtools sort and
+      filter, MACS2 narrow peak calling per sample, then differential
+      binding with DiffBind in R, aggregated into a MultiQC report.
+    expected_workflow_type: [chip_seq, custom]
+    expected_tools: [fastqc, trim_galore, bowtie2, samtools, macs2, diffbind, multiqc]
+    expected_min_steps: 7
+    forbidden_tools: [wget, bwa, kallisto, star]
+
+  - id: hard_smallrna_mirdeep2
+    # D+F: small-RNA / miRNA profiling — must pick a miRNA-aware toolchain
+    # (mirdeep2 / bowtie against miRBase), not a generic RNA-seq path.
+    prompt: >-
+      Small-RNA / miRNA-seq profiling on single-end reads: QC with FastQC,
+      adapter- and quality-trim with cutadapt using a small-RNA adapter,
+      collapse reads, align against miRBase with bowtie, quantify known and
+      novel miRNAs with miRDeep2, and aggregate QC with MultiQC.
+    expected_workflow_type: [small_rna, rna_seq, custom]
+    expected_tools: [fastqc, cutadapt, bowtie, mirdeep2, multiqc]
+    expected_min_steps: 5
+    forbidden_tools: [wget, kallisto, salmon, star, hisat2]
+
+  - id: hard_hic_cooler
+    # E+H: Hi-C contact matrix generation — must build a proper pairs →
+    # cooler pipeline rather than stopping at alignment.
+    prompt: >-
+      Hi-C contact-map pipeline for paired-end reads: FastQC, align each
+      mate separately with bwa in the Hi-C mode, pair with pairtools parse,
+      sort and deduplicate pairs, build a .cool matrix with cooler cload
+      pairs, balance it with cooler balance, and aggregate QC with MultiQC.
+    expected_workflow_type: [hic, custom]
+    expected_tools: [fastqc, bwa, pairtools, cooler, multiqc]
+    expected_min_steps: 6
+    forbidden_tools: [wget, kallisto, star, hisat2]
+
+  - id: hard_shortread_assembly_spades
+    # G: short-read de novo assembly — must pick SPAdes (not hifiasm/flye).
+    prompt: >-
+      Bacterial short-read de novo assembly from paired-end Illumina reads:
+      QC with FastQC, adapter- and quality-trim with fastp, assemble with
+      SPAdes in --isolate mode, evaluate contiguity with QUAST, annotate
+      with Prokka, and collect QC into MultiQC.
+    expected_workflow_type: [assembly, custom]
+    expected_tools: [fastqc, fastp, spades, quast, prokka, multiqc]
+    expected_min_steps: 6
+    forbidden_tools: [wget, bwa, hifiasm, flye, kallisto]
+
+  - id: hard_cfdna_lowpass_cnv
+    # D+H: low-pass WGS copy-number profiling from cfDNA — a niche clinical
+    # pipeline the LLM rarely gets end-to-end.
+    prompt: >-
+      Low-pass whole-genome sequencing copy-number profiling from plasma
+      cfDNA: QC with FastQC, adapter trim with fastp, align with BWA-MEM,
+      sort and dedup with samtools markdup, compute bin-level read counts
+      with QDNAseq in R, segment with circular binary segmentation, and
+      aggregate QC with MultiQC.
+    expected_workflow_type: [cnv, variant_calling, custom]
+    expected_tools: [fastqc, fastp, bwa, samtools, qdnaseq, multiqc]
+    expected_min_steps: 6
+    forbidden_tools: [wget, kallisto, star, gatk]

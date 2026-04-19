@@ -82,15 +82,34 @@ class LocalExecutor(BaseExecutor):
     """Execute workflow steps locally using subprocess."""
     
     async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a workflow step locally."""
+        """Execute a workflow step locally.
+
+        If the step dict contains a ``timeout`` key (seconds), the subprocess
+        is killed after that many seconds and the step is marked FAILED.
+        """
         try:
             process = await asyncio.create_subprocess_shell(
                 step["command"],
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await process.communicate()
-            
+            timeout = step.get("timeout")
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                result = StepResult(
+                    step_id=step["name"],
+                    status=StepStatus.FAILED,
+                    returncode=-9,
+                    stdout="",
+                    stderr=f"Command timed out after {timeout}s",
+                )
+                return result.to_dict()
+
             result = StepResult(
                 step_id=step["name"],
                 status=StepStatus.COMPLETED if process.returncode == 0 else StepStatus.FAILED,
@@ -109,13 +128,18 @@ class LocalExecutor(BaseExecutor):
 
 class CGATExecutor(BaseExecutor):
     """Execute workflow steps using CGATCore pipeline."""
-    
+
     def __init__(self):
-        """Initialize CGATCore pipeline."""
+        """Initialize CGATCore pipeline.
+
+        The DRMAA session is started lazily on first job submission so
+        that the executor can be imported and introspected on systems
+        without a cluster scheduler.
+        """
         if P is None:
             raise ImportError("cgatcore is required for CGATExecutor: pip install 'flowagent[hpc]'")
         self.pipeline = P
-        self.pipeline.start_pipeline()
+        self._session_started = False
         self.settings = Settings()
         logger.info(
             f"Initialized CGATCore pipeline with settings:\n"
@@ -123,6 +147,12 @@ class CGATExecutor(BaseExecutor):
             f"  Default Memory: {self.settings.SLURM_DEFAULT_MEMORY}\n"
             f"  Default CPUs: {self.settings.SLURM_DEFAULT_CPUS}"
         )
+
+    def _ensure_session(self):
+        """Start the DRMAA session exactly once, on demand."""
+        if not self._session_started:
+            self.pipeline.start_session()
+            self._session_started = True
     
     def _prepare_job_options(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare job options for CGATCore."""
@@ -157,8 +187,9 @@ class CGATExecutor(BaseExecutor):
             # Prepare job options
             job_options = self._prepare_job_options(step)
             logger.info(f"Submitting step {step['name']} with options: {job_options}")
-            
-            # Submit job via CGATCore
+
+            # Submit job via CGATCore (DRMAA session starts on first submit)
+            self._ensure_session()
             statement = step["command"]
             job = self.pipeline.submit(
                 statement,
@@ -203,33 +234,36 @@ class CGATExecutor(BaseExecutor):
             logger.error(f"Error waiting for jobs to complete: {str(e)}")
             raise
         finally:
-            # Clean up pipeline
-            self.pipeline.close_pipeline()
+            # Clean up DRMAA session if one was started
+            if self._session_started:
+                self.pipeline.close_session()
+                self._session_started = False
 
 class HPCExecutor(BaseExecutor):
     """Execute workflow steps using various HPC systems (SLURM, SGE, TORQUE)."""
     
     def __init__(self):
-        """Initialize HPC executor."""
+        """Initialize HPC executor.
+
+        Constructs the backend object but defers DRMAA/session startup
+        until the first job submission, so the executor can be
+        introspected on systems without a live scheduler.
+        """
         self.settings = Settings()
         self.hpc_system = self.settings.HPC_SYSTEM.lower()
-        
-        # Initialize appropriate backend
+
+        # Construct the backend without starting a session
         if self.hpc_system == "slurm":
             from cgatcore import pipeline as P
             self.backend = P
-            self.backend.start_pipeline()
-        elif self.hpc_system == "sge":
+        elif self.hpc_system in ("sge", "torque"):
             import drmaa
             self.backend = drmaa.Session()
-            self.backend.initialize()
-        elif self.hpc_system == "torque":
-            import drmaa
-            self.backend = drmaa.Session()
-            self.backend.initialize()
         else:
             raise ValueError(f"Unsupported HPC system: {self.hpc_system}")
-            
+
+        self._backend_ready = False
+
         logger.info(
             f"Initialized {self.hpc_system.upper()} executor with settings:\n"
             f"  Queue: {self.settings.HPC_QUEUE}\n"
@@ -237,6 +271,16 @@ class HPCExecutor(BaseExecutor):
             f"  Default CPUs: {self.settings.HPC_DEFAULT_CPUS}\n"
             f"  Default Time: {self.settings.HPC_DEFAULT_TIME} minutes"
         )
+
+    def _ensure_backend_ready(self):
+        """Start the scheduler session exactly once, on demand."""
+        if self._backend_ready:
+            return
+        if self.hpc_system == "slurm":
+            self.backend.start_session()
+        elif self.hpc_system in ("sge", "torque"):
+            self.backend.initialize()
+        self._backend_ready = True
     
     def _prepare_job_options(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare job options for the HPC system."""
@@ -277,7 +321,10 @@ class HPCExecutor(BaseExecutor):
         try:
             job_options = self._prepare_job_options(step)
             logger.info(f"Submitting step {step['name']} with options: {job_options}")
-            
+
+            # Start DRMAA/session on first submit
+            self._ensure_backend_ready()
+
             if self.hpc_system == "slurm":
                 # Use CGAT pipeline for SLURM
                 job = self.backend.submit(
@@ -348,8 +395,9 @@ class HPCExecutor(BaseExecutor):
             logger.error(f"Error waiting for jobs to complete: {str(e)}")
             return jobs
         finally:
-            if self.hpc_system != "slurm":
+            if self.hpc_system != "slurm" and self._backend_ready:
                 self.backend.exit()
+                self._backend_ready = False
 
 class KubernetesExecutor(BaseExecutor):
     """Execute workflow steps using Kubernetes Jobs."""

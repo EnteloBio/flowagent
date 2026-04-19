@@ -58,6 +58,24 @@ models:
     tier: frontier
     pricing: {input_per_1k: 0.002, output_per_1k: 0.008}
 
+  - id: gpt-5.4                        # 2026 frontier ($2.50/$15 per MTok)
+    provider: openai
+    env_var: OPENAI_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.0025, output_per_1k: 0.015}
+
+  - id: gpt-5.4-mini                   # 2026 mini ($0.75/$4.50 per MTok)
+    provider: openai
+    env_var: OPENAI_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.00075, output_per_1k: 0.0045}
+
+  - id: gpt-5.4-nano                   # 2026 nano ($0.20/$1.25 per MTok)
+    provider: openai
+    env_var: OPENAI_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.0002, output_per_1k: 0.00125}
+
   # ── Anthropic ─────────────────────────────────────────────────
   - id: claude-3-haiku-20240307        # Cheap legacy
     provider: anthropic
@@ -90,6 +108,18 @@ models:
     pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
 
   - id: claude-opus-4-5                # 2025 frontier (Opus tier — most capable)
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+
+  - id: claude-opus-4-6                # 2025/26 frontier (Opus 4.6)
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+
+  - id: claude-opus-4-7                # 2026 frontier (Opus 4.7)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
