@@ -107,23 +107,23 @@ models:
     tier: frontier
     pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
 
-  - id: claude-opus-4-5                # 2025 frontier (Opus tier — most capable)
+  - id: claude-opus-4-5                # 2025 frontier ($5/$25 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    pricing: {input_per_1k: 0.005, output_per_1k: 0.025}
 
-  - id: claude-opus-4-6                # 2025/26 frontier (Opus 4.6)
+  - id: claude-opus-4-6                # 2025/26 frontier ($5/$25 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    pricing: {input_per_1k: 0.005, output_per_1k: 0.025}
 
-  - id: claude-opus-4-7                # 2026 frontier (Opus 4.7)
+  - id: claude-opus-4-7                # 2026 frontier ($5/$25 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    pricing: {input_per_1k: 0.005, output_per_1k: 0.025}
 
   # ── Google ────────────────────────────────────────────────────
   - id: gemini-1.5-flash               # 2024 cheap legacy
@@ -138,8 +138,8 @@ models:
     tier: mid
     pricing: {input_per_1k: 0.00125, output_per_1k: 0.005}
 
-  - id: gemini-2.5-flash               # 2025 frontier (cheap tier)
+  - id: gemini-2.5-flash               # 2025 frontier ($0.30/$2.50 per MTok)
     provider: google
     env_var: GOOGLE_API_KEY
     tier: frontier
-    pricing: {input_per_1k: 0.00015, output_per_1k: 0.0006}
+    pricing: {input_per_1k: 0.0003, output_per_1k: 0.0025}
