@@ -418,28 +418,69 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
 
 # ── Benchmark B: error recovery ──────────────────────────────────
 
-_UNRECOVERABLE_FAULTS = {"corrupt_fastq", "paired_single_mismatch"}
+# Legacy fall-back — populated from fault_tier column when present.
+_UNRECOVERABLE_FAULTS = {
+    "corrupt_fastq", "paired_single_mismatch",
+    "empty_input_file", "binary_as_fastq",
+}
 
 _FAULT_LABELS = {
-    "missing_wget":           "Missing binary (wget \u2192 curl)",
-    "tool_typo":              "Tool name typo (fastq_c)",
-    "wrong_flag":             "Wrong CLI flag (-x \u2192 -i)",
-    "missing_output_dir":     "Missing output directory",
-    "paired_single_mismatch": "Paired/single mode mismatch",
-    "corrupt_fastq":          "Corrupted input FASTQ",
-    "readonly_output":        "Read-only output directory",
-    "path_with_spaces":       "Unquoted path with spaces",
-    "multiqc_collision":      "Output file collision (no -f)",
-    "stale_conda_pin":        "Stale conda version pin",
+    # Easy
+    "missing_wget":                "Missing binary (wget \u2192 curl)",
+    "tool_typo":                   "Tool name typo (fastq_c)",
+    "wrong_flag":                  "Wrong CLI flag (-x \u2192 -i)",
+    "missing_output_dir":          "Missing output directory",
+    "readonly_output":             "Read-only output directory",
+    "path_with_spaces":            "Unquoted path with spaces",
+    "multiqc_collision":           "Output file collision (no -f)",
+    "samtools_subcommand_typo":    "Subcommand typo (samtools srot)",
+    "missing_flag_value":          "Flag missing its value (-@)",
+    "missing_mandatory_arg":       "Missing mandatory arg (bwa mem)",
+    "cp_source_missing":           "cp source file not found",
+    "deep_nonexistent_outdir":     "Redirect to unmade parent dirs",
+    "ambiguous_flag":              "Ambiguous abbreviated flag",
+    "undefined_env_var":           "Undefined env var (set -u)",
+    "missing_python_module":       "Python module not installed",
+    # Hard
+    "stale_conda_pin":             "Stale conda version pin",
+    "bam_unsorted_indexing":       "BAM not sorted for indexing",
+    "missing_bwa_index":           "bwa mem before bwa index",
+    "missing_faidx":               "Missing .fai index",
+    "missing_sequence_dict":       "Missing GATK .dict file",
+    "chromosome_naming_mismatch":  "chr1 vs 1 prefix mismatch",
+    "htseq_needs_name_sort":       "htseq needs -n sorted BAM",
+    "java_heap_oom":                "Java heap OOM (bump -Xmx)",
+    "vcf_contig_mismatch":         "VCF contig mismatch on merge",
+    # Unrecoverable
+    "paired_single_mismatch":      "Paired/single mode mismatch",
+    "corrupt_fastq":               "Corrupted input FASTQ",
+    "empty_input_file":            "Empty input FASTQ",
+    "binary_as_fastq":             "Binary data posing as FASTQ",
 }
 
 
-def recovery_figure(df: pd.DataFrame) -> plt.Figure:
-    """Stacked bar chart showing recovery outcomes per fault.
+_TIER_ORDER_B = {"easy": 0, "hard": 1, "unrecoverable": 2}
 
-    Recoverable faults:    green = recovered, red = failed.
-    Unrecoverable faults:  slate = correctly rejected, red = incorrectly
-                           attempted.
+# Colours used across recovery figures
+_REC_GREEN = "#15803d"
+_REC_RED   = "#b91c1c"
+_REC_SLATE = "#475569"
+
+
+def _tier_from_row(row, fallback_set: set) -> str:
+    """Pick up the explicit ``fault_tier`` column; else infer from legacy set."""
+    t = row.get("fault_tier") if hasattr(row, "get") else None
+    if isinstance(t, str) and t in _TIER_ORDER_B:
+        return t
+    return "unrecoverable" if row["fault"] in fallback_set else "easy"
+
+
+def recovery_figure(df: pd.DataFrame) -> plt.Figure:
+    """Per-fault stacked bar chart, grouped into Easy / Hard / Unrecoverable.
+
+    Recoverable faults (easy/hard): green = recovered, red = failed.
+    Unrecoverable faults:           slate = correctly rejected, red =
+                                    incorrectly attempted.
     """
     if "fault" not in df.columns:
         return _empty_figure("No recovery data.")
@@ -450,52 +491,59 @@ def recovery_figure(df: pd.DataFrame) -> plt.Figure:
         else str(v).strip().lower() == "true"
     )
 
+    # Per-fault aggregation
     agg = (df.groupby("fault")["recovered"]
-           .agg(["sum", "count"]).reset_index())
+             .agg(["sum", "count"]).reset_index())
     agg.columns = ["fault", "n_recovered", "n_total"]
-    agg["n_failed"]      = agg["n_total"] - agg["n_recovered"]
-    agg["rate"]          = agg["n_recovered"] / agg["n_total"]
-    agg["unrecoverable"] = agg["fault"].isin(_UNRECOVERABLE_FAULTS)
-    agg["label"]         = agg["fault"].map(
+    agg["n_failed"] = agg["n_total"] - agg["n_recovered"]
+    agg["rate"]     = agg["n_recovered"] / agg["n_total"]
+
+    # Attach tier (prefer explicit column; fall back to legacy set)
+    if "fault_tier" in df.columns:
+        tier_by_fault = (df.groupby("fault")["fault_tier"]
+                           .agg(lambda s: s.iloc[0]).to_dict())
+    else:
+        tier_by_fault = {}
+    agg["tier"] = agg["fault"].map(
+        lambda f: tier_by_fault.get(f)
+        or ("unrecoverable" if f in _UNRECOVERABLE_FAULTS else "easy"))
+    agg["label"] = agg["fault"].map(
         lambda f: _FAULT_LABELS.get(f, f.replace("_", " ").title()))
 
-    # Order: recoverable first (by descending rate), then unrecoverable
+    # Sort: easy first (by rate desc), then hard, then unrecoverable
     agg["sort_key"] = agg.apply(
-        lambda r: (0, -r["rate"]) if not r["unrecoverable"] else (1, -r["rate"]),
+        lambda r: (_TIER_ORDER_B.get(r["tier"], 99), -r["rate"]),
         axis=1,
     )
     agg = agg.sort_values("sort_key").reset_index(drop=True)
 
-    n_rec = int((~agg["unrecoverable"]).sum())
+    n_per_tier = agg.groupby("tier").size().to_dict()
+    n_easy   = n_per_tier.get("easy", 0)
+    n_hard   = n_per_tier.get("hard", 0)
+    n_unrec  = n_per_tier.get("unrecoverable", 0)
 
-    # Palette
-    GREEN  = "#15803d"
-    RED    = "#b91c1c"
-    SLATE  = "#475569"
+    fig_h = max(3.2, 0.42 * len(agg) + 1.2)
+    fig, ax = plt.subplots(figsize=(8.2, fig_h))
 
-    fig_h = max(2.6, 0.5 * len(agg) + 1.2)
-    fig, ax = plt.subplots(figsize=(7.2, fig_h))
-
-    y = np.arange(len(agg))
     for i, row in agg.iterrows():
         rate, fail = row["rate"], 1 - row["rate"]
-        if row["unrecoverable"]:
-            ax.barh(i, fail,  height=0.68, color=SLATE,
+        if row["tier"] == "unrecoverable":
+            ax.barh(i, fail,  height=0.68, color=_REC_SLATE,
                     edgecolor="white", linewidth=0.5)
             if rate > 0:
-                ax.barh(i, rate, height=0.68, left=fail, color=RED,
+                ax.barh(i, rate, height=0.68, left=fail, color=_REC_RED,
                         edgecolor="white", linewidth=0.5)
         else:
-            ax.barh(i, rate,  height=0.68, color=GREEN,
+            ax.barh(i, rate,  height=0.68, color=_REC_GREEN,
                     edgecolor="white", linewidth=0.5)
             if fail > 0:
-                ax.barh(i, fail, height=0.68, left=rate, color=RED,
+                ax.barh(i, fail, height=0.68, left=rate, color=_REC_RED,
                         edgecolor="white", linewidth=0.5)
 
         ax.text(1.015, i, f"{int(row['n_recovered'])}/{int(row['n_total'])}",
                 va="center", fontsize=8, color="#1f2937")
 
-    ax.set_yticks(y)
+    ax.set_yticks(np.arange(len(agg)))
     ax.set_yticklabels(agg["label"])
     ax.set_xlim(0, 1.12)
     ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
@@ -504,26 +552,103 @@ def recovery_figure(df: pd.DataFrame) -> plt.Figure:
     ax.invert_yaxis()
     _style_value_axis(ax, x=True)
 
-    if 0 < n_rec < len(agg):
-        sep_y = n_rec - 0.5
-        ax.axhline(sep_y, color="#94a3b8", linewidth=0.7, linestyle="--")
-        ax.text(-0.01, (n_rec - 1) / 2, "Recoverable",
-                ha="right", va="center", fontsize=7.5, fontstyle="italic",
-                color=GREEN, transform=ax.get_yaxis_transform())
-        ax.text(-0.01, n_rec + (len(agg) - n_rec - 1) / 2, "Unrecoverable",
-                ha="right", va="center", fontsize=7.5, fontstyle="italic",
-                color=SLATE, transform=ax.get_yaxis_transform())
+    # Tier separators + side-labels (placed well to the left of the tick labels)
+    tier_colors = {"easy": _REC_GREEN, "hard": "#b45309",
+                   "unrecoverable": _REC_SLATE}
+    offset = 0
+    for tier, count in (("easy", n_easy), ("hard", n_hard),
+                        ("unrecoverable", n_unrec)):
+        if count == 0:
+            continue
+        mid = offset + (count - 1) / 2
+        ax.text(-0.28, mid,
+                tier.capitalize() if tier != "unrecoverable" else "Unrecoverable",
+                ha="right", va="center", fontsize=8.5, fontstyle="italic",
+                color=tier_colors[tier], fontweight="semibold",
+                transform=ax.get_yaxis_transform(),
+                clip_on=False)
+        offset += count
+        if offset < len(agg):
+            ax.axhline(offset - 0.5, color="#94a3b8",
+                       linewidth=0.7, linestyle="--")
 
     from matplotlib.patches import Patch
     handles = [
-        Patch(facecolor=GREEN, edgecolor="white", label="Recovered (correct)"),
-        Patch(facecolor=SLATE, edgecolor="white", label="Correctly rejected"),
-        Patch(facecolor=RED,   edgecolor="white", label="Wrong outcome"),
+        Patch(facecolor=_REC_GREEN, edgecolor="white", label="Recovered (correct)"),
+        Patch(facecolor=_REC_SLATE, edgecolor="white", label="Correctly rejected"),
+        Patch(facecolor=_REC_RED,   edgecolor="white", label="Wrong outcome"),
     ]
     ax.legend(handles=handles, loc="lower right", fontsize=7.5,
               framealpha=0.95, edgecolor="#d1d5db")
 
     ax.set_title("LLM-driven error recovery", loc="left")
+    return fig
+
+
+def recovery_tier_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Compact per-tier summary: recovery rate for easy vs. hard, plus the
+    false-recovery rate on unrecoverable faults (where "recovered" is wrong).
+    """
+    if "fault" not in df.columns:
+        return None
+    df = df.copy()
+    df["recovered"] = df["recovered"].map(
+        lambda v: v if isinstance(v, bool)
+        else str(v).strip().lower() == "true"
+    )
+    if "fault_tier" in df.columns:
+        tier_col = df["fault_tier"]
+    else:
+        tier_col = df["fault"].map(
+            lambda f: "unrecoverable" if f in _UNRECOVERABLE_FAULTS else "easy")
+    df["tier"] = tier_col
+
+    tiers = [t for t in ("easy", "hard", "unrecoverable")
+             if (df["tier"] == t).any()]
+    if not tiers:
+        return None
+
+    rows = []
+    for t in tiers:
+        sub = df[df["tier"] == t]
+        k = int(sub["recovered"].sum())
+        n = int(len(sub))
+        rows.append((t, k, n, k / n if n else 0.0))
+    tdf = pd.DataFrame(rows, columns=["tier", "k", "n", "rate"])
+
+    fig, ax = plt.subplots(figsize=(5.2, max(1.6, 0.5 * len(tiers) + 0.8)))
+    y = np.arange(len(tdf))
+    labels = []
+    colours = []
+    for _, row in tdf.iterrows():
+        if row["tier"] == "unrecoverable":
+            # Invert the narrative: what we want here is NON-recovery
+            correct = 1 - row["rate"]
+            labels.append(f"Unrecoverable (correct reject = {correct:.0%})")
+            colours.append(_REC_SLATE)
+        else:
+            labels.append(
+                f"{row['tier'].capitalize()} (recovered = {row['rate']:.0%})"
+            )
+            colours.append(_REC_GREEN if row["tier"] == "easy" else "#b45309")
+
+    displayed = np.where(
+        tdf["tier"] == "unrecoverable", 1 - tdf["rate"], tdf["rate"]
+    )
+    ax.barh(y, displayed, color=colours, edgecolor="white",
+            linewidth=0.6, height=0.6)
+    for i, (v, row) in enumerate(zip(displayed, tdf.itertuples())):
+        ax.text(v + 0.01, i, f"{int(row.k)}/{int(row.n)}",
+                va="center", ha="left", fontsize=8, color="#1f2937")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels)
+    ax.set_xlim(0, 1.12)
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.set_xlabel("Fraction of runs with the desired outcome")
+    ax.set_title("Recovery outcome by fault tier", loc="left")
+    _style_value_axis(ax, x=True)
     return fig
 
 
@@ -1221,6 +1346,15 @@ def main() -> None:
         _save(fig, fig_dir / bench_name, svg=args.svg)
         plt.close(fig)
         print(f"[ok]   {bench_name} → {fig_dir/bench_name}.pdf")
+
+        # Bonus tier-summary alongside the per-fault bar chart
+        if bench_name == "recovery":
+            tierfig = recovery_tier_summary_figure(df)
+            if tierfig is not None:
+                _save(tierfig, fig_dir / "recovery_tier_summary", svg=args.svg)
+                plt.close(tierfig)
+                print(f"[ok]   recovery_tier_summary → "
+                      f"{fig_dir/'recovery_tier_summary'}.pdf")
 
         # Planning bonus figures
         if bench_name == "planning":

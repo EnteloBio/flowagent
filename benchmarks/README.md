@@ -35,7 +35,7 @@ benchmarks/
 | ID | Claim | Needs API key | Needs infra |
 |---|---|---|---|
 | **A** | FlowAgent generates valid plans from natural language | yes | no |
-| **B** | FlowAgent self-heals faults that break traditional WMS | yes | no |
+| **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no |
 | **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` |
 | **D** | All six execution backends function | no | best-effort — mock mode if infra absent |
 
@@ -52,6 +52,31 @@ benchmarks/
   (hifiasm vs spades, Mutect2 vs HaplotypeCaller), forbidden shortcuts
   (kallisto when STAR is required), and R-package wrappers (DADA2, DiffBind,
   QDNAseq, tximport).
+
+### Fault catalogue (Benchmark B)
+
+`config/faults.yaml` + `harness/fault_inject.py` contain **28 faults** across
+three tiers:
+
+- **15 easy faults** — surface-level fixes: a flag typo, a missing output
+  directory, an abbreviated ambiguous flag. A competent LLM should recover
+  on the first attempt. Examples: `missing_wget`, `tool_typo`,
+  `samtools_subcommand_typo`, `ambiguous_flag`, `cp_source_missing`,
+  `missing_python_module`.
+- **9 hard faults** — require semantic reasoning or a multi-step fix
+  (insert a new step, not just edit the failing one). Examples:
+  `bam_unsorted_indexing` (needs a `samtools sort` prepended),
+  `missing_bwa_index` (needs `bwa index` run first),
+  `chromosome_naming_mismatch` (detect chr1-vs-1 prefix),
+  `java_heap_oom` (raise `-Xmx`), `missing_sequence_dict` (create GATK dict).
+- **4 unrecoverable faults** — data / environment problems where the
+  *desired* outcome is *failure*. A correct LLM should refuse to "fix"
+  these: `corrupt_fastq`, `empty_input_file`, `binary_as_fastq`,
+  `paired_single_mismatch`.
+
+Each fault produces a real failure signature (genuine exit code + stderr
+via shell stubs or real tools), so recovery is judged on the LLM's ability
+to read and fix an authentic error.
 
 ### Models
 
@@ -200,7 +225,8 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 | `planning_heatmap.pdf` | Per-prompt × per-model pass-rate heatmap (hard prompts) |
 | `planning_cost_summary.pdf` | Per-model cost bar chart (two panels) |
 | `planning_cost_quality.pdf` | Pass-rate vs. cost scatter (log x-axis) |
-| `recovery.pdf` | Benchmark B fault-recovery outcomes |
+| `recovery.pdf` | Benchmark B per-fault recovery, grouped into Easy / Hard / Unrecoverable |
+| `recovery_tier_summary.pdf` | Compact per-tier summary: recovery rate for Easy + Hard, correct-rejection rate for Unrecoverable |
 | `generation.pdf` | Benchmark C generator-fidelity heatmap |
 | `executors.pdf` | Benchmark D executor-coverage matrix |
 
@@ -260,7 +286,7 @@ Rough guide at current (Apr 2026) rates across the full 20-model sweep.
 |---|---|---|---|
 | `make plan` | 1 | ~5–15 min | ~$0.05–$2 (depends on model tier) |
 | `make plan-all` | 20 | ~30–60 min (concurrent) | ~$15–30 |
-| `make recovery` | 1 | ~15 min | ~$1 |
+| `make recovery` | 1 | ~35–45 min (28 faults × 5 seeds) | ~$2–3 |
 | `make gen` | — | <1 min | $0 |
 | `make exec` | — | <1 min | $0 |
 | `make rescore` | — | ~5 s | $0 |

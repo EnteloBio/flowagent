@@ -3,6 +3,11 @@
 # Each fault has:
 #   id:              unique identifier used in results CSV
 #   class:           human-readable category (for figure grouping)
+#   tier:            easy | hard | unrecoverable
+#                      easy          — surface-level fix (one flag / typo / dir)
+#                      hard          — semantic reasoning or multi-step fix
+#                      unrecoverable — data / environment problem that *should*
+#                                      be rejected, not recovered
 #   description:     short documentation
 #   diagnosis_regex: regex that the LLM's recovery diagnosis SHOULD match
 #                    if the recovery is on the right track
@@ -12,52 +17,173 @@
 # manuscript figure; adding a fault here requires implementing it there.
 
 faults:
+  # ── Easy tier ────────────────────────────────────────────────
   - id: missing_wget
     class: missing_binary
+    tier: easy
     description: Replace tool with wget on a host where wget is not in PATH
     diagnosis_regex: '(?i)wget|not found|command not found|curl'
 
   - id: tool_typo
     class: typo
+    tier: easy
     description: Mutate the tool name to a plausible typo (kalisto, fastq_c)
     diagnosis_regex: '(?i)typo|not found|misspell|command not found'
 
   - id: wrong_flag
     class: wrong_flag
+    tier: easy
     description: Swap a required flag for one that looks similar (e.g. -x for -i)
     diagnosis_regex: '(?i)flag|option|argument|usage'
 
   - id: missing_output_dir
     class: missing_path
+    tier: easy
     description: Point FastQC at an output directory that does not exist
     diagnosis_regex: '(?i)directory.*exist|mkdir|no such'
 
-  - id: paired_single_mismatch
-    class: data_shape_mismatch
-    description: Feed paired-end reads to a single-end kallisto quant command
-    diagnosis_regex: '(?i)paired|single|fragment|length'
-
-  - id: corrupt_fastq
-    class: corrupt_input
-    description: Truncate a gzipped FASTQ to trigger a parse error
-    diagnosis_regex: '(?i)truncat|invalid|corrupt|gzip'
-
   - id: readonly_output
     class: permission
+    tier: easy
     description: Output directory is not writable
     diagnosis_regex: '(?i)permission|readonly|not writable'
 
   - id: path_with_spaces
     class: shell_escaping
+    tier: easy
     description: Unquoted ${launchDir} containing parentheses (regression test)
     diagnosis_regex: '(?i)quote|escape|syntax|space|unexpected token'
 
   - id: multiqc_collision
     class: output_collision
+    tier: easy
     description: Pre-existing multiqc_report.html causes _1 / _2 suffix collision
     diagnosis_regex: '(?i)-f|force|overwrite|exist'
 
+  - id: samtools_subcommand_typo
+    class: typo
+    tier: easy
+    description: samtools srot → sort (subcommand typo)
+    diagnosis_regex: '(?i)srot|unrecognized|unknown|sort'
+
+  - id: missing_flag_value
+    class: usage
+    tier: easy
+    description: Flag like -@ missing its numeric argument
+    diagnosis_regex: '(?i)requires.*argument|missing.*value|usage|-@'
+
+  - id: missing_mandatory_arg
+    class: usage
+    tier: easy
+    description: Tool invoked without a required positional arg (bwa mem sans reads)
+    diagnosis_regex: '(?i)usage|need.*input|reads|fastq'
+
+  - id: cp_source_missing
+    class: missing_path
+    tier: easy
+    description: cp with a non-existent source file
+    diagnosis_regex: '(?i)no such file|not exist|missing'
+
+  - id: deep_nonexistent_outdir
+    class: missing_path
+    tier: easy
+    description: Redirect output into multiple unmade parent directories
+    diagnosis_regex: '(?i)no such|directory|mkdir'
+
+  - id: ambiguous_flag
+    class: usage
+    tier: easy
+    description: Abbreviated flag (--th) is ambiguous with other flags
+    diagnosis_regex: '(?i)ambiguous|flag|option|--threads'
+
+  - id: undefined_env_var
+    class: shell_escaping
+    tier: easy
+    description: Reference to an unset env var under `set -u`
+    diagnosis_regex: '(?i)unbound|unset|variable|env|export'
+
+  - id: missing_python_module
+    class: env_mismatch
+    tier: easy
+    description: Python imports a module not installed in the current environment
+    diagnosis_regex: '(?i)modulenotfounderror|no module|pip install|import'
+
+  # ── Hard tier ────────────────────────────────────────────────
   - id: stale_conda_pin
     class: env_mismatch
+    tier: hard
     description: Conda spec pins a version that does not exist on osx-arm64
     diagnosis_regex: '(?i)not available|pin|version|package.*found'
+
+  - id: bam_unsorted_indexing
+    class: data_order
+    tier: hard
+    description: samtools index on coordinate-unsorted BAM — needs sort first
+    diagnosis_regex: '(?i)unsorted|sort|index|coordinate'
+
+  - id: missing_bwa_index
+    class: missing_artefact
+    tier: hard
+    description: bwa mem before `bwa index` — must build index files first
+    diagnosis_regex: '(?i)locate.*index|bwa index|idx|missing'
+
+  - id: missing_faidx
+    class: missing_artefact
+    tier: hard
+    description: samtools command requires .fai — run `samtools faidx` first
+    diagnosis_regex: '(?i)faidx|fai|reference.*index|reference.*file'
+
+  - id: missing_sequence_dict
+    class: missing_artefact
+    tier: hard
+    description: GATK needs .dict — run CreateSequenceDictionary first
+    diagnosis_regex: '(?i)\.dict|sequence.*dictionary|createsequencedictionary'
+
+  - id: chromosome_naming_mismatch
+    class: data_semantic
+    tier: hard
+    description: BAM uses 'chr1' but GTF uses '1' — 0 reads assigned
+    diagnosis_regex: '(?i)chr|contig|naming|prefix|no features'
+
+  - id: htseq_needs_name_sort
+    class: data_order
+    tier: hard
+    description: htseq-count paired-end requires name-sorted BAM
+    diagnosis_regex: '(?i)sort.*name|name.*sort|samtools.*-n'
+
+  - id: java_heap_oom
+    class: resource
+    tier: hard
+    description: Java OOM — recovery is to raise -Xmx
+    diagnosis_regex: '(?i)outofmemoryerror|heap|xmx|memory'
+
+  - id: vcf_contig_mismatch
+    class: data_semantic
+    tier: hard
+    description: bcftools merge across differently-built VCFs
+    diagnosis_regex: '(?i)contig|reheader|vcf|force-samples'
+
+  # ── Unrecoverable (should be correctly rejected) ─────────────
+  - id: paired_single_mismatch
+    class: data_shape_mismatch
+    tier: unrecoverable
+    description: Feed paired-end reads to a single-end kallisto quant command
+    diagnosis_regex: '(?i)paired|single|fragment|length'
+
+  - id: corrupt_fastq
+    class: corrupt_input
+    tier: unrecoverable
+    description: Truncate a gzipped FASTQ to trigger a parse error
+    diagnosis_regex: '(?i)truncat|invalid|corrupt|gzip'
+
+  - id: empty_input_file
+    class: corrupt_input
+    tier: unrecoverable
+    description: Zero-byte FASTQ passed to FastQC
+    diagnosis_regex: '(?i)empty|no (data|reads)|format'
+
+  - id: binary_as_fastq
+    class: corrupt_input
+    tier: unrecoverable
+    description: Random binary file passed to FastQC (wrong format)
+    diagnosis_regex: '(?i)not.*gzip|format|invalid|binary'

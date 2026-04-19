@@ -70,6 +70,7 @@ async def _run_real(fault: Fault, seed: int, tmp: Path) -> Dict[str, Any]:
         return {
             "fault": fault.id,
             "fault_class": fault.cls,
+            "fault_tier": fault.tier,
             "seed": seed,
             "provoked_failure": provoked_failure,
             "original_command": step["command"],
@@ -105,13 +106,20 @@ async def _run_real(fault: Fault, seed: int, tmp: Path) -> Dict[str, Any]:
 
 def _run_mock(fault: Fault, seed: int) -> Dict[str, Any]:
     """Synthetic response without touching the filesystem or the LLM."""
-    # Choose faults we claim to always fix at attempt 1 vs harder ones.
-    easy = {"missing_wget", "missing_output_dir", "multiqc_collision"}
-    recovered = fault.id in easy
+    # Simulate tier-dependent recovery: easy always recovers; hard recovers
+    # 70% of the time; unrecoverable faults correctly stay failed.
+    if fault.tier == "easy":
+        recovered = True
+    elif fault.tier == "hard":
+        # Pseudo-deterministic ~70% recovery per (fault, seed)
+        recovered = ((hash((fault.id, seed)) & 0xFFFF) / 0xFFFF) < 0.7
+    else:
+        recovered = False
     diag = "Simulated diagnosis for %s" % fault.id
     return {
         "fault": fault.id,
         "fault_class": fault.cls,
+        "fault_tier": fault.tier,
         "seed": seed,
         "provoked_failure": True,
         "original_command": "<mock>",
