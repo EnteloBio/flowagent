@@ -416,18 +416,54 @@ def _write_scratch_config(*, scratch_dir: Path, output_dir: Path,
     return cfg_path
 
 
+_AUTOBA_TOOL_RE = __import__("re").compile(
+    r"(?i)\b(?:Use|Run|Apply|Execute|Perform|Invoke|With|Using|Call)"
+    r"\s+([A-Za-z][\w.-]*)"
+)
+
+
+def _command_from_task(task: str) -> str:
+    """Turn an AutoBA task sentence into a shell-ish command for scoring.
+
+    AutoBA's plan steps are natural-language like
+    ``"Use FastQC to perform quality control assessment on …"``.
+    ``harness.metrics.extract_tools_from_plan`` greps the first whitespace
+    token of each command segment for a tool name, and then falls back to
+    a library-search over the whole command if the plan also invokes a
+    script runner. A bare sentence defeats both paths —
+    ``_strip_label_prefix`` eats the ``"Use FastQC to perform quality
+    control"`` head, leaving ``assessment`` as the "first token", so
+    ``fastqc`` / ``kallisto`` / etc. never make it into ``plan_tools``.
+
+    We:
+      1. Try to extract a tool name via the ``Use/Run/With/…`` verb
+         pattern and place it as the first token, preserving the full
+         sentence as a trailing comment so library-fallback grep still
+         sees every tool name mentioned.
+      2. If extraction fails, prepend ``python`` (a runner token) so the
+         library-fallback matcher activates; the sentence text is then
+         searched directly for expected tool names.
+    """
+    task = str(task).strip()
+    m = _AUTOBA_TOOL_RE.match(task)
+    if m:
+        head = m.group(1).lower()
+        return f"{head}  # {task}"
+    return f"python  # {task}"
+
+
 def _map_plan(plan_tasks: List[str], shells: Dict[int, str]) -> List[Dict[str, Any]]:
     """Project AutoBA's plan (list of task strings) onto FlowAgent steps.
 
-    Each task becomes one step; the corresponding ``<N>.sh`` (N=1..len)
-    body becomes the ``command``. If a shell is missing (task crashed or
-    hadn't run yet), we fall back to the task description string so
-    ``score_plan`` still has tool-name text to grep.
+    Each task becomes one step. If AutoBA's code-generation phase ran
+    and produced a per-task ``<N>.sh``, its body is the ``command``;
+    otherwise we derive a tool-first command from the task sentence via
+    :func:`_command_from_task` so ``score_plan`` can grep it.
     """
     steps: List[Dict[str, Any]] = []
     for idx, task in enumerate(plan_tasks, 1):
         shell_body = shells.get(idx, "")
-        command = shell_body if shell_body.strip() else str(task)
+        command = shell_body.strip() or _command_from_task(task)
         steps.append({
             "name":         f"step_{idx}",
             "command":      command,
