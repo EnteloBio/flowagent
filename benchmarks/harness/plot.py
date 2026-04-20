@@ -652,6 +652,203 @@ def recovery_tier_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     return fig
 
 
+# ── Benchmark E: head-to-head competitors ────────────────────────
+
+# Competitor palette — fixed so the same agent keeps the same colour
+# across every figure in the paper.
+_COMPETITOR_COLOURS = {
+    "flowagent":   "#0f766e",   # teal
+    "biomaster":   "#a855f7",   # violet
+    "autoba":      "#f97316",   # orange
+    "cellagent":   "#2563eb",   # blue
+    "other":       "#6b7280",
+}
+
+
+def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Side-by-side bar chart comparing competitors on overall_pass rate
+    and cost-per-successful-plan.
+
+    Expects columns: competitor, competitor_name, input_id, overall_pass,
+    cost_usd (optional). A two-panel layout mirrors planning_cost_summary.
+    """
+    if "competitor" not in df.columns or df.empty:
+        return None
+
+    df = df.copy()
+    # Filter out unavailable-competitor rows (they have error set and no real plan)
+    if "error" in df.columns:
+        avail = df[df["error"].isna() | (df["error"].astype(str) == "")]
+        if avail.empty:
+            return _empty_figure(
+                "All competitors reported 'not available'.\n"
+                "Install their upstream packages or set the CLI env var\n"
+                "(see harness/competitors.py for install hints)."
+            )
+        df = avail
+
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+    if "cost_usd" in df.columns:
+        df["cost_usd"] = pd.to_numeric(df["cost_usd"], errors="coerce").fillna(0.0)
+
+    g = (df.groupby(["competitor", "competitor_name"])
+             .agg(n=("overall_pass", "count"),
+                  passes=("overall_pass", "sum"),
+                  total_cost=("cost_usd", "sum") if "cost_usd" in df.columns
+                             else ("overall_pass", "count"),
+                  mean_wall=("wall_seconds", "mean")
+                             if "wall_seconds" in df.columns
+                             else ("overall_pass", "mean"))
+             .reset_index())
+    if g.empty:
+        return None
+
+    g["pass_rate"] = g["passes"] / g["n"]
+    if "cost_usd" in df.columns:
+        g["cost_per_pass"] = g.apply(
+            lambda r: (r["total_cost"] / r["passes"]) if r["passes"] > 0 else float("nan"),
+            axis=1,
+        )
+    g = g.sort_values("pass_rate", ascending=True).reset_index(drop=True)
+
+    # ── Compute Wilson CI per competitor ──
+    def _ci(row):
+        _, lo, hi = _wilson_ci(int(row["passes"]), int(row["n"]))
+        return pd.Series({"ci_lo": lo, "ci_hi": hi})
+    g[["ci_lo", "ci_hi"]] = g.apply(_ci, axis=1)
+
+    has_cost = "cost_per_pass" in g.columns and g["cost_per_pass"].dropna().size
+
+    # Layout
+    if has_cost:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, 3.6))
+    else:
+        fig, ax1 = plt.subplots(figsize=(5.4, 3.4))
+        ax2 = None
+
+    y = np.arange(len(g))
+    cols = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"])
+            for c in g["competitor"]]
+    labels = [r["competitor_name"] for _, r in g.iterrows()]
+
+    # Panel a — pass rate with Wilson CIs
+    xerr_lo = np.clip(g["pass_rate"] - g["ci_lo"], 0, None)
+    xerr_hi = np.clip(g["ci_hi"] - g["pass_rate"], 0, None)
+    ax1.barh(y, g["pass_rate"], color=cols, edgecolor="white",
+             linewidth=0.6, height=0.68,
+             xerr=[xerr_lo, xerr_hi], capsize=3,
+             error_kw={"elinewidth": 0.8, "capthick": 0.8, "color": "#1f2937"})
+    for i, (rate, ci_hi) in enumerate(zip(g["pass_rate"], g["ci_hi"])):
+        x = min(ci_hi + 0.015, 1.14)
+        ax1.text(x, i, f"{rate:.0%}",
+                 va="center", ha="left", fontsize=8, color="#1f2937")
+    ax1.set_yticks(y)
+    ax1.set_yticklabels(labels)
+    ax1.set_xlim(0, 1.18)
+    ax1.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax1.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax1.set_xlabel("Pass rate (95% Wilson CI)")
+    ax1.set_title("a  Plan correctness" if has_cost else "Plan correctness",
+                  loc="left")
+    _style_value_axis(ax1, x=True)
+
+    # Panel b — cost per successful plan
+    if ax2 is not None:
+        t = g.sort_values("cost_per_pass").reset_index(drop=True)
+        yb = np.arange(len(t))
+        cols2 = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"])
+                 for c in t["competitor"]]
+        ax2.barh(yb, t["cost_per_pass"], color=cols2, edgecolor="white",
+                 linewidth=0.6, height=0.68)
+        for i, v in enumerate(t["cost_per_pass"]):
+            if pd.isna(v):
+                ax2.text(0.005, i, "n/a", va="center", ha="left",
+                         fontsize=8, color="#9ca3af",
+                         transform=ax2.get_yaxis_transform())
+                continue
+            label = (f"${v:,.4f}" if v < 0.01 else
+                     f"${v:,.3f}" if v < 1 else
+                     f"${v:,.2f}")
+            ax2.text(v, i, f"  {label}", va="center", ha="left",
+                     fontsize=8, color="#1f2937")
+        ax2.set_yticks(yb)
+        ax2.set_yticklabels([r["competitor_name"] for _, r in t.iterrows()])
+        vmax = t["cost_per_pass"].dropna().max() if t["cost_per_pass"].dropna().size else 1
+        ax2.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
+        ax2.set_xlabel("USD per successful plan")
+        ax2.set_title("b  Cost efficiency", loc="left")
+        _style_value_axis(ax2, x=True)
+
+    fig.suptitle("Head-to-head: FlowAgent vs. alternative agentic systems",
+                 fontsize=11, fontweight="bold", y=1.03)
+    return fig
+
+
+def competitors_perprompt_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Heatmap: competitor × prompt pass rate (averaged over replicates)."""
+    if "competitor" not in df.columns or df.empty:
+        return None
+    df = df.copy()
+    if "error" in df.columns:
+        df = df[df["error"].isna() | (df["error"].astype(str) == "")]
+        if df.empty:
+            return None
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    pivot = df.pivot_table(index="input_id", columns="competitor",
+                           values="overall_pass", aggfunc="mean")
+    if pivot.empty:
+        return None
+
+    pivot = pivot.loc[pivot.mean(axis=1).sort_values().index,
+                      pivot.mean(axis=0).sort_values(ascending=True).index]
+
+    fig_w = max(4.5, 0.9 * pivot.shape[1] + 2.0)
+    fig_h = max(3.0, 0.4 * pivot.shape[0] + 1.2)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    im = ax.imshow(pivot.values, aspect="auto", cmap=_HEATMAP_CMAP,
+                   vmin=0, vmax=1, interpolation="nearest")
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels(pivot.columns, rotation=25, ha="right", fontsize=9)
+    display = [n.removeprefix("hard_").replace("_", " ").title()
+               for n in pivot.index]
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels(display, fontsize=8.5)
+    ax.set_xticks(np.arange(-.5, pivot.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, pivot.shape[0], 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=0.8)
+    ax.tick_params(which="minor", length=0)
+    ax.tick_params(which="major", length=0)
+
+    for i in range(pivot.shape[0]):
+        for j in range(pivot.shape[1]):
+            v = pivot.iloc[i, j]
+            if np.isnan(v):
+                continue
+            colour = "#111827" if 0.35 < v < 0.75 else "white"
+            ax.text(j, i, f"{v:.0%}", ha="center", va="center",
+                    fontsize=8, color=colour, fontweight="semibold")
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.015,
+                        ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
+    cbar.ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    cbar.outline.set_visible(False)
+    cbar.ax.tick_params(length=2, labelsize=8)
+    cbar.set_label("Pass rate", fontsize=9)
+
+    for spine in ("top", "right", "bottom", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.set_title("Per-prompt pass rate by competitor", loc="left")
+    return fig
+
+
 # ── Benchmark C: generator fidelity ──────────────────────────────
 
 def generation_figure(df: pd.DataFrame) -> plt.Figure:
@@ -1324,10 +1521,11 @@ def main() -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     for bench_name, fn in (
-        ("planning",   planning_figure),
-        ("recovery",   recovery_figure),
-        ("generation", generation_figure),
-        ("executors",  executor_matrix_figure),
+        ("planning",    planning_figure),
+        ("recovery",    recovery_figure),
+        ("generation",  generation_figure),
+        ("executors",   executor_matrix_figure),
+        ("competitors", competitors_figure),
     ):
         latest = _latest(root / bench_name)
         if latest is None:
@@ -1355,6 +1553,15 @@ def main() -> None:
                 plt.close(tierfig)
                 print(f"[ok]   recovery_tier_summary → "
                       f"{fig_dir/'recovery_tier_summary'}.pdf")
+
+        # Companion heatmap for the head-to-head
+        if bench_name == "competitors":
+            heat = competitors_perprompt_figure(df)
+            if heat is not None:
+                _save(heat, fig_dir / "competitors_perprompt", svg=args.svg)
+                plt.close(heat)
+                print(f"[ok]   competitors_perprompt → "
+                      f"{fig_dir/'competitors_perprompt'}.pdf")
 
         # Planning bonus figures
         if bench_name == "planning":

@@ -19,18 +19,22 @@ benchmarks/
 │   ├── fault_inject.py      # Fault implementations
 │   ├── env_detect.py        # Which executor backends are live-testable
 │   ├── executor_probes.py   # Per-backend probes for Benchmark D
+│   ├── competitors.py       # Competitor interface + FlowAgent/BioMaster/AutoBA adapters
+│   ├── biomaster_shim.py    # Subprocess shim driving upstream BioMaster
+│   ├── autoba_shim.py       # Subprocess shim driving upstream AutoBA
 │   └── plot.py              # Publication-ready figures (colour-blind safe)
 ├── bench_planning.py        # Benchmark A: planning correctness + cost
 ├── bench_recovery.py        # Benchmark B: error recovery
 ├── bench_generation.py      # Benchmark C: Nextflow/Snakemake codegen fidelity
 ├── bench_executors.py       # Benchmark D: executor-coverage matrix
+├── bench_competitors.py     # Benchmark E: head-to-head vs other agentic systems
 ├── rescore_planning.py      # Re-evaluate existing plans with updated metrics (no API calls)
 ├── merge_runs.py            # Combine runs across models/sessions into one CSV
 ├── Makefile                 # Convenience orchestration
 └── results/                 # Gitignored outputs (CSV, JSON, PDF)
 ```
 
-## The four benchmarks
+## The five benchmarks
 
 | ID | Claim | Needs API key | Needs infra |
 |---|---|---|---|
@@ -38,6 +42,7 @@ benchmarks/
 | **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no |
 | **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` |
 | **D** | All six execution backends function | no | best-effort — mock mode if infra absent |
+| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA clones on disk (see below) |
 
 ### Prompt corpus
 
@@ -102,6 +107,10 @@ The harness auto-loads a `.env` file from the repo root (walks up from
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=...
+
+# Optional — only needed for Benchmark E (head-to-head)
+BIOMASTER_DIR=/absolute/path/to/BioMaster
+AUTOBA_DIR=/absolute/path/to/AutoBA
 ```
 
 No need to `source` or `export` — the harness picks them up automatically.
@@ -146,6 +155,163 @@ make recovery MODEL=claude-opus-4-7 SEEDS=5
 make gen      # Benchmark C: generator fidelity
 make exec     # Benchmark D: executor coverage
 ```
+
+### Benchmark E — head-to-head against other agents
+
+```bash
+make competitors MODEL=gpt-4.1 REPLICATES=3
+```
+
+Runs every registered competitor (currently `flowagent`, `biomaster`, and
+`autoba`) on the same prompt corpus, scored with the same `score_plan`
+metrics so the comparison is apples-to-apples. Results land in
+`results/competitors/<ts>/` with per-row `competitor`, `plan`,
+`prompt_tokens`, `completion_tokens`, `cost_usd`, `wall_seconds`, and the
+standard scoring columns. At the end of each run, the driver prints a
+per-competitor **pass / fail / crash** rollup and writes it to
+`summary.tsv`:
+
+```
+Head-to-head rollup (pass / fail / crash per competitor):
+  Competitor        Pass   Fail  Crash   Pass%    $/cell    Wall
+  --------------------------------------------------------------
+  FlowAgent         8/10      2      0   80.0%   $0.0123   15.4s
+  BioMaster         4/10      4      2   40.0%   $0.0087   18.2s
+  AutoBA            5/10      5      0   50.0%   $0.0195   22.1s
+```
+
+Where:
+- **Pass** = plan produced and scored True on every `score_plan` gate.
+- **Fail** = plan produced but missed at least one scoring gate
+  (workflow type, expected tools, forbidden tools, min step count).
+- **Crash** = the competitor raised before producing any scorable plan.
+  Broken out separately so robustness shows up as its own column rather
+  than silently dragging down the pass rate.
+
+**Subsetting:**
+
+```bash
+python bench_competitors.py \
+  --competitors=flowagent,biomaster \
+  --prompts=rnaseq_kallisto_basic,hard_full_germline_pipeline \
+  --replicates=2
+```
+
+`--mock` runs offline with canned plans derived from each prompt's
+`gold_preset` / `expected_tools`, useful for smoke-testing the harness.
+
+#### BioMaster setup (one-off, ~5 min)
+
+BioMaster (Su et al., 2025) is a multi-agent bioinformatics workflow system.
+Upstream is a script project — no pip packaging — so we drive it via a
+subprocess shim ([`harness/biomaster_shim.py`](harness/biomaster_shim.py))
+that synthesises a BioMaster-native `config.yaml` and invokes upstream's
+own `run.py config.yaml` entrypoint via `runpy` (the same code path as
+`python run.py config.yaml` would execute after a fresh `git clone`).
+The shim wraps that invocation in a LangChain OpenAI callback to capture
+token usage, then reads the on-disk `output/<id>_PLAN.json` and maps it
+into FlowAgent's plan schema.
+
+```bash
+# 1. Clone the upstream repo
+git clone <biomaster-repo-url> /path/to/BioMaster
+cd /path/to/BioMaster
+
+# 2. Install its pinned deps (skip PySide6 — unused leftover, saves ~500 MB)
+pip install -r <(grep -ivE '^(pyside6|shiboken6)' requirements.txt)
+
+# 3. Point the harness at the clone
+echo 'BIOMASTER_DIR=/path/to/BioMaster' >> /path/to/flowagent/.env
+```
+
+Smoke-test the shim directly before wiring it into the sweep:
+
+```bash
+python benchmarks/harness/biomaster_shim.py \
+  --prompt "Run a kallisto RNA-seq quantification on paired-end FASTQs"
+```
+
+Expect a JSON envelope on stdout with `plan`, `prompt_tokens`,
+`completion_tokens`, `cost_usd`, `wall_seconds`. First run is slow — BioMaster
+indexes its `doc/` RAG into a scratch Chroma store on cold start; that's
+discarded when the subprocess exits.
+
+**Notes:**
+
+- The config has `executor: false` so BioMaster plans without actually
+  running bioinformatics tools (the default `true` would try to `conda
+  install` + execute each generated shell script per cell, which is
+  infeasible in a benchmark context).
+- Upstream `execute_TASK` has an `UnboundLocalError` when `executor: false`
+  (a bare `DEBUG_output_dict` reference inside an `if self.excutor:`
+  branch). The shim captures that as a soft error and still scores the
+  `PLAN.json` that `execute_PLAN` wrote before the crash. Step `command`
+  fields are populated from each PLAN step's `tools` metadata — BioMaster's
+  own tool-name text — so `score_plan`'s matcher still has something to
+  work with.
+- `workflow_type` is inferred post-hoc by a deterministic classifier
+  (`biomaster_shim._classify_workflow_type`) because BioMaster has no
+  workflow taxonomy. Asymmetric wildcard semantics in
+  `harness/metrics.py::type_matches` mean an "actual=custom" would
+  auto-fail strictly typed prompts (e.g. `rnaseq_kallisto_basic`,
+  `chipseq_macs2`) even if the plan is perfect — the classifier gives
+  BioMaster the equivalent benefit FlowAgent earns by labelling its plan.
+- Each cell uses a fresh `uuid`-derived `id` and a temp working dir, so
+  concurrent cells don't collide on BioMaster's `output/<id>_PLAN.json`.
+  The BioMaster clone itself stays clean (no `./output`, `./chroma_db`,
+  `./token.txt` pollution).
+- Token and cost accounting come from
+  `langchain_community.callbacks.get_openai_callback` — directly comparable
+  to FlowAgent's `_TokenTracker` numbers.
+- Drop-in for other agents: subclass `Competitor` in `harness/competitors.py`
+  and register it in `build_registry()`.
+
+#### AutoBA setup (one-off, ~10 min)
+
+AutoBA / Auto-BioinfoGPT (Zhou et al., 2023) is a second-generation multi-agent
+bioinformatics planner. Upstream is also a script project — the shim
+([`harness/autoba_shim.py`](harness/autoba_shim.py)) invokes AutoBA's own
+`app.py --config cfg.yaml --openai KEY --model MODEL --execute False`
+entrypoint via `runpy`, and monkey-patches
+`openai.resources.chat.completions.Completions.create` to capture token
+usage (AutoBA uses the raw `openai` SDK, not LangChain — so the BioMaster
+callback trick doesn't apply, but an SDK-level patch gives the same
+accounting).
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/JoshuaChou2018/Auto-BioinfoGPT /path/to/AutoBA
+
+# 2. Install its deps. AutoBA imports torch.cuda at module load time and
+#    llama_index (for RAG), even when we don't use those paths.
+pip install openai pyyaml torch \
+    llama-index-core \
+    llama-index-embeddings-openai \
+    llama-index-embeddings-huggingface
+
+# 3. Point the harness at the clone
+echo 'AUTOBA_DIR=/path/to/AutoBA' >> /path/to/flowagent/.env
+```
+
+Smoke-test the shim directly:
+
+```bash
+python benchmarks/harness/autoba_shim.py \
+  --prompt "Run a kallisto RNA-seq quantification on paired-end FASTQs"
+```
+
+**Notes:**
+
+- AutoBA runs with `--execute False` so it plans + writes per-task shell
+  scripts without executing them. Each task becomes one FlowAgent-schema
+  step; `<output_dir>/<N>.sh` bodies become the step `command` (with a
+  fallback to the task description string if the shell is missing).
+- The `workflow_type` is inferred by the same classifier used for
+  BioMaster (`biomaster_shim._classify_workflow_type`) — AutoBA's plan is
+  just a list of task strings, so we project them through the shared
+  tool-signature mapping.
+- AutoBA's `app.py` has a top-level `import torch.cuda`, so `torch` must
+  be installed even if you never invoke its GPU paths.
 
 ### Everything at once
 
