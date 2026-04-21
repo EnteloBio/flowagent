@@ -104,6 +104,33 @@ class LLMInterface:
                 "MultiQC: multiqc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant -o results/rna_seq_kallisto/qc",
             ],
         },
+        "rna_seq_star": {
+            "keywords": [
+                "rna-seq",
+                "rnaseq",
+                "star",
+                "featurecounts",
+                "deseq2",
+                "differential expression",
+            ],
+            "tools": ["fastqc", "star", "samtools", "featureCounts", "deseq2", "multiqc"],
+            "dir_structure": [
+                "results/rna_seq_star/fastqc",
+                "results/rna_seq_star/star_index",
+                "results/rna_seq_star/star_align",
+                "results/rna_seq_star/counts",
+                "results/rna_seq_star/deseq2",
+                "results/rna_seq_star/qc",
+            ],
+            "rules": [
+                "FastQC: fastqc file.fastq.gz -o results/rna_seq_star/fastqc",
+                "STAR index: STAR --runMode genomeGenerate --genomeDir results/rna_seq_star/star_index --genomeFastaFiles reference.fa --sjdbGTFfile annotation.gtf --runThreadN 8",
+                "STAR align paired: STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index --readFilesIn read1.fastq.gz read2.fastq.gz --readFilesCommand zcat --outSAMtype BAM SortedByCoordinate --outFileNamePrefix results/rna_seq_star/star_align/sample_ --runThreadN 8",
+                "featureCounts: featureCounts -a annotation.gtf -o results/rna_seq_star/counts/counts.txt -p --countReadPairs -T 8 results/rna_seq_star/star_align/*Aligned.sortedByCoord.out.bam",
+                "DESeq2: Rscript -e 'library(DESeq2); cts <- read.table(\"results/rna_seq_star/counts/counts.txt\", header=TRUE, row.names=1, sep=\"\\t\", comment.char=\"#\"); coldata <- read.table(\"sample_conditions.tsv\", header=TRUE, row.names=1); dds <- DESeqDataSetFromMatrix(countData=cts[,rownames(coldata)], colData=coldata, design=~condition); dds <- DESeq(dds); write.csv(as.data.frame(results(dds)), \"results/rna_seq_star/deseq2/deseq2_results.csv\")'",
+                "MultiQC: multiqc results/rna_seq_star/fastqc results/rna_seq_star/star_align results/rna_seq_star/counts -o results/rna_seq_star/qc",
+            ],
+        },
         "rna_seq_hisat": {
             "keywords": [
                 "rna-seq",
@@ -453,6 +480,21 @@ Use the exact sample name '{sample_name}' for output directories.""",
     # the user wants that specific tool, not a generic keyword-matched workflow.
     # Generic/supporting tools (fastqc, multiqc, samtools, picard, etc.) are
     # excluded because they appear across many workflow types.
+    # Genomes we know how to fetch from Ensembl. When a prompt names one of
+    # these keys, the STAR workflow inserts a ``download_reference`` step
+    # that pulls the matching primary-assembly FASTA and GTF from Ensembl
+    # so the user does not have to stage reference files manually.
+    _GENOME_REFERENCES = {
+        # prompt keyword (lowercase): (species, assembly, ensembl_release)
+        "grcm39": ("mus_musculus", "GRCm39", 112),
+        "mm39":   ("mus_musculus", "GRCm39", 112),
+        "grch38": ("homo_sapiens", "GRCh38", 112),
+        "hg38":   ("homo_sapiens", "GRCh38", 112),
+        "grcz11": ("danio_rerio", "GRCz11", 112),
+        "wbcel235": ("caenorhabditis_elegans", "WBcel235", 112),
+        "bdgp6":  ("drosophila_melanogaster", "BDGP6.46", 112),
+    }
+
     _PRIMARY_TOOLS = {
         # Aligners / quantifiers / callers — the tools that define a workflow
         "kallisto", "salmon", "star", "starsolo", "hisat2", "bowtie2",
@@ -488,6 +530,36 @@ Use the exact sample name '{sample_name}' for output directories.""",
             if tool in prompt_lower:
                 found.add(tool)
         return found
+
+    def _detect_reference_genome(self, prompt: str) -> Optional[Dict[str, str]]:
+        """Return Ensembl URLs for a reference genome named in *prompt*.
+
+        Looks for a case-insensitive whole-word match against
+        ``_GENOME_REFERENCES``. Returns ``None`` if no known genome is
+        mentioned — callers should then fall back to placeholder paths so
+        the user can supply their own reference.
+        """
+        p = prompt.lower()
+        for key, (species, assembly, release) in self._GENOME_REFERENCES.items():
+            if re.search(rf"\b{re.escape(key)}\b", p):
+                species_filename = species[0].upper() + species[1:]
+                base = f"https://ftp.ensembl.org/pub/release-{release}"
+                return {
+                    "assembly": assembly,
+                    "fasta_url": (
+                        f"{base}/fasta/{species}/dna/"
+                        f"{species_filename}.{assembly}.dna.primary_assembly.fa.gz"
+                    ),
+                    "cdna_url": (
+                        f"{base}/fasta/{species}/cdna/"
+                        f"{species_filename}.{assembly}.cdna.all.fa.gz"
+                    ),
+                    "gtf_url": (
+                        f"{base}/gtf/{species}/"
+                        f"{species_filename}.{assembly}.{release}.gtf.gz"
+                    ),
+                }
+        return None
 
     def _custom_workflow_config(self) -> Dict[str, Any]:
         """Return the template config used for custom (free-form) workflows."""
@@ -1647,15 +1719,22 @@ If you are being asked to generate a title, set "success" to false.
 
         prompt_lower = prompt.lower()
 
+        # Matched as whole words / phrases. Bare "counts" and "matrix" are
+        # intentionally excluded because they show up inside tool names
+        # (e.g. "featureCounts") and genome identifiers — use the explicit
+        # phrases below instead.
         supplementary_indicators = [
-            "no fastq", "no raw fastq",
-            "counts", "matrix", "supplementary", "suppl",
-            "processed", "metadata",
-            "barcodes.tsv", "features.tsv", "matrix.mtx",
-            "counts_matrix", "cell_metadata", "count_matrix",
-            "no raw", "not raw",
+            "no fastq", "no raw fastq", "no raw", "not raw",
+            "supplementary", "suppl", "processed",
+            "count matrix", "counts matrix", "count_matrix", "counts_matrix",
+            "counts.tsv", "matrix.mtx",
+            "barcodes.tsv", "features.tsv",
+            "cell_metadata", "metadata",
         ]
-        wants_supplementary = any(ind in prompt_lower for ind in supplementary_indicators)
+        wants_supplementary = any(
+            re.search(rf"\b{re.escape(ind)}\b", prompt_lower)
+            for ind in supplementary_indicators
+        )
 
         if wants_supplementary:
             self.logger.info("Detected request for supplementary/processed files (not raw FASTQ)")
@@ -1796,16 +1875,18 @@ If you are being asked to generate a title, set "success" to false.
             reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
             reference = reference_match.group(1) if reference_match else "reference.fa"
         
-        # Get GEO accession from the workflow plan
+        # Get GEO accession from the workflow plan. Scan every step's command
+        # and description for a GSE identifier — the old code only looked at
+        # the "extract_srr_ids" step, which the supplementary-download path
+        # never creates, so analysis steps were silently skipped.
         geo_accession = None
         for step in workflow_plan["steps"]:
-            if step["name"] == "extract_srr_ids":
-                # Extract GEO accession from the command
-                match = re.search(r'(GSE\d+)_runinfo\.csv', step["command"])
-                if match:
-                    geo_accession = match.group(1)
-                    break
-        
+            haystack = f"{step.get('command', '')} {step.get('description', '')}"
+            match = re.search(r'\b(GSE\d+)\b', haystack)
+            if match:
+                geo_accession = match.group(1)
+                break
+
         if not geo_accession:
             self.logger.warning("Could not extract GEO accession from workflow plan")
             return workflow_plan
@@ -1822,7 +1903,37 @@ If you are being asked to generate a title, set "success" to false.
         
         # Add analysis steps based on workflow type
         if workflow_type == "rna_seq_kallisto":
-            # Add RNA-seq analysis steps with Kallisto
+            genome = self._detect_reference_genome(prompt)
+            if genome:
+                transcriptome = "raw_data/reference/transcriptome.fa"
+                self.logger.info(
+                    "Detected reference genome %s — adding Ensembl download step",
+                    genome["assembly"],
+                )
+                workflow_plan["steps"].append({
+                    "name": "download_reference",
+                    "command": (
+                        f"mkdir -p raw_data/reference && cd raw_data/reference && "
+                        f"curl -fSL -o transcriptome.fa.gz '{genome['cdna_url']}' && "
+                        f"curl -fSL -o annotation.gtf.gz '{genome['gtf_url']}' && "
+                        f"gunzip -f transcriptome.fa.gz annotation.gtf.gz"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["create_directories"],
+                    "outputs": [transcriptome, "raw_data/reference/annotation.gtf"],
+                    "description": (
+                        f"Download {genome['assembly']} transcriptome cDNA and GTF from Ensembl"
+                    ),
+                    "profile_name": "minimal",
+                })
+                index_path = "raw_data/reference/transcriptome.idx"
+                index_source = transcriptome
+                index_deps = ["fastqc", "download_reference"]
+            else:
+                index_source = reference.rstrip('.')
+                index_path = f"{index_source}.idx"
+                index_deps = ["fastqc"]
+
             workflow_plan["steps"].extend([
                 {
                     "name": "fastqc",
@@ -1835,16 +1946,16 @@ If you are being asked to generate a title, set "success" to false.
                 },
                 {
                     "name": "kallisto_index",
-                    "command": f"kallisto index -i {reference.rstrip('.')}.idx {reference.rstrip('.')}",
+                    "command": f"kallisto index -i {index_path} {index_source}",
                     "parameters": {},
-                    "dependencies": ["fastqc"],
-                    "outputs": [f"{reference.rstrip('.')}.idx"],
+                    "dependencies": index_deps,
+                    "outputs": [index_path],
                     "description": "Create kallisto index",
                     "profile_name": "high_memory"
                 },
                 {
                     "name": "kallisto_quant",
-                    "command": f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr && kallisto quant -i {reference.rstrip('.')}.idx -o results/rna_seq_kallisto/kallisto_quant/$srr raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; done",
+                    "command": f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr && kallisto quant -i {index_path} -o results/rna_seq_kallisto/kallisto_quant/$srr raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; done",
                     "parameters": {},
                     "dependencies": ["kallisto_index"],
                     "outputs": ["results/rna_seq_kallisto/kallisto_quant"],
@@ -1860,6 +1971,119 @@ If you are being asked to generate a title, set "success" to false.
                     "description": "Generate MultiQC report",
                     "profile_name": "minimal"
                 }
+            ])
+        elif workflow_type == "rna_seq_star":
+            genome = self._detect_reference_genome(prompt)
+            if genome:
+                ref = "raw_data/reference/genome.fa"
+                gtf = "raw_data/reference/annotation.gtf"
+                self.logger.info(
+                    "Detected reference genome %s — adding Ensembl download step",
+                    genome["assembly"],
+                )
+                workflow_plan["steps"].append({
+                    "name": "download_reference",
+                    "command": (
+                        f"mkdir -p raw_data/reference && cd raw_data/reference && "
+                        f"curl -fSL -o genome.fa.gz '{genome['fasta_url']}' && "
+                        f"curl -fSL -o transcriptome.fa.gz '{genome['cdna_url']}' && "
+                        f"curl -fSL -o annotation.gtf.gz '{genome['gtf_url']}' && "
+                        f"gunzip -f genome.fa.gz transcriptome.fa.gz annotation.gtf.gz"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["create_directories"],
+                    "outputs": [
+                        ref,
+                        "raw_data/reference/transcriptome.fa",
+                        gtf,
+                    ],
+                    "description": (
+                        f"Download {genome['assembly']} genome FASTA, transcriptome cDNA and GTF from Ensembl"
+                    ),
+                    "profile_name": "minimal",
+                })
+            else:
+                ref = reference.rstrip('.') if reference else "reference.fa"
+                gtf = file_info.get("annotation", "") or "annotation.gtf"
+
+            star_index_deps = ["fastqc"]
+            if genome:
+                star_index_deps.append("download_reference")
+
+            workflow_plan["steps"].extend([
+                {
+                    "name": "fastqc",
+                    "command": "cd raw_data && mkdir -p ../results/rna_seq_star/fastqc && fastqc -o ../results/rna_seq_star/fastqc *.fastq.gz",
+                    "parameters": {},
+                    "dependencies": ["download_fastq_files"],
+                    "outputs": ["results/rna_seq_star/fastqc"],
+                    "description": "Run FastQC on FASTQ files",
+                    "profile_name": "minimal",
+                },
+                {
+                    "name": "star_index",
+                    "command": f"STAR --runMode genomeGenerate --genomeDir results/rna_seq_star/star_index --genomeFastaFiles {ref} --sjdbGTFfile {gtf} --runThreadN 8",
+                    "parameters": {},
+                    "dependencies": star_index_deps,
+                    "outputs": ["results/rna_seq_star/star_index"],
+                    "description": "Build STAR genome index",
+                    "profile_name": "high_memory",
+                },
+                {
+                    "name": "star_align",
+                    "command": (
+                        f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do "
+                        f"STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index "
+                        f"--readFilesIn raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz "
+                        f"--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate "
+                        f"--outFileNamePrefix results/rna_seq_star/star_align/${{srr}}_ "
+                        f"--runThreadN 8; done"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["star_index"],
+                    "outputs": ["results/rna_seq_star/star_align"],
+                    "description": "Align paired-end reads with STAR",
+                    "profile_name": "multi_thread",
+                },
+                {
+                    "name": "feature_counts",
+                    "command": (
+                        f"featureCounts -a {gtf} -o results/rna_seq_star/counts/counts.txt "
+                        f"-p --countReadPairs -T 8 "
+                        f"results/rna_seq_star/star_align/*Aligned.sortedByCoord.out.bam"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["star_align"],
+                    "outputs": ["results/rna_seq_star/counts/counts.txt"],
+                    "description": "Quantify gene-level counts with featureCounts",
+                    "profile_name": "multi_thread",
+                },
+                {
+                    "name": "deseq2",
+                    "command": (
+                        "Rscript -e 'library(DESeq2); "
+                        "cts <- read.table(\"results/rna_seq_star/counts/counts.txt\", header=TRUE, row.names=1, sep=\"\\t\", comment.char=\"#\"); "
+                        "cts <- cts[,6:ncol(cts)]; "
+                        "coldata <- read.table(\"sample_conditions.tsv\", header=TRUE, row.names=1); "
+                        "dds <- DESeqDataSetFromMatrix(countData=cts[,rownames(coldata)], colData=coldata, design=~condition); "
+                        "dds <- DESeq(dds); "
+                        "write.csv(as.data.frame(results(dds)), \"results/rna_seq_star/deseq2/deseq2_results.csv\")'"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["feature_counts"],
+                    "outputs": ["results/rna_seq_star/deseq2/deseq2_results.csv"],
+                    "description": "Differential expression with DESeq2 (requires sample_conditions.tsv mapping samples to conditions)",
+                    "profile_name": "default",
+                },
+                {
+                    "name": "multiqc",
+                    "command": "multiqc -o results/rna_seq_star/qc results/rna_seq_star/fastqc results/rna_seq_star/star_align results/rna_seq_star/counts",
+                    "parameters": {},
+                    "dependencies": ["deseq2"],
+                    "outputs": ["results/rna_seq_star/qc/multiqc_report.html"],
+                    "description": "Generate MultiQC report",
+                    "profile_name": "minimal",
+                },
             ])
         elif workflow_type == "rna_seq_hisat":
             # Add RNA-seq analysis steps with HISAT2

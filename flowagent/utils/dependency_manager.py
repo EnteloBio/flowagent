@@ -359,7 +359,7 @@ Example format:
             except Exception as e:
                 self.logger.debug(f"Error checking conda for sra-tools: {str(e)}")
         
-        if tool_name in ["esearch", "efetch", "einfo", "elink", "xtract"]:
+        if tool_name in ["esearch", "efetch", "einfo", "elink", "xtract", "esummary"]:
             # Check if Entrez Direct is installed in the home directory
             edirect_path = os.path.expanduser("~/edirect")
             if os.path.isdir(edirect_path):
@@ -519,17 +519,40 @@ Example format:
             self.logger.error(f"Failed to install R package {package_name}: {str(e)}")
             return False
             
+    # Binary name → conda package that provides it. The LLM often lists
+    # individual binaries ("prefetch", "esearch", "featureCounts") which are
+    # not themselves conda packages; installing them verbatim fails. Anything
+    # not in this map is assumed to already be a valid conda package name.
+    _BINARY_TO_PACKAGE = {
+        "esearch": "entrez-direct",
+        "efetch": "entrez-direct",
+        "einfo": "entrez-direct",
+        "elink": "entrez-direct",
+        "esummary": "entrez-direct",
+        "xtract": "entrez-direct",
+        "prefetch": "sra-tools",
+        "fasterq-dump": "sra-tools",
+        "fastq-dump": "sra-tools",
+        "sam-dump": "sra-tools",
+        "featureCounts": "subread",
+        "STAR": "star",
+    }
+
+    def _resolve_package_for_tool(self, tool_name: str) -> str:
+        """Return the conda package name that provides *tool_name*."""
+        return self._BINARY_TO_PACKAGE.get(tool_name, tool_name)
+
     def install_tool(self, tool_info: Dict[str, str]) -> bool:
         """Install a command-line tool using conda."""
         tool_name = tool_info.get("name", "")
         channel = tool_info.get("channel", "bioconda")
         min_version = tool_info.get("min_version", "")
         reason = tool_info.get("reason", "")
-        
+
         if not tool_name:
             self.logger.error("No tool name provided for installation")
             return False
-            
+
         self.logger.info(f"Installing tool: {tool_name} ({reason})")
         
         # Check if the tool is already available before attempting installation
@@ -545,11 +568,19 @@ Example format:
             self.logger.info(f"Tool {tool_name} is already available, skipping installation")
             return True
             
-        # Try to install using conda
+        # Try to install using conda. Translate binary names (e.g. "prefetch",
+        # "esearch", "featureCounts") to the conda package that provides them
+        # (sra-tools, entrez-direct, subread) — otherwise mamba errors with
+        # "package does not exist".
         try:
+            package_name = self._resolve_package_for_tool(tool_name)
             version_spec = f">={min_version}" if min_version else ""
-            cmd = f"{self._installer} install -y -c {channel} {tool_name}{version_spec}"
-            
+            cmd = f"{self._installer} install -y -c {channel} {package_name}{version_spec}"
+
+            if package_name != tool_name:
+                self.logger.info(
+                    "Resolved '%s' to conda package '%s'", tool_name, package_name,
+                )
             self.logger.info(f"Running: {cmd}")
             
             # Set a reasonable timeout for conda installation (3 minutes)
@@ -714,13 +745,17 @@ Option 2: Check the tool's documentation for alternative installation methods
             for tool in dependencies.get("tools", []):
                 tool_name = tool["name"]
                 
-                # Map package names to their component tools
-                component_tools = self._map_package_to_tools(tool_name)
-                
-                # Check if any of the component tools are already available
+                # Map package names to their component tools. If the name is
+                # not a known package (e.g. the LLM listed individual binaries
+                # like "esearch" or "STAR" directly) fall back to checking the
+                # tool name itself — otherwise the check trivially passes on
+                # an empty list and every unknown tool reports as "available".
+                component_tools = self._map_package_to_tools(tool_name) or [tool_name]
+
+                # Check if all component tools are actually available
                 all_components_available = True
                 for component in component_tools:
-                    if component in ["esearch", "efetch", "einfo", "elink", "xtract"]:
+                    if component in ["esearch", "efetch", "einfo", "elink", "xtract", "esummary"]:
                         if not self._check_entrez_direct_tool(component):
                             all_components_available = False
                             break
@@ -856,13 +891,17 @@ Option 2: Check the tool's documentation for alternative installation methods
             for tool in dependencies.get("tools", []):
                 tool_name = tool["name"] if isinstance(tool, dict) else tool
                 
-                # Map package names to their component tools
-                component_tools = self._map_package_to_tools(tool_name)
-                
-                # Check if any of the component tools are already available
+                # Map package names to their component tools. If the name is
+                # not a known package (e.g. the LLM listed individual binaries
+                # like "esearch" or "STAR" directly) fall back to checking the
+                # tool name itself — otherwise the check trivially passes on
+                # an empty list and every unknown tool reports as "available".
+                component_tools = self._map_package_to_tools(tool_name) or [tool_name]
+
+                # Check if all component tools are actually available
                 all_components_available = True
                 for component in component_tools:
-                    if component in ["esearch", "efetch", "einfo", "elink", "xtract"]:
+                    if component in ["esearch", "efetch", "einfo", "elink", "xtract", "esummary"]:
                         if not self._check_entrez_direct_tool(component):
                             all_components_available = False
                             break

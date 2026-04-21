@@ -249,13 +249,18 @@ class WorkflowDAG:
                         cmd = self.graph.nodes[step_name]["step"].get("command", "")
                         logger.error(f"Step {step_name} failed:\nCommand: {cmd}\nError: {error_msg}")
 
-                        # Attempt LLM-driven recovery if a callback was provided
+                        # Attempt LLM-driven recovery if a callback was provided.
+                        # Only a re-executed step that returns status=="completed"
+                        # counts as recovery. A "rejected" verdict (the LLM
+                        # declined to propose a fix) must NOT be treated as
+                        # success, or downstream dependent steps fire against
+                        # missing outputs.
                         recovered = False
                         if recovery_fn is not None:
                             step_data = self.graph.nodes[step_name]["step"]
                             try:
                                 recovery_result = await recovery_fn(step_data, result)
-                                if recovery_result and recovery_result.get("status") not in ("error", "failed"):
+                                if recovery_result and recovery_result.get("status") == "completed":
                                     logger.info(f"Step {step_name} recovered successfully via LLM")
                                     jobs[step_name] = recovery_result
                                     self.graph.nodes[step_name]["step"]["status"] = "completed"
@@ -263,6 +268,12 @@ class WorkflowDAG:
                                     if recovery_result.get("fixed_command"):
                                         self.graph.nodes[step_name]["step"]["command"] = recovery_result["fixed_command"]
                                     recovered = True
+                                elif recovery_result and recovery_result.get("status") == "rejected":
+                                    logger.error(
+                                        "Step %s could not be recovered: %s",
+                                        step_name,
+                                        recovery_result.get("rejection_reason", "LLM declined to fix"),
+                                    )
                             except Exception as rec_err:
                                 logger.warning(f"Recovery callback failed for {step_name}: {rec_err}")
 

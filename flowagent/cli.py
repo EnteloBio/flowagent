@@ -87,6 +87,11 @@ Examples:
         "--non-interactive", action="store_true",
         help="Skip interactive questions; use defaults (human/GRCh38/Ensembl)",
     )
+    prompt_parser.add_argument(
+        "--model", default=None,
+        help="LLM model to use (e.g. claude-sonnet-4-5-20250929, gpt-4.1). "
+             "Overrides LLM_MODEL; provider is auto-detected from the model prefix.",
+    )
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start the web interface")
@@ -175,6 +180,13 @@ async def main(
 ):
     """Main entry point for the CLI."""
     try:
+        if getattr(args, "model", None):
+            os.environ["LLM_MODEL"] = args.model
+            # Infer provider from model prefix unless user set it explicitly.
+            if "LLM_PROVIDER" not in os.environ:
+                from .core.providers.registry import _infer_provider
+                os.environ["LLM_PROVIDER"] = _infer_provider(args.model)
+
         # --preset shortcut
         if args.preset:
             from .presets.catalog import get_preset, list_presets, apply_context_to_preset

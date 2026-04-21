@@ -110,12 +110,17 @@ class LocalExecutor(BaseExecutor):
                 )
                 return result.to_dict()
 
+            # ``errors="replace"`` keeps the step alive when a tool emits
+            # non-UTF-8 bytes (e.g. NCBI's efetch sometimes returns Latin-1
+            # characters in author metadata). Without this, decode() raises
+            # and the whole step is marked as an internal error even if the
+            # subprocess itself exited cleanly.
             result = StepResult(
                 step_id=step["name"],
                 status=StepStatus.COMPLETED if process.returncode == 0 else StepStatus.FAILED,
                 returncode=process.returncode,
-                stdout=stdout.decode(),
-                stderr=stderr.decode(),
+                stdout=stdout.decode("utf-8", errors="replace"),
+                stderr=stderr.decode("utf-8", errors="replace"),
             )
             return result.to_dict()
         except Exception as e:
