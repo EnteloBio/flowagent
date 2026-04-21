@@ -107,3 +107,4 @@ wheels/
 
 # Benchmark outputs (generated; corpus/ and config/ are checked in)
 benchmarks/results/
+.env_tmp
