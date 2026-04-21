@@ -50,14 +50,20 @@ _GTF_GLOBS = [
     "genome/*.gtf", "genome/*.gtf.gz",
 ]
 
-# Organism keywords found in prompts
+# Organism keywords found in prompts. Matched as whole words (via \b
+# boundaries) so "rat" can't match inside "generate", "separate" etc.
+# Also includes common genome-build names so a prompt like "align to GRCm39"
+# identifies the organism directly without needing the species word.
 _ORGANISM_KEYWORDS: Dict[str, str] = {
     "human": "human", "homo sapiens": "human", "homo_sapiens": "human",
+    "grch38": "human", "grch37": "human", "hg38": "human", "hg19": "human",
     "mouse": "mouse", "mus musculus": "mouse", "mus_musculus": "mouse",
-    "rat": "rat", "rattus": "rat",
-    "zebrafish": "zebrafish", "danio": "zebrafish",
-    "drosophila": "drosophila", "fruit fly": "drosophila",
+    "grcm39": "mouse", "grcm38": "mouse", "mm10": "mouse", "mm39": "mouse",
+    "rat": "rat", "rattus": "rat", "mratbn7": "rat",
+    "zebrafish": "zebrafish", "danio": "zebrafish", "grcz11": "zebrafish",
+    "drosophila": "drosophila", "fruit fly": "drosophila", "bdgp6": "drosophila",
     "c. elegans": "c_elegans", "c elegans": "c_elegans", "worm": "c_elegans",
+    "wbcel235": "c_elegans",
 }
 
 # Workflow-type keywords that indicate a need for genome (not transcriptome)
@@ -81,10 +87,15 @@ def _detect_pairing(files: List[str]) -> bool:
 
 
 def _detect_organism_from_prompt(prompt: str) -> Optional[str]:
-    """Extract organism from the user's free-text prompt."""
+    """Extract organism from the user's free-text prompt.
+
+    Matches keywords on word boundaries so "rat" can't hit inside
+    "generate" / "separate" / "Rattus" (the last one is still matched
+    explicitly by the ``rattus`` entry).
+    """
     lower = prompt.lower()
     for keyword, org in _ORGANISM_KEYWORDS.items():
-        if keyword in lower:
+        if re.search(rf"\b{re.escape(keyword)}\b", lower):
             return org
     return None
 

@@ -1748,6 +1748,71 @@ If you are being asked to generate a title, set "success" to false.
         prefix = numeric[:-3] if len(numeric) > 3 else numeric
         return f"ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE{prefix}nnn/{geo_accession}/suppl/"
 
+    def _geo_soft_url(self, geo_accession: str) -> str:
+        """Construct the NCBI URL for a GEO series SOFT family file."""
+        numeric = geo_accession.upper().replace("GSE", "")
+        prefix = numeric[:-3] if len(numeric) > 3 else numeric
+        return (
+            f"https://ftp.ncbi.nlm.nih.gov/geo/series/GSE{prefix}nnn/"
+            f"{geo_accession}/soft/{geo_accession}_family.soft.gz"
+        )
+
+    def _build_sample_sheet_step(self, geo_accession: str, prompt: str) -> Dict[str, Any]:
+        """Build the ``build_sample_sheet`` step shared by STAR and Kallisto.
+
+        Downloads the GEO SOFT family file and runs
+        ``python -m flowagent.utils.build_sample_sheet`` to produce
+        ``sample_conditions.tsv``. When condition labels can be extracted
+        from the prompt (``between A and B``), the output is a two-column
+        DESeq2-ready TSV; otherwise a template is written for manual fill-in.
+        """
+        labels = self._extract_condition_labels(prompt)
+        labels_arg = f"--labels '{','.join(labels)}' " if labels else ""
+        soft_url = self._geo_soft_url(geo_accession)
+        return {
+            "name": "build_sample_sheet",
+            "command": (
+                f"mkdir -p raw_data/metadata && "
+                f"curl -fSL -o raw_data/metadata/family.soft.gz '{soft_url}' && "
+                f"gunzip -f raw_data/metadata/family.soft.gz && "
+                f"python3 -m flowagent.utils.build_sample_sheet "
+                f"--soft raw_data/metadata/family.soft "
+                f"--runinfo raw_data/{geo_accession}_runinfo.csv "
+                f"{labels_arg}--out sample_conditions.tsv"
+            ),
+            "parameters": {},
+            "dependencies": ["download_geo_metadata"],
+            "outputs": ["sample_conditions.tsv"],
+            "description": (
+                f"Build sample_conditions.tsv from {geo_accession} SOFT metadata"
+                + (f" using labels {labels}" if labels else " (template — fill in condition column)")
+            ),
+            "profile_name": "minimal",
+        }
+
+    def _extract_condition_labels(self, prompt: str) -> List[str]:
+        """Pull a pair of condition labels out of a prompt.
+
+        Recognises ``between X and Y``, ``X vs Y`` (and ``X vs. Y``), and
+        ``compar(e|ing) X {and|to|with} Y``. Returns ``[]`` when only
+        bracketed placeholders (``[condition A]``) are present or when the
+        two labels are identical (meaning we probably matched a generic
+        phrase like "compare condition and condition").
+        """
+        patterns = (
+            r"between\s+([A-Za-z0-9_\-]+)\s+and\s+([A-Za-z0-9_\-]+)",
+            r"\b([A-Za-z0-9_\-]+)\s+vs\.?\s+([A-Za-z0-9_\-]+)",
+            r"compar(?:e|ing)\s+([A-Za-z0-9_\-]+)\s+(?:and|to|with)\s+([A-Za-z0-9_\-]+)",
+        )
+        for pat in patterns:
+            m = re.search(pat, prompt, re.IGNORECASE)
+            if m:
+                a, b = m.group(1), m.group(2)
+                if a.lower() == b.lower():
+                    continue
+                return [a, b]
+        return []
+
     def _geo_download_page_url(self, geo_accession: str) -> str:
         """Construct the GEO bulk-download URL that returns a tar of all supplementary files."""
         return f"https://www.ncbi.nlm.nih.gov/geo/download/?acc={geo_accession}&format=file"
@@ -1934,6 +1999,10 @@ If you are being asked to generate a title, set "success" to false.
                 index_path = f"{index_source}.idx"
                 index_deps = ["fastqc"]
 
+            workflow_plan["steps"].append(
+                self._build_sample_sheet_step(geo_accession, prompt)
+            )
+
             workflow_plan["steps"].extend([
                 {
                     "name": "fastqc",
@@ -2006,6 +2075,10 @@ If you are being asked to generate a title, set "success" to false.
                 ref = reference.rstrip('.') if reference else "reference.fa"
                 gtf = file_info.get("annotation", "") or "annotation.gtf"
 
+            workflow_plan["steps"].append(
+                self._build_sample_sheet_step(geo_accession, prompt)
+            )
+
             star_index_deps = ["fastqc"]
             if genome:
                 star_index_deps.append("download_reference")
@@ -2070,9 +2143,9 @@ If you are being asked to generate a title, set "success" to false.
                         "write.csv(as.data.frame(results(dds)), \"results/rna_seq_star/deseq2/deseq2_results.csv\")'"
                     ),
                     "parameters": {},
-                    "dependencies": ["feature_counts"],
+                    "dependencies": ["feature_counts", "build_sample_sheet"],
                     "outputs": ["results/rna_seq_star/deseq2/deseq2_results.csv"],
-                    "description": "Differential expression with DESeq2 (requires sample_conditions.tsv mapping samples to conditions)",
+                    "description": "Differential expression with DESeq2 (sample_conditions.tsv built by build_sample_sheet step)",
                     "profile_name": "default",
                 },
                 {
