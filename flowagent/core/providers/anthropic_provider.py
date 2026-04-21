@@ -40,6 +40,25 @@ class AnthropicProvider(LLMProvider):
         return override or self.default_model
 
     @staticmethod
+    def _accepts_temperature(model: str) -> bool:
+        """Recent Opus thinking-style models (opus-4-5 / 4-6 / 4-7 etc.)
+        removed the ``temperature`` parameter and the API returns 400
+        if it's included. Detect those by prefix so we can omit it.
+        """
+        m = (model or "").lower()
+        # Known-incompatible families. Keep conservative — only exclude
+        # exact prefixes Anthropic has deprecated ``temperature`` on;
+        # everything else keeps the usual behaviour.
+        for prefix in (
+            "claude-opus-4-5",
+            "claude-opus-4-6",
+            "claude-opus-4-7",
+        ):
+            if m.startswith(prefix):
+                return False
+        return True
+
+    @staticmethod
     def _split_system(messages: List[Dict[str, str]]):
         """Separate system messages (Anthropic uses a top-level ``system`` param)."""
         system_parts: List[str] = []
@@ -75,12 +94,14 @@ class AnthropicProvider(LLMProvider):
         max_tokens: Optional[int] = None,
     ) -> ProviderResponse:
         system, chat_msgs = self._split_system(messages)
+        resolved_model = self._model(model)
         kwargs: Dict[str, Any] = {
-            "model": self._model(model),
+            "model": resolved_model,
             "messages": chat_msgs,
-            "temperature": temperature,
             "max_tokens": max_tokens if max_tokens is not None else 4096,
         }
+        if self._accepts_temperature(resolved_model):
+            kwargs["temperature"] = temperature
         if system:
             kwargs["system"] = system
 
@@ -117,13 +138,15 @@ class AnthropicProvider(LLMProvider):
                 "input_schema": fn.get("parameters", {}),
             })
 
+        resolved_model = self._model(model)
         kwargs: Dict[str, Any] = {
-            "model": self._model(model),
+            "model": resolved_model,
             "messages": chat_msgs,
             "tools": anthropic_tools,
-            "temperature": temperature,
             "max_tokens": 4096,
         }
+        if self._accepts_temperature(resolved_model):
+            kwargs["temperature"] = temperature
         if system:
             kwargs["system"] = system
         tc = TOOL_CHOICE_MAP.get(tool_choice, {"type": tool_choice})
@@ -167,14 +190,16 @@ class AnthropicProvider(LLMProvider):
             "input_schema": response_schema,
         }
         system, chat_msgs = self._split_system(messages)
+        resolved_model = self._model(model)
         kwargs: Dict[str, Any] = {
-            "model": self._model(model),
+            "model": resolved_model,
             "messages": chat_msgs,
             "tools": [schema_tool],
             "tool_choice": {"type": "tool", "name": "structured_response"},
-            "temperature": temperature,
             "max_tokens": 4096,
         }
+        if self._accepts_temperature(resolved_model):
+            kwargs["temperature"] = temperature
         if system:
             kwargs["system"] = system
 
@@ -203,12 +228,14 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.2,
     ) -> AsyncIterator[str]:
         system, chat_msgs = self._split_system(messages)
+        resolved_model = self._model(model)
         kwargs: Dict[str, Any] = {
-            "model": self._model(model),
+            "model": resolved_model,
             "messages": chat_msgs,
-            "temperature": temperature,
             "max_tokens": 4096,
         }
+        if self._accepts_temperature(resolved_model):
+            kwargs["temperature"] = temperature
         if system:
             kwargs["system"] = system
 

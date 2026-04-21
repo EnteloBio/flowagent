@@ -236,7 +236,23 @@ class WorkflowManager:
                     "LLM determined step '%s' is unrecoverable: %s",
                     step.get("name"), diagnosis,
                 )
-                return None
+                # Return a structured refusal instead of ``None`` so callers
+                # (notably the recovery benchmark) can record *why* the LLM
+                # declined — on unrecoverable faults, the refusal text is
+                # the primary datum. Preserves backward compatibility
+                # because ``status`` is still non-success.
+                return {
+                    "status": "rejected",
+                    "recovery_attempt": attempt,
+                    "recovery_diagnosis": diagnosis,
+                    "rejection_reason": explanation or (
+                        "LLM determined the step is unrecoverable"
+                    ),
+                    "fixed_command": None,
+                    "raw_response": response,
+                    "original_command": step.get("command"),
+                    "step_name": step.get("name", "unknown"),
+                }
 
             self.logger.info(
                 "LLM recovery attempt %d for '%s': %s",

@@ -77,53 +77,68 @@ models:
     pricing: {input_per_1k: 0.0002, output_per_1k: 0.00125}
 
   # ── Anthropic ─────────────────────────────────────────────────
-  - id: claude-3-haiku-20240307        # Cheap legacy
+  #
+  # The claude-3-* family (haiku-20240307, sonnet-20240229, 3-5-haiku,
+  # 3-5-sonnet) was retired from the Anthropic API in early 2026 —
+  # calls against those snapshot IDs now return 404. Entries below
+  # mirror the live model list returned by ``GET /v1/models`` as of
+  # April 2026. Pricing is Anthropic's published rate per MTok as of
+  # this update (verify at https://www.anthropic.com/pricing before a
+  # manuscript submission; rates have shifted before).
+
+  - id: claude-opus-4-20250514         # Opus 4 original ($15/$75 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: legacy
-    pricing: {input_per_1k: 0.00025, output_per_1k: 0.00125}
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
 
-  - id: claude-3-sonnet-20240229       # Mid 2024 (deprecated but useful baseline)
+  - id: claude-opus-4-1-20250805       # Opus 4.1 ($15/$75 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: legacy
-    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
 
-  - id: claude-3-5-sonnet-20241022     # Mid-tier 2024 update
+  - id: claude-haiku-4-5-20251001      # Haiku 4.5 — cheap current-gen ($1/$5 per MTok)
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: mid
+    pricing: {input_per_1k: 0.001, output_per_1k: 0.005}
+
+  - id: claude-sonnet-4-20250514       # Sonnet 4 baseline ($3/$15 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: mid
     pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
 
-  - id: claude-3-5-haiku-20241022      # Cheap mid
-    provider: anthropic
-    env_var: ANTHROPIC_API_KEY
-    tier: mid
-    pricing: {input_per_1k: 0.0008, output_per_1k: 0.004}
-
-  - id: claude-sonnet-4-20250514       # 2025 frontier
+  - id: claude-sonnet-4-5-20250929     # Sonnet 4.5 ($3/$15 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
     pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
 
-  - id: claude-opus-4-5                # 2025 frontier ($5/$25 per MTok)
+  - id: claude-sonnet-4-6              # Sonnet 4.6 ($3/$15 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
-    pricing: {input_per_1k: 0.005, output_per_1k: 0.025}
+    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
 
-  - id: claude-opus-4-6                # 2025/26 frontier ($5/$25 per MTok)
+  - id: claude-opus-4-5-20251101       # Opus 4.5 ($15/$75 per MTok)
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
-    pricing: {input_per_1k: 0.005, output_per_1k: 0.025}
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
 
-  - id: claude-opus-4-7                # 2026 frontier ($5/$25 per MTok)
+  - id: claude-opus-4-6                # Opus 4.6 — thinking model; temperature arg unsupported
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
     tier: frontier
-    pricing: {input_per_1k: 0.005, output_per_1k: 0.025}
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+
+  - id: claude-opus-4-7                # Opus 4.7 — thinking model; temperature arg unsupported
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    tier: frontier
+    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
 
   # ── Google ────────────────────────────────────────────────────
   - id: gemini-1.5-flash               # 2024 cheap legacy

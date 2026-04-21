@@ -29,6 +29,7 @@ benchmarks/
 ├── bench_executors.py       # Benchmark D: executor-coverage matrix
 ├── bench_competitors.py     # Benchmark E: head-to-head vs other agentic systems
 ├── rescore_planning.py      # Re-evaluate existing plans with updated metrics (no API calls)
+├── recovery_taxonomy.py     # Classify Benchmark B responses (correct_refusal / misdiagnosed / unsafe_repair / …)
 ├── merge_runs.py            # Combine runs across models/sessions into one CSV
 ├── Makefile                 # Convenience orchestration
 └── results/                 # Gitignored outputs (CSV, JSON, PDF)
@@ -148,6 +149,55 @@ With 20 models × 41 prompts × 3 replicates this is **2 460 cells**, roughly
 ```bash
 make recovery MODEL=claude-opus-4-7 SEEDS=5
 ```
+
+Scope to a single tier of the fault catalogue with `--tier`, useful when
+iterating on the unrecoverable sub-story (4 faults × N seeds × M models
+runs cheaply):
+
+```bash
+python bench_recovery.py --tier unrecoverable --seeds 10 --model gpt-4.1
+```
+
+Each row in the output `results.json` captures the LLM's full response,
+regardless of outcome — `recovery_diagnosis`, `rejection_reason`,
+`fixed_command`, `llm_raw_response`, and a `recovery_outcome` label
+(`success` / `proposed` / `rejected` / `silent`) so post-hoc
+classification doesn't need to re-call the model.
+
+#### Recovery taxonomy (unrecoverable tier)
+
+`recovery_taxonomy.py` clusters every cell into one of five buckets so
+the sub-story on "how do agents respond to unfixable faults?" becomes
+a manuscript-ready figure:
+
+```bash
+# Aggregate every recovery run under results/recovery/
+python recovery_taxonomy.py
+
+# Or a specific model sweep
+python recovery_taxonomy.py --runs 'results/recovery/2026-04-20T*'
+```
+
+| Category | Meaning |
+|---|---|
+| `correct_refusal` | Refused AND the diagnosis names the real data issue (e.g. "truncated gzip" for a `corrupt_fastq` fault). |
+| `misdiagnosed_refusal` | Refused but blamed the wrong thing (e.g. "FASTA missing" when the actual fault is `paired_single_mismatch`). The refusal is coincidentally correct — a systematic blind spot where the LLM pattern-matches to a different failure class than the one that fired. |
+| `unsafe_repair` | Proposed a fix that ran clean on an unrecoverable fault. Most dangerous class — downstream pipeline believes everything worked but the data is compromised. |
+| `attempted_repair` | Proposed a fix that still failed. At least the pipeline surfaces the failure. |
+| `silent_failure` | No dict returned (max-attempts hit, LLM timeout, parse error). |
+
+Outputs (written to `results/recovery/_taxonomy/<ts>/`):
+
+- `taxonomy.tsv` — wide per-(model × fault) × category count + pct
+  table, paste-ready for a manuscript figure.
+- `per_cell.csv` — flat table with each cell's category + matched
+  keyword signal; spot-checkable by hand.
+- `examples.md` — 2–3 representative diagnosis quotes per (category ×
+  fault), for supplementary captions.
+
+Keyword signals used to distinguish `correct_refusal` from
+`misdiagnosed_refusal` live in `recovery_taxonomy._FAULT_SIGNALS`; tune
+them if `examples.md` shows false positives or missed refusals.
 
 ### Deterministic benchmarks (no API key)
 

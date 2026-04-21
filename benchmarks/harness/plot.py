@@ -103,6 +103,30 @@ _PROVIDER_COLOURS = {
 
 _TIER_ORDER = {"legacy": 0, "mid": 1, "frontier": 2}
 
+# Taxonomy palette — Okabe-Ito-derived. Green = safe refusal with
+# correct diagnosis; amber = refusal with wrong diagnosis (coincidentally
+# correct); red = confidently unsafe fix (the dangerous category);
+# blue = tried but failed (at least the pipeline surfaces the error);
+# grey = no engagement (silent / max-retries).
+_TAXONOMY_CATEGORIES = [
+    "correct_refusal", "misdiagnosed_refusal",
+    "attempted_repair", "silent_failure", "unsafe_repair",
+]
+_TAXONOMY_COLOURS = {
+    "correct_refusal":      "#15803d",  # green
+    "misdiagnosed_refusal": "#E69F00",  # amber
+    "attempted_repair":     "#0072B2",  # blue
+    "silent_failure":       "#6b7280",  # slate grey
+    "unsafe_repair":        "#b91c1c",  # deep red
+}
+_TAXONOMY_LABELS = {
+    "correct_refusal":      "Correct refusal",
+    "misdiagnosed_refusal": "Misdiagnosed refusal",
+    "attempted_repair":     "Attempted repair",
+    "silent_failure":       "Silent failure",
+    "unsafe_repair":        "Unsafe repair",
+}
+
 # Custom divergent heat-map colormap: desaturated red → amber → green, tuned
 # for readability in greyscale and for protanopia. Values 0–1 map to
 # colours that remain distinguishable at 0.3 vs 0.7.
@@ -649,6 +673,97 @@ def recovery_tier_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     ax.set_xlabel("Fraction of runs with the desired outcome")
     ax.set_title("Recovery outcome by fault tier", loc="left")
     _style_value_axis(ax, x=True)
+    return fig
+
+
+def recovery_taxonomy_figure(per_cell_df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Stacked-bar chart of the unrecoverable-tier response taxonomy.
+
+    Input is the ``per_cell.csv`` that ``recovery_taxonomy.py`` emits —
+    one row per cell with a ``_category`` column and a ``_model`` column.
+    Output is one horizontal bar per model, stacked left-to-right by
+    category percentage; models are ordered top-down by decreasing
+    combined "safe refusal" rate (correct + misdiagnosed). The unsafe
+    category is coloured red so the dangerous rows jump out visually
+    even to a grayscale reader.
+    """
+    if per_cell_df.empty or "_category" not in per_cell_df.columns:
+        return None
+    # Restrict to unrecoverable tier (paranoia; the taxonomy script
+    # already filters, but the CSV is flat).
+    if "fault_tier" in per_cell_df.columns:
+        df = per_cell_df[per_cell_df["fault_tier"] == "unrecoverable"].copy()
+    else:
+        df = per_cell_df.copy()
+    if df.empty:
+        return None
+
+    counts = (
+        df.groupby(["_model", "_category"])
+          .size().unstack("_category", fill_value=0)
+    )
+    # Ensure every category column exists even if absent from the data
+    for c in _TAXONOMY_CATEGORIES:
+        if c not in counts.columns:
+            counts[c] = 0
+    counts = counts[_TAXONOMY_CATEGORIES]
+    totals = counts.sum(axis=1)
+    pcts = counts.div(totals, axis=0) * 100
+
+    # Order models by safe-refusal rate descending (best first, on top)
+    safe = pcts["correct_refusal"] + pcts["misdiagnosed_refusal"]
+    ordered_models = safe.sort_values(ascending=True).index.tolist()
+
+    _set_publication_style()
+    height = max(2.2, 0.55 * len(ordered_models) + 1.0)
+    fig, ax = plt.subplots(figsize=(8.5, height))
+
+    y = np.arange(len(ordered_models))
+    left = np.zeros(len(ordered_models))
+    for cat in _TAXONOMY_CATEGORIES:
+        vals = pcts.loc[ordered_models, cat].values
+        ax.barh(y, vals, left=left, height=0.72,
+                color=_TAXONOMY_COLOURS[cat], edgecolor="white",
+                linewidth=0.6,
+                label=_TAXONOMY_LABELS[cat])
+        # In-bar percentage labels, only for segments >=6 % (readable)
+        for i, v in enumerate(vals):
+            if v >= 6:
+                ax.text(left[i] + v / 2, y[i], f"{v:.0f}%",
+                        ha="center", va="center", fontsize=8,
+                        color="white", fontweight="bold")
+        left += vals
+
+    # n label at right of each bar
+    for i, m in enumerate(ordered_models):
+        ax.text(101, i, f"n={int(totals.loc[m])}", va="center",
+                fontsize=7.5, color="#444")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([_short_name(m) for m in ordered_models])
+    ax.set_xlim(0, 108)
+    ax.set_xlabel("% of cells")
+    ax.set_title(
+        "Recovery taxonomy on unrecoverable faults\n"
+        "(ordered top → bottom by decreasing safe-refusal rate)",
+        fontsize=11, pad=8,
+    )
+    ax.grid(axis="x", linestyle="--", alpha=0.35)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+
+    # Legend below the plot — compact, all five categories in a single row
+    fig.legend(
+        handles=[plt.Rectangle((0, 0), 1, 1, color=_TAXONOMY_COLOURS[c])
+                 for c in _TAXONOMY_CATEGORIES],
+        labels=[_TAXONOMY_LABELS[c] for c in _TAXONOMY_CATEGORIES],
+        loc="lower center", bbox_to_anchor=(0.5, -0.03),
+        ncol=len(_TAXONOMY_CATEGORIES), frameon=False, fontsize=9,
+    )
+    # No manual subplots_adjust — _save uses ``bbox_inches='tight'``
+    # which crops to include the legend automatically, and
+    # _set_publication_style installs a constrained layout engine that
+    # conflicts with subplots_adjust.
     return fig
 
 
@@ -1479,6 +1594,98 @@ def _save(fig: plt.Figure, out_base: Path, *,
 
 # ── CLI: regenerate all figures ──────────────────────────────────
 
+def _latest_taxonomy_per_cell(results_root: Path) -> Optional[Path]:
+    """Return the newest ``per_cell.csv`` under ``results/recovery/_taxonomy/``."""
+    tdir = results_root / "recovery" / "_taxonomy"
+    if not tdir.exists():
+        return None
+    subs = [
+        p for p in tdir.iterdir()
+        if p.is_dir() and (p / "per_cell.csv").exists()
+    ]
+    if not subs:
+        return None
+    return max(subs, key=lambda p: p.stat().st_mtime) / "per_cell.csv"
+
+
+def _regen_recovery_taxonomy(results_root: Path) -> Optional[Path]:
+    """Run ``recovery_taxonomy.py`` against every recovery run in-tree.
+
+    Returns the path to the freshly written ``per_cell.csv`` or ``None``
+    if the taxonomy script isn't importable (e.g. running the plot
+    module from outside the ``benchmarks/`` tree).
+    """
+    import sys
+    import subprocess
+    tax_script = Path(__file__).resolve().parent.parent / "recovery_taxonomy.py"
+    if not tax_script.exists():
+        return None
+    try:
+        subprocess.run(
+            [sys.executable, str(tax_script),
+             "--runs", str(results_root / "recovery" / "*")],
+            check=True, capture_output=True,
+        )
+    except Exception as e:
+        print(f"[warn] recovery_taxonomy regen failed: {e}")
+        return None
+    return _latest_taxonomy_per_cell(results_root)
+
+
+def _load_all_recovery_runs(results_root: Path) -> Optional[pd.DataFrame]:
+    """Load and concat every ``recovery/<ts>/metrics.csv`` under ``results/``.
+
+    Tags each row with the ``model`` taken from that run's
+    ``manifest.json`` (metrics.csv rows don't carry the model id), then
+    deduplicates by ``(model, fault, seed)`` keeping the newest run so a
+    re-run replaces stale cells rather than duplicating them.
+
+    Returns ``None`` if no runs exist.
+    """
+    rec_dir = results_root / "recovery"
+    if not rec_dir.exists():
+        return None
+    frames: List[pd.DataFrame] = []
+    for sub in sorted(rec_dir.iterdir(), key=lambda p: p.stat().st_mtime):
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        csv = sub / "metrics.csv"
+        if not csv.exists() or csv.stat().st_size == 0:
+            continue
+        try:
+            df = pd.read_csv(csv)
+        except Exception:
+            continue
+        if df.empty:
+            continue
+        # Tag model from manifest.json if the rows don't have one
+        if "model" not in df.columns:
+            model = "unknown"
+            mf = sub / "manifest.json"
+            if mf.exists():
+                try:
+                    import json
+                    manifest = json.loads(mf.read_text())
+                    models = [m.get("id") for m in manifest.get("models") or []]
+                    if models:
+                        model = models[0]
+                except Exception:
+                    pass
+            df["model"] = model
+        df["_source_run"] = sub.name
+        frames.append(df)
+    if not frames:
+        return None
+    merged = pd.concat(frames, ignore_index=True)
+    # Deduplicate: later runs of the same cell replace earlier ones.
+    # (Rows were appended in mtime order above, so keep="last" wins.)
+    if {"model", "fault", "seed"}.issubset(merged.columns):
+        merged = merged.drop_duplicates(
+            subset=["model", "fault", "seed"], keep="last",
+        ).reset_index(drop=True)
+    return merged
+
+
 def _latest(run_dir: Path) -> Optional[Path]:
     """Return the latest results dir for a given benchmark.
 
@@ -1527,18 +1734,28 @@ def main() -> None:
         ("executors",   executor_matrix_figure),
         ("competitors", competitors_figure),
     ):
-        latest = _latest(root / bench_name)
-        if latest is None:
-            print(f"[skip] no results for {bench_name}")
-            continue
-        csv = latest / "metrics.csv"
-        if not csv.exists() or csv.stat().st_size == 0:
-            print(f"[skip] empty metrics for {bench_name}")
-            continue
-        df = pd.read_csv(csv)
-        if df.empty:
-            print(f"[skip] empty dataframe for {bench_name}")
-            continue
+        # Recovery is special: a sweep across models produces one dir per
+        # model, and the per-fault figure is far more informative when
+        # aggregated across all of them. For everything else, pick the
+        # latest single run as before.
+        if bench_name == "recovery":
+            df = _load_all_recovery_runs(root)
+            if df is None or df.empty:
+                print(f"[skip] no results for {bench_name}")
+                continue
+        else:
+            latest = _latest(root / bench_name)
+            if latest is None:
+                print(f"[skip] no results for {bench_name}")
+                continue
+            csv = latest / "metrics.csv"
+            if not csv.exists() or csv.stat().st_size == 0:
+                print(f"[skip] empty metrics for {bench_name}")
+                continue
+            df = pd.read_csv(csv)
+            if df.empty:
+                print(f"[skip] empty dataframe for {bench_name}")
+                continue
 
         fig = fn(df)
         _save(fig, fig_dir / bench_name, svg=args.svg)
@@ -1553,6 +1770,22 @@ def main() -> None:
                 plt.close(tierfig)
                 print(f"[ok]   recovery_tier_summary → "
                       f"{fig_dir/'recovery_tier_summary'}.pdf")
+
+            # Unrecoverable-tier taxonomy (correct / misdiagnosed /
+            # unsafe / silent). Uses per_cell.csv from the latest
+            # recovery_taxonomy.py run; regenerates if absent.
+            tax_csv = _latest_taxonomy_per_cell(root)
+            if tax_csv is None or not tax_csv.exists():
+                tax_csv = _regen_recovery_taxonomy(root)
+            if tax_csv is not None and tax_csv.exists():
+                tax_df = pd.read_csv(tax_csv)
+                taxfig = recovery_taxonomy_figure(tax_df)
+                if taxfig is not None:
+                    _save(taxfig, fig_dir / "recovery_taxonomy",
+                          svg=args.svg)
+                    plt.close(taxfig)
+                    print(f"[ok]   recovery_taxonomy → "
+                          f"{fig_dir/'recovery_taxonomy'}.pdf")
 
         # Companion heatmap for the head-to-head
         if bench_name == "competitors":
