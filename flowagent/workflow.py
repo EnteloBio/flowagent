@@ -229,10 +229,15 @@ async def run_workflow(prompt: str, checkpoint_dir: str = None, resume: bool = F
             print(f"\nError planning workflow: {str(e)}")
             print("Proceeding with direct execution...")
             workflow_plan = None
-        
-        # Execute workflow
+
+        # Execute workflow — reuse the plan from above so we don't re-plan or
+        # re-install dependencies. Fall back to re-planning if the preview failed.
         logger.info(f"Executing workflow with checkpoint dir: {checkpoint_path}")
-        result = await workflow_manager.plan_and_execute_workflow(prompt, checkpoint_dir=checkpoint_path)
+        result = await workflow_manager.plan_and_execute_workflow(
+            prompt,
+            checkpoint_dir=checkpoint_path,
+            workflow_plan=workflow_plan,
+        )
         
         if result.get("status") != "success":
             error_msg = result.get("error", "Unknown error")

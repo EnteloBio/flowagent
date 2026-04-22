@@ -222,21 +222,22 @@ Example format:
                 
                 # Parse dependencies
                 dependencies = json.loads(response)
-                self.logger.info(f"Identified dependencies: {json.dumps(dependencies, indent=2)}")
                 
-                # Handle the case where tools can be either strings or dictionaries
+                # Handle the case where tools can be either strings or dictionaries.
+                # Normalise common LLM variants to the canonical bioconda package name.
+                _TOOL_ALIASES = {
+                    "ncbi-entrez-direct": "entrez-direct",
+                    "edirect": "entrez-direct",
+                }
                 tools_list = []
                 for pkg in dependencies.get("tools", []):
                     if isinstance(pkg, str):
-                        # Convert 'ncbi-entrez-direct' to 'entrez-direct' if needed
-                        pkg_name = 'entrez-direct' if pkg.lower() == 'ncbi-entrez-direct' else pkg
+                        pkg_name = _TOOL_ALIASES.get(pkg.lower(), pkg)
                         tools_list.append({"name": pkg_name, "channel": "bioconda"})
                     elif isinstance(pkg, dict) and "name" in pkg:
-                        # If it's already a dictionary with a name, use it directly
-                        # But still convert 'ncbi-entrez-direct' to 'entrez-direct' if needed
-                        if pkg["name"].lower() == 'ncbi-entrez-direct':
-                            pkg["name"] = 'entrez-direct'
-                        # Ensure it has a channel if not specified
+                        alias = _TOOL_ALIASES.get(pkg["name"].lower())
+                        if alias:
+                            pkg["name"] = alias
                         if "channel" not in pkg:
                             pkg["channel"] = "bioconda"
                         tools_list.append(pkg)
@@ -553,8 +554,9 @@ Example format:
             self.logger.error("No tool name provided for installation")
             return False
 
-        self.logger.info(f"Installing tool: {tool_name} ({reason})")
-        
+        # Caller logs "Installing tool: ..." before dispatching here; avoid
+        # logging the same line twice.
+
         # Check if the tool is already available before attempting installation
         if tool_name in ["esearch", "efetch", "einfo", "elink", "xtract"]:
             if self._check_entrez_direct_tool(tool_name):

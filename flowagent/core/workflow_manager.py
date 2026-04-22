@@ -182,10 +182,11 @@ class WorkflowManager:
 
         error_context = {
             "step_name": step.get("name"),
+            "step_description": step.get("description", ""),
             "original_command": step.get("command"),
             "exit_code": step_result.get("exit_code") or step_result.get("returncode"),
-            "stderr": (step_result.get("stderr") or "")[:2000],
-            "stdout": (step_result.get("stdout") or "")[:1000],
+            "stderr": (step_result.get("stderr") or "")[:3000],
+            "stdout": (step_result.get("stdout") or "")[:1500],
             "platform": "macOS" if sys.platform == "darwin" else "Linux",
             "tool_availability": tool_availability,
             "attempt": attempt,
@@ -195,17 +196,33 @@ class WorkflowManager:
             "A bioinformatics pipeline step failed during execution. "
             "Diagnose the error and return a fixed shell command.\n\n"
             f"Step name: {error_context['step_name']}\n"
+            f"Step description: {error_context['step_description']}\n"
             f"Original command:\n  {error_context['original_command']}\n"
             f"Exit code: {error_context['exit_code']}\n"
             f"stderr:\n  {error_context['stderr']}\n"
+            f"stdout (tail):\n  {error_context['stdout']}\n"
             f"Platform: {error_context['platform']}\n"
             f"Tool availability: {json.dumps(error_context['tool_availability'])}\n"
             f"Recovery attempt: {attempt}/{max_attempts}\n\n"
-            "Common fixes:\n"
+            "Common fixes by error class:\n"
             "- Exit code 127 (command not found): substitute an equivalent tool "
             "(e.g. curl -fSL -o <file> <url> instead of wget, pigz instead of gzip).\n"
             "- 'No such file or directory': add mkdir -p for missing directories.\n"
-            "- Permission denied: check paths and permissions.\n\n"
+            "- Permission denied: check paths and permissions.\n"
+            "- R/Bioconductor errors:\n"
+            "  * tximport 'None of the transcripts ... present in the first column of tx2gene': "
+            "add ignoreTxVersion=TRUE, ignoreAfterBar=TRUE to tximport(); also strip version "
+            "suffixes from tx2gene TXNAME via sub('\\\\..*$','',...). Ensembl cDNA FASTA carries "
+            "version suffixes, GTF transcript_id does not.\n"
+            "  * DESeq2 'colData rownames do not match countData colnames': intersect sample "
+            "names and subset both (txi$counts <- txi$counts[, keep]).\n"
+            "  * 'could not find function \"X\"' / 'there is no package called X': add "
+            "library(X) or install via BiocManager::install('X').\n"
+            "  * rtracklayer 'duplicate row names': dedupe with unique() on the data.frame.\n"
+            "- Python module errors (ModuleNotFoundError): install via pip in the right env, "
+            "or rewrite using a stdlib equivalent.\n"
+            "- When rewriting R one-liners, preserve the existing Rscript -e '...' shape and "
+            "all input/output paths from the original command — only change the R logic.\n\n"
             "Return ONLY a JSON object with this structure:\n"
             '{"diagnosis": "short explanation", '
             '"fixed_command": "the corrected shell command or null if unrecoverable", '
@@ -414,6 +431,7 @@ class WorkflowManager:
 
             # Use DAG-parallel execution when steps declare dependencies
             has_deps = any(step.get("dependencies") for step in workflow_steps)
+            dag_executed = False  # True only if the DAG path ran end-to-end
             if has_deps and len(workflow_steps) > 1:
                 try:
                     dag = WorkflowDAG(executor_type=self.executor_type)
@@ -437,6 +455,7 @@ class WorkflowManager:
                     completed = [r.get("step_name", "") for r in results if r.get("status") not in ("error", "failed")]
                     ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
                     self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
+                    dag_executed = True
                 except (ValueError, Exception) as dag_err:
                     self.logger.warning("DAG-parallel execution failed (%s), falling back to sequential", dag_err)
                     results = []
@@ -444,10 +463,10 @@ class WorkflowManager:
 
             if not has_deps or not results:
                 results = []
-            
+
             for i, step in enumerate(workflow_steps):
-                if results:
-                    break  # already executed via DAG
+                if dag_executed:
+                    break  # already executed via DAG — don't re-run in sequential
                 step_name = step.get("name", f"Step {i+1}")
                 self.logger.info(f"Executing step {i+1}/{len(workflow_steps)}: {step_name}")
                 
@@ -745,14 +764,17 @@ class WorkflowManager:
                 # Detect completed steps only if force_resume is False
                 completed_steps = set()
                 if not force_resume:
-                    # Convert to step_dicts format for smart resume
+                    # Convert to step_dicts format for smart resume, preserving
+                    # the planner's ``outputs`` list so generic_validator can
+                    # check declared artifacts rather than re-parsing the shell.
                     step_dicts = []
                     for step in workflow_plan.get("steps", []):
                         step_dict = {
                             "name": step.get("name", ""),
                             "command": step.get("command", ""),
                             "description": step.get("description", ""),
-                            "dependencies": step.get("dependencies", [])
+                            "dependencies": step.get("dependencies", []),
+                            "outputs": step.get("outputs", []),
                         }
                         step_dicts.append(step_dict)
                     
@@ -807,13 +829,23 @@ class WorkflowManager:
             # If a checkpoint directory is provided, use smart resume functionality
             if checkpoint_dir:
                 self.logger.info("Using smart resume functionality")
-                # Convert WorkflowStep objects to dictionaries for smart resume
+                # Convert WorkflowStep objects to dictionaries for smart resume.
+                # Pull the planner's ``outputs`` list through by name — it's the
+                # authoritative source of expected artifacts and makes
+                # completion detection reliable for `cd`-prefixed commands,
+                # pipelines, and xargs-based downloads where output paths
+                # can't be parsed from the shell text.
+                plan_by_name = {
+                    s.get("name"): s for s in workflow_plan.get("steps", [])
+                } if isinstance(workflow_plan, dict) else {}
                 step_dicts = []
                 for step in workflow.steps:
+                    plan_step = plan_by_name.get(step.name, {})
                     step_dict = {
                         "name": step.name,
                         "command": step.command,
-                        "dependencies": step.dependencies
+                        "dependencies": step.dependencies,
+                        "outputs": plan_step.get("outputs", []),
                     }
                     step_dicts.append(step_dict)
                 
@@ -827,12 +859,20 @@ class WorkflowManager:
                 
                 # Filter workflow steps
                 filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
-                
+
                 # Update workflow steps based on filtered steps
                 if len(filtered_steps) < len(step_dicts):
                     self.logger.info(f"Filtered {len(step_dicts) - len(filtered_steps)} steps, will run {len(filtered_steps)} steps")
                     # Keep only the steps that are in the filtered list
-                    workflow.steps = [step for step in workflow.steps if any(step.name == fs["name"] for fs in filtered_steps)]
+                    filtered_names = {fs["name"] for fs in filtered_steps}
+                    workflow.steps = [s for s in workflow.steps if s.name in filtered_names]
+                    # Propagate scrubbed dependency lists onto the surviving
+                    # WorkflowStep objects so the executor's DAG build doesn't
+                    # reject them for referencing filtered-out completed steps.
+                    scrubbed_deps_by_name = {fs["name"]: fs.get("dependencies", []) for fs in filtered_steps}
+                    for s in workflow.steps:
+                        if s.name in scrubbed_deps_by_name:
+                            s.dependencies = scrubbed_deps_by_name[s.name]
             
             # Execute the workflow
             result = await self.execute_workflow(workflow)
@@ -1149,28 +1189,35 @@ class WorkflowManager:
         
         return report
 
-    async def plan_and_execute_workflow(self, prompt, output_dir=None, checkpoint_dir=None):
+    async def plan_and_execute_workflow(
+        self, prompt, output_dir=None, checkpoint_dir=None, workflow_plan=None,
+    ):
         """Plan and execute a workflow based on a natural language prompt.
-        
+
         Args:
             prompt: Natural language prompt describing the workflow
             output_dir: Directory to store workflow outputs
             checkpoint_dir: Directory to store workflow checkpoints
-            
+            workflow_plan: Pre-computed plan from a prior ``plan_workflow`` call.
+                When provided, planning and dependency-installation are skipped
+                so the same run doesn't re-plan / re-install.
+
         Returns:
             dict: Workflow execution results
         """
         try:
             self.logger.info(f"Initial working directory: {os.getcwd()}")
             self.logger.info(f"Using {self.executor_type} executor")
-            
-            # Plan the workflow
-            self.logger.info("Planning workflow steps...")
-            workflow_plan = await self.llm.generate_workflow_plan(prompt)
-            
-            # Check if all dependencies are installed
-            self.logger.info("Checking dependencies...")
-            all_installed, available_but_failed_install = await self.dependency_manager.ensure_workflow_dependencies(workflow_plan)
+
+            if workflow_plan is None:
+                self.logger.info("Planning workflow steps...")
+                workflow_plan = await self.llm.generate_workflow_plan(prompt)
+
+                self.logger.info("Checking dependencies...")
+                all_installed, available_but_failed_install = await self.dependency_manager.ensure_workflow_dependencies(workflow_plan)
+            else:
+                self.logger.info("Reusing pre-computed workflow plan (skipping re-plan and dependency re-install)")
+                all_installed, available_but_failed_install = True, []
             
             if not all_installed:
                 if available_but_failed_install:
@@ -1226,13 +1273,23 @@ class WorkflowManager:
             # If a checkpoint directory is provided, use smart resume functionality
             if checkpoint_dir:
                 self.logger.info("Using smart resume functionality")
-                # Convert WorkflowStep objects to dictionaries for smart resume
+                # Convert WorkflowStep objects to dictionaries for smart resume.
+                # Pull the planner's ``outputs`` list through by name — it's the
+                # authoritative source of expected artifacts and makes
+                # completion detection reliable for `cd`-prefixed commands,
+                # pipelines, and xargs-based downloads where output paths
+                # can't be parsed from the shell text.
+                plan_by_name = {
+                    s.get("name"): s for s in workflow_plan.get("steps", [])
+                } if isinstance(workflow_plan, dict) else {}
                 step_dicts = []
                 for step in workflow.steps:
+                    plan_step = plan_by_name.get(step.name, {})
                     step_dict = {
                         "name": step.name,
                         "command": step.command,
-                        "dependencies": step.dependencies
+                        "dependencies": step.dependencies,
+                        "outputs": plan_step.get("outputs", []),
                     }
                     step_dicts.append(step_dict)
                 
@@ -1246,12 +1303,20 @@ class WorkflowManager:
                 
                 # Filter workflow steps
                 filtered_steps = filter_workflow_steps(step_dicts, completed_steps)
-                
+
                 # Update workflow steps based on filtered steps
                 if len(filtered_steps) < len(step_dicts):
                     self.logger.info(f"Filtered {len(step_dicts) - len(filtered_steps)} steps, will run {len(filtered_steps)} steps")
                     # Keep only the steps that are in the filtered list
-                    workflow.steps = [step for step in workflow.steps if any(step.name == fs["name"] for fs in filtered_steps)]
+                    filtered_names = {fs["name"] for fs in filtered_steps}
+                    workflow.steps = [s for s in workflow.steps if s.name in filtered_names]
+                    # Propagate scrubbed dependency lists onto the surviving
+                    # WorkflowStep objects so the executor's DAG build doesn't
+                    # reject them for referencing filtered-out completed steps.
+                    scrubbed_deps_by_name = {fs["name"]: fs.get("dependencies", []) for fs in filtered_steps}
+                    for s in workflow.steps:
+                        if s.name in scrubbed_deps_by_name:
+                            s.dependencies = scrubbed_deps_by_name[s.name]
             
             # Execute the workflow
             result = await self.execute_workflow(workflow)
