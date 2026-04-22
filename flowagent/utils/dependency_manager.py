@@ -269,11 +269,44 @@ Example format:
         except PackageNotFoundError:
             return False
             
+    # Common Bioconductor/CRAN package names that LLMs often lowercase.
+    # R / Bioconductor are case-sensitive, so the check and install must agree.
+    _R_PACKAGE_CANONICAL = {
+        "deseq2": "DESeq2",
+        "tximport": "tximport",
+        "rtracklayer": "rtracklayer",
+        "biocmanager": "BiocManager",
+        "biocgenerics": "BiocGenerics",
+        "s4vectors": "S4Vectors",
+        "iranges": "IRanges",
+        "genomicranges": "GenomicRanges",
+        "genomeinfodb": "GenomeInfoDb",
+        "summarizedexperiment": "SummarizedExperiment",
+        "edger": "edgeR",
+        "limma": "limma",
+        "dplyr": "dplyr",
+        "ggplot2": "ggplot2",
+        "tidyr": "tidyr",
+    }
+
+    def _canonical_r_name(self, package_name: str) -> str:
+        """Map a possibly-lowercased R package name to its canonical casing."""
+        return self._R_PACKAGE_CANONICAL.get(package_name.lower(), package_name)
+
     def check_r_package(self, package_name: str) -> bool:
-        """Check if an R package is installed."""
+        """Check if an R package is installed (case-insensitive)."""
+        canonical = self._canonical_r_name(package_name)
+        # installed.packages() rownames is the authoritative list; comparing
+        # tolower() avoids the ``deseq2`` vs ``DESeq2`` trap that would
+        # otherwise make every run re-install the same package.
+        r_expr = (
+            f'q(status=as.integer(!any(tolower(rownames(installed.packages())) == '
+            f'tolower("{canonical}"))))'
+        )
         try:
-            cmd = f"Rscript -e 'if (!require({package_name})) quit(status=1)'"
-            result = subprocess.run(cmd, shell=True, capture_output=True)
+            result = subprocess.run(
+                ["Rscript", "-e", r_expr], capture_output=True, timeout=30,
+            )
             return result.returncode == 0
         except Exception:
             return False
@@ -504,15 +537,22 @@ Example format:
             
     def install_r_package(self, package_info: Dict[str, str]) -> bool:
         """Install an R package from CRAN or Bioconductor."""
-        package_name = package_info["name"]
+        package_name = self._canonical_r_name(package_info["name"])
         repository = package_info.get("repository", "cran")
-        
+
         try:
             if repository == "bioconductor":
-                cmd = f"""Rscript -e 'if (!require("BiocManager")) install.packages("BiocManager"); BiocManager::install("{package_name}")'"""
+                cmd = (
+                    f'Rscript -e \'if (!require("BiocManager", quietly=TRUE)) '
+                    f'install.packages("BiocManager", repos="https://cloud.r-project.org"); '
+                    f'BiocManager::install("{package_name}", update=FALSE, ask=FALSE)\''
+                )
             else:
-                cmd = f"""Rscript -e 'if (!require("{package_name}")) install.packages("{package_name}")'"""
-                
+                cmd = (
+                    f'Rscript -e \'if (!require("{package_name}", quietly=TRUE)) '
+                    f'install.packages("{package_name}", repos="https://cloud.r-project.org")\''
+                )
+
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             return result.returncode == 0
             

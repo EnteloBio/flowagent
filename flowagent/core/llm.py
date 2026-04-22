@@ -103,7 +103,7 @@ class LLMInterface:
                 "Kallisto index: kallisto index -i results/rna_seq_kallisto/kallisto_index/transcripts.idx reference.fa",
                 "Kallisto quant paired: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name read1.fastq.gz read2.fastq.gz",
                 "Kallisto quant single: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name --single -l 200 -s 20 read.fastq.gz",
-                "tximport: Rscript -e 'library(tximport); library(rtracklayer); gtf <- rtracklayer::import(\"raw_data/reference/annotation.gtf\"); tx <- gtf[gtf$type == \"transcript\"]; tx2gene <- unique(data.frame(TXNAME=tx$transcript_id, GENEID=tx$gene_id)); tx2gene$TXNAME <- sub(\"\\\\..*$\", \"\", tx2gene$TXNAME); quant_dir <- \"results/rna_seq_kallisto/kallisto_quant\"; samples <- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); files <- setNames(file.path(quant_dir, samples, \"abundance.h5\"), samples); txi <- tximport(files, type=\"kallisto\", tx2gene=tx2gene, ignoreTxVersion=TRUE, ignoreAfterBar=TRUE); saveRDS(txi, \"results/rna_seq_kallisto/deseq2/txi.rds\")'",
+                "tximport: Rscript -e 'library(tximport); library(rtracklayer); gtf <- rtracklayer::import(\"raw_data/reference/annotation.gtf\"); tx <- gtf[gtf$type == \"transcript\"]; tx2gene <- unique(data.frame(TXNAME=tx$transcript_id, GENEID=tx$gene_id)); tx2gene$TXNAME <- sub(\"[.].*$\", \"\", tx2gene$TXNAME); quant_dir <- \"results/rna_seq_kallisto/kallisto_quant\"; samples <- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); files <- setNames(file.path(quant_dir, samples, \"abundance.h5\"), samples); txi <- tximport(files, type=\"kallisto\", tx2gene=tx2gene, ignoreTxVersion=TRUE, ignoreAfterBar=TRUE); saveRDS(txi, \"results/rna_seq_kallisto/deseq2/txi.rds\")'",
                 "DESeq2: Rscript -e 'library(DESeq2); txi <- readRDS(\"results/rna_seq_kallisto/deseq2/txi.rds\"); coldata <- read.table(\"sample_conditions.tsv\", header=TRUE, row.names=1, sep=\"\\t\"); coldata$condition <- factor(coldata$condition); dds <- DESeqDataSetFromTximport(txi, colData=coldata[colnames(txi$counts),,drop=FALSE], design=~condition); dds <- DESeq(dds); write.csv(as.data.frame(results(dds)), \"results/rna_seq_kallisto/deseq2/deseq2_results.csv\")'",
                 "MultiQC: multiqc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant -o results/rna_seq_kallisto/qc",
             ],
@@ -2043,7 +2043,7 @@ If you are being asked to generate a title, set "success" to false.
                         "gtf <- rtracklayer::import(\"raw_data/reference/annotation.gtf\"); "
                         "tx <- gtf[gtf$type == \"transcript\"]; "
                         "tx2gene <- unique(data.frame(TXNAME=tx$transcript_id, GENEID=tx$gene_id)); "
-                        "tx2gene$TXNAME <- sub(\"\\\\..*$\", \"\", tx2gene$TXNAME); "
+                        "tx2gene$TXNAME <- sub(\"[.].*$\", \"\", tx2gene$TXNAME); "
                         "quant_dir <- \"results/rna_seq_kallisto/kallisto_quant\"; "
                         "samples <- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); "
                         "files <- setNames(file.path(quant_dir, samples, \"abundance.h5\"), samples); "

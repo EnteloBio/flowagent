@@ -135,11 +135,18 @@ def _build_llm_prompt(
         "valid R, idempotent, and write results to the CSV path given. "
         "Return ONLY the R script — no markdown, no commentary."
     )
+    # Pre-compute strings that contain backslashes so they don't sit inside
+    # f-string expression braces — Python < 3.12 rejects `\t` / `\n` literals
+    # inside f-string expressions with a SyntaxError at parse time.
+    tab = "\t"
+    newline = "\n"
+    intent = user_intent or "Run DESeq2 differential expression on the available kallisto quantification"
+    sample_rows_block = newline.join("  " + tab.join(r) for r in sample_rows)
     user = f"""
 Task: write an R script at an agreed path. It will be executed via `Rscript`.
 
 User intent:
-  {user_intent or "Run DESeq2 differential expression on the available kallisto quantification"}
+  {intent}
 
 Inputs (paths the script must read):
   - tximport RDS: {txi_path}
@@ -152,7 +159,7 @@ Sample sheet header:
   {sample_header}
 
 Sample sheet rows (first {len(sample_rows)}):
-{chr(10).join('  ' + '\t'.join(r) for r in sample_rows)}
+{sample_rows_block}
 
 Example transcript IDs from kallisto abundance.tsv (first column):
   {quant_tx_ids}

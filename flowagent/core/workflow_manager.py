@@ -176,6 +176,31 @@ class WorkflowManager:
             )
             return None
 
+        # Short-circuit: if the failure is a Python SyntaxError inside
+        # imported code, no shell-level edit can fix it. Skip the LLM
+        # round-trip and return a structured rejection — this saves 3 API
+        # calls and stops the LLM from hallucinating non-existent CLI flags.
+        stderr_tail = (step_result.get("stderr") or "") + (step_result.get("stdout") or "")
+        if (
+            "SyntaxError" in stderr_tail
+            and ("f-string" in stderr_tail or "cannot include a backslash" in stderr_tail
+                 or "invalid syntax" in stderr_tail)
+        ):
+            self.logger.error(
+                "Step '%s' failed with a Python SyntaxError in imported code — "
+                "not recoverable via shell edits. Fix the source and re-run.",
+                step.get("name"),
+            )
+            return {
+                "status": "rejected",
+                "recovery_attempt": attempt,
+                "recovery_diagnosis": "Python SyntaxError in imported module — source-code bug, not a shell-level issue.",
+                "rejection_reason": "No shell-level fix can resolve a Python SyntaxError.",
+                "fixed_command": None,
+                "original_command": step.get("command"),
+                "step_name": step.get("name", "unknown"),
+            }
+
         # Build tool-availability context
         executables = self._extract_executables(step.get("command", ""))
         tool_availability = {cmd: shutil.which(cmd) is not None for cmd in executables}
@@ -222,7 +247,20 @@ class WorkflowManager:
             "- Python module errors (ModuleNotFoundError): install via pip in the right env, "
             "or rewrite using a stdlib equivalent.\n"
             "- When rewriting R one-liners, preserve the existing Rscript -e '...' shape and "
-            "all input/output paths from the original command — only change the R logic.\n\n"
+            "all input/output paths from the original command — only change the R logic.\n"
+            "- In R regex within Rscript -e, prefer a character class over backslash escapes: "
+            "use '[.].*$' instead of '\\\\..*$' to match a literal dot. Modern R (4.4+) errors "
+            "on '\\.' as an unrecognised escape at parse time, and JSON payloads lose one "
+            "backslash layer on the wire — character classes sidestep both.\n"
+            "- In the JSON response, the ``fixed_command`` string MUST be valid JSON: every "
+            "backslash must be escaped as \\\\, and every double-quote as \\\". If you're "
+            "unsure about escaping, rewrite the regex with a character class instead.\n"
+            "- CRITICAL: if the error is a bug inside imported source code (Python "
+            "SyntaxError / ImportError from an imported module, NameError in library "
+            "code, R parse error in an installed package, etc.), NO shell-level edit "
+            "can fix it. DO NOT invent CLI flags (--template, --no-fstring, etc.) that "
+            "aren't documented in the original command. Return null as the "
+            "``fixed_command`` with a diagnosis explaining the source-code bug.\n\n"
             "Return ONLY a JSON object with this structure:\n"
             '{"diagnosis": "short explanation", '
             '"fixed_command": "the corrected shell command or null if unrecoverable", '
@@ -524,7 +562,11 @@ class WorkflowManager:
                     recovery_result = await self._attempt_error_recovery(
                         step, step_result, output_dir,
                     )
-                    if recovery_result and recovery_result.get("status") not in ("error", "failed"):
+                    # Positive allowlist — status must explicitly signal success.
+                    # The helper returns status="rejected" for unrecoverable cases,
+                    # which previously slipped through a negative check and got
+                    # logged as "recovered successfully".
+                    if recovery_result and recovery_result.get("status") in ("completed", "success"):
                         self.logger.info(f"Step '{step_name}' recovered successfully")
                         results[-1] = recovery_result  # replace failed result
                     elif step.get("critical", False):
