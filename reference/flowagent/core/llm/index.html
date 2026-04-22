@@ -2475,8 +2475,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">  26</span>
-<span class="normal">  27</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">  27</span>
 <span class="normal">  28</span>
 <span class="normal">  29</span>
 <span class="normal">  30</span>
@@ -4744,7 +4743,63 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2292</span>
 <span class="normal">2293</span>
 <span class="normal">2294</span>
-<span class="normal">2295</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">2295</span>
+<span class="normal">2296</span>
+<span class="normal">2297</span>
+<span class="normal">2298</span>
+<span class="normal">2299</span>
+<span class="normal">2300</span>
+<span class="normal">2301</span>
+<span class="normal">2302</span>
+<span class="normal">2303</span>
+<span class="normal">2304</span>
+<span class="normal">2305</span>
+<span class="normal">2306</span>
+<span class="normal">2307</span>
+<span class="normal">2308</span>
+<span class="normal">2309</span>
+<span class="normal">2310</span>
+<span class="normal">2311</span>
+<span class="normal">2312</span>
+<span class="normal">2313</span>
+<span class="normal">2314</span>
+<span class="normal">2315</span>
+<span class="normal">2316</span>
+<span class="normal">2317</span>
+<span class="normal">2318</span>
+<span class="normal">2319</span>
+<span class="normal">2320</span>
+<span class="normal">2321</span>
+<span class="normal">2322</span>
+<span class="normal">2323</span>
+<span class="normal">2324</span>
+<span class="normal">2325</span>
+<span class="normal">2326</span>
+<span class="normal">2327</span>
+<span class="normal">2328</span>
+<span class="normal">2329</span>
+<span class="normal">2330</span>
+<span class="normal">2331</span>
+<span class="normal">2332</span>
+<span class="normal">2333</span>
+<span class="normal">2334</span>
+<span class="normal">2335</span>
+<span class="normal">2336</span>
+<span class="normal">2337</span>
+<span class="normal">2338</span>
+<span class="normal">2339</span>
+<span class="normal">2340</span>
+<span class="normal">2341</span>
+<span class="normal">2342</span>
+<span class="normal">2343</span>
+<span class="normal">2344</span>
+<span class="normal">2345</span>
+<span class="normal">2346</span>
+<span class="normal">2347</span>
+<span class="normal">2348</span>
+<span class="normal">2349</span>
+<span class="normal">2350</span>
+<span class="normal">2351</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -4810,11 +4865,12 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="s2">&quot;transcript&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;expression&quot;</span><span class="p">,</span>
             <span class="p">],</span>
-            <span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;fastqc&quot;</span><span class="p">,</span> <span class="s2">&quot;kallisto&quot;</span><span class="p">,</span> <span class="s2">&quot;multiqc&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;fastqc&quot;</span><span class="p">,</span> <span class="s2">&quot;kallisto&quot;</span><span class="p">,</span> <span class="s2">&quot;tximport&quot;</span><span class="p">,</span> <span class="s2">&quot;deseq2&quot;</span><span class="p">,</span> <span class="s2">&quot;multiqc&quot;</span><span class="p">],</span>
             <span class="s2">&quot;dir_structure&quot;</span><span class="p">:</span> <span class="p">[</span>
                 <span class="s2">&quot;results/rna_seq_kallisto/fastqc&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;results/rna_seq_kallisto/kallisto_index&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;results/rna_seq_kallisto/kallisto_quant&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;results/rna_seq_kallisto/deseq2&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;results/rna_seq_kallisto/qc&quot;</span><span class="p">,</span>
             <span class="p">],</span>
             <span class="s2">&quot;rules&quot;</span><span class="p">:</span> <span class="p">[</span>
@@ -4822,6 +4878,8 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="s2">&quot;Kallisto index: kallisto index -i results/rna_seq_kallisto/kallisto_index/transcripts.idx reference.fa&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;Kallisto quant paired: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name read1.fastq.gz read2.fastq.gz&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;Kallisto quant single: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name --single -l 200 -s 20 read.fastq.gz&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;tximport: Rscript -e &#39;library(tximport); library(rtracklayer); gtf &lt;- rtracklayer::import(</span><span class="se">\&quot;</span><span class="s2">raw_data/reference/annotation.gtf</span><span class="se">\&quot;</span><span class="s2">); tx &lt;- gtf[gtf$type == </span><span class="se">\&quot;</span><span class="s2">transcript</span><span class="se">\&quot;</span><span class="s2">]; tx2gene &lt;- unique(data.frame(TXNAME=tx$transcript_id, GENEID=tx$gene_id)); tx2gene$TXNAME &lt;- sub(</span><span class="se">\&quot;</span><span class="s2">[.].*$</span><span class="se">\&quot;</span><span class="s2">, </span><span class="se">\&quot;\&quot;</span><span class="s2">, tx2gene$TXNAME); quant_dir &lt;- </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/kallisto_quant</span><span class="se">\&quot;</span><span class="s2">; samples &lt;- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); files &lt;- setNames(file.path(quant_dir, samples, </span><span class="se">\&quot;</span><span class="s2">abundance.h5</span><span class="se">\&quot;</span><span class="s2">), samples); txi &lt;- tximport(files, type=</span><span class="se">\&quot;</span><span class="s2">kallisto</span><span class="se">\&quot;</span><span class="s2">, tx2gene=tx2gene, ignoreTxVersion=TRUE, ignoreAfterBar=TRUE); saveRDS(txi, </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/deseq2/txi.rds</span><span class="se">\&quot;</span><span class="s2">)&#39;&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;DESeq2: Rscript -e &#39;library(DESeq2); txi &lt;- readRDS(</span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/deseq2/txi.rds</span><span class="se">\&quot;</span><span class="s2">); coldata &lt;- read.table(</span><span class="se">\&quot;</span><span class="s2">sample_conditions.tsv</span><span class="se">\&quot;</span><span class="s2">, header=TRUE, row.names=1, sep=</span><span class="se">\&quot;\\</span><span class="s2">t</span><span class="se">\&quot;</span><span class="s2">); coldata$condition &lt;- factor(coldata$condition); dds &lt;- DESeqDataSetFromTximport(txi, colData=coldata[colnames(txi$counts),,drop=FALSE], design=~condition); dds &lt;- DESeq(dds); write.csv(as.data.frame(results(dds)), </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/deseq2/deseq2_results.csv</span><span class="se">\&quot;</span><span class="s2">)&#39;&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;MultiQC: multiqc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant -o results/rna_seq_kallisto/qc&quot;</span><span class="p">,</span>
             <span class="p">],</span>
         <span class="p">},</span>
@@ -6753,10 +6811,62 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span>
                 <span class="p">},</span>
                 <span class="p">{</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;tximport&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
+                        <span class="s2">&quot;mkdir -p results/rna_seq_kallisto/deseq2 &amp;&amp; &quot;</span>
+                        <span class="s2">&quot;Rscript -e &#39;library(tximport); library(rtracklayer); &quot;</span>
+                        <span class="s2">&quot;gtf &lt;- rtracklayer::import(</span><span class="se">\&quot;</span><span class="s2">raw_data/reference/annotation.gtf</span><span class="se">\&quot;</span><span class="s2">); &quot;</span>
+                        <span class="s2">&quot;tx &lt;- gtf[gtf$type == </span><span class="se">\&quot;</span><span class="s2">transcript</span><span class="se">\&quot;</span><span class="s2">]; &quot;</span>
+                        <span class="s2">&quot;tx2gene &lt;- unique(data.frame(TXNAME=tx$transcript_id, GENEID=tx$gene_id)); &quot;</span>
+                        <span class="s2">&quot;tx2gene$TXNAME &lt;- sub(</span><span class="se">\&quot;</span><span class="s2">[.].*$</span><span class="se">\&quot;</span><span class="s2">, </span><span class="se">\&quot;\&quot;</span><span class="s2">, tx2gene$TXNAME); &quot;</span>
+                        <span class="s2">&quot;quant_dir &lt;- </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/kallisto_quant</span><span class="se">\&quot;</span><span class="s2">; &quot;</span>
+                        <span class="s2">&quot;samples &lt;- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); &quot;</span>
+                        <span class="s2">&quot;files &lt;- setNames(file.path(quant_dir, samples, </span><span class="se">\&quot;</span><span class="s2">abundance.h5</span><span class="se">\&quot;</span><span class="s2">), samples); &quot;</span>
+                        <span class="s2">&quot;txi &lt;- tximport(files, type=</span><span class="se">\&quot;</span><span class="s2">kallisto</span><span class="se">\&quot;</span><span class="s2">, tx2gene=tx2gene, ignoreTxVersion=TRUE, ignoreAfterBar=TRUE); &quot;</span>
+                        <span class="s2">&quot;saveRDS(txi, </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/deseq2/txi.rds</span><span class="se">\&quot;</span><span class="s2">); &quot;</span>
+                        <span class="s2">&quot;write.csv(txi$counts, </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/deseq2/gene_counts.csv</span><span class="se">\&quot;</span><span class="s2">)&#39;&quot;</span>
+                    <span class="p">),</span>
+                    <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
+                    <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;kallisto_quant&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="p">([</span><span class="s2">&quot;download_reference&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">genome</span> <span class="k">else</span> <span class="p">[]),</span>
+                    <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span>
+                        <span class="s2">&quot;results/rna_seq_kallisto/deseq2/txi.rds&quot;</span><span class="p">,</span>
+                        <span class="s2">&quot;results/rna_seq_kallisto/deseq2/gene_counts.csv&quot;</span><span class="p">,</span>
+                    <span class="p">],</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Aggregate kallisto transcript abundance to gene level with tximport&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;generate_deseq2_script&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
+                        <span class="s2">&quot;python -m flowagent.utils.generate_deseq2_script &quot;</span>
+                        <span class="s2">&quot;--quant-dir results/rna_seq_kallisto/kallisto_quant &quot;</span>
+                        <span class="s2">&quot;--sample-sheet sample_conditions.tsv &quot;</span>
+                        <span class="s2">&quot;--gtf raw_data/reference/annotation.gtf &quot;</span>
+                        <span class="s2">&quot;--txi results/rna_seq_kallisto/deseq2/txi.rds &quot;</span>
+                        <span class="s2">&quot;--out-csv results/rna_seq_kallisto/deseq2/deseq2_results.csv &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;--prompt </span><span class="si">{</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="s2">&quot;--out scripts/run_deseq2.R&quot;</span>
+                    <span class="p">),</span>
+                    <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
+                    <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;tximport&quot;</span><span class="p">,</span> <span class="s2">&quot;build_sample_sheet&quot;</span><span class="p">],</span>
+                    <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;scripts/run_deseq2.R&quot;</span><span class="p">],</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Generate a bespoke DESeq2 R script tailored to this dataset via the LLM (falls back to deterministic template if generation fails)&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;deseq2&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="s2">&quot;Rscript scripts/run_deseq2.R&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
+                    <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;generate_deseq2_script&quot;</span><span class="p">],</span>
+                    <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;results/rna_seq_kallisto/deseq2/deseq2_results.csv&quot;</span><span class="p">],</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Differential expression with DESeq2 (LLM-generated script at scripts/run_deseq2.R)&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
                     <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;multiqc&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="s2">&quot;multiqc -o results/rna_seq_kallisto/qc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
-                    <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;kallisto_quant&quot;</span><span class="p">],</span>
+                    <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;deseq2&quot;</span><span class="p">],</span>
                     <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;results/rna_seq_kallisto/qc/multiqc_report.html&quot;</span><span class="p">],</span>
                     <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Generate MultiQC report&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span>
@@ -7046,8 +7156,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">33</span>
-<span class="normal">34</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">34</span>
 <span class="normal">35</span>
 <span class="normal">36</span>
 <span class="normal">37</span>
@@ -7093,7 +7202,8 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">77</span>
 <span class="normal">78</span>
 <span class="normal">79</span>
-<span class="normal">80</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">80</span>
+<span class="normal">81</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize LLM interface.&quot;&quot;&quot;</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
@@ -7167,49 +7277,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2222</span>
-<span class="normal">2223</span>
-<span class="normal">2224</span>
-<span class="normal">2225</span>
-<span class="normal">2226</span>
-<span class="normal">2227</span>
-<span class="normal">2228</span>
-<span class="normal">2229</span>
-<span class="normal">2230</span>
-<span class="normal">2231</span>
-<span class="normal">2232</span>
-<span class="normal">2233</span>
-<span class="normal">2234</span>
-<span class="normal">2235</span>
-<span class="normal">2236</span>
-<span class="normal">2237</span>
-<span class="normal">2238</span>
-<span class="normal">2239</span>
-<span class="normal">2240</span>
-<span class="normal">2241</span>
-<span class="normal">2242</span>
-<span class="normal">2243</span>
-<span class="normal">2244</span>
-<span class="normal">2245</span>
-<span class="normal">2246</span>
-<span class="normal">2247</span>
-<span class="normal">2248</span>
-<span class="normal">2249</span>
-<span class="normal">2250</span>
-<span class="normal">2251</span>
-<span class="normal">2252</span>
-<span class="normal">2253</span>
-<span class="normal">2254</span>
-<span class="normal">2255</span>
-<span class="normal">2256</span>
-<span class="normal">2257</span>
-<span class="normal">2258</span>
-<span class="normal">2259</span>
-<span class="normal">2260</span>
-<span class="normal">2261</span>
-<span class="normal">2262</span>
-<span class="normal">2263</span>
-<span class="normal">2264</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2278</span>
+<span class="normal">2279</span>
+<span class="normal">2280</span>
+<span class="normal">2281</span>
+<span class="normal">2282</span>
+<span class="normal">2283</span>
+<span class="normal">2284</span>
+<span class="normal">2285</span>
+<span class="normal">2286</span>
+<span class="normal">2287</span>
+<span class="normal">2288</span>
+<span class="normal">2289</span>
+<span class="normal">2290</span>
+<span class="normal">2291</span>
+<span class="normal">2292</span>
+<span class="normal">2293</span>
+<span class="normal">2294</span>
+<span class="normal">2295</span>
+<span class="normal">2296</span>
+<span class="normal">2297</span>
+<span class="normal">2298</span>
+<span class="normal">2299</span>
+<span class="normal">2300</span>
+<span class="normal">2301</span>
+<span class="normal">2302</span>
+<span class="normal">2303</span>
+<span class="normal">2304</span>
+<span class="normal">2305</span>
+<span class="normal">2306</span>
+<span class="normal">2307</span>
+<span class="normal">2308</span>
+<span class="normal">2309</span>
+<span class="normal">2310</span>
+<span class="normal">2311</span>
+<span class="normal">2312</span>
+<span class="normal">2313</span>
+<span class="normal">2314</span>
+<span class="normal">2315</span>
+<span class="normal">2316</span>
+<span class="normal">2317</span>
+<span class="normal">2318</span>
+<span class="normal">2319</span>
+<span class="normal">2320</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -7278,11 +7388,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1435</span>
-<span class="normal">1436</span>
-<span class="normal">1437</span>
-<span class="normal">1438</span>
-<span class="normal">1439</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1439</span>
 <span class="normal">1440</span>
 <span class="normal">1441</span>
 <span class="normal">1442</span>
@@ -7410,7 +7516,11 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1564</span>
 <span class="normal">1565</span>
 <span class="normal">1566</span>
-<span class="normal">1567</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">1567</span>
+<span class="normal">1568</span>
+<span class="normal">1569</span>
+<span class="normal">1570</span>
+<span class="normal">1571</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to determine the action and extract options.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Extract file patterns and relationships using LLM</span>
@@ -7569,58 +7679,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2169</span>
-<span class="normal">2170</span>
-<span class="normal">2171</span>
-<span class="normal">2172</span>
-<span class="normal">2173</span>
-<span class="normal">2174</span>
-<span class="normal">2175</span>
-<span class="normal">2176</span>
-<span class="normal">2177</span>
-<span class="normal">2178</span>
-<span class="normal">2179</span>
-<span class="normal">2180</span>
-<span class="normal">2181</span>
-<span class="normal">2182</span>
-<span class="normal">2183</span>
-<span class="normal">2184</span>
-<span class="normal">2185</span>
-<span class="normal">2186</span>
-<span class="normal">2187</span>
-<span class="normal">2188</span>
-<span class="normal">2189</span>
-<span class="normal">2190</span>
-<span class="normal">2191</span>
-<span class="normal">2192</span>
-<span class="normal">2193</span>
-<span class="normal">2194</span>
-<span class="normal">2195</span>
-<span class="normal">2196</span>
-<span class="normal">2197</span>
-<span class="normal">2198</span>
-<span class="normal">2199</span>
-<span class="normal">2200</span>
-<span class="normal">2201</span>
-<span class="normal">2202</span>
-<span class="normal">2203</span>
-<span class="normal">2204</span>
-<span class="normal">2205</span>
-<span class="normal">2206</span>
-<span class="normal">2207</span>
-<span class="normal">2208</span>
-<span class="normal">2209</span>
-<span class="normal">2210</span>
-<span class="normal">2211</span>
-<span class="normal">2212</span>
-<span class="normal">2213</span>
-<span class="normal">2214</span>
-<span class="normal">2215</span>
-<span class="normal">2216</span>
-<span class="normal">2217</span>
-<span class="normal">2218</span>
-<span class="normal">2219</span>
-<span class="normal">2220</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2225</span>
+<span class="normal">2226</span>
+<span class="normal">2227</span>
+<span class="normal">2228</span>
+<span class="normal">2229</span>
+<span class="normal">2230</span>
+<span class="normal">2231</span>
+<span class="normal">2232</span>
+<span class="normal">2233</span>
+<span class="normal">2234</span>
+<span class="normal">2235</span>
+<span class="normal">2236</span>
+<span class="normal">2237</span>
+<span class="normal">2238</span>
+<span class="normal">2239</span>
+<span class="normal">2240</span>
+<span class="normal">2241</span>
+<span class="normal">2242</span>
+<span class="normal">2243</span>
+<span class="normal">2244</span>
+<span class="normal">2245</span>
+<span class="normal">2246</span>
+<span class="normal">2247</span>
+<span class="normal">2248</span>
+<span class="normal">2249</span>
+<span class="normal">2250</span>
+<span class="normal">2251</span>
+<span class="normal">2252</span>
+<span class="normal">2253</span>
+<span class="normal">2254</span>
+<span class="normal">2255</span>
+<span class="normal">2256</span>
+<span class="normal">2257</span>
+<span class="normal">2258</span>
+<span class="normal">2259</span>
+<span class="normal">2260</span>
+<span class="normal">2261</span>
+<span class="normal">2262</span>
+<span class="normal">2263</span>
+<span class="normal">2264</span>
+<span class="normal">2265</span>
+<span class="normal">2266</span>
+<span class="normal">2267</span>
+<span class="normal">2268</span>
+<span class="normal">2269</span>
+<span class="normal">2270</span>
+<span class="normal">2271</span>
+<span class="normal">2272</span>
+<span class="normal">2273</span>
+<span class="normal">2274</span>
+<span class="normal">2275</span>
+<span class="normal">2276</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
@@ -7698,11 +7808,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1286</span>
-<span class="normal">1287</span>
-<span class="normal">1288</span>
-<span class="normal">1289</span>
-<span class="normal">1290</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1290</span>
 <span class="normal">1291</span>
 <span class="normal">1292</span>
 <span class="normal">1293</span>
@@ -7729,7 +7835,11 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1314</span>
 <span class="normal">1315</span>
 <span class="normal">1316</span>
-<span class="normal">1317</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_analysis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal">1317</span>
+<span class="normal">1318</span>
+<span class="normal">1319</span>
+<span class="normal">1320</span>
+<span class="normal">1321</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_analysis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate analysis of workflow outputs.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Prepare the prompt for analysis</span>
@@ -7787,11 +7897,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1261</span>
-<span class="normal">1262</span>
-<span class="normal">1263</span>
-<span class="normal">1264</span>
-<span class="normal">1265</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1265</span>
 <span class="normal">1266</span>
 <span class="normal">1267</span>
 <span class="normal">1268</span>
@@ -7810,7 +7916,11 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1281</span>
 <span class="normal">1282</span>
 <span class="normal">1283</span>
-<span class="normal">1284</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal">1284</span>
+<span class="normal">1285</span>
+<span class="normal">1286</span>
+<span class="normal">1287</span>
+<span class="normal">1288</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a command for a workflow step.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="c1"># If command is already provided, use it</span>
@@ -7865,11 +7975,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 956</span>
-<span class="normal"> 957</span>
-<span class="normal"> 958</span>
-<span class="normal"> 959</span>
-<span class="normal"> 960</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 960</span>
 <span class="normal"> 961</span>
 <span class="normal"> 962</span>
 <span class="normal"> 963</span>
@@ -8168,7 +8274,11 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1256</span>
 <span class="normal">1257</span>
 <span class="normal">1258</span>
-<span class="normal">1259</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_workflow_plan</span><span class="p">(</span>
+<span class="normal">1259</span>
+<span class="normal">1260</span>
+<span class="normal">1261</span>
+<span class="normal">1262</span>
+<span class="normal">1263</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_workflow_plan</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PipelineContext</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a workflow plan from a prompt.</span>
