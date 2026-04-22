@@ -89,11 +89,12 @@ class LLMInterface:
                 "transcript",
                 "expression",
             ],
-            "tools": ["fastqc", "kallisto", "multiqc"],
+            "tools": ["fastqc", "kallisto", "tximport", "deseq2", "multiqc"],
             "dir_structure": [
                 "results/rna_seq_kallisto/fastqc",
                 "results/rna_seq_kallisto/kallisto_index",
                 "results/rna_seq_kallisto/kallisto_quant",
+                "results/rna_seq_kallisto/deseq2",
                 "results/rna_seq_kallisto/qc",
             ],
             "rules": [
@@ -101,6 +102,8 @@ class LLMInterface:
                 "Kallisto index: kallisto index -i results/rna_seq_kallisto/kallisto_index/transcripts.idx reference.fa",
                 "Kallisto quant paired: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name read1.fastq.gz read2.fastq.gz",
                 "Kallisto quant single: kallisto quant -i results/rna_seq_kallisto/kallisto_index/transcripts.idx -o results/rna_seq_kallisto/kallisto_quant/sample_name --single -l 200 -s 20 read.fastq.gz",
+                "tximport: Rscript -e 'library(tximport); library(rtracklayer); gtf <- rtracklayer::import(\"raw_data/reference/annotation.gtf\"); tx <- gtf[gtf$type == \"transcript\"]; tx2gene <- unique(data.frame(TXNAME=tx$transcript_id, GENEID=tx$gene_id)); quant_dir <- \"results/rna_seq_kallisto/kallisto_quant\"; samples <- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); files <- setNames(file.path(quant_dir, samples, \"abundance.h5\"), samples); txi <- tximport(files, type=\"kallisto\", tx2gene=tx2gene); saveRDS(txi, \"results/rna_seq_kallisto/deseq2/txi.rds\")'",
+                "DESeq2: Rscript -e 'library(DESeq2); txi <- readRDS(\"results/rna_seq_kallisto/deseq2/txi.rds\"); coldata <- read.table(\"sample_conditions.tsv\", header=TRUE, row.names=1, sep=\"\\t\"); coldata$condition <- factor(coldata$condition); dds <- DESeqDataSetFromTximport(txi, colData=coldata[colnames(txi$counts),,drop=FALSE], design=~condition); dds <- DESeq(dds); write.csv(as.data.frame(results(dds)), \"results/rna_seq_kallisto/deseq2/deseq2_results.csv\")'",
                 "MultiQC: multiqc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant -o results/rna_seq_kallisto/qc",
             ],
         },
@@ -2032,10 +2035,55 @@ If you are being asked to generate a title, set "success" to false.
                     "profile_name": "multi_thread"
                 },
                 {
+                    "name": "tximport",
+                    "command": (
+                        "mkdir -p results/rna_seq_kallisto/deseq2 && "
+                        "Rscript -e 'library(tximport); library(rtracklayer); "
+                        "gtf <- rtracklayer::import(\"raw_data/reference/annotation.gtf\"); "
+                        "tx <- gtf[gtf$type == \"transcript\"]; "
+                        "tx2gene <- unique(data.frame(TXNAME=tx$transcript_id, GENEID=tx$gene_id)); "
+                        "quant_dir <- \"results/rna_seq_kallisto/kallisto_quant\"; "
+                        "samples <- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); "
+                        "files <- setNames(file.path(quant_dir, samples, \"abundance.h5\"), samples); "
+                        "txi <- tximport(files, type=\"kallisto\", tx2gene=tx2gene); "
+                        "saveRDS(txi, \"results/rna_seq_kallisto/deseq2/txi.rds\"); "
+                        "write.csv(txi$counts, \"results/rna_seq_kallisto/deseq2/gene_counts.csv\")'"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["kallisto_quant"] + (["download_reference"] if genome else []),
+                    "outputs": [
+                        "results/rna_seq_kallisto/deseq2/txi.rds",
+                        "results/rna_seq_kallisto/deseq2/gene_counts.csv",
+                    ],
+                    "description": "Aggregate kallisto transcript abundance to gene level with tximport",
+                    "profile_name": "default"
+                },
+                {
+                    "name": "deseq2",
+                    "command": (
+                        "Rscript -e 'library(DESeq2); "
+                        "txi <- readRDS(\"results/rna_seq_kallisto/deseq2/txi.rds\"); "
+                        "coldata <- read.table(\"sample_conditions.tsv\", header=TRUE, row.names=1, sep=\"\\t\"); "
+                        "coldata$condition <- factor(coldata$condition); "
+                        "keep <- intersect(colnames(txi$counts), rownames(coldata)); "
+                        "txi$counts <- txi$counts[, keep]; "
+                        "txi$abundance <- txi$abundance[, keep]; "
+                        "txi$length <- txi$length[, keep]; "
+                        "dds <- DESeqDataSetFromTximport(txi, colData=coldata[keep,,drop=FALSE], design=~condition); "
+                        "dds <- DESeq(dds); "
+                        "write.csv(as.data.frame(results(dds)), \"results/rna_seq_kallisto/deseq2/deseq2_results.csv\")'"
+                    ),
+                    "parameters": {},
+                    "dependencies": ["tximport", "build_sample_sheet"],
+                    "outputs": ["results/rna_seq_kallisto/deseq2/deseq2_results.csv"],
+                    "description": "Differential expression with DESeq2 from kallisto tximport output (sample_conditions.tsv built by build_sample_sheet step)",
+                    "profile_name": "default"
+                },
+                {
                     "name": "multiqc",
                     "command": "multiqc -o results/rna_seq_kallisto/qc results/rna_seq_kallisto/fastqc results/rna_seq_kallisto/kallisto_quant",
                     "parameters": {},
-                    "dependencies": ["kallisto_quant"],
+                    "dependencies": ["deseq2"],
                     "outputs": ["results/rna_seq_kallisto/qc/multiqc_report.html"],
                     "description": "Generate MultiQC report",
                     "profile_name": "minimal"
