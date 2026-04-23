@@ -11,9 +11,15 @@
 #       base_url: http://localhost:11434
 #       pricing: {input_per_1k: 0.0, output_per_1k: 0.0}
 #
-# Models are grouped into "tiers" so a manuscript figure can colour-code by
-# generation. The ``tier`` field is purely a label — the harness ignores it
-# but the figure code groups by it.
+# Tier semantics (matches provider docs as of April 2026):
+#   current    — actively supported, flagship or mainline.
+#   preview    — published preview release (not GA; may change).
+#   legacy     — older generation, still callable, superseded by newer models.
+#   deprecated — scheduled for retirement; intentionally excluded from this list.
+#
+# Fields: id, provider, env_var, family, tier, context_k, pricing, [notes].
+# The harness reads provider/env_var/pricing; the other fields are metadata
+# used by the plotting code and manuscript tables.
 
 defaults:
   timeout_seconds: 300
@@ -21,140 +27,310 @@ defaults:
 
 models:
 
-  # ── OpenAI ────────────────────────────────────────────────────
-  - id: gpt-3.5-turbo                  # Released 2022; flagship of its day
+  # ═════════════════════════════════════════════════════════════
+  #  OpenAI
+  # ═════════════════════════════════════════════════════════════
+
+  # ── GPT-5.4 family (flagship, released March 2026) ─────────
+  - id: gpt-5.4
     provider: openai
     env_var: OPENAI_API_KEY
+    family: gpt-5.4
+    tier: current
+    context_k: 270
+    pricing: {input_per_1k: 0.0025, output_per_1k: 0.0150}
+
+  - id: gpt-5.4-mini
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-5.4
+    tier: current
+    context_k: 270
+    pricing: {input_per_1k: 0.00075, output_per_1k: 0.00450}
+
+  - id: gpt-5.4-nano
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-5.4
+    tier: current
+    context_k: 270
+    pricing: {input_per_1k: 0.00020, output_per_1k: 0.00125}
+
+  - id: gpt-5.4-pro
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-5.4
+    tier: current
+    context_k: 270
+    pricing: {input_per_1k: 0.0300, output_per_1k: 0.1800}
+
+  # ── GPT-4.1 family (long-context, released April 2025) ─────
+  - id: gpt-4.1
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-4.1
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00200, output_per_1k: 0.00800}
+
+  - id: gpt-4.1-mini
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-4.1
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00040, output_per_1k: 0.00160}
+
+  - id: gpt-4.1-nano
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-4.1
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
+
+  # ── o-series reasoning models ──────────────────────────────
+  - id: o3
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: o-series
+    tier: current
+    context_k: 200
+    pricing: {input_per_1k: 0.00200, output_per_1k: 0.00800}
+
+  - id: o3-pro
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: o-series
+    tier: current
+    context_k: 200
+    pricing: {input_per_1k: 0.02000, output_per_1k: 0.08000}
+
+  - id: o4-mini
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: o-series
+    tier: current
+    context_k: 200
+    pricing: {input_per_1k: 0.00110, output_per_1k: 0.00440}
+
+  - id: o3-mini
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: o-series
+    tier: current
+    context_k: 200
+    pricing: {input_per_1k: 0.00050, output_per_1k: 0.00200}
+
+  - id: o1
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: o-series
     tier: legacy
-    pricing: {input_per_1k: 0.0005, output_per_1k: 0.0015}
+    context_k: 200
+    pricing: {input_per_1k: 0.01500, output_per_1k: 0.06000}
 
-  - id: gpt-4                          # Released 2023
+  - id: o1-pro
     provider: openai
     env_var: OPENAI_API_KEY
+    family: o-series
     tier: legacy
-    pricing: {input_per_1k: 0.03, output_per_1k: 0.06}
+    context_k: 200
+    pricing: {input_per_1k: 0.15000, output_per_1k: 0.60000}
 
-  - id: gpt-4-turbo                    # 2023 Nov turbo update
+  # ── GPT-4o (legacy, still callable) ────────────────────────
+  - id: gpt-4o
     provider: openai
     env_var: OPENAI_API_KEY
-    tier: mid
-    pricing: {input_per_1k: 0.01, output_per_1k: 0.03}
-
-  - id: gpt-4o-mini                    # 2024 cheap option
-    provider: openai
-    env_var: OPENAI_API_KEY
-    tier: mid
-    pricing: {input_per_1k: 0.00015, output_per_1k: 0.0006}
-
-  - id: gpt-4o                         # 2024 flagship
-    provider: openai
-    env_var: OPENAI_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.0025, output_per_1k: 0.01}
-
-  - id: gpt-4.1                        # 2025 flagship
-    provider: openai
-    env_var: OPENAI_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.002, output_per_1k: 0.008}
-
-  - id: gpt-5.4                        # 2026 frontier ($2.50/$15 per MTok)
-    provider: openai
-    env_var: OPENAI_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.0025, output_per_1k: 0.015}
-
-  - id: gpt-5.4-mini                   # 2026 mini ($0.75/$4.50 per MTok)
-    provider: openai
-    env_var: OPENAI_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.00075, output_per_1k: 0.0045}
-
-  - id: gpt-5.4-nano                   # 2026 nano ($0.20/$1.25 per MTok)
-    provider: openai
-    env_var: OPENAI_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.0002, output_per_1k: 0.00125}
-
-  # ── Anthropic ─────────────────────────────────────────────────
-  #
-  # The claude-3-* family (haiku-20240307, sonnet-20240229, 3-5-haiku,
-  # 3-5-sonnet) was retired from the Anthropic API in early 2026 —
-  # calls against those snapshot IDs now return 404. Entries below
-  # mirror the live model list returned by ``GET /v1/models`` as of
-  # April 2026. Pricing is Anthropic's published rate per MTok as of
-  # this update (verify at https://www.anthropic.com/pricing before a
-  # manuscript submission; rates have shifted before).
-
-  - id: claude-opus-4-20250514         # Opus 4 original ($15/$75 per MTok)
-    provider: anthropic
-    env_var: ANTHROPIC_API_KEY
+    family: gpt-4o
     tier: legacy
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    context_k: 128
+    pricing: {input_per_1k: 0.00250, output_per_1k: 0.01000}
 
-  - id: claude-opus-4-1-20250805       # Opus 4.1 ($15/$75 per MTok)
-    provider: anthropic
-    env_var: ANTHROPIC_API_KEY
+  - id: gpt-4o-mini
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-4o
     tier: legacy
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    context_k: 128
+    pricing: {input_per_1k: 0.00015, output_per_1k: 0.00060}
 
-  - id: claude-haiku-4-5-20251001      # Haiku 4.5 — cheap current-gen ($1/$5 per MTok)
+  # ── GPT-4 Turbo + GPT-3.5 (legacy) ─────────────────────────
+  - id: gpt-4-turbo
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-4
+    tier: legacy
+    context_k: 128
+    pricing: {input_per_1k: 0.01000, output_per_1k: 0.03000}
+
+  - id: gpt-3.5-turbo
+    provider: openai
+    env_var: OPENAI_API_KEY
+    family: gpt-3.5
+    tier: legacy
+    context_k: 16
+    pricing: {input_per_1k: 0.00050, output_per_1k: 0.00150}
+
+  # ═════════════════════════════════════════════════════════════
+  #  Anthropic
+  # ═════════════════════════════════════════════════════════════
+
+  # ── Claude Opus 4.x ────────────────────────────────────────
+  - id: claude-opus-4-7
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    tier: mid
-    pricing: {input_per_1k: 0.001, output_per_1k: 0.005}
+    family: claude-opus-4
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00500, output_per_1k: 0.02500}
 
-  - id: claude-sonnet-4-20250514       # Sonnet 4 baseline ($3/$15 per MTok)
+  - id: claude-opus-4-6
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    tier: mid
-    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
+    family: claude-opus-4
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00500, output_per_1k: 0.02500}
 
-  - id: claude-sonnet-4-5-20250929     # Sonnet 4.5 ($3/$15 per MTok)
+  - id: claude-opus-4-5
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
+    family: claude-opus-4
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00500, output_per_1k: 0.02500}
 
-  - id: claude-sonnet-4-6              # Sonnet 4.6 ($3/$15 per MTok)
+  - id: claude-opus-4-1
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
+    family: claude-opus-4
+    tier: legacy
+    context_k: 200
+    pricing: {input_per_1k: 0.01500, output_per_1k: 0.07500}
 
-  - id: claude-opus-4-5-20251101       # Opus 4.5 ($15/$75 per MTok)
+  - id: claude-opus-4
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    family: claude-opus-4
+    tier: legacy
+    context_k: 200
+    pricing: {input_per_1k: 0.01500, output_per_1k: 0.07500}
 
-  - id: claude-opus-4-6                # Opus 4.6 — thinking model; temperature arg unsupported
+  # ── Claude Sonnet 4.x ──────────────────────────────────────
+  - id: claude-sonnet-4-6
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    family: claude-sonnet-4
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00300, output_per_1k: 0.01500}
 
-  - id: claude-opus-4-7                # Opus 4.7 — thinking model; temperature arg unsupported
+  - id: claude-sonnet-4-5
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.015, output_per_1k: 0.075}
+    family: claude-sonnet-4
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00300, output_per_1k: 0.01500}
 
-  # ── Google ────────────────────────────────────────────────────
-  - id: gemini-1.5-flash               # 2024 cheap legacy
+  - id: claude-sonnet-4
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    family: claude-sonnet-4
+    tier: legacy
+    context_k: 200
+    pricing: {input_per_1k: 0.00300, output_per_1k: 0.01500}
+
+  # ── Claude Haiku 4.x / 3.5 ─────────────────────────────────
+  - id: claude-haiku-4-5
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    family: claude-haiku-4
+    tier: current
+    context_k: 200
+    pricing: {input_per_1k: 0.00100, output_per_1k: 0.00500}
+
+  - id: claude-haiku-3-5
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    family: claude-haiku-3
+    tier: legacy
+    context_k: 200
+    pricing: {input_per_1k: 0.00080, output_per_1k: 0.00400}
+
+  # ═════════════════════════════════════════════════════════════
+  #  Google Gemini
+  # ═════════════════════════════════════════════════════════════
+  # Pro models have tiered pricing: standard for ≤200K tokens,
+  # 2× input for >200K tokens. Flash models are flat-rate.
+
+  # ── Gemini 3.x (latest) ────────────────────────────────────
+  - id: gemini-3.1-pro
     provider: google
     env_var: GOOGLE_API_KEY
+    family: gemini-3
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00200, output_per_1k: 0.01200}
+    notes: "2x input rate for prompts >200K tokens"
+
+  - id: gemini-3.1-flash-lite-preview
+    provider: google
+    env_var: GOOGLE_API_KEY
+    family: gemini-3
+    tier: preview
+    context_k: 1000
+    pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
+
+  - id: gemini-3-flash
+    provider: google
+    env_var: GOOGLE_API_KEY
+    family: gemini-3
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00050, output_per_1k: 0.00300}
+
+  # ── Gemini 2.5 (stable production) ─────────────────────────
+  - id: gemini-2.5-pro
+    provider: google
+    env_var: GOOGLE_API_KEY
+    family: gemini-2.5
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00125, output_per_1k: 0.01000}
+    notes: "2x input rate for prompts >200K tokens"
+
+  - id: gemini-2.5-flash
+    provider: google
+    env_var: GOOGLE_API_KEY
+    family: gemini-2.5
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00030, output_per_1k: 0.00250}
+
+  - id: gemini-2.5-flash-lite
+    provider: google
+    env_var: GOOGLE_API_KEY
+    family: gemini-2.5
+    tier: current
+    context_k: 1000
+    pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
+
+  # ── Gemini 1.5 (legacy, still callable) ────────────────────
+  - id: gemini-1.5-pro
+    provider: google
+    env_var: GOOGLE_API_KEY
+    family: gemini-1.5
     tier: legacy
-    pricing: {input_per_1k: 0.000075, output_per_1k: 0.0003}
+    context_k: 2000
+    pricing: {input_per_1k: 0.00125, output_per_1k: 0.00500}
+    notes: "3.5x pricing above 128K tokens"
 
-  - id: gemini-1.5-pro                 # 2024 mid
+  - id: gemini-1.5-flash
     provider: google
     env_var: GOOGLE_API_KEY
-    tier: mid
-    pricing: {input_per_1k: 0.00125, output_per_1k: 0.005}
-
-  - id: gemini-2.5-flash               # 2025 frontier ($0.30/$2.50 per MTok)
-    provider: google
-    env_var: GOOGLE_API_KEY
-    tier: frontier
-    pricing: {input_per_1k: 0.0003, output_per_1k: 0.0025}
+    family: gemini-1.5
+    tier: legacy
+    context_k: 1000
+    pricing: {input_per_1k: 0.000075, output_per_1k: 0.00030}

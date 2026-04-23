@@ -101,7 +101,16 @@ _PROVIDER_COLOURS = {
     "other":     "#6b7280",  # slate
 }
 
-_TIER_ORDER = {"legacy": 0, "mid": 1, "frontier": 2}
+# Tier ordering for x-axis layout. Keeps backwards compatibility with the
+# old three-tier scheme (legacy/mid/frontier) while also accepting the
+# current models.yaml vocabulary (legacy/preview/current).
+_TIER_ORDER = {
+    "legacy": 0,
+    "mid": 1,
+    "preview": 1,
+    "frontier": 2,
+    "current": 2,
+}
 
 # Taxonomy palette — Okabe-Ito-derived. Green = safe refusal with
 # correct diagnosis; amber = refusal with wrong diagnosis (coincidentally
@@ -158,25 +167,53 @@ def _provider_from_model(model: str) -> str:
 def _short_name(model: str) -> str:
     """Shorten model names for axis labels."""
     replacements = [
+        # ── Anthropic (current) ────────────────────────────
+        ("claude-opus-4-7",            "Opus 4.7"),
+        ("claude-opus-4-6",            "Opus 4.6"),
+        ("claude-opus-4-5",            "Opus 4.5"),
+        ("claude-opus-4-1",            "Opus 4.1"),
+        ("claude-opus-4",              "Opus 4"),
+        ("claude-sonnet-4-6",          "Sonnet 4.6"),
+        ("claude-sonnet-4-5",          "Sonnet 4.5"),
+        ("claude-sonnet-4",            "Sonnet 4"),
+        ("claude-haiku-4-5",           "Haiku 4.5"),
+        ("claude-haiku-3-5",           "Haiku 3.5"),
+        # ── Anthropic (legacy, dated snapshot IDs) ─────────
         ("claude-3-5-haiku-20241022",  "Haiku 3.5"),
         ("claude-3-5-sonnet-20241022", "Sonnet 3.5"),
         ("claude-3-haiku-20240307",    "Haiku 3"),
         ("claude-3-sonnet-20240229",   "Sonnet 3"),
         ("claude-sonnet-4-20250514",   "Sonnet 4"),
-        ("claude-opus-4-5",            "Opus 4.5"),
-        ("claude-opus-4-6",            "Opus 4.6"),
-        ("claude-opus-4-7",            "Opus 4.7"),
+        # ── Google ─────────────────────────────────────────
+        ("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash-Lite"),
+        ("gemini-3.1-pro",             "Gemini 3.1 Pro"),
+        ("gemini-3-flash",             "Gemini 3 Flash"),
+        ("gemini-2.5-flash-lite",      "Gemini 2.5 Flash-Lite"),
+        ("gemini-2.5-flash",           "Gemini 2.5 Flash"),
+        ("gemini-2.5-pro",             "Gemini 2.5 Pro"),
         ("gemini-1.5-flash",           "Gemini 1.5 Flash"),
         ("gemini-1.5-pro",             "Gemini 1.5 Pro"),
-        ("gemini-2.5-flash",           "Gemini 2.5 Flash"),
-        ("gpt-3.5-turbo",              "GPT-3.5"),
-        ("gpt-4-turbo",                "GPT-4 Turbo"),
-        ("gpt-4o-mini",                "GPT-4o mini"),
-        ("gpt-4o",                     "GPT-4o"),
-        ("gpt-4.1",                    "GPT-4.1"),
+        # ── OpenAI (current — GPT-5.4) ─────────────────────
         ("gpt-5.4-nano",               "GPT-5.4 nano"),
         ("gpt-5.4-mini",               "GPT-5.4 mini"),
+        ("gpt-5.4-pro",                "GPT-5.4 Pro"),
         ("gpt-5.4",                    "GPT-5.4"),
+        # ── OpenAI (current — GPT-4.1) ─────────────────────
+        ("gpt-4.1-nano",               "GPT-4.1 nano"),
+        ("gpt-4.1-mini",               "GPT-4.1 mini"),
+        ("gpt-4.1",                    "GPT-4.1"),
+        # ── OpenAI (reasoning) ─────────────────────────────
+        ("o3-pro",                     "o3-pro"),
+        ("o3-mini",                    "o3-mini"),
+        ("o3",                         "o3"),
+        ("o4-mini",                    "o4-mini"),
+        ("o1-pro",                     "o1-pro"),
+        ("o1",                         "o1"),
+        # ── OpenAI (legacy) ────────────────────────────────
+        ("gpt-4o-mini",                "GPT-4o mini"),
+        ("gpt-4o",                     "GPT-4o"),
+        ("gpt-4-turbo",                "GPT-4 Turbo"),
+        ("gpt-3.5-turbo",              "GPT-3.5"),
         ("gpt-4",                      "GPT-4"),
     ]
     for long, short in replacements:
@@ -189,14 +226,32 @@ def _tier_of(model: str) -> str:
     """Best-effort inference of which tier a model belongs to, for ordering.
 
     Used only when the ``tier`` column is absent from the metrics CSV.
+    Returns one of: ``legacy`` | ``mid`` | ``frontier`` — these are the
+    plotting buckets, which map to ``_TIER_ORDER``. Pre-current-gen
+    snapshots (2024 and earlier) are ``legacy``; mid-generation bridges
+    (gpt-4o, Sonnet 3.5, Gemini 2.0/1.5 Pro, etc.) are ``mid``; the
+    2026 flagships (GPT-5.4 family, Claude 4.5+/Sonnet 4.5+/Haiku 4.5,
+    Gemini 2.5+/3.x, o3/o4 reasoning) are ``frontier``.
     """
     m = model.lower()
-    if any(k in m for k in ("3.5-turbo", "gpt-4\b", "claude-3-haiku",
-                             "claude-3-sonnet-2024", "gemini-1.5-flash")):
+    # Legacy — pre-current-gen or explicitly superseded.
+    legacy_markers = (
+        "gpt-3.5-turbo", "gpt-4-turbo",
+        "claude-3-haiku", "claude-3-sonnet-2024",
+        "gemini-1.5-flash", "gemini-1.5-pro",
+    )
+    if any(k in m for k in legacy_markers):
         return "legacy"
-    if any(k in m for k in ("3-5-", "4-turbo", "4o-mini",
-                             "gemini-1.5-pro", "3-5-haiku", "3-5-sonnet")):
+    # Mid — bridging-generation models.
+    mid_markers = (
+        "claude-3-5-", "claude-haiku-3-5",
+        "gpt-4o", "gpt-4o-mini",
+        "o1", "o1-pro",
+        "gemini-2.0-", "claude-sonnet-4-20250514", "claude-opus-4-20250514",
+    )
+    if any(k in m for k in mid_markers):
         return "mid"
+    # Frontier — current flagships.
     return "frontier"
 
 
