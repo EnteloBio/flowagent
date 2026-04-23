@@ -75,11 +75,43 @@ def parse_runinfo(path: str) -> Dict[str, List[str]]:
 
 
 def match_label(sample: Dict[str, str], labels: List[str]) -> str:
-    """Return the first label whose whole-word appears in title/characteristics."""
-    haystack = f"{sample.get('title', '')} {sample.get('characteristics', '')}".lower()
+    """Return the first label that is a case-insensitive prefix of a token
+    in the sample's title or characteristics.
+
+    A ``token`` is an ``\\w+`` run — alphanumerics plus underscore. Prefix
+    matching is deliberate so short labels like ``Dex`` match treatments
+    like ``Dexamethasone`` (the standard GEO pattern of abbreviating a
+    drug name in the sample ID while spelling it out in ``treatment:``).
+
+    Labels that contain a non-word character (typically a hyphen, e.g.
+    ``Dex-treated`` extracted from a prompt like ``between Dex-treated
+    and untreated``) are also tried by their first ``\\w+`` sub-token.
+    That way descriptor suffixes like ``-treated`` / ``-stimulated`` /
+    ``-group`` don't have to literally appear in the SOFT characteristics
+    to match — the core drug/condition name suffices.
+
+    Combo treatments like ``Albuterol_Dex`` are a single token, and ``Dex``
+    is *not* a prefix of ``Albuterol_Dex``, so short labels don't
+    accidentally capture combos — the user would have to supply
+    ``Albuterol_Dex`` (or similar) explicitly.
+
+    Labels are checked in the order the user provided them, so put the
+    more specific label first when there's potential overlap.
+    """
+    haystack = f"{sample.get('title', '')} {sample.get('characteristics', '')}"
+    tokens = re.findall(r"\w+", haystack)
     for label in labels:
-        if re.search(rf"\b{re.escape(label.lower())}\b", haystack):
-            return label
+        candidates = [label]
+        first_sub = next(iter(re.findall(r"\w+", label)), "")
+        if first_sub and first_sub != label:
+            candidates.append(first_sub)
+        for cand in candidates:
+            lab = cand.lower()
+            if not lab:
+                continue
+            for tok in tokens:
+                if tok.lower().startswith(lab):
+                    return label
     return ""
 
 
@@ -127,35 +159,57 @@ def main(argv: List[str] | None = None) -> int:
         print(f"ERROR: no samples parsed from {args.soft}", file=sys.stderr)
         return 1
 
-    all_matched = bool(labels) and not unmatched_gsms
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        if all_matched:
-            f.write("sample_id\tcondition\n")
-            for r in rows:
-                f.write(f"{r['sample_id']}\t{r['condition']}\n")
-        else:
-            f.write("sample_id\ttitle\tcharacteristics\tcondition\n")
-            for r in rows:
-                f.write(
-                    f"{r['sample_id']}\t{r['title']}\t"
-                    f"{r['characteristics']}\t{r['condition']}\n"
-                )
 
+    if labels:
+        # Labels given → write a DE-ready 2-column TSV with ONLY the matched
+        # rows. Unmatched samples are out-of-scope for this comparison and
+        # would otherwise contaminate downstream DESeq2 (empty ``condition``
+        # becomes a spurious factor level).
+        matched_rows = [r for r in rows if r["condition"]]
+        if not matched_rows:
+            print(
+                f"ERROR: no samples matched any of the labels {labels!r}. "
+                f"Check label spelling against {args.soft}.",
+                file=sys.stderr,
+            )
+            return 1
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("sample_id\tcondition\n")
+            for r in matched_rows:
+                f.write(f"{r['sample_id']}\t{r['condition']}\n")
+
+        # Per-label tally for quick sanity check.
+        from collections import Counter
+        counts = Counter(r["condition"] for r in matched_rows)
+        tally = ", ".join(f"{c} {lab}" for lab, c in counts.most_common())
+        print(f"Wrote {len(matched_rows)} rows to {out_path} ({tally})")
+        if unmatched_gsms:
+            skipped = len(set(unmatched_gsms))
+            print(
+                f"Excluded {skipped} out-of-scope sample(s) not matching "
+                f"any of {labels!r} (Albuterol combos, etc).",
+                file=sys.stderr,
+            )
+        return 0
+
+    # No labels → write the 4-column template so the user can fill in
+    # conditions by hand. Keep every row so they can see what's available.
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("sample_id\ttitle\tcharacteristics\tcondition\n")
+        for r in rows:
+            f.write(
+                f"{r['sample_id']}\t{r['title']}\t"
+                f"{r['characteristics']}\t{r['condition']}\n"
+            )
     print(f"Wrote {len(rows)} rows to {out_path}")
-    if unmatched_gsms:
-        print(
-            f"WARNING: {len(set(unmatched_gsms))} sample(s) had no condition matched; "
-            f"edit the 'condition' column of {out_path} before running DESeq2.",
-            file=sys.stderr,
-        )
-    elif not labels:
-        print(
-            f"No labels supplied — template written. Fill the 'condition' column "
-            f"of {out_path} before running DESeq2.",
-            file=sys.stderr,
-        )
+    print(
+        f"No labels supplied — template written. Fill the 'condition' column "
+        f"of {out_path} before running DESeq2.",
+        file=sys.stderr,
+    )
     return 0
 
 
