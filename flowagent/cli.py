@@ -101,44 +101,88 @@ Examples:
     return parser, parser.parse_args()
 
 
-def _should_use_workflow(prompt: str, args) -> bool:
+_WORKFLOW_FALLBACK_PHRASES = (
+    "run rna-seq", "run rnaseq", "run chipseq", "run chip-seq",
+    "run atacseq", "run atac-seq", "run variant calling",
+    "run fastqc", "run kallisto", "run hisat", "run star ",
+    "run salmon", "run bowtie", "run bwa ", "run cellranger",
+    "execute pipeline", "execute workflow", "run pipeline",
+    "run workflow", "process fastq", "align reads",
+    "quantify transcripts", "call peaks", "call variants",
+    "download from geo", "download from sra",
+)
+
+
+_ROUTING_SYSTEM_PROMPT = (
+    "You route prompts for a bioinformatics CLI. Classify the user's prompt "
+    "as exactly one word: 'workflow' or 'agent'.\n"
+    "- 'workflow' = a multi-step bioinformatics pipeline to plan and execute: "
+    "RNA-seq / ChIP-seq / ATAC-seq / scRNA-seq / variant calling pipelines, "
+    "GEO/SRA downloads followed by processing, differential expression with "
+    "DESeq2/edgeR, peak calling with MACS2, alignment with STAR/HISAT2/BWA, "
+    "quantification with kallisto/salmon, and similar end-to-end tasks.\n"
+    "- 'agent' = an exploratory, conversational, or single-action question "
+    "that doesn't warrant a planned pipeline: e.g. 'what bioinformatics "
+    "tools are installed?', 'list files in data/', 'explain this FASTQ "
+    "header', 'summarise this MultiQC report'.\n"
+    "Reply with a single lowercase word — workflow or agent. No punctuation, "
+    "no explanation."
+)
+
+
+async def _should_use_workflow(prompt: str, args) -> bool:
     """Decide whether a prompt should go through the workflow manager.
 
-    Returns True when the prompt clearly describes a multi-step bioinformatics
-    pipeline that should be planned and executed as a batch workflow.
-    Returns False for exploratory, conversational, or single-action prompts
-    which are better handled by the agent loop.
+    Uses an LLM classifier against the configured model (``--model`` /
+    ``LLM_MODEL``) so natural phrasings route correctly without requiring
+    the user to remember ``--workflow``. Falls back to a small keyword list
+    only if the classifier call fails (API down, quota, etc.), so routing
+    still works offline or against a broken endpoint.
     """
-    # Explicit flags always win
+    # Explicit flags always win.
     if args.workflow:
         return True
     if args.agent:
         return False
-    # These flags imply workflow mode
+    # These flags imply workflow mode.
     if args.preset or args.pipeline_format or args.resume or args.checkpoint_dir:
         return True
     if args.analysis_dir:
         return False  # analysis is its own path
 
+    # LLM-based routing. One tiny classification call (~60 in / 1 out) against
+    # the configured model; negligible cost and latency compared to the
+    # workflow itself, and robust against phrasing variations the keyword
+    # list can't handle.
+    try:
+        from .core.llm import LLMInterface
+        llm = LLMInterface()
+        response = await llm._call_openai(
+            [
+                {"role": "system", "content": _ROUTING_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            timeout=30,
+        )
+        label = (response or "").strip().lower().split()[:1]
+        label = label[0] if label else ""
+        # Strip trailing punctuation from the label for robustness.
+        label = label.rstrip(".,!?;:\"'")
+        if label in ("workflow", "agent"):
+            logger.info("LLM router classified prompt as '%s'", label)
+            return label == "workflow"
+        logger.warning(
+            "LLM router returned unexpected response %r; falling back to keyword match",
+            response,
+        )
+    except Exception as exc:
+        logger.warning(
+            "LLM router unavailable (%s); falling back to keyword match", exc,
+        )
+
+    # Fallback: legacy keyword-phrase match for when the LLM call can't run.
     p = prompt.lower()
-
-    # Strong workflow indicators: the user is describing a pipeline to execute
-    workflow_phrases = [
-        "run rna-seq", "run rnaseq", "run chipseq", "run chip-seq",
-        "run atacseq", "run atac-seq", "run variant calling",
-        "run fastqc", "run kallisto", "run hisat", "run star ",
-        "run salmon", "run bowtie", "run bwa ", "run cellranger",
-        "execute pipeline", "execute workflow", "run pipeline",
-        "run workflow", "process fastq", "align reads",
-        "quantify transcripts", "call peaks", "call variants",
-        "download from geo", "download from sra",
-    ]
-    if any(phrase in p for phrase in workflow_phrases):
-        return True
-
-    # Default: use the agent loop -- it's smarter and can invoke
-    # plan_workflow / run_workflow itself if needed
-    return False
+    return any(phrase in p for phrase in _WORKFLOW_FALLBACK_PHRASES)
 
 
 async def _run_agent_cli(prompt: str):
@@ -348,7 +392,7 @@ async def main(
             return
 
         # Smart routing: agent loop vs workflow manager
-        if _should_use_workflow(prompt, args):
+        if await _should_use_workflow(prompt, args):
             # Workflow path
             if args.resume and not args.checkpoint_dir:
                 raise ValueError("--checkpoint-dir is required with --resume")
