@@ -353,19 +353,22 @@ Optional: `mypy`, `ruff`, `black`, `isort` as in your team conventions.
 ## Benchmarking
 
 FlowAgent ships with a reproducible benchmark suite under [`benchmarks/`](benchmarks/)
-that measures the four core claims of the tool: planning correctness,
-LLM-driven error recovery, generator fidelity, and executor coverage. Each
+that measures the five core claims of the tool: planning correctness,
+LLM-driven error recovery, generator fidelity, executor coverage, and
+head-to-head performance against other agentic bioinformatics systems. Each
 benchmark writes timestamped results (JSON + CSV + `manifest.json`) and the
-`make report` target renders publication-ready figures.
+`make report` target renders publication-ready figures. See
+[`benchmarks/README.md`](benchmarks/README.md) for the full reference.
 
-### The four benchmarks
+### The five benchmarks
 
 | ID | Claim tested | API key? | Extra infra? |
 |---|---|---|---|
 | **A** | FlowAgent generates valid plans from natural-language prompts | required | none |
-| **B** | FlowAgent self-heals realistic pipeline faults | required | none |
+| **B** | FlowAgent self-heals realistic pipeline faults (28 faults × 3 tiers) | required | none |
 | **C** | Generated Nextflow/Snakemake code is valid and preserves plan intent | no | `nextflow`/`snakemake` improve validation |
 | **D** | All six execution backends (local, cgat, hpc, kubernetes, nextflow, snakemake) function | no | best-effort; uses mocks when infra absent |
+| **E** | FlowAgent is competitive with other agentic bio systems (BioMaster, AutoBA) on the same prompt corpus | required | clones of BioMaster + AutoBA on disk |
 
 ### Install benchmark-only dependencies
 
@@ -403,12 +406,14 @@ Every target runs inside `benchmarks/`; results land in
 ```bash
 cd benchmarks
 
-# ── Benchmark A — planning correctness ────────────────────
+# ── Benchmark A — planning correctness & cost ─────────────
 make plan       MODEL=gpt-4.1 REPLICATES=3      # one model
 make plan-all   REPLICATES=3                     # every model in config/models.yaml
 
-# ── Benchmark B — error recovery ──────────────────────────
+# ── Benchmark B — error recovery (28 faults × N seeds) ────
 make recovery   MODEL=gpt-4.1 SEEDS=5
+python bench_recovery.py --tier unrecoverable --seeds 10 --model gpt-4.1
+python recovery_taxonomy.py                      # classify recovery outcomes
 
 # ── Benchmark C — generator fidelity (no API key) ────────
 make gen
@@ -416,36 +421,62 @@ make gen
 # ── Benchmark D — executor coverage (no API key) ─────────
 make exec
 
+# ── Benchmark E — head-to-head vs competitors ─────────────
+# Requires BIOMASTER_DIR and/or AUTOBA_DIR in .env; see benchmarks/README.md
+make competitors MODEL=gpt-4.1 REPLICATES=3
+
 # ── Post-processing (no API calls) ────────────────────────
 make rescore    # re-evaluate latest planning run with current scoring logic
 make merge      # combine all planning runs into a single deduplicated CSV
 
 # ── Figures ───────────────────────────────────────────────
 make report     # auto-uses merged/rescored data when present
-make all        # plan + recovery + gen + exec + report
+make all        # single MODEL end-to-end: plan + recovery + gen + exec + report
+make all-sweep  # full sweep: plan-all + recovery + gen + exec + competitors
+                # + rescore + merge + report
 ```
 
 Figures are written to `benchmarks/results/figures/` as both `.pdf`
 (for manuscripts) and `.png` (for READMEs).
+
+### Subset runs
+
+You rarely want to sweep every model in one go — the full corpus is 35 models
+× 41 prompts × 3 replicates ≈ 4,300 cells. Narrow the sweep with `--models`:
+
+```bash
+cd benchmarks
+
+# A cheap pilot across one model per family
+python bench_planning.py --replicates=1 \
+  --models=gpt-5.4-mini,gpt-4.1-mini,o3-mini,claude-haiku-4-5,claude-sonnet-4-6,gemini-2.5-flash
+
+# A specific prompt against a specific model (fast debugging loop)
+python bench_planning.py --prompts=rnaseq_kallisto_basic --model=gpt-4.1 --replicates=1
+```
 
 ### Typical multi-model workflow
 
 ```bash
 cd benchmarks
 
-make plan-all REPLICATES=3      # sweep 4 LLMs, ~30 min, ~$6–8
-make rescore                     # (optional) apply current scoring
-make merge                       # collate into one CSV
-make report                      # figure → results/figures/planning.pdf
+make plan-all REPLICATES=3      # sweep every model in config/models.yaml
+make rescore                     # (optional) re-apply current scoring logic
+make merge                       # collate into one CSV under results/planning/_merged/
+make report                      # figures → results/figures/
 ```
 
-### Switching LLM providers
+### Switching LLM providers and models
 
-The `MODEL` variable accepts any model ID from `benchmarks/config/models.yaml`
-(currently `gpt-4.1`, `gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-flash`).
-Make sure the matching API-key environment variable is set (via `.env` or
-`export`). To add a local Ollama model, append an entry to that YAML — see the
-comment at the top of the file.
+[`benchmarks/config/models.yaml`](benchmarks/config/models.yaml) ships with
+35 non-deprecated models across three families: OpenAI (GPT-5.4, GPT-4.1,
+o-series reasoning, legacy 4o/4-turbo/3.5), Anthropic (Opus 4.5/4.6/4.7,
+Sonnet 4.5/4.6, Haiku 4.5), Google (Gemini 3.x, 2.5, 1.5 legacy). Each model
+lists its provider, API-key environment variable, and per-1k-token pricing.
+Make sure the matching key is set (via `.env` or `export`) before sweeping.
+
+To add a local Ollama model or a new provider entry, append to that YAML —
+see the comment at the top of the file.
 
 ### Python interpreter selection
 
@@ -456,17 +487,52 @@ The Makefile auto-detects `python` or `python3`. Pin a specific interpreter
 make plan PY=$(which python) MODEL=gpt-4.1
 ```
 
+### End-to-end real-world case study (Figure 5 of the manuscript)
+
+The suite under [`benchmarks/case_study/`](benchmarks/case_study/) generates
+the three-panel case-study figure from a single `flowagent prompt` run
+(execution trace + PCA + DESeq2 volcano):
+
+```bash
+# Panel 5a — execution trace
+python benchmarks/case_study/timeline.py \
+    --run-dir benchmarks/results/realworld_GSE52778 \
+    --out figures/fig5a_timeline
+
+# Panels 5b + 5c — PCA + volcano (requires R + DESeq2 + patchwork)
+cd benchmarks/results/realworld_GSE52778
+Rscript ../../case_study/pca_volcano.R \
+    --txi results/rna_seq_kallisto/deseq2/txi.rds \
+    --sample-sheet sample_conditions.tsv \
+    --de-csv results/rna_seq_kallisto/deseq2/deseq2_results.csv \
+    --counts results/rna_seq_kallisto/deseq2/gene_counts.csv \
+    --out ../../../figures/fig5bc_biology \
+    --reference untreated \
+    --highlight FKBP5,DUSP1,KLF15,PER1,CRISPLD2,TSC22D3
+```
+
+See [`benchmarks/case_study/README.md`](benchmarks/case_study/README.md) for
+a LaTeX figure block and full reproduction instructions.
+
 ### Rough cost and wall-time estimates
 
-| Target | Models | Wall time | API cost |
+At April-2026 provider rates. Cost scales roughly linearly with the number
+of models; `plan-all` is dominated by the premium reasoning tier
+(`gpt-5.4-pro`, `o3-pro`, `o1-pro`) — drop those three from `models.yaml`
+for a 10× cheaper sweep.
+
+| Target | Cells | Wall time | API cost |
 |---|---|---|---|
-| `make plan` | 1 | ~20 min | ~$2 |
-| `make plan-all` | 4 | ~30 min (concurrent) | ~$6–8 |
-| `make recovery` | 1 | ~15 min | ~$1 |
+| `make smoke` | 0 | ~3 s | $0 |
+| `make plan` (1 model) | 123 | ~5–15 min | $0.05–$5 (depends on tier) |
+| `make plan-all` (35 models) | ~4,300 | ~2–4 h (concurrent) | $150–300 full, $20–40 without premium reasoning |
+| `make recovery` (1 model × 5 seeds) | 140 | ~35–45 min | $2–3 |
+| `make competitors` (3 systems × 1 model) | ~125 | ~30 min | $3–5 |
 | `make gen` | — | <1 min | $0 |
 | `make exec` | — | <1 min | $0 |
 | `make rescore` | — | ~5 s | $0 |
 | `make merge` | — | ~1 s | $0 |
+| `make report` | — | ~3 s | $0 |
 
 ### Reproducibility
 
