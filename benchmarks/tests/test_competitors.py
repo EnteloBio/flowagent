@@ -178,9 +178,9 @@ class TestBioMasterCompetitor:
 
 class TestRegistry:
 
-    def test_default_registry_has_both(self):
+    def test_default_registry_has_known_competitors(self):
         reg = build_registry()
-        assert set(reg) == {"flowagent", "biomaster"}
+        assert set(reg) == {"flowagent", "biomaster", "autoba"}
         assert all(isinstance(v, Competitor) for v in reg.values())
 
     def test_unique_slugs_and_colours(self):

@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import copy
 import json
 import logging
 import sys
@@ -44,6 +43,7 @@ from harness.competitors import (                              # noqa: E402
     Competitor, CompetitorResult, build_registry, _empty_plan,
 )
 from harness.metrics import score_plan, cost_usd               # noqa: E402
+from harness.mock_plans import mock_plan_from_prompt             # noqa: E402
 from harness.runner import (                                    # noqa: E402
     load_yaml, set_provider, timestamped_dir, write_manifest, _write_csv,
 )
@@ -61,27 +61,7 @@ def _mock_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
     tool, padded to ``expected_min_steps``. Not a real agent invocation;
     used only when ``--mock`` is passed so the harness runs offline.
     """
-    gold = prompt_entry.get("gold_preset")
-    if gold:
-        try:
-            from flowagent.presets.catalog import get_preset
-            preset = get_preset(gold)
-            if preset:
-                return {"workflow_type": preset["workflow_type"],
-                        "steps": copy.deepcopy(preset["steps"])}
-        except Exception:
-            pass
-    tools = prompt_entry.get("expected_tools") or ["fastqc"]
-    steps = [
-        {"name": f"s{i}", "command": f"{t} input.fastq.gz",
-         "dependencies": [f"s{i-1}"] if i else [],
-         "outputs": [], "description": ""}
-        for i, t in enumerate(tools)
-    ]
-    wf = prompt_entry.get("expected_workflow_type", "custom")
-    if isinstance(wf, list):
-        wf = wf[0]
-    return {"workflow_type": wf, "steps": steps}
+    return mock_plan_from_prompt(prompt_entry, step_name=lambda i: f"s{i}")
 
 
 # ── Per-cell runner ──────────────────────────────────────────────

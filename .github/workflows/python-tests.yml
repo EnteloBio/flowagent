@@ -75,3 +75,9 @@ jobs:
         python -m pytest tests/ -v
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    - name: Run benchmark harness tests
+      shell: bash -l {0}
+      run: |
+        conda activate test
+        cd benchmarks && python -m pytest tests -v

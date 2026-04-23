@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import copy
 import json
 import os
 import sys
@@ -27,6 +26,7 @@ sys.path.insert(0, str(_HERE_DIR))
 sys.path.insert(0, str(_HERE_DIR.parent))
 
 from harness.metrics import score_plan, cost_usd   # noqa: E402
+from harness.mock_plans import mock_plan_from_prompt  # noqa: E402
 from harness.runner import (                       # noqa: E402
     load_yaml, set_provider, sweep, timestamped_dir,
 )
@@ -97,31 +97,12 @@ def _mock_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
 
     If the prompt has a ``gold_preset``, use that preset verbatim so the
     metrics pipeline exercises a well-formed plan. Otherwise synthesise a
-    minimal plan from ``expected_workflow_type`` + ``expected_tools``.
+    minimal plan from ``expected_workflow_type`` + ``expected_tools``, padded
+    to ``expected_min_steps`` (see :mod:`harness.mock_plans`).
     """
-    gold = prompt_entry.get("gold_preset")
-    if gold:
-        try:
-            from flowagent.presets.catalog import get_preset
-            preset = get_preset(gold)
-            if preset:
-                return {
-                    "workflow_type": preset["workflow_type"],
-                    "steps": copy.deepcopy(preset["steps"]),
-                }
-        except Exception:
-            pass
-    tools = prompt_entry.get("expected_tools") or ["fastqc"]
-    steps = [
-        {"name": f"step_{i}", "command": f"{tool} input.fastq.gz",
-         "dependencies": [] if i == 0 else [f"step_{i-1}"],
-         "outputs": [], "description": ""}
-        for i, tool in enumerate(tools)
-    ]
-    return {
-        "workflow_type": prompt_entry.get("expected_workflow_type", "custom"),
-        "steps": steps,
-    }
+    return mock_plan_from_prompt(
+        prompt_entry, step_name=lambda i: f"step_{i}",
+    )
 
 
 # ── Per-cell runner ──────────────────────────────────────────────
