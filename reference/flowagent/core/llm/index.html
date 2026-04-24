@@ -4799,7 +4799,33 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2348</span>
 <span class="normal">2349</span>
 <span class="normal">2350</span>
-<span class="normal">2351</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">2351</span>
+<span class="normal">2352</span>
+<span class="normal">2353</span>
+<span class="normal">2354</span>
+<span class="normal">2355</span>
+<span class="normal">2356</span>
+<span class="normal">2357</span>
+<span class="normal">2358</span>
+<span class="normal">2359</span>
+<span class="normal">2360</span>
+<span class="normal">2361</span>
+<span class="normal">2362</span>
+<span class="normal">2363</span>
+<span class="normal">2364</span>
+<span class="normal">2365</span>
+<span class="normal">2366</span>
+<span class="normal">2367</span>
+<span class="normal">2368</span>
+<span class="normal">2369</span>
+<span class="normal">2370</span>
+<span class="normal">2371</span>
+<span class="normal">2372</span>
+<span class="normal">2373</span>
+<span class="normal">2374</span>
+<span class="normal">2375</span>
+<span class="normal">2376</span>
+<span class="normal">2377</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -6657,30 +6683,56 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span>
                 <span class="p">},</span>
                 <span class="p">{</span>
-                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;get_gsm_ids&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; esearch -db gds -query &#39;</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">[Accession]&#39; | esummary | xtract -pattern DocumentSummary -element Accession,Project | grep &#39;GSM&#39; &gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_gsm_ids.txt&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;download_geo_metadata&quot;</span><span class="p">,</span>
+                    <span class="c1"># ``elink`` is the canonical NCBI way to navigate from a</span>
+                    <span class="c1"># GEO Series to the associated SRA runs. SRA&#39;s own</span>
+                    <span class="c1"># ``[Accession]`` field only matches SRA-prefixed IDs</span>
+                    <span class="c1"># (SRR/SRP/SRS/SRX) — it will NOT resolve a ``GSE…``</span>
+                    <span class="c1"># accession, so a naive direct SRA query returns zero</span>
+                    <span class="c1"># rows and every downstream step silently cascades to</span>
+                    <span class="c1"># empty files. The elink hop via ``-db gds -&gt; sra``</span>
+                    <span class="c1"># resolves the cross-reference server-side and returns</span>
+                    <span class="c1"># exactly the runs belonging to this series.</span>
+                    <span class="c1">#</span>
+                    <span class="c1"># ``set -o pipefail`` + a row-count guard surface silent</span>
+                    <span class="c1"># NCBI failures instead of letting empty files cascade.</span>
+                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; set -o pipefail &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;esearch -db gds -query &#39;</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">[Accession]&#39; | &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;elink -target sra | &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;efetch -format runinfo &gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;[ $(wc -l &lt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv) -gt 1 ] || &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">{{</span><span class="s2"> echo &#39;FAIL: runinfo has no data rows for </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">&#39;; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;exit 1; </span><span class="se">}}</span><span class="s2">&quot;</span>
+                    <span class="p">),</span>
                     <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
                     <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;create_directories&quot;</span><span class="p">],</span>
-                    <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_gsm_ids.txt&quot;</span><span class="p">],</span>
-                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Get GSM IDs for GEO accession&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span>
-                <span class="p">},</span>
-                <span class="p">{</span>
-                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;download_geo_metadata&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; &gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv &amp;&amp; first=true &amp;&amp; for gsm_id in $(grep -v &#39;^GSE&#39; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_gsm_ids.txt); do echo </span><span class="se">\&quot;</span><span class="s2">Processing $gsm_id...</span><span class="se">\&quot;</span><span class="s2"> &amp;&amp; if [ </span><span class="se">\&quot;</span><span class="s2">$first</span><span class="se">\&quot;</span><span class="s2"> = true ]; then esearch -db sra -query </span><span class="se">\&quot;</span><span class="s2">$gsm_id</span><span class="se">\&quot;</span><span class="s2"> | efetch -format runinfo &gt;&gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv &amp;&amp; first=false; else esearch -db sra -query </span><span class="se">\&quot;</span><span class="s2">$gsm_id</span><span class="se">\&quot;</span><span class="s2"> | efetch -format runinfo | tail -n +2 &gt;&gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv; fi; done&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
-                    <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;get_gsm_ids&quot;</span><span class="p">],</span>
                     <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv&quot;</span><span class="p">],</span>
-                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Download metadata for all GSM IDs&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Fetch SRA runinfo via GDS→SRA elink (one query, no fan-out)&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span>
                 <span class="p">},</span>
                 <span class="p">{</span>
                     <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;extract_srr_ids&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; tail -n +2 </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv | cut -d&#39;,&#39; -f1 &gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt&quot;</span><span class="p">,</span>
+                    <span class="c1"># Header-aware, accession-filtered, deduped. The</span>
+                    <span class="c1"># ``[ -s ... ]`` guard fails loudly if the resulting</span>
+                    <span class="c1"># file is empty rather than cascading to silent</span>
+                    <span class="c1"># zero-work downstream steps.</span>
+                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; set -o pipefail &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;( if head -1 </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv | grep -q &#39;^Run,&#39;; then &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;tail -n +2 </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;else cat </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv; fi ) | &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;cut -d&#39;,&#39; -f1 | &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;grep -E &#39;^(SRR|ERR|DRR)[0-9]+$&#39; | sort -u &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;&gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;[ -s </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt ] || &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">{{</span><span class="s2"> echo &#39;FAIL: no SRR/ERR/DRR ids extracted from runinfo&#39;; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;exit 1; </span><span class="se">}}</span><span class="s2">&quot;</span>
+                    <span class="p">),</span>
                     <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
                     <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;download_geo_metadata&quot;</span><span class="p">],</span>
                     <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt&quot;</span><span class="p">],</span>
-                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Extract SRR IDs from runinfo&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Extract SRR IDs from runinfo (deduped; fails loudly if empty)&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span>
                 <span class="p">},</span>
                 <span class="p">{</span>
@@ -7277,33 +7329,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2278</span>
-<span class="normal">2279</span>
-<span class="normal">2280</span>
-<span class="normal">2281</span>
-<span class="normal">2282</span>
-<span class="normal">2283</span>
-<span class="normal">2284</span>
-<span class="normal">2285</span>
-<span class="normal">2286</span>
-<span class="normal">2287</span>
-<span class="normal">2288</span>
-<span class="normal">2289</span>
-<span class="normal">2290</span>
-<span class="normal">2291</span>
-<span class="normal">2292</span>
-<span class="normal">2293</span>
-<span class="normal">2294</span>
-<span class="normal">2295</span>
-<span class="normal">2296</span>
-<span class="normal">2297</span>
-<span class="normal">2298</span>
-<span class="normal">2299</span>
-<span class="normal">2300</span>
-<span class="normal">2301</span>
-<span class="normal">2302</span>
-<span class="normal">2303</span>
-<span class="normal">2304</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2304</span>
 <span class="normal">2305</span>
 <span class="normal">2306</span>
 <span class="normal">2307</span>
@@ -7319,7 +7345,33 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2317</span>
 <span class="normal">2318</span>
 <span class="normal">2319</span>
-<span class="normal">2320</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">2320</span>
+<span class="normal">2321</span>
+<span class="normal">2322</span>
+<span class="normal">2323</span>
+<span class="normal">2324</span>
+<span class="normal">2325</span>
+<span class="normal">2326</span>
+<span class="normal">2327</span>
+<span class="normal">2328</span>
+<span class="normal">2329</span>
+<span class="normal">2330</span>
+<span class="normal">2331</span>
+<span class="normal">2332</span>
+<span class="normal">2333</span>
+<span class="normal">2334</span>
+<span class="normal">2335</span>
+<span class="normal">2336</span>
+<span class="normal">2337</span>
+<span class="normal">2338</span>
+<span class="normal">2339</span>
+<span class="normal">2340</span>
+<span class="normal">2341</span>
+<span class="normal">2342</span>
+<span class="normal">2343</span>
+<span class="normal">2344</span>
+<span class="normal">2345</span>
+<span class="normal">2346</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -7679,33 +7731,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2225</span>
-<span class="normal">2226</span>
-<span class="normal">2227</span>
-<span class="normal">2228</span>
-<span class="normal">2229</span>
-<span class="normal">2230</span>
-<span class="normal">2231</span>
-<span class="normal">2232</span>
-<span class="normal">2233</span>
-<span class="normal">2234</span>
-<span class="normal">2235</span>
-<span class="normal">2236</span>
-<span class="normal">2237</span>
-<span class="normal">2238</span>
-<span class="normal">2239</span>
-<span class="normal">2240</span>
-<span class="normal">2241</span>
-<span class="normal">2242</span>
-<span class="normal">2243</span>
-<span class="normal">2244</span>
-<span class="normal">2245</span>
-<span class="normal">2246</span>
-<span class="normal">2247</span>
-<span class="normal">2248</span>
-<span class="normal">2249</span>
-<span class="normal">2250</span>
-<span class="normal">2251</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2251</span>
 <span class="normal">2252</span>
 <span class="normal">2253</span>
 <span class="normal">2254</span>
@@ -7730,7 +7756,33 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2273</span>
 <span class="normal">2274</span>
 <span class="normal">2275</span>
-<span class="normal">2276</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">2276</span>
+<span class="normal">2277</span>
+<span class="normal">2278</span>
+<span class="normal">2279</span>
+<span class="normal">2280</span>
+<span class="normal">2281</span>
+<span class="normal">2282</span>
+<span class="normal">2283</span>
+<span class="normal">2284</span>
+<span class="normal">2285</span>
+<span class="normal">2286</span>
+<span class="normal">2287</span>
+<span class="normal">2288</span>
+<span class="normal">2289</span>
+<span class="normal">2290</span>
+<span class="normal">2291</span>
+<span class="normal">2292</span>
+<span class="normal">2293</span>
+<span class="normal">2294</span>
+<span class="normal">2295</span>
+<span class="normal">2296</span>
+<span class="normal">2297</span>
+<span class="normal">2298</span>
+<span class="normal">2299</span>
+<span class="normal">2300</span>
+<span class="normal">2301</span>
+<span class="normal">2302</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
