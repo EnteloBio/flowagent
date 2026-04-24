@@ -484,20 +484,60 @@ class WorkflowManager:
                         self._step_executor.execute_step,
                         recovery_fn=_dag_recovery,
                     )
-                    results = list(dag_results.values()) if isinstance(dag_results, dict) else dag_results
-                    # Normalise results to list-of-dicts with step_name
-                    for r in results:
-                        if isinstance(r, dict) and "step_name" not in r:
-                            r["step_name"] = r.get("step_id", r.get("name", "unknown"))
-                    # Write final checkpoint
-                    completed = [r.get("step_name", "") for r in results if r.get("status") not in ("error", "failed")]
-                    ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
-                    self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
+                    # ``dag_executed`` flips True the moment the DAG returns —
+                    # BEFORE any bookkeeping below runs. A formatting/
+                    # normalisation bug in post-processing must NOT trigger a
+                    # sequential re-run of steps the DAG already completed
+                    # (previously this re-downloaded FASTQs on deseq2 failure).
                     dag_executed = True
-                except (ValueError, Exception) as dag_err:
-                    self.logger.warning("DAG-parallel execution failed (%s), falling back to sequential", dag_err)
+
+                    raw_results = list(dag_results.values()) if isinstance(dag_results, dict) else (dag_results or [])
+
+                    # Normalise every entry to a dict; anything that isn't
+                    # (strings from partial failures, None, etc.) becomes a
+                    # best-effort error row rather than crashing the loop.
                     results = []
-                    has_deps = False  # fall through to sequential
+                    for r in raw_results:
+                        if isinstance(r, dict):
+                            if "step_name" not in r:
+                                r["step_name"] = r.get("step_id", r.get("name", "unknown"))
+                            results.append(r)
+                        else:
+                            results.append({
+                                "status": "error",
+                                "step_name": "unknown",
+                                "error": f"Non-dict result from DAG: {type(r).__name__}",
+                                "raw": str(r)[:500],
+                            })
+
+                    completed = [
+                        r.get("step_name", "")
+                        for r in results
+                        if isinstance(r, dict) and r.get("status") not in ("error", "failed")
+                    ]
+                    ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
+                    try:
+                        self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
+                    except Exception as ckpt_err:
+                        # Checkpoint failure is not fatal — we have the
+                        # results in memory and on the DAG side.
+                        self.logger.warning("Checkpoint write failed (non-fatal): %s", ckpt_err)
+                except (ValueError, Exception) as dag_err:
+                    # Only reached when the DAG itself can't start (cycle,
+                    # missing dep node). If we get here AFTER the DAG ran,
+                    # dag_executed stays True and we do NOT re-run steps.
+                    if not dag_executed:
+                        self.logger.warning(
+                            "DAG-parallel execution failed before completion (%s), falling back to sequential",
+                            dag_err,
+                        )
+                        results = []
+                        has_deps = False
+                    else:
+                        self.logger.warning(
+                            "Post-DAG bookkeeping raised %s, but all steps already executed — not re-running.",
+                            dag_err,
+                        )
 
             if not has_deps or not results:
                 results = []

@@ -35,6 +35,19 @@ class OpenAIProvider(LLMProvider):
 
     # -- core methods ---------------------------------------------------
 
+    # Reasoning models where the server-side default is "medium" — which burns
+    # 20–50k hidden-thinking tokens per call, all billed at output rates.
+    # Downgrade to "low" unless the caller explicitly overrides. Also cap
+    # ``max_completion_tokens`` so one runaway cell can't cost $100.
+    _REASONING_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+    _DEFAULT_REASONING_EFFORT = "low"
+    _DEFAULT_MAX_COMPLETION_TOKENS = 8000
+
+    @classmethod
+    def _is_reasoning_model(cls, model: str) -> bool:
+        m = (model or "").lower()
+        return any(m.startswith(p) for p in cls._REASONING_MODEL_PREFIXES)
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -42,14 +55,24 @@ class OpenAIProvider(LLMProvider):
         model: Optional[str] = None,
         temperature: float = 0.2,
         max_tokens: Optional[int] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> ProviderResponse:
+        effective_model = self._model(model)
         kwargs: Dict[str, Any] = {
-            "model": self._model(model),
+            "model": effective_model,
             "messages": messages,
-            "temperature": temperature,
         }
-        if max_tokens is not None:
-            kwargs["max_tokens"] = max_tokens
+        if self._is_reasoning_model(effective_model):
+            # Reasoning models reject ``temperature``/``max_tokens``; use
+            # ``max_completion_tokens`` + ``reasoning_effort``.
+            kwargs["max_completion_tokens"] = (
+                max_tokens if max_tokens is not None else self._DEFAULT_MAX_COMPLETION_TOKENS
+            )
+            kwargs["reasoning_effort"] = reasoning_effort or self._DEFAULT_REASONING_EFFORT
+        else:
+            kwargs["temperature"] = temperature
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
 
         completion = await self._call_with_retry(**kwargs)
         if not completion.choices:

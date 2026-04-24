@@ -156,13 +156,25 @@ def main():
     ap.add_argument("--prompts", default=str(HERE / "corpus" / "prompts.yaml"))
     ap.add_argument("--config", default=str(HERE / "config" / "models.yaml"))
     ap.add_argument("--out", default="results")
+    ap.add_argument(
+        "--resume", default=None,
+        help="Path to an existing results/planning/<ts>/ dir. Skips cells "
+             "already present in its results.jsonl; appends new cells to the "
+             "same files. Use to recover from a killed or timed-out sweep.",
+    )
     args = ap.parse_args()
 
     only = args.models.split(",") if args.models else []
     models = _load_models(Path(args.config), only)
     inputs = load_yaml(Path(args.prompts))["prompts"]
 
-    out_dir = timestamped_dir(Path(args.out), "planning")
+    if args.resume:
+        out_dir = Path(args.resume)
+        if not out_dir.is_dir():
+            raise SystemExit(f"--resume dir does not exist: {out_dir}")
+        print(f"[resume] reusing {out_dir}")
+    else:
+        out_dir = timestamped_dir(Path(args.out), "planning")
 
     async def _runner(m, e, r):
         return await run_one(m, e, r, mock=args.mock)

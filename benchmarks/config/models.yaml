@@ -56,13 +56,13 @@ models:
     context_k: 270
     pricing: {input_per_1k: 0.00020, output_per_1k: 0.00125}
 
-  - id: gpt-5.4-pro
-    provider: openai
-    env_var: OPENAI_API_KEY
-    family: gpt-5.4
-    tier: current
-    context_k: 270
-    pricing: {input_per_1k: 0.0300, output_per_1k: 0.1800}
+#  - id: gpt-5.4-pro
+#    provider: openai
+#    env_var: OPENAI_API_KEY
+#    family: gpt-5.4
+#    tier: current
+#    context_k: 270
+#    pricing: {input_per_1k: 0.0300, output_per_1k: 0.1800}
 
   # ── GPT-4.1 family (long-context, released April 2025) ─────
   - id: gpt-4.1
@@ -98,13 +98,13 @@ models:
     context_k: 200
     pricing: {input_per_1k: 0.00200, output_per_1k: 0.00800}
 
-  - id: o3-pro
-    provider: openai
-    env_var: OPENAI_API_KEY
-    family: o-series
-    tier: current
-    context_k: 200
-    pricing: {input_per_1k: 0.02000, output_per_1k: 0.08000}
+#  - id: o3-pro
+#    provider: openai
+#    env_var: OPENAI_API_KEY
+#    family: o-series
+#    tier: current
+#    context_k: 200
+#    pricing: {input_per_1k: 0.02000, output_per_1k: 0.08000}
 
   - id: o4-mini
     provider: openai
@@ -130,13 +130,13 @@ models:
     context_k: 200
     pricing: {input_per_1k: 0.01500, output_per_1k: 0.06000}
 
-  - id: o1-pro
-    provider: openai
-    env_var: OPENAI_API_KEY
-    family: o-series
-    tier: legacy
-    context_k: 200
-    pricing: {input_per_1k: 0.15000, output_per_1k: 0.60000}
+#  - id: o1-pro
+#    provider: openai
+#    env_var: OPENAI_API_KEY
+#    family: o-series
+#    tier: legacy
+#    context_k: 200
+#    pricing: {input_per_1k: 0.15000, output_per_1k: 0.60000}
 
   # ── GPT-4o (legacy, still callable) ────────────────────────
   - id: gpt-4o

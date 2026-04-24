@@ -61,15 +61,53 @@ def parse_soft(path: str) -> Iterator[Dict[str, str]]:
             yield current
 
 
+# Stable NCBI SRA runinfo CSV schema — used when the downloaded file is
+# missing its header row (which happens when the ``download_geo_metadata``
+# bash loop's first iteration returns header-only output and subsequent
+# iterations strip their own headers via ``tail -n +2``).
+_SRA_RUNINFO_COLUMNS = [
+    "Run", "ReleaseDate", "LoadDate", "spots", "bases", "spots_with_mates",
+    "avgLength", "size_MB", "AssemblyName", "download_path",
+    "Experiment", "LibraryName", "LibraryStrategy", "LibrarySelection",
+    "LibrarySource", "LibraryLayout", "InsertSize", "InsertDev", "Platform",
+    "Model", "SRAStudy", "BioProject", "ProjectID", "Sample", "BioSample",
+    "SampleType", "TaxID", "ScientificName", "SampleName", "g1k_pop_code",
+    "source", "g1k_analysis_group", "Subject_ID", "Sex", "Disease", "Tumor",
+    "Affection_Status", "Analyte_Type", "Histological_Type", "Body_Site",
+    "CenterName", "Submission", "dbgap_study_accession", "Consent",
+    "RunHash", "ReadHash",
+]
+
+
 def parse_runinfo(path: str) -> Dict[str, List[str]]:
-    """Return ``SRX -> [SRR, ...]`` from a GEO ``runinfo.csv``."""
+    """Return ``SRX -> [SRR, ...]`` from a GEO ``runinfo.csv``.
+
+    Tolerant of missing header rows — the ``esearch | efetch -format runinfo``
+    loop sometimes drops the initial header depending on how the caller
+    concatenates per-GSM results. If the first line's first field looks like
+    an SRR accession rather than the literal ``Run``, we fall back to the
+    stable SRA runinfo column schema.
+    """
     srx_to_srr: Dict[str, List[str]] = {}
     with open(path, newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
+        first_line = f.readline()
+        f.seek(0)
+
+        first_field = first_line.split(",", 1)[0].strip() if first_line else ""
+        has_header = first_field == "Run"
+
+        if has_header:
+            reader = csv.DictReader(f)
+        else:
+            # Headerless file — apply the canonical SRA schema. Only as many
+            # columns as we actually have in the data are populated; extra
+            # schema columns are ignored safely by ``row.get()`` below.
+            reader = csv.DictReader(f, fieldnames=_SRA_RUNINFO_COLUMNS)
+
         for row in reader:
             srr = (row.get("Run") or "").strip()
             srx = (row.get("Experiment") or "").strip()
-            if srr and srx:
+            if srr and srx and srr.startswith(("SRR", "ERR", "DRR")):
                 srx_to_srr.setdefault(srx, []).append(srr)
     return srx_to_srr
 

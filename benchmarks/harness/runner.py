@@ -161,14 +161,76 @@ async def sweep(
 ) -> SweepResult:
     """Execute the (model × input × replicate) sweep.
 
+    Incremental + resumable:
+      * Appends each completed cell to ``results.jsonl`` as it finishes, so
+        partial progress survives a ``Ctrl-C`` / timeout / OOM.
+      * On startup, reads any existing ``results.jsonl`` in ``out_dir`` and
+        skips cells already present (keyed by ``model, input_id, replicate``).
+        To resume, point at the existing timestamped dir instead of creating
+        a fresh one (``--resume`` in ``bench_planning.py``).
+      * Logs one line per cell completion with index / total / model /
+        prompt / status / cost / wall-time — so progress is visible in the
+        terminal and trivially greppable (each line starts with ``[N/TOTAL]``).
+      * At end, consolidates ``results.jsonl`` → ``results.json`` +
+        ``metrics.csv`` with a schema that spans every field observed.
+
     ``run_one`` MUST be self-contained: a failure in one cell must not
     affect other cells. We catch all exceptions, record them as a
     ``{"error": ...}`` row, and continue.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     sem = asyncio.Semaphore(concurrency)
+    write_lock = asyncio.Lock()
 
-    async def _guarded(model_cfg, entry, rep):
+    results_jsonl = out_dir / "results.jsonl"
+
+    # ── Resume: load any existing rows and skip their (model, input, rep) cells.
+    existing_rows: List[Dict[str, Any]] = []
+    completed_keys: set = set()
+    if results_jsonl.exists():
+        with results_jsonl.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                existing_rows.append(row)
+                completed_keys.add((
+                    row.get("model"),
+                    row.get("input_id"),
+                    row.get("replicate"),
+                ))
+        if existing_rows:
+            print(
+                f"[resume] {results_jsonl.name}: {len(existing_rows)} cells "
+                f"already complete, will be skipped",
+                flush=True,
+            )
+
+    total_cells = len(models) * len(inputs) * replicates
+    pending = [
+        (model_cfg, entry, rep)
+        for model_cfg in models
+        for entry in inputs
+        for rep in range(replicates)
+        if (model_cfg["id"], entry.get("id"), rep) not in completed_keys
+    ]
+    print(
+        f"[sweep] {total_cells} total cells "
+        f"({len(existing_rows)} cached, {len(pending)} to run, "
+        f"concurrency={concurrency})",
+        flush=True,
+    )
+
+    async def _append_row(row: Dict[str, Any]) -> None:
+        async with write_lock:
+            with results_jsonl.open("a") as f:
+                f.write(json.dumps(row, default=str) + "\n")
+
+    async def _guarded(model_cfg, entry, rep, idx):
         async with sem:
             t0 = time.perf_counter()
             try:
@@ -182,21 +244,43 @@ async def sweep(
                     "traceback": traceback.format_exc(),
                 }
             result.setdefault("wall_seconds", time.perf_counter() - t0)
+            # Ensure key fields are present for the resume index.
+            result.setdefault("model", model_cfg["id"])
+            result.setdefault("input_id", entry.get("id", "?"))
+            result.setdefault("replicate", rep)
+
+            await _append_row(result)
+
+            status = "err" if result.get("error") else "ok"
+            cost = float(result.get("cost_usd") or 0.0)
+            wall = float(result.get("wall_seconds") or 0.0)
+            print(
+                f"[{idx:>4}/{total_cells}] "
+                f"{model_cfg['id']:<32s} "
+                f"{str(entry.get('id', '?')):<28s} "
+                f"rep={rep} {status} "
+                f"${cost:6.4f} {wall:6.1f}s",
+                flush=True,
+            )
             return result
 
+    # Enumerate pending with a 1-based global index that counts past the
+    # cells already loaded from disk (so the [idx/total] line matches what
+    # the user sees written to results.jsonl).
+    offset = len(existing_rows)
     tasks = [
-        _guarded(model_cfg, entry, rep)
-        for model_cfg in models
-        for entry in inputs
-        for rep in range(replicates)
+        _guarded(m, e, r, offset + i + 1)
+        for i, (m, e, r) in enumerate(pending)
     ]
-    results = await asyncio.gather(*tasks)
+    new_results = list(await asyncio.gather(*tasks))
+    results = existing_rows + new_results
 
-    # Persist results
+    # Final consolidated writes — schema covers the union of all fields.
     (out_dir / "results.json").write_text(json.dumps(results, indent=2, default=str))
     _write_csv(out_dir / "metrics.csv", results)
     write_manifest(out_dir, benchmark=benchmark_name, models=models,
-                   extra={"num_inputs": len(inputs), "replicates": replicates})
+                   extra={"num_inputs": len(inputs), "replicates": replicates,
+                          "resumed_from": len(existing_rows)})
     return SweepResult(out_dir=out_dir, results=results)
 
 
