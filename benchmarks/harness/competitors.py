@@ -448,21 +448,210 @@ class AutoBACompetitor(Competitor):
         )
 
 
+# ── Raw-LLM baseline ─────────────────────────────────────────────
+
+# Zero-shot "LLM only" baseline — proves whether FlowAgent's planning
+# scaffolding (preset catalogue, reference resolution, pattern
+# extraction, JSON repair, error-recovery loop) adds value over asking
+# a frontier model to emit the workflow plan directly. Reviewers always
+# ask for this. Without it, a positive FlowAgent result could just be
+# the underlying LLM doing all the work.
+#
+# The system prompt matches FlowAgent's own output schema so
+# ``harness.metrics.score_plan`` can grade raw-LLM output on the same
+# rubric. No context gathering, no repair loop, no presets — exactly
+# one provider call per cell.
+
+_RAW_LLM_SYSTEM_PROMPT = """You are a bioinformatics pipeline planner.
+Given a user's request, produce a JSON workflow plan using this schema:
+
+{
+  "name": "<workflow_name>",
+  "description": "<short description>",
+  "workflow_type": "<rna_seq_kallisto | rna_seq_star | rna_seq_hisat | chip_seq | atac_seq | variant_calling | single_cell_10x | single_cell_kb | qc_only | custom>",
+  "steps": [
+    {
+      "name": "<unique_snake_case_id>",
+      "command": "<runnable shell command>",
+      "dependencies": ["<prior step names>"],
+      "outputs": ["<declared output paths>"]
+    }
+  ]
+}
+
+Rules:
+- Steps must be in topological order.
+- ``dependencies`` must reference names of prior steps exactly.
+- Commands should be runnable shell pipelines using standard
+  bioinformatics tools (fastqc, kallisto, salmon, STAR, bwa, samtools,
+  macs2, cellranger, kb-python, deseq2 via Rscript, multiqc, etc.).
+- Include every step needed to go from raw input to the requested output.
+
+Return ONLY the JSON object. No markdown fences. No commentary."""
+
+
+_PROVIDER_ENV_VARS = {
+    "openai":    "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "google":    "GOOGLE_API_KEY",
+    "ollama":    None,
+}
+
+
+def _strip_code_fences(text: str) -> str:
+    """Drop ```json … ``` wrappers if the model insisted on them."""
+    t = text.strip()
+    if t.startswith("```"):
+        lines = t.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        t = "\n".join(lines)
+    return t.strip()
+
+
+class RawLLMCompetitor(Competitor):
+    """Zero-shot raw-LLM baseline — one provider call, no scaffolding.
+
+    Establishes the ceiling of what the underlying model can do WITHOUT
+    FlowAgent's planning infrastructure. If ``raw_gpt-5.4`` produces plans
+    of comparable quality to FlowAgent on the same scoring rubric, the
+    scaffolding isn't adding value; if it's measurably worse, it is.
+    """
+
+    def __init__(self, model_id: str, models_yaml_cfg: Optional[Dict[str, Any]] = None):
+        self.model_id = model_id
+        # Slug-safe id for results CSV; keep model id human-readable in name.
+        self.id = f"raw_{model_id}"
+        self.name = f"Raw LLM ({model_id})"
+        self.url = ""
+        # Used for pricing lookup. Accept either a single {id: ..., pricing: ...}
+        # dict, or a full models.yaml cfg dict {"models": [...]}.
+        self._cfg_full = models_yaml_cfg or {}
+
+    def _model_cfg(self) -> Dict[str, Any]:
+        if "pricing" in self._cfg_full:
+            return self._cfg_full
+        for m in self._cfg_full.get("models", []):
+            if m.get("id") == self.model_id:
+                return m
+        return {}
+
+    def _provider_name(self) -> str:
+        # Local import to avoid hard coupling at module load.
+        from flowagent.core.providers.registry import _infer_provider
+        return _infer_provider(self.model_id)
+
+    def available(self) -> Tuple[bool, str]:
+        env_var = _PROVIDER_ENV_VARS.get(self._provider_name())
+        if env_var and not os.environ.get(env_var):
+            return False, f"{env_var} not set for raw {self.model_id}"
+        return True, ""
+
+    async def plan(self, prompt: str, *, context=None) -> CompetitorResult:
+        from flowagent.core.providers import create_provider
+        from harness.metrics import cost_usd
+        bench_dir = Path(__file__).resolve().parent.parent
+        sys.path.insert(0, str(bench_dir))
+        from bench_planning import _TokenTracker  # noqa: E402
+
+        provider_name = self._provider_name()
+        env_var = _PROVIDER_ENV_VARS.get(provider_name)
+        api_key = os.environ.get(env_var) if env_var else None
+
+        t0 = time.perf_counter()
+        try:
+            provider = create_provider(
+                provider_name, model=self.model_id, api_key=api_key,
+            )
+            tracker = _TokenTracker(provider)
+            resp = await tracker.chat(
+                [
+                    {"role": "system", "content": _RAW_LLM_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                model=self.model_id,
+            )
+            content = _strip_code_fences(resp.content or "")
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError as je:
+                return CompetitorResult(
+                    plan=_empty_plan(),
+                    wall_seconds=time.perf_counter() - t0,
+                    prompt_tokens=tracker.prompt_tokens,
+                    completion_tokens=tracker.completion_tokens,
+                    llm_calls=tracker.call_count,
+                    cost_usd=cost_usd(
+                        tracker.prompt_tokens, tracker.completion_tokens,
+                        self._model_cfg(),
+                    ),
+                    error=f"JSONDecodeError: {je}",
+                )
+            plan = _normalise_plan(parsed)
+            return CompetitorResult(
+                plan=plan,
+                wall_seconds=time.perf_counter() - t0,
+                prompt_tokens=tracker.prompt_tokens,
+                completion_tokens=tracker.completion_tokens,
+                llm_calls=tracker.call_count,
+                cost_usd=cost_usd(
+                    tracker.prompt_tokens, tracker.completion_tokens,
+                    self._model_cfg(),
+                ),
+            )
+        except Exception as e:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=time.perf_counter() - t0,
+                error=f"{type(e).__name__}: {e}",
+            )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
-def build_registry(model_cfg: Optional[Dict[str, Any]] = None
-                   ) -> Dict[str, Competitor]:
+# Default frontier models for the raw-LLM baseline lanes. Chosen to
+# span providers (OpenAI, Anthropic, Google) without including the most
+# expensive premium-reasoning tier.
+DEFAULT_RAW_FRONTIER_MODELS = (
+    "gpt-5.4",
+    "claude-opus-4-7",
+    "gemini-2.5-pro",
+)
+
+
+def build_registry(
+    model_cfg: Optional[Dict[str, Any]] = None,
+    raw_models: Optional[List[str]] = None,
+    models_yaml_cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Competitor]:
     """Construct the default competitor registry.
 
-    Additional agents (CellAgent, …) can be added here by appending
-    further Competitor subclasses.
+    Parameters
+    ----------
+    model_cfg : dict, optional
+        Single-model cfg passed to FlowAgent / BioMaster / AutoBA lanes
+        (they all share one "driver model" for token accounting).
+    raw_models : list[str], optional
+        Model IDs to add as zero-shot raw-LLM baselines. Each becomes a
+        separate competitor keyed ``raw_<model_id>``. When omitted, no
+        raw lanes are added — call with ``raw_models=DEFAULT_RAW_FRONTIER_MODELS``
+        for the manuscript comparison.
+    models_yaml_cfg : dict, optional
+        Full ``config/models.yaml`` contents, used to look up pricing
+        for the raw-LLM lanes.
     """
     model_id = (model_cfg or {}).get("id", "gpt-4.1")
     # Ordering: third-party competitors first, FlowAgent last. Means any
     # adapter / shim issues surface before the (known-good) FlowAgent
     # baseline is spent on, so a broken sweep fails fast.
-    return {
+    reg: Dict[str, Competitor] = {
         "autoba":     AutoBACompetitor(model=model_id),
         "biomaster":  BioMasterCompetitor(model=model_id),
         "flowagent":  FlowAgentCompetitor(model_cfg=model_cfg),
     }
+    for raw_id in (raw_models or []):
+        key = f"raw_{raw_id}"
+        reg[key] = RawLLMCompetitor(model_id=raw_id, models_yaml_cfg=models_yaml_cfg)
+    return reg

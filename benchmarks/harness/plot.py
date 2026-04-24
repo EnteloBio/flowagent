@@ -20,11 +20,12 @@ from __future__ import annotations
 import argparse
 import math
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
 import matplotlib
+import matplotlib.ticker as mtick
 matplotlib.use("Agg")  # headless
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -222,6 +223,32 @@ def _short_name(model: str) -> str:
     return model
 
 
+# Models that emit reasoning / thinking tokens (billed as output). Used
+# to annotate heatmap columns so reviewers can see at a glance which
+# models pay the hidden-thinking tax on the cost-vs-quality tradeoff.
+_REASONING_MODEL_IDS: Set[str] = {
+    # OpenAI — GPT-5.4 family and the o-series
+    "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4-pro",
+    "o1", "o1-pro", "o3", "o3-pro", "o3-mini", "o4-mini",
+    # Anthropic — Opus 4.6 / 4.7 are documented thinking models
+    "claude-opus-4-6", "claude-opus-4-7",
+    # Google — Gemini 2.5 / 3.x have thinking modes, though Flash variants
+    # run at effort=low by default. We leave them non-reasoning to keep
+    # the annotation useful (otherwise every Google model except Flash-Lite
+    # would flip to reasoning and the label loses information).
+}
+
+
+def _classify_model(model_id: str) -> Tuple[str, bool]:
+    """Return ``(provider, is_reasoning)`` for a model ID.
+
+    ``provider`` is one of ``openai`` / ``anthropic`` / ``google`` /
+    ``ollama`` / ``other``. ``is_reasoning`` is True for models that
+    emit hidden-thinking tokens (billed as output).
+    """
+    return _provider_from_model(model_id), model_id in _REASONING_MODEL_IDS
+
+
 def _tier_of(model: str) -> str:
     """Best-effort inference of which tier a model belongs to, for ordering.
 
@@ -412,13 +439,105 @@ def planning_figure(df: pd.DataFrame) -> plt.Figure:
     return fig
 
 
-def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
-    """Per-prompt × per-model pass-rate heatmap (hard prompts only).
+_PROVIDER_RANK = {"openai": 0, "anthropic": 1, "google": 2,
+                   "ollama": 3, "other": 4}
 
-    Models are ordered left-to-right by overall pass rate; prompts are
-    ordered top-to-bottom with the hardest (lowest mean) at the top. Cells
-    are annotated with the pass-rate percentage and outlined with a thin
-    white grid to aid readability.
+
+def _style_xtick_labels_by_provider(ax, columns) -> None:
+    """Colour x-tick labels by provider and italicise reasoning models."""
+    for tick, m in zip(ax.get_xticklabels(), columns):
+        provider, is_reasoning = _classify_model(m)
+        tick.set_color(_PROVIDER_COLOURS.get(provider, "#111827"))
+        if is_reasoning:
+            tick.set_fontstyle("italic")
+            tick.set_fontweight("bold")
+
+
+# Prompt-tier classification is *corpus-based*: prompts in the hard
+# benchmark tier carry a ``hard_`` prefix in ``corpus/prompts.yaml``.
+# These are a-priori designated as the stress-test subset, regardless
+# of whether any given model happens to solve them at runtime. Row
+# labels on the heatmaps colour-code that corpus tier — so a reviewer
+# can see which rows belong to the hard-benchmark subset at a glance.
+_CORPUS_TIER_COLOURS = {
+    "hard":     "#b91c1c",   # deep red — corpus-designated hard prompts
+    "standard": "#111827",   # dark grey/black — standard benchmark tier
+}
+
+
+def _classify_corpus_tier(input_id: str) -> str:
+    """Return ``hard`` or ``standard`` based on the prompt's corpus tier."""
+    return "hard" if str(input_id).startswith("hard_") else "standard"
+
+
+def _style_ytick_labels_by_corpus(ax, prompt_ids) -> None:
+    """Colour y-tick labels by corpus tier.
+
+    ``prompt_ids`` is an iterable of ``input_id`` values in the same
+    order as the tick positions on the y-axis. Hard-tier rows are
+    bolded + coloured red; standard-tier rows use the default text style.
+    """
+    ticks = ax.get_yticklabels()
+    for tick_label, prompt_id in zip(ticks, prompt_ids):
+        tier = _classify_corpus_tier(prompt_id)
+        tick_label.set_color(_CORPUS_TIER_COLOURS[tier])
+        if tier == "hard":
+            tick_label.set_fontweight("bold")
+
+
+def _add_provider_reasoning_legend(fig, providers_present=None,
+                                    show_difficulty: bool = True) -> None:
+    """Small key explaining colour + italic + difficulty conventions."""
+    from matplotlib.lines import Line2D
+    handles = []
+    if providers_present is None:
+        providers_present = ["openai", "anthropic", "google"]
+    labels_map = {"openai": "OpenAI", "anthropic": "Anthropic (Claude)",
+                  "google": "Google (Gemini)", "ollama": "Local (Ollama)"}
+    # Column-axis annotations: provider + reasoning
+    for p in providers_present:
+        handles.append(Line2D(
+            [], [], marker="s", color="none",
+            markerfacecolor=_PROVIDER_COLOURS.get(p, "#6b7280"),
+            markersize=9, label=f"{labels_map.get(p, p.title())} (col)",
+        ))
+    handles.append(Line2D(
+        [], [], marker="none", color="#111827", linestyle="",
+        label="$\\bf{\\mathit{italic\\ bold}}$ = reasoning",
+    ))
+    # Row-axis annotations: corpus tier
+    if show_difficulty:
+        corpus_labels = [
+            ("hard",     "Hard-corpus prompt (row)"),
+            ("standard", "Standard-corpus prompt (row)"),
+        ]
+        for key, lbl in corpus_labels:
+            handles.append(Line2D(
+                [], [], marker="s", color="none",
+                markerfacecolor=_CORPUS_TIER_COLOURS[key], markersize=9,
+                label=lbl,
+            ))
+    fig.legend(
+        handles=handles, loc="lower center",
+        ncol=min(len(handles), 4), frameon=False, fontsize=8,
+        bbox_to_anchor=(0.5, -0.02),
+    )
+
+
+def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
+    """Per-prompt × per-model pass-rate heatmap across the full corpus.
+
+    Shows all 41 prompts. Row labels are colour-coded by corpus tier —
+    **red bold** for prompts in the hard-benchmark subset (``hard_``
+    prefix in ``corpus/prompts.yaml``), default weight for standard
+    prompts. Within each corpus tier rows are ordered with lowest
+    cross-model mean pass rate on top, so empirical difficulty is still
+    visible through row ordering even though the tier labelling is
+    corpus-defined.
+
+    Columns are grouped by provider (OpenAI → Anthropic → Google) and
+    ranked by pass rate within each provider; reasoning models are
+    rendered in italic bold.
     """
     if "error" in df.columns:
         df = df[df["error"].isna()]
@@ -431,20 +550,34 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
         else str(v).strip().lower() == "true"
     ).astype(int)
 
-    if df["input_id"].str.startswith("hard_").any():
-        df = df[df["input_id"].str.startswith("hard_")]
-
     pivot = df.pivot_table(
         index="input_id", columns="model", values="overall_pass",
         aggfunc="mean",
     )
-    # Hardest prompts on top, best models on the right.
-    pivot = pivot.loc[pivot.mean(axis=1).sort_values().index,
-                      pivot.mean(axis=0).sort_values(ascending=True).index]
+
+    # Row order: hard-corpus prompts on top (sorted by empirical
+    # difficulty — hardest-to-plan first), then standard-corpus prompts
+    # below (same ordering within tier). A single horizontal separator
+    # between the two tiers anchors the visual split.
+    row_means = pivot.mean(axis=1)
+    hard_ids = [i for i in pivot.index if _classify_corpus_tier(i) == "hard"]
+    std_ids  = [i for i in pivot.index if _classify_corpus_tier(i) == "standard"]
+    hard_ids = sorted(hard_ids, key=lambda i: row_means[i])
+    std_ids  = sorted(std_ids,  key=lambda i: row_means[i])
+    pivot = pivot.loc[hard_ids + std_ids]
+
+    # Column order: provider → reasoning-flag → descending pass rate.
+    def _col_sort_key(m: str):
+        provider, reasoning = _classify_model(m)
+        return (_PROVIDER_RANK.get(provider, 9), not reasoning,
+                -pivot[m].mean())
+    col_order = sorted(pivot.columns, key=_col_sort_key)
+    pivot = pivot[col_order]
 
     # Figure size: scale with matrix shape, clamp to journal widths.
     fig_w = max(6.0, min(0.55 * pivot.shape[1] + 2.4, 11.5))
-    fig_h = max(3.2, min(0.42 * pivot.shape[0] + 1.4,  9.0))
+    # 41 prompts shown; taller clamp than the old hard-only-18 version.
+    fig_h = max(3.2, min(0.34 * pivot.shape[0] + 1.6, 14.0))
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
 
@@ -454,12 +587,22 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
     ax.set_xticks(range(len(pivot.columns)))
     ax.set_xticklabels([_short_name(m) for m in pivot.columns],
                        rotation=35, ha="right", fontsize=8)
+    _style_xtick_labels_by_provider(ax, pivot.columns)
+
     display_names = [
         n.removeprefix("hard_").replace("_", " ").title()
         for n in pivot.index
     ]
     ax.set_yticks(range(len(pivot.index)))
     ax.set_yticklabels(display_names, fontsize=8.5)
+
+    # Corpus-tier colouring: red bold for hard-tier prompts, default for standard.
+    _style_ytick_labels_by_corpus(ax, pivot.index)
+
+    # Horizontal separator between the two corpus tiers.
+    n_hard = sum(1 for i in pivot.index if _classify_corpus_tier(i) == "hard")
+    if 0 < n_hard < pivot.shape[0]:
+        ax.axhline(n_hard - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
 
     # Thin white separators
     ax.set_xticks(np.arange(-.5, pivot.shape[1], 1), minor=True)
@@ -468,21 +611,25 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
     ax.tick_params(which="minor", length=0)
     ax.tick_params(which="major", length=0)
 
-    # Annotate cells
-    for i in range(pivot.shape[0]):
-        for j in range(pivot.shape[1]):
-            v = pivot.iloc[i, j]
-            if np.isnan(v):
-                continue
-            # High-contrast text: dark over amber, white over deep red/green
-            colour = "#111827" if 0.35 < v < 0.75 else "white"
-            ax.text(j, i, f"{v:.0%}", ha="center", va="center",
-                    fontsize=7.5, color=colour, fontweight="semibold")
+    # Vertical separators between provider groups — help the eye anchor.
+    prev_provider = None
+    for j, m in enumerate(pivot.columns):
+        p, _ = _classify_model(m)
+        if prev_provider is not None and p != prev_provider:
+            ax.axvline(j - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
+        prev_provider = p
 
-    ax.set_title("Per-prompt pass rate (hard benchmarks)", loc="left",
-                 fontsize=10.5, fontweight="bold")
+    # Cell values are encoded by colour only — explicit % labels were
+    # removed after they saturated the figure at 97–100% across most
+    # rows and obscured the difficulty-tier row-labels. The colourbar
+    # remains the quantitative key.
 
-    # Discrete colourbar for better scale perception
+    ax.set_title(
+        "Per-prompt pass rate across the full corpus  —  "
+        "red bold labels: hard-benchmark subset (corpus tier)",
+        loc="left", fontsize=10.5, fontweight="bold",
+    )
+
     cbar = fig.colorbar(im, ax=ax, shrink=0.75, pad=0.015,
                         ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
     cbar.ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
@@ -492,6 +639,239 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
 
     for spine in ("top", "right", "bottom", "left"):
         ax.spines[spine].set_visible(False)
+
+    # Legend key for provider colours + reasoning italic.
+    providers_present = []
+    for m in pivot.columns:
+        p, _ = _classify_model(m)
+        if p not in providers_present:
+            providers_present.append(p)
+    _add_provider_reasoning_legend(fig, providers_present=providers_present)
+    fig.subplots_adjust(bottom=0.22)
+    return fig
+
+
+def _load_model_tiers(models_yaml: Optional[Path] = None) -> Dict[str, str]:
+    """Return ``{model_id: tier}`` from ``config/models.yaml``.
+
+    Falls back to ``_tier_of(model)`` inference when the YAML can't be
+    located — so the function still works against historical CSVs.
+    """
+    if models_yaml is None:
+        here = Path(__file__).resolve().parent.parent  # benchmarks/
+        models_yaml = here / "config" / "models.yaml"
+    tiers: Dict[str, str] = {}
+    try:
+        import yaml  # local import to avoid module-level dep
+        with models_yaml.open() as f:
+            cfg = yaml.safe_load(f)
+        for entry in cfg.get("models", []):
+            if entry.get("id") and entry.get("tier"):
+                tiers[entry["id"]] = entry["tier"]
+    except Exception:
+        pass
+    return tiers
+
+
+def planning_heatmap_by_tier(
+    df: pd.DataFrame,
+    models_yaml: Optional[Path] = None,
+    *,
+    struggle_threshold: float = 0.80,  # retained for API stability; unused
+) -> plt.Figure:
+    """Two-panel per-prompt × per-model heatmap split into current / legacy tiers.
+
+    Hard prompts only. Rows are colour-coded by cross-model difficulty:
+    **red** (mean pass < 50%), **amber** (50–90%), **green** (≥90%) — so
+    reviewers can see at a glance which prompts stress the system
+    regardless of model tier, and which are saturated across the corpus.
+
+    Columns within each panel are sorted by descending mean pass rate.
+    ``preview`` tier models (e.g. ``gemini-3.1-flash-lite-preview``) are
+    grouped with ``current``; ``legacy`` models get their own panel.
+    Models whose tier can't be resolved fall through to the ``current``
+    panel so nothing is dropped from the figure.
+    """
+    if "error" in df.columns:
+        df = df[df["error"].isna()]
+    if df.empty or "model" not in df.columns or "overall_pass" not in df.columns:
+        return _empty_figure("No data for tier-split heatmap.")
+
+    df = df.copy()
+    df["overall_pass"] = df["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    pivot = df.pivot_table(
+        index="input_id", columns="model", values="overall_pass",
+        aggfunc="mean",
+    )
+    if pivot.empty:
+        return _empty_figure("No prompt data for tier split.")
+
+    # Row order: hard-corpus prompts on top, standard below. Within each
+    # tier, sort by empirical mean (hardest first) so the gradient stays
+    # legible even though the hard/standard split is corpus-defined.
+    row_means = pivot.mean(axis=1)
+    hard_ids = sorted(
+        (i for i in pivot.index if _classify_corpus_tier(i) == "hard"),
+        key=lambda i: row_means[i],
+    )
+    std_ids = sorted(
+        (i for i in pivot.index if _classify_corpus_tier(i) == "standard"),
+        key=lambda i: row_means[i],
+    )
+    pivot = pivot.loc[hard_ids + std_ids]
+
+    # Column grouping by tier.
+    tiers = _load_model_tiers(models_yaml)
+    current_cols, legacy_cols = [], []
+    for m in pivot.columns:
+        tier = tiers.get(m, _tier_of(m))
+        if tier in ("current", "preview", "frontier", "mid"):
+            current_cols.append(m)
+        elif tier == "legacy":
+            legacy_cols.append(m)
+        else:
+            current_cols.append(m)  # fall through — don't drop unresolved
+
+    # Within each panel sort by (provider, reasoning-flag, pass rate) so
+    # models cluster by family and reasoning column-groups are obvious.
+    def _panel_sort_key(m: str):
+        provider, reasoning = _classify_model(m)
+        return (_PROVIDER_RANK.get(provider, 9), not reasoning,
+                -pivot[m].mean())
+    current_cols = sorted(current_cols, key=_panel_sort_key)
+    legacy_cols = sorted(legacy_cols, key=_panel_sort_key)
+
+    pivot_cur = pivot[current_cols]
+    pivot_leg = pivot[legacy_cols] if legacy_cols else None
+
+    # Row-level stats for difficulty colouring (used by the inner
+    # _render via closure): red=hard (<50%), amber=moderate,
+    # green=easy (>=90%).
+    row_means = pivot.mean(axis=1)
+
+    n_cur = pivot_cur.shape[1]
+    n_leg = pivot_leg.shape[1] if pivot_leg is not None else 0
+    n_rows = pivot.shape[0]
+
+    # Figure sizing: accommodate both panels side-by-side.
+    panel_w_current = max(3.5, 0.42 * n_cur + 1.5)
+    panel_w_legacy = max(2.5, 0.42 * n_leg + 1.5) if n_leg else 0
+    fig_w = panel_w_current + panel_w_legacy + 2.0  # + colourbar + gutter
+    fig_h = max(3.5, min(0.34 * n_rows + 1.7, 14.0))
+
+    width_ratios = [n_cur, max(n_leg, 0.4)] if n_leg else [n_cur]
+    fig, axes = plt.subplots(
+        1, len(width_ratios), figsize=(fig_w, fig_h),
+        gridspec_kw={"width_ratios": width_ratios, "wspace": 0.08},
+        squeeze=False,
+    )
+    axes = axes[0]
+    ax_cur = axes[0]
+    ax_leg = axes[1] if n_leg else None
+
+    def _render(ax, data, *, show_ylabels: bool, title: str):
+        im = ax.imshow(data.values, aspect="auto", cmap=_HEATMAP_CMAP,
+                       vmin=0, vmax=1, interpolation="nearest")
+        ax.set_xticks(range(data.shape[1]))
+        ax.set_xticklabels(
+            [_short_name(m) for m in data.columns],
+            rotation=35, ha="right", fontsize=8,
+        )
+        # Provider colour + reasoning italic on x-tick labels.
+        _style_xtick_labels_by_provider(ax, data.columns)
+
+        ax.set_yticks(range(data.shape[0]))
+        if show_ylabels:
+            display_names = [
+                n.removeprefix("hard_").replace("_", " ").title()
+                for n in data.index
+            ]
+            ax.set_yticklabels(display_names, fontsize=8.5)
+            # Corpus-tier colouring: red bold for hard-benchmark
+            # prompts (``hard_`` prefix in the corpus YAML), default
+            # weight for standard prompts.
+            _style_ytick_labels_by_corpus(ax, data.index)
+            # Horizontal separator between the hard and standard tier blocks.
+            n_hard = sum(
+                1 for i in data.index if _classify_corpus_tier(i) == "hard"
+            )
+            if 0 < n_hard < data.shape[0]:
+                ax.axhline(n_hard - 0.5, color="#111827",
+                           linewidth=1.2, alpha=0.6)
+        else:
+            ax.set_yticklabels([])
+            # Still draw the separator on the right panel so rows
+            # visually align across panels.
+            n_hard = sum(
+                1 for i in data.index if _classify_corpus_tier(i) == "hard"
+            )
+            if 0 < n_hard < data.shape[0]:
+                ax.axhline(n_hard - 0.5, color="#111827",
+                           linewidth=1.2, alpha=0.6)
+        ax.set_xticks(np.arange(-.5, data.shape[1], 1), minor=True)
+        ax.set_yticks(np.arange(-.5, data.shape[0], 1), minor=True)
+        ax.grid(which="minor", color="white", linewidth=0.8)
+        ax.tick_params(which="minor", length=0)
+        ax.tick_params(which="major", length=0)
+
+        # Vertical separators between provider groups.
+        prev_provider = None
+        for j, m in enumerate(data.columns):
+            p, _ = _classify_model(m)
+            if prev_provider is not None and p != prev_provider:
+                ax.axvline(j - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
+            prev_provider = p
+
+        # No per-cell % annotations — colour alone encodes pass rate,
+        # the shared colourbar is the key. Removing the annotations lets
+        # the row-label difficulty colouring and column grouping breathe.
+
+        ax.set_title(title, loc="left", fontsize=10.5, fontweight="bold")
+        for spine in ("top", "right", "bottom", "left"):
+            ax.spines[spine].set_visible(False)
+        return im
+
+    im = _render(
+        ax_cur, pivot_cur,
+        show_ylabels=True,
+        title=f"Current / preview models  (n={n_cur})",
+    )
+    if ax_leg is not None:
+        _render(
+            ax_leg, pivot_leg,
+            show_ylabels=False,
+            title=f"Legacy models  (n={n_leg})",
+        )
+
+    # Shared colourbar
+    cbar = fig.colorbar(im, ax=axes.tolist(), shrink=0.75, pad=0.015,
+                        ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
+    cbar.ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    cbar.outline.set_visible(False)
+    cbar.ax.tick_params(length=2, labelsize=7.5)
+    cbar.set_label("Pass rate", fontsize=8.5)
+
+    fig.suptitle(
+        "Per-prompt pass rate by model tier  —  "
+        "red bold labels: corpus-designated hard benchmarks; "
+        "normal labels: standard benchmarks",
+        fontsize=10.5, fontweight="bold", x=0.02, ha="left",
+    )
+
+    # Provider + reasoning legend (same as single-panel heatmap).
+    providers_present = []
+    for m in list(pivot_cur.columns) + (
+        list(pivot_leg.columns) if pivot_leg is not None else []
+    ):
+        p, _ = _classify_model(m)
+        if p not in providers_present:
+            providers_present.append(p)
+    _add_provider_reasoning_legend(fig, providers_present=providers_present)
+    fig.subplots_adjust(bottom=0.20)
     return fig
 
 
@@ -954,6 +1334,204 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
     fig.suptitle("Head-to-head: FlowAgent vs. alternative agentic systems",
                  fontsize=11, fontweight="bold", y=1.03)
+    return fig
+
+
+def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Three-panel head-to-head of the agentic systems alone.
+
+    Filters to flowagent / biomaster / autoba (excludes raw-LLM lanes) and
+    renders:
+      (a) Binary pass rate + Wilson 95% CI
+      (b) Mean tool-completeness score — a partial-credit view where each
+          cell contributes ``tools_present_fraction`` instead of 0/1.
+          Addresses the reviewer comment that a 5-of-6 plan shouldn't
+          score identically to a 0-of-6 plan.
+      (c) Failure-mode composition — stacked bar of pass / plan_fail /
+          error per system. Shows BioMaster's fragility pattern.
+
+    Expects columns: competitor, competitor_name, overall_pass,
+    tools_present_fraction (optional), error.
+    """
+    if "competitor" not in df.columns or df.empty:
+        return None
+
+    AGENTIC = {"flowagent", "biomaster", "autoba"}
+    sub = df[df["competitor"].isin(AGENTIC)].copy()
+    if sub.empty:
+        return _empty_figure(
+            "No flowagent/biomaster/autoba rows in the competitors sweep.\n"
+            "Run: make competitors (with BIOMASTER_DIR / AUTOBA_DIR set)."
+        )
+
+    sub["overall_pass"] = sub["overall_pass"].map(
+        lambda v: v if isinstance(v, (bool, int, float))
+        else str(v).strip().lower() == "true"
+    ).astype(int)
+
+    # Classify each row. ``error`` in the merged CSV is NaN for successful
+    # rows and sometimes the literal string "None" — both must be treated
+    # as "no error". The naive ``if r.get("error"):`` check was truthy for
+    # NaN and mis-labelled every cell as an upstream crash.
+    def _has_error(err) -> bool:
+        if err is None:
+            return False
+        if isinstance(err, float) and pd.isna(err):
+            return False
+        s = str(err).strip()
+        return bool(s) and s.lower() not in ("none", "nan", "null")
+
+    def _label(r):
+        if _has_error(r.get("error")):
+            return "error"
+        if r["overall_pass"]:
+            return "pass"
+        return "plan_fail"
+    sub["outcome"] = sub.apply(_label, axis=1)
+
+    # Pretty names + consistent ordering
+    NAME_MAP = {"flowagent": "FlowAgent", "biomaster": "BioMaster", "autoba": "AutoBA"}
+    COLOURS  = {"flowagent": "#0072B2", "biomaster": "#E69F00", "autoba": "#009E73"}
+    order = [c for c in ("flowagent", "autoba", "biomaster") if c in sub["competitor"].unique()]
+
+    # ── Panel A: pass rate + Wilson CI ─────────────────────────────
+    agg = (sub.groupby("competitor")
+              .agg(n=("overall_pass", "size"),
+                   passes=("overall_pass", "sum"))
+              .reindex(order))
+    agg["pass_rate"] = agg["passes"] / agg["n"]
+    cis = [_wilson_ci(int(r.passes), int(r.n)) for r in agg.itertuples()]
+    agg["lo"] = [c[1] for c in cis]
+    agg["hi"] = [c[2] for c in cis]
+
+    # ── Panel B: partial-credit tool-completeness ─────────────────
+    has_frac = "tools_present_fraction" in sub.columns
+    if has_frac:
+        sub["tools_present_fraction"] = pd.to_numeric(
+            sub["tools_present_fraction"], errors="coerce"
+        )
+        # Crashed cells have no plan and therefore no fraction — score as 0
+        # so they don't inflate the partial-credit view.
+        sub.loc[sub["outcome"] == "error", "tools_present_fraction"] = 0.0
+        tools_mean = sub.groupby("competitor")["tools_present_fraction"].mean().reindex(order)
+    else:
+        tools_mean = None
+
+    # ── Panel C: outcome composition ───────────────────────────────
+    counts = (sub.groupby(["competitor", "outcome"])
+                  .size().unstack(fill_value=0)
+                  .reindex(order)
+                  .reindex(columns=["pass", "plan_fail", "error"], fill_value=0))
+    counts_frac = counts.div(counts.sum(axis=1), axis=0)
+
+    # ── Layout ─────────────────────────────────────────────────────
+    n_panels = 3 if has_frac else 2
+    fig_w = 10.5 if has_frac else 7.5
+    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 4.0),
+                             gridspec_kw={"wspace": 0.38})
+    if n_panels == 2:
+        ax_pr, ax_stack = axes
+        ax_tpf = None
+    else:
+        ax_pr, ax_tpf, ax_stack = axes
+
+    x = np.arange(len(order))
+    bar_colours = [COLOURS[c] for c in order]
+    labels = [NAME_MAP[c] for c in order]
+
+    # Panel A
+    ax_pr.bar(x, agg["pass_rate"].values, color=bar_colours,
+              edgecolor="#111827", linewidth=0.7, width=0.7)
+    err_lo = agg["pass_rate"].values - agg["lo"].values
+    err_hi = agg["hi"].values - agg["pass_rate"].values
+    ax_pr.errorbar(x, agg["pass_rate"].values,
+                   yerr=[err_lo, err_hi],
+                   fmt="none", ecolor="#111827", capsize=4, linewidth=1)
+    for xi, (pr, n, p) in enumerate(zip(agg["pass_rate"], agg["n"], agg["passes"])):
+        ax_pr.text(xi, pr + 0.035, f"{pr:.0%}\n({int(p)}/{int(n)})",
+                   ha="center", va="bottom", fontsize=9, fontweight="semibold")
+    ax_pr.set_xticks(x)
+    ax_pr.set_xticklabels(labels, fontsize=10)
+    ax_pr.set_ylim(0, 1.12)
+    ax_pr.set_ylabel("Pass rate (binary)", fontsize=10)
+    ax_pr.set_title("a  Plan correctness (binary pass/fail)",
+                    loc="left", fontsize=11, fontweight="bold")
+    for side in ("top", "right"): ax_pr.spines[side].set_visible(False)
+    ax_pr.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    ax_pr.grid(axis="y", linestyle=":", color="#d1d5db", alpha=0.6)
+    ax_pr.set_axisbelow(True)
+
+    # Panel B — partial credit
+    if ax_tpf is not None and tools_mean is not None:
+        ax_tpf.bar(x, tools_mean.values, color=bar_colours,
+                   edgecolor="#111827", linewidth=0.7, width=0.7)
+        for xi, v in enumerate(tools_mean.values):
+            if np.isnan(v):
+                continue
+            ax_tpf.text(xi, v + 0.035, f"{v:.0%}",
+                        ha="center", va="bottom", fontsize=9, fontweight="semibold")
+        ax_tpf.set_xticks(x)
+        ax_tpf.set_xticklabels(labels, fontsize=10)
+        ax_tpf.set_ylim(0, 1.12)
+        ax_tpf.set_ylabel("Mean tool-completeness", fontsize=10)
+        ax_tpf.set_title("b  Partial credit (mean expected-tool recovery)",
+                         loc="left", fontsize=11, fontweight="bold")
+        for side in ("top", "right"): ax_tpf.spines[side].set_visible(False)
+        ax_tpf.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+        ax_tpf.grid(axis="y", linestyle=":", color="#d1d5db", alpha=0.6)
+        ax_tpf.set_axisbelow(True)
+
+    # Panel C — stacked outcome composition
+    OUTCOME_COLOURS = {
+        "pass":      "#15803d",
+        "plan_fail": "#E69F00",
+        "error":     "#b91c1c",
+    }
+    OUTCOME_LABELS = {
+        "pass":      "Pass",
+        "plan_fail": "Plan failed (rubric)",
+        "error":     "Upstream crash",
+    }
+    bottom = np.zeros(len(order))
+    for out_key in ("pass", "plan_fail", "error"):
+        vals = counts_frac[out_key].values
+        ax_stack.bar(
+            x, vals, bottom=bottom,
+            color=OUTCOME_COLOURS[out_key],
+            edgecolor="white", linewidth=0.7, width=0.7,
+            label=OUTCOME_LABELS[out_key],
+        )
+        # Annotate non-trivial segments
+        for xi, v in enumerate(vals):
+            if v > 0.04:
+                ax_stack.text(
+                    xi, bottom[xi] + v / 2,
+                    f"{int(counts[out_key].iloc[xi])}",
+                    ha="center", va="center", fontsize=8.5,
+                    fontweight="semibold",
+                    color=("#111827" if out_key == "plan_fail" else "white"),
+                )
+        bottom += vals
+    ax_stack.set_xticks(x)
+    ax_stack.set_xticklabels(labels, fontsize=10)
+    ax_stack.set_ylim(0, 1.0)
+    ax_stack.set_ylabel("Fraction of cells", fontsize=10)
+    panel_letter = "c" if has_frac else "b"
+    ax_stack.set_title(f"{panel_letter}  Failure mode composition",
+                       loc="left", fontsize=11, fontweight="bold")
+    ax_stack.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    ax_stack.legend(loc="lower center", bbox_to_anchor=(0.5, -0.28),
+                    ncol=3, fontsize=8.5, frameon=False)
+    for side in ("top", "right"): ax_stack.spines[side].set_visible(False)
+    ax_stack.grid(axis="y", linestyle=":", color="#d1d5db", alpha=0.6)
+    ax_stack.set_axisbelow(True)
+
+    fig.suptitle(
+        "Head-to-head across agentic bioinformatics systems  —  "
+        "FlowAgent vs. AutoBA vs. BioMaster",
+        fontsize=11.5, fontweight="bold", x=0.02, ha="left",
+    )
+    fig.subplots_adjust(bottom=0.22, top=0.86)
     return fig
 
 
@@ -1851,12 +2429,25 @@ def main() -> None:
                 print(f"[ok]   competitors_perprompt → "
                       f"{fig_dir/'competitors_perprompt'}.pdf")
 
+            # Focused agentic-only head-to-head (FlowAgent / BioMaster / AutoBA)
+            agentic = competitors_agentic_figure(df)
+            if agentic is not None:
+                _save(agentic, fig_dir / "competitors_agentic", svg=args.svg)
+                plt.close(agentic)
+                print(f"[ok]   competitors_agentic → "
+                      f"{fig_dir/'competitors_agentic'}.pdf")
+
         # Planning bonus figures
         if bench_name == "planning":
             fig2 = planning_heatmap(df)
             _save(fig2, fig_dir / "planning_heatmap", svg=args.svg)
             plt.close(fig2)
             print(f"[ok]   planning_heatmap → {fig_dir/'planning_heatmap'}.pdf")
+
+            fig2b = planning_heatmap_by_tier(df)
+            _save(fig2b, fig_dir / "planning_heatmap_by_tier", svg=args.svg)
+            plt.close(fig2b)
+            print(f"[ok]   planning_heatmap_by_tier → {fig_dir/'planning_heatmap_by_tier'}.pdf")
 
             fig3 = cost_vs_quality_figure(df)
             if fig3 is not None:

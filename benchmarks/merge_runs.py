@@ -78,46 +78,50 @@ def _resolve_results_json(metrics_csv: Path) -> Optional[Path]:
     return j if j.exists() else None
 
 
-def _discover_runs(base: Path) -> List[Path]:
-    pdir = base / "planning"
+def _discover_runs(base: Path, bench: str = "planning") -> List[Path]:
+    pdir = base / bench
     if not pdir.exists():
         return []
     return sorted([p for p in pdir.iterdir() if _is_run_dir(p)],
                   key=lambda p: p.stat().st_mtime)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--runs", nargs="+",
-                    help="Specific run dirs to merge "
-                         "(default: every dir under results/planning/)")
-    ap.add_argument("--results-base", default="results")
-    ap.add_argument("--no-rescored", action="store_true",
-                    help="Use original metrics.csv even if rescored_* exists")
-    ap.add_argument("--refresh", action="store_true",
-                    help="Delete previous results/planning/_merged/ first")
-    args = ap.parse_args()
+# Benchmark → list of columns that together identify a unique cell.
+# Used for deduplication when the same cell appears in multiple runs.
+_DEDUP_KEYS_BY_BENCH = {
+    "planning":    ("model", "input_id", "replicate"),
+    "competitors": ("competitor", "input_id", "replicate"),
+    "recovery":    ("model", "fault_id", "seed"),
+}
 
-    base = Path(args.results_base)
-    if args.runs:
-        run_dirs = [Path(r) for r in args.runs]
+
+def _merge_benchmark(
+    base: Path, bench: str, *, runs=None, refresh: bool = False,
+    prefer_rescored: bool = True,
+) -> Optional[Path]:
+    """Merge every run under ``base/<bench>/`` into ``base/<bench>/_merged/<ts>/``.
+
+    Returns the merged-output directory, or None if nothing was mergeable.
+    Dedup key per cell is drawn from ``_DEDUP_KEYS_BY_BENCH[bench]``.
+    """
+    if runs:
+        run_dirs = [Path(r) for r in runs]
     else:
-        run_dirs = _discover_runs(base)
+        run_dirs = _discover_runs(base, bench)
     if not run_dirs:
-        raise SystemExit(f"No planning runs found under {base/'planning'}")
+        return None
 
-    if args.refresh:
-        merged_root = base / "planning" / "_merged"
+    if refresh:
+        merged_root = base / bench / "_merged"
         if merged_root.exists():
             shutil.rmtree(merged_root)
 
-    # Collect metrics + results
     csv_frames: List[pd.DataFrame] = []
     all_json_rows: List[Dict[str, Any]] = []
     sources: List[Dict[str, Any]] = []
 
     for run in run_dirs:
-        csv = _resolve_metrics_csv(run, prefer_rescored=not args.no_rescored)
+        csv = _resolve_metrics_csv(run, prefer_rescored=prefer_rescored)
         if csv is None:
             print(f"  [skip] no metrics.csv: {run}")
             continue
@@ -136,77 +140,124 @@ def main():
             except Exception as exc:
                 print(f"  [warn] couldn't read {rj}: {exc}")
 
+        # Use whichever grouping column the benchmark emits (model /
+        # competitor / fault_id) so the summary printout is meaningful
+        # for each.
+        keys = _DEDUP_KEYS_BY_BENCH.get(bench, ("model", "input_id", "replicate"))
+        key_col = keys[0] if keys[0] in df.columns else None
+        seen_keys = (sorted(df[key_col].dropna().unique().tolist())
+                     if key_col else [])
         sources.append({
             "run_dir": str(run),
             "metrics_csv": str(csv),
             "rows": len(df),
-            "models": sorted(df["model"].dropna().unique().tolist())
-                       if "model" in df.columns else [],
+            key_col or "entries": seen_keys,
         })
-        print(f"  [ok]  {run.name}  ({len(df)} rows; "
-              f"models={sorted(df['model'].dropna().unique().tolist()) if 'model' in df else []})")
+        print(f"  [ok]  {bench}/{run.name}  ({len(df)} rows; "
+              f"{key_col or 'entries'}={seen_keys})")
 
     if not csv_frames:
-        raise SystemExit("Found run dirs but none had readable metrics.csv")
+        print(f"  [skip] {bench}: run dirs exist but no readable metrics.csv")
+        return None
 
     merged = pd.concat(csv_frames, ignore_index=True)
 
-    # Deduplicate: keep the most recent result per (model, input_id, replicate)
-    if all(c in merged.columns for c in ("model", "input_id", "replicate")):
+    # Deduplicate on the benchmark's identity columns.
+    dedup_keys = _DEDUP_KEYS_BY_BENCH.get(
+        bench, ("model", "input_id", "replicate"),
+    )
+    present_keys = [k for k in dedup_keys if k in merged.columns]
+    if len(present_keys) == len(dedup_keys):
         before = len(merged)
         merged = (merged.sort_values("_source_csv_mtime")
-                         .drop_duplicates(
-                             subset=["model", "input_id", "replicate"],
-                             keep="last")
+                         .drop_duplicates(subset=list(dedup_keys), keep="last")
                          .reset_index(drop=True))
         if len(merged) < before:
-            print(f"  [info] dedup: {before} → {len(merged)} rows "
-                  f"(kept latest per model/input/replicate)")
+            print(f"  [info] {bench} dedup: {before} → {len(merged)} rows "
+                  f"(kept latest per {'/'.join(dedup_keys)})")
 
-    # Drop the helper columns from the final CSV
     merged = merged.drop(columns=["_source_csv_mtime"], errors="ignore")
 
     ts = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    out_dir = base / "planning" / "_merged" / ts
+    out_dir = base / bench / "_merged" / ts
     out_dir.mkdir(parents=True, exist_ok=True)
     merged.to_csv(out_dir / "metrics.csv", index=False)
 
-    # Also dedup the per-row JSON if present
     if all_json_rows:
         seen: Dict[tuple, Dict[str, Any]] = {}
         for r in all_json_rows:
-            key = (r.get("model"), r.get("input_id"), r.get("replicate"))
-            seen[key] = r  # last write wins (matches CSV dedup direction)
+            key = tuple(r.get(k) for k in dedup_keys)
+            seen[key] = r
         (out_dir / "results.json").write_text(
             json.dumps(list(seen.values()), indent=2, default=str)
         )
 
+    group_col = present_keys[0] if present_keys else None
     manifest = {
         "merged_at": ts,
+        "benchmark": bench,
         "sources": sources,
         "total_rows": len(merged),
-        "models": sorted(merged["model"].dropna().unique().tolist())
-                  if "model" in merged.columns else [],
+        "group_column": group_col,
+        "groups": (sorted(merged[group_col].dropna().unique().tolist())
+                   if group_col and group_col in merged.columns else []),
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
-    # Per-model summary
-    if "model" in merged.columns and "overall_pass" in merged.columns:
-        summary = (merged.groupby("model")
-                          .agg(rows=("overall_pass", "size"),
-                               overall_pass_rate=("overall_pass", "mean"),
-                               type_correct=("type_correct", "mean")
-                                if "type_correct" in merged.columns else ("overall_pass", "mean"),
-                               wall_seconds=("wall_seconds", "mean")
-                                if "wall_seconds" in merged.columns else ("overall_pass", "mean"))
-                          .round(3))
+    # Per-group summary
+    if group_col and "overall_pass" in merged.columns:
+        agg_cols = {"rows": ("overall_pass", "size"),
+                    "overall_pass_rate": ("overall_pass", "mean")}
+        if "type_correct" in merged.columns:
+            agg_cols["type_correct"] = ("type_correct", "mean")
+        if "wall_seconds" in merged.columns:
+            agg_cols["wall_seconds"] = ("wall_seconds", "mean")
+        summary = merged.groupby(group_col).agg(**agg_cols).round(3)
         print()
-        print("Per-model summary:")
+        print(f"{bench.title()} — per-{group_col} summary:")
         print(summary.to_string())
 
     print()
     print(f"[ok] wrote merged CSV → {out_dir/'metrics.csv'}")
     print(f"     ({len(merged)} rows, {len(sources)} source runs)")
+    return out_dir
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--runs", nargs="+",
+                    help="Specific run dirs to merge "
+                         "(default: every dir under results/<bench>/)")
+    ap.add_argument("--results-base", default="results")
+    ap.add_argument("--no-rescored", action="store_true",
+                    help="Use original metrics.csv even if rescored_* exists")
+    ap.add_argument("--refresh", action="store_true",
+                    help="Delete previous results/<bench>/_merged/ first")
+    ap.add_argument("--benchmarks", default="planning,competitors",
+                    help="Comma-separated list of benchmarks to merge "
+                         "(default: planning,competitors)")
+    args = ap.parse_args()
+
+    base = Path(args.results_base)
+    benchmarks = [b.strip() for b in args.benchmarks.split(",") if b.strip()]
+
+    any_merged = False
+    for bench in benchmarks:
+        print(f"=== Merging {bench} ===")
+        out = _merge_benchmark(
+            base, bench,
+            runs=args.runs if bench == benchmarks[0] else None,
+            refresh=args.refresh,
+            prefer_rescored=not args.no_rescored,
+        )
+        if out is not None:
+            any_merged = True
+        print()
+
+    if not any_merged:
+        raise SystemExit(
+            f"No runs found under {base}/ for any of: {benchmarks}"
+        )
 
 
 if __name__ == "__main__":

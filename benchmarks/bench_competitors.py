@@ -284,7 +284,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--competitors",
                     help="Comma-separated competitor ids "
-                         "(default: all registered)")
+                         "(default: all registered, including raw-LLM lanes)")
+    ap.add_argument("--raw-models",
+                    default="gpt-5.4,claude-opus-4-7,gemini-2.5-pro",
+                    help="Comma-separated model IDs to run as zero-shot "
+                         "raw-LLM baselines (one provider call, no "
+                         "scaffolding). Each becomes a ``raw_<model_id>`` "
+                         "competitor. Set to empty string to disable.")
     ap.add_argument("--prompts",
                     help="Comma-separated prompt ids "
                          "(default: 10 representative prompts)")
@@ -318,8 +324,14 @@ def main() -> None:
     if not args.mock:
         set_provider(model_cfg)
 
-    # Competitors
-    registry = build_registry(model_cfg=model_cfg)
+    # Competitors — includes zero-shot raw-LLM baselines alongside the
+    # scaffolded agentic systems (FlowAgent / BioMaster / AutoBA).
+    raw_models = [m.strip() for m in (args.raw_models or "").split(",") if m.strip()]
+    registry = build_registry(
+        model_cfg=model_cfg,
+        raw_models=raw_models,
+        models_yaml_cfg=cfg,
+    )
     if args.competitors:
         wanted = set(args.competitors.split(","))
         registry = {k: v for k, v in registry.items() if k in wanted}

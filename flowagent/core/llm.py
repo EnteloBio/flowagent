@@ -1882,30 +1882,56 @@ If you are being asked to generate a title, set "success" to false.
                     "profile_name": "minimal"
                 },
                 {
-                    "name": "get_gsm_ids",
-                    "command": f"cd raw_data && esearch -db gds -query '{geo_accession}[Accession]' | esummary | xtract -pattern DocumentSummary -element Accession,Project | grep 'GSM' > {geo_accession}_gsm_ids.txt",
+                    "name": "download_geo_metadata",
+                    # ``elink`` is the canonical NCBI way to navigate from a
+                    # GEO Series to the associated SRA runs. SRA's own
+                    # ``[Accession]`` field only matches SRA-prefixed IDs
+                    # (SRR/SRP/SRS/SRX) — it will NOT resolve a ``GSE…``
+                    # accession, so a naive direct SRA query returns zero
+                    # rows and every downstream step silently cascades to
+                    # empty files. The elink hop via ``-db gds -> sra``
+                    # resolves the cross-reference server-side and returns
+                    # exactly the runs belonging to this series.
+                    #
+                    # ``set -o pipefail`` + a row-count guard surface silent
+                    # NCBI failures instead of letting empty files cascade.
+                    "command": (
+                        f"cd raw_data && set -o pipefail && "
+                        f"esearch -db gds -query '{geo_accession}[Accession]' | "
+                        f"elink -target sra | "
+                        f"efetch -format runinfo > {geo_accession}_runinfo.csv && "
+                        f"[ $(wc -l < {geo_accession}_runinfo.csv) -gt 1 ] || "
+                        f"{{ echo 'FAIL: runinfo has no data rows for {geo_accession}'; "
+                        f"exit 1; }}"
+                    ),
                     "parameters": {},
                     "dependencies": ["create_directories"],
-                    "outputs": [f"raw_data/{geo_accession}_gsm_ids.txt"],
-                    "description": "Get GSM IDs for GEO accession",
-                    "profile_name": "minimal"
-                },
-                {
-                    "name": "download_geo_metadata",
-                    "command": f"cd raw_data && > {geo_accession}_runinfo.csv && first=true && for gsm_id in $(grep -v '^GSE' {geo_accession}_gsm_ids.txt); do echo \"Processing $gsm_id...\" && if [ \"$first\" = true ]; then esearch -db sra -query \"$gsm_id\" | efetch -format runinfo >> {geo_accession}_runinfo.csv && first=false; else esearch -db sra -query \"$gsm_id\" | efetch -format runinfo | tail -n +2 >> {geo_accession}_runinfo.csv; fi; done",
-                    "parameters": {},
-                    "dependencies": ["get_gsm_ids"],
                     "outputs": [f"raw_data/{geo_accession}_runinfo.csv"],
-                    "description": "Download metadata for all GSM IDs",
+                    "description": "Fetch SRA runinfo via GDS→SRA elink (one query, no fan-out)",
                     "profile_name": "minimal"
                 },
                 {
                     "name": "extract_srr_ids",
-                    "command": f"cd raw_data && tail -n +2 {geo_accession}_runinfo.csv | cut -d',' -f1 > {geo_accession}_srr_ids.txt",
+                    # Header-aware, accession-filtered, deduped. The
+                    # ``[ -s ... ]`` guard fails loudly if the resulting
+                    # file is empty rather than cascading to silent
+                    # zero-work downstream steps.
+                    "command": (
+                        f"cd raw_data && set -o pipefail && "
+                        f"( if head -1 {geo_accession}_runinfo.csv | grep -q '^Run,'; then "
+                        f"tail -n +2 {geo_accession}_runinfo.csv; "
+                        f"else cat {geo_accession}_runinfo.csv; fi ) | "
+                        f"cut -d',' -f1 | "
+                        f"grep -E '^(SRR|ERR|DRR)[0-9]+$' | sort -u "
+                        f"> {geo_accession}_srr_ids.txt && "
+                        f"[ -s {geo_accession}_srr_ids.txt ] || "
+                        f"{{ echo 'FAIL: no SRR/ERR/DRR ids extracted from runinfo'; "
+                        f"exit 1; }}"
+                    ),
                     "parameters": {},
                     "dependencies": ["download_geo_metadata"],
                     "outputs": [f"raw_data/{geo_accession}_srr_ids.txt"],
-                    "description": "Extract SRR IDs from runinfo",
+                    "description": "Extract SRR IDs from runinfo (deduped; fails loudly if empty)",
                     "profile_name": "minimal"
                 },
                 {
