@@ -1111,6 +1111,326 @@ def recovery_tier_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     return fig
 
 
+def recovery_per_fault_heatmap(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Per-fault × per-model recovery heatmap.
+
+    Rows are individual fault types, grouped by tier (easy → hard →
+    unrecoverable) with horizontal separators. Columns are models,
+    grouped by provider with reasoning models clustered first within
+    each provider block (matching the planning-heatmap convention).
+
+    Cell value is **outcome correctness**, unified across tiers so green
+    is always "good":
+      * Easy / Hard tiers: fraction of cells where the LLM ``recovered``.
+      * Unrecoverable tier: fraction of cells where the LLM correctly
+        ``rejected`` (i.e. ``recovered == False``).
+    Colour is the shared red→amber→green ``_HEATMAP_CMAP``.
+    """
+    if df.empty or "fault" not in df.columns or "model" not in df.columns:
+        return None
+
+    df = df.copy()
+    df["recovered"] = df["recovered"].map(
+        lambda v: v if isinstance(v, bool)
+        else str(v).strip().lower() == "true"
+    )
+
+    # Tier per fault — prefer explicit column, fall back to legacy set.
+    if "fault_tier" in df.columns:
+        tier_by_fault = (df.groupby("fault")["fault_tier"]
+                           .agg(lambda s: s.iloc[0]).to_dict())
+    else:
+        tier_by_fault = {}
+    def _tier_for(f):
+        t = tier_by_fault.get(f)
+        # ``tier_by_fault`` may yield NaN if the upstream CSV recorded
+        # a missing tier; fall back to the legacy unrecoverable set.
+        if isinstance(t, str) and t.strip():
+            return t
+        return "unrecoverable" if f in _UNRECOVERABLE_FAULTS else "easy"
+
+    # Compute outcome-correctness: recovery for easy/hard, rejection for
+    # unrecoverable. Unifies the colour scale so green = good across tiers.
+    df["_tier"] = df["fault"].map(_tier_for)
+    df["_correct"] = np.where(
+        df["_tier"] == "unrecoverable",
+        ~df["recovered"].astype(bool),
+        df["recovered"].astype(bool),
+    ).astype(int)
+
+    pivot = df.pivot_table(
+        index="fault", columns="model", values="_correct", aggfunc="mean"
+    )
+    if pivot.empty:
+        return None
+
+    # Row order: by tier, then by mean correctness within tier (worst-on-top
+    # for easy/hard so reviewer sees the failure clusters; best-on-top for
+    # unrecoverable since they all should be 100%).
+    fault_tiers = {f: _tier_for(f) for f in pivot.index}
+    fault_means = pivot.mean(axis=1)
+    def _row_key(f):
+        tier = fault_tiers[f]
+        # easy=0, hard=1, unrecoverable=2 → tier ordering preserved
+        # within each tier sort by ascending mean (worst at top of tier)
+        return (_TIER_ORDER_B.get(tier, 9), fault_means[f])
+    row_order = sorted(pivot.index, key=_row_key)
+    pivot = pivot.loc[row_order]
+
+    # Column order: provider → reasoning-flag → descending correctness mean
+    def _col_key(m):
+        provider, reasoning = _classify_model(m)
+        return (_PROVIDER_RANK.get(provider, 9), not reasoning,
+                -pivot[m].mean())
+    col_order = sorted(pivot.columns, key=_col_key)
+    pivot = pivot[col_order]
+
+    n_rows, n_cols = pivot.shape
+    fig_w = max(6.5, min(0.65 * n_cols + 3.5, 12.0))
+    fig_h = max(4.0, min(0.32 * n_rows + 2.0, 14.0))
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    im = ax.imshow(pivot.values, aspect="auto", cmap=_HEATMAP_CMAP,
+                   vmin=0, vmax=1, interpolation="nearest")
+
+    # X-tick labels (models) with provider colour + reasoning italic
+    ax.set_xticks(range(n_cols))
+    ax.set_xticklabels([_short_name(m) for m in pivot.columns],
+                       rotation=35, ha="right", fontsize=8.5)
+    _style_xtick_labels_by_provider(ax, pivot.columns)
+
+    # Y-tick labels (faults) with pretty names from _FAULT_LABELS
+    ax.set_yticks(range(n_rows))
+    ax.set_yticklabels(
+        [_FAULT_LABELS.get(f, f.replace("_", " ").title()) for f in pivot.index],
+        fontsize=8.5,
+    )
+
+    # Tier separators (horizontal) + tier-label markers on the left edge
+    tier_sequence = [fault_tiers[f] for f in pivot.index]
+    prev_tier = None
+    for i, t in enumerate(tier_sequence):
+        if prev_tier is not None and t != prev_tier:
+            ax.axhline(i - 0.5, color="#111827", linewidth=1.4, alpha=0.7)
+        prev_tier = t
+    # Inline tier markers on the y-axis (shown left of the labels)
+    tier_labels_seen = set()
+    for i, t in enumerate(tier_sequence):
+        if t not in tier_labels_seen:
+            tier_labels_seen.add(t)
+            display = {"easy": "Easy", "hard": "Hard",
+                        "unrecoverable": "Unrecov."}.get(t, t.title())
+            ax.text(-0.5, i - 0.4, display,
+                    fontsize=8.5, fontweight="bold", style="italic",
+                    color="#374151", ha="right", va="bottom")
+
+    # Provider separators (vertical)
+    prev_provider = None
+    for j, m in enumerate(pivot.columns):
+        p, _ = _classify_model(m)
+        if prev_provider is not None and p != prev_provider:
+            ax.axvline(j - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
+        prev_provider = p
+
+    # Cell-grid white separators
+    ax.set_xticks(np.arange(-.5, n_cols, 1), minor=True)
+    ax.set_yticks(np.arange(-.5, n_rows, 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=0.7)
+    ax.tick_params(which="minor", length=0)
+    ax.tick_params(which="major", length=0)
+    for spine in ("top", "right", "bottom", "left"):
+        ax.spines[spine].set_visible(False)
+
+    # No per-cell annotations — colour alone encodes the value, the
+    # shared colourbar is the quantitative key. Raw n_correct/n_total
+    # counts are still in the underlying CSV for spot-checks.
+
+    ax.set_title(
+        "Per-fault recovery correctness across models  —  "
+        "green = correct outcome (recovered for easy/hard, rejected for unrecoverable)",
+        loc="left", fontsize=10.5, fontweight="bold",
+    )
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.7, pad=0.015,
+                        ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
+    cbar.ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    cbar.outline.set_visible(False)
+    cbar.ax.tick_params(length=2, labelsize=7.5)
+    cbar.set_label("Outcome correctness", fontsize=8.5)
+
+    # Provider + reasoning legend (mirrors the planning heatmap)
+    providers_present = []
+    for m in pivot.columns:
+        p, _ = _classify_model(m)
+        if p not in providers_present:
+            providers_present.append(p)
+    _add_provider_reasoning_legend(
+        fig, providers_present=providers_present, show_difficulty=False,
+    )
+    fig.subplots_adjust(bottom=0.18, left=0.28)
+    return fig
+
+
+def recovery_reasoning_split_figure(per_cell_df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Two-panel figure contrasting reasoning vs non-reasoning models on the
+    unrecoverable-fault taxonomy.
+
+    Panel a — per-model stacked bars, grouped into reasoning (top) and
+    non-reasoning (bottom) blocks with a horizontal separator.
+    Panel b — aggregated: one stacked bar per reasoning class (reasoning
+    vs non-reasoning), letting readers see the headline difference in
+    safe-refusal vs unsafe-repair rates between the two classes.
+
+    Input is the ``per_cell.csv`` that ``recovery_taxonomy.py`` emits.
+    Reasoning classification uses ``_REASONING_MODEL_IDS`` defined at
+    the top of this module.
+    """
+    if per_cell_df.empty or "_category" not in per_cell_df.columns:
+        return None
+    if "fault_tier" in per_cell_df.columns:
+        df = per_cell_df[per_cell_df["fault_tier"] == "unrecoverable"].copy()
+    else:
+        df = per_cell_df.copy()
+    if df.empty or "_model" not in df.columns:
+        return None
+
+    df["_reasoning"] = df["_model"].map(
+        lambda m: "reasoning" if m in _REASONING_MODEL_IDS else "non-reasoning"
+    )
+
+    # ── Per-model percentages ──────────────────────────────────────
+    counts = (df.groupby(["_model", "_category"])
+                .size().unstack("_category", fill_value=0))
+    for c in _TAXONOMY_CATEGORIES:
+        if c not in counts.columns:
+            counts[c] = 0
+    counts = counts[_TAXONOMY_CATEGORIES]
+    totals = counts.sum(axis=1)
+    pcts = counts.div(totals, axis=0) * 100
+
+    # Reasoning tag per model (preserved across groupby)
+    model_is_reasoning = (df.groupby("_model")["_reasoning"]
+                            .first()
+                            .eq("reasoning"))
+
+    # ── Aggregated across reasoning class ──────────────────────────
+    group_counts = (df.groupby(["_reasoning", "_category"])
+                      .size().unstack("_category", fill_value=0))
+    for c in _TAXONOMY_CATEGORIES:
+        if c not in group_counts.columns:
+            group_counts[c] = 0
+    group_counts = group_counts[_TAXONOMY_CATEGORIES]
+    group_totals = group_counts.sum(axis=1)
+    group_pcts = group_counts.div(group_totals, axis=0) * 100
+
+    # Order reasoning groups top-down
+    group_order = [g for g in ("reasoning", "non-reasoning")
+                   if g in group_pcts.index]
+
+    # Model order within each reasoning block — by safe-refusal rate descending
+    safe = pcts["correct_refusal"] + pcts["misdiagnosed_refusal"]
+    reasoning_models = [m for m in pcts.index if model_is_reasoning.get(m, False)]
+    nonreas_models   = [m for m in pcts.index if not model_is_reasoning.get(m, False)]
+    reasoning_models = sorted(reasoning_models, key=lambda m: safe[m])
+    nonreas_models   = sorted(nonreas_models,   key=lambda m: safe[m])
+    # Reasoning at top; non-reasoning below.
+    ordered_models = reasoning_models + nonreas_models
+    n_reas = len(reasoning_models)
+
+    _set_publication_style()
+    height = max(2.8, 0.55 * len(ordered_models) + 2.2)
+    fig, axes = plt.subplots(
+        1, 2, figsize=(12, height),
+        gridspec_kw={"width_ratios": [2.3, 1.0], "wspace": 0.12},
+    )
+    ax_per, ax_agg = axes
+
+    # ── Panel a: per-model stacked bars ────────────────────────────
+    y = np.arange(len(ordered_models))
+    left = np.zeros(len(ordered_models))
+    for cat in _TAXONOMY_CATEGORIES:
+        vals = pcts.loc[ordered_models, cat].values
+        ax_per.barh(y, vals, left=left, height=0.72,
+                    color=_TAXONOMY_COLOURS[cat], edgecolor="white",
+                    linewidth=0.6, label=_TAXONOMY_LABELS[cat])
+        for i, v in enumerate(vals):
+            if v >= 6:
+                ax_per.text(left[i] + v / 2, y[i], f"{v:.0f}%",
+                            ha="center", va="center", fontsize=8,
+                            color="white", fontweight="bold")
+        left += vals
+    # n labels
+    for i, m in enumerate(ordered_models):
+        ax_per.text(101, i, f"n={int(totals.loc[m])}", va="center",
+                    fontsize=7.5, color="#444")
+
+    ax_per.set_yticks(y)
+    ax_per.set_yticklabels([_short_name(m) for m in ordered_models])
+
+    # Italic-bold reasoning labels + provider colour on y-ticks, matching
+    # the planning-heatmap convention so the two figures read together.
+    for tick, m in zip(ax_per.get_yticklabels(), ordered_models):
+        provider, is_reasoning = _classify_model(m)
+        tick.set_color(_PROVIDER_COLOURS.get(provider, "#111827"))
+        if is_reasoning:
+            tick.set_fontstyle("italic")
+            tick.set_fontweight("bold")
+
+    # Separator between reasoning block (top) and non-reasoning (below)
+    if 0 < n_reas < len(ordered_models):
+        ax_per.axhline(n_reas - 0.5, color="#111827",
+                       linewidth=1.2, alpha=0.6)
+        ax_per.text(-0.5, n_reas - 0.5 - 0.3, "↑ reasoning  ",
+                    fontsize=8, style="italic", color="#6b7280",
+                    ha="right", va="top")
+        ax_per.text(-0.5, n_reas - 0.5 + 0.3, "↓ non-reasoning",
+                    fontsize=8, style="italic", color="#6b7280",
+                    ha="right", va="bottom")
+
+    ax_per.set_xlim(0, 108)
+    ax_per.set_xlabel("% of cells")
+    ax_per.set_title("a  Per-model taxonomy (unrecoverable faults)",
+                     loc="left", fontsize=11, fontweight="bold")
+    ax_per.grid(axis="x", linestyle="--", alpha=0.35)
+    for spine in ("top", "right"): ax_per.spines[spine].set_visible(False)
+
+    # ── Panel b: aggregated reasoning-vs-non-reasoning ─────────────
+    y2 = np.arange(len(group_order))
+    left2 = np.zeros(len(group_order))
+    for cat in _TAXONOMY_CATEGORIES:
+        vals = group_pcts.loc[group_order, cat].values
+        ax_agg.barh(y2, vals, left=left2, height=0.55,
+                    color=_TAXONOMY_COLOURS[cat], edgecolor="white",
+                    linewidth=0.6)
+        for i, v in enumerate(vals):
+            if v >= 6:
+                ax_agg.text(left2[i] + v / 2, y2[i], f"{v:.0f}%",
+                            ha="center", va="center", fontsize=8.5,
+                            color="white", fontweight="bold")
+        left2 += vals
+    for i, g in enumerate(group_order):
+        ax_agg.text(101, i, f"n={int(group_totals.loc[g])}", va="center",
+                    fontsize=7.5, color="#444")
+    ax_agg.set_yticks(y2)
+    ax_agg.set_yticklabels([g.replace("-", "-\n") for g in group_order],
+                            fontsize=10)
+    ax_agg.set_xlim(0, 108)
+    ax_agg.set_xlabel("% of cells")
+    ax_agg.set_title("b  Aggregated by class",
+                     loc="left", fontsize=11, fontweight="bold")
+    ax_agg.grid(axis="x", linestyle="--", alpha=0.35)
+    for spine in ("top", "right"): ax_agg.spines[spine].set_visible(False)
+
+    fig.legend(
+        handles=[plt.Rectangle((0, 0), 1, 1, color=_TAXONOMY_COLOURS[c])
+                 for c in _TAXONOMY_CATEGORIES],
+        labels=[_TAXONOMY_LABELS[c] for c in _TAXONOMY_CATEGORIES],
+        loc="lower center", bbox_to_anchor=(0.5, -0.03),
+        ncol=len(_TAXONOMY_CATEGORIES), frameon=False, fontsize=9,
+    )
+    return fig
+
+
 def recovery_taxonomy_figure(per_cell_df: pd.DataFrame) -> Optional[plt.Figure]:
     """Stacked-bar chart of the unrecoverable-tier response taxonomy.
 
@@ -1575,14 +1895,7 @@ def competitors_perprompt_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     ax.tick_params(which="minor", length=0)
     ax.tick_params(which="major", length=0)
 
-    for i in range(pivot.shape[0]):
-        for j in range(pivot.shape[1]):
-            v = pivot.iloc[i, j]
-            if np.isnan(v):
-                continue
-            colour = "#111827" if 0.35 < v < 0.75 else "white"
-            ax.text(j, i, f"{v:.0%}", ha="center", va="center",
-                    fontsize=8, color=colour, fontweight="semibold")
+    # No per-cell annotations — colour alone encodes the value.
 
     cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.015,
                         ticks=[0.0, 0.25, 0.5, 0.75, 1.0])
@@ -1639,15 +1952,7 @@ def generation_figure(df: pd.DataFrame) -> plt.Figure:
     # Cell markers — use glyphs present in Arial / Helvetica to avoid PDF
     # font-embedding warnings ("●" U+25CF and "×" U+00D7 are in every core
     # font; "✓" U+2713 is not in Arial).
-    for i in range(heat.shape[0]):
-        for j in range(heat.shape[1]):
-            v = heat.iloc[i, j]
-            if np.isnan(v):
-                continue
-            marker = "●" if v >= 0.5 else "×"
-            col = "white" if v < 0.35 or v > 0.75 else "#111827"
-            ax.text(j, i, marker, ha="center", va="center",
-                    fontsize=10, color=col, fontweight="bold")
+    # No per-cell annotations — colour alone encodes the value.
 
     ax.set_xticks(np.arange(-.5, heat.shape[1], 1), minor=True)
     ax.set_yticks(np.arange(-.5, heat.shape[0], 1), minor=True)
@@ -1701,14 +2006,7 @@ def executor_matrix_figure(df: pd.DataFrame) -> plt.Figure:
     ax.set_yticks(range(len(mat)))
     ax.set_yticklabels(mat.index, fontsize=8.5)
 
-    for i in range(mat_num.shape[0]):
-        for j in range(mat_num.shape[1]):
-            score = mat_num.iloc[i, j]
-            # Arial-safe glyphs (see ``generation_figure`` for the rationale)
-            label = "●" if score == 1.0 else ("×" if score == 0.0 else "—")
-            col   = "white" if score != 0.5 else "#111827"
-            ax.text(j, i, label, ha="center", va="center",
-                    fontsize=11, color=col, fontweight="bold")
+    # No per-cell annotations — colour alone encodes the value.
 
     ax.set_xticks(np.arange(-.5, mat_num.shape[1], 1), minor=True)
     ax.set_yticks(np.arange(-.5, mat_num.shape[0], 1), minor=True)
@@ -1927,6 +2225,187 @@ def cost_vs_quality_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
     ax.set_title("Pass rate vs cost" if use_cost else "Pass rate vs latency",
                  loc="left")
+    return fig
+
+
+# ── Wall-clock latency ───────────────────────────────────────────
+
+def latency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Two-panel wall-clock latency comparison across models.
+
+    Panel a: sorted horizontal bar chart of median wall-time per model
+    with IQR error bars, provider-coloured.
+    Panel b: scatter of pass rate vs median wall-time (log-x) with
+    Pareto frontier annotated — the speed/quality trade-off.
+
+    Pairs with ``planning_cost_quality.pdf``: that figure answers
+    "what does it cost?", this one answers "is it fast enough?".
+    Returns ``None`` if ``wall_seconds`` is missing or all-zero.
+    """
+    if "wall_seconds" not in df.columns or df.empty:
+        return None
+
+    df = df.copy()
+    df["wall_seconds"] = pd.to_numeric(df["wall_seconds"], errors="coerce")
+    df = df[df["wall_seconds"].notna() & (df["wall_seconds"] > 0)]
+    if df.empty:
+        return None
+
+    if "overall_pass" in df.columns:
+        df["overall_pass"] = df["overall_pass"].map(
+            lambda v: v if isinstance(v, (bool, int, float))
+            else str(v).strip().lower() == "true"
+        ).astype(int)
+
+    g = (df.groupby("model")["wall_seconds"]
+           .agg(median="median",
+                q1=lambda s: float(np.percentile(s, 25)),
+                q3=lambda s: float(np.percentile(s, 75)),
+                count="count")
+           .reset_index())
+    if "overall_pass" in df.columns:
+        rates = (df.groupby("model")["overall_pass"]
+                   .mean().rename("rate").reset_index())
+        g = g.merge(rates, on="model", how="left")
+    else:
+        g["rate"] = np.nan
+    g = g.sort_values("median", ascending=True).reset_index(drop=True)
+
+    fig_h = max(3.4, 0.26 * len(g) + 1.4)
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(11.0, fig_h),
+        gridspec_kw={"width_ratios": [1.0, 1.05], "wspace": 0.32},
+    )
+
+    # Panel a — sorted bar chart with IQR error bars
+    y    = np.arange(len(g))
+    cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+            for m in g["model"]]
+    err_lo = (g["median"] - g["q1"]).clip(lower=0).to_numpy()
+    err_hi = (g["q3"] - g["median"]).clip(lower=0).to_numpy()
+    ax1.barh(y, g["median"], xerr=[err_lo, err_hi],
+             color=cols, edgecolor="white", linewidth=0.6, height=0.72,
+             capsize=2, error_kw={"elinewidth": 0.8, "capthick": 0.8,
+                                  "color": "#1f2937"})
+    for i, (m, q3) in enumerate(zip(g["median"], g["q3"])):
+        ax1.text(q3 + 0.02 * g["q3"].max(), i, f"{m:.0f}s",
+                 va="center", ha="left", fontsize=7.5, color="#1f2937")
+
+    ax1.set_yticks(y)
+    ax1.set_yticklabels([_short_name(m) for m in g["model"]])
+    ax1.set_xlabel("Median wall time per plan (s)  ·  IQR")
+    ax1.set_title("a  Latency per model", loc="left", fontweight="bold")
+    ax1.set_xlim(0, g["q3"].max() * 1.18)
+    _style_value_axis(ax1, x=True)
+
+    # Panel b — pass rate vs latency scatter with Pareto frontier highlighted
+    if g["rate"].notna().any():
+        plot_df = g.dropna(subset=["rate"]).copy()
+        for _, row in plot_df.iterrows():
+            prov   = _provider_from_model(row["model"])
+            colour = _PROVIDER_COLOURS.get(prov, "#6b7280")
+            ax2.scatter(row["median"], row["rate"], s=60, color=colour,
+                        edgecolor="white", linewidth=0.8, zorder=3)
+
+        # Frontier: lowest latency at each new-best pass-rate threshold
+        frontier = plot_df.sort_values("median").copy()
+        best_rate = -1.0
+        is_frontier = []
+        for _, r in frontier.iterrows():
+            on = r["rate"] > best_rate
+            if on:
+                best_rate = r["rate"]
+            is_frontier.append(on)
+        frontier["frontier"] = is_frontier
+        on_frontier = set(frontier.loc[frontier["frontier"], "model"])
+
+        # Linear x when range spans < 1 decade — log compression hurts here
+        x_lo, x_hi = plot_df["median"].min(), plot_df["median"].max()
+        use_log = (x_hi / max(x_lo, 1e-9)) >= 10.0
+        if use_log:
+            ax2.set_xscale("log")
+            ax2.set_xlabel("Median wall time per plan (s, log)")
+        else:
+            pad = 0.05 * max(x_hi - x_lo, 1.0)
+            ax2.set_xlim(x_lo - pad, x_hi + pad)
+            ax2.set_xlabel("Median wall time per plan (s)")
+        ax2.xaxis.set_major_formatter(mtick.FuncFormatter(
+            lambda v, _: f"{v:.0f}s"))
+
+        ax2.set_ylabel("Pass rate")
+        ax2.set_title("b  Speed vs quality trade-off",
+                      loc="left", fontweight="bold")
+
+        # Highlight frontier points with a heavier ring
+        front_pts = plot_df[plot_df["model"].isin(on_frontier)]
+        ax2.scatter(front_pts["median"], front_pts["rate"], s=110,
+                    facecolors="none", edgecolor="#1f2937",
+                    linewidth=1.2, zorder=4)
+
+        y_lo = max(0.0, plot_df["rate"].min() - 0.04)
+        y_hi = min(1.02, plot_df["rate"].max() + 0.04)
+        ax2.set_ylim(y_lo, y_hi)
+        span = y_hi - y_lo
+        step = 0.02 if span < 0.15 else 0.05 if span < 0.3 else 0.1
+        ticks = np.arange(0, 1.01, step)
+        ax2.set_yticks([t for t in ticks if y_lo <= t <= y_hi])
+        ax2.set_yticklabels([f"{t:.0%}" for t in ticks if y_lo <= t <= y_hi])
+        ax2.grid(True, linestyle="-", linewidth=0.6, alpha=0.35)
+        ax2.set_axisbelow(True)
+
+        # Selective labelling — labelling all 32 models overcrowds the
+        # panel. We mark: every frontier point, the slowest model, the
+        # lowest-pass-rate model, and one representative per pass-rate
+        # tier per provider (whichever sits at the latency extreme).
+        to_label = set(on_frontier)
+        to_label.add(plot_df.loc[plot_df["median"].idxmax(), "model"])
+        to_label.add(plot_df.loc[plot_df["rate"].idxmin(), "model"])
+
+        # Per (provider, rate-tier) pick the fastest + slowest representative
+        rate_bin = (plot_df["rate"] * 200).round().astype(int)  # 0.5% bins
+        plot_df["_rb"] = rate_bin
+        for (_prov, _rb), sub in plot_df.groupby(
+                [plot_df["model"].map(_provider_from_model), "_rb"]):
+            to_label.add(sub.loc[sub["median"].idxmin(), "model"])
+            to_label.add(sub.loc[sub["median"].idxmax(), "model"])
+
+        x_range = max(x_hi - x_lo, 1.0)
+        bin_w   = 0.05 * x_range
+        labelled = plot_df[plot_df["model"].isin(to_label)].sort_values(
+            ["rate", "median"], ascending=[False, True])
+        buckets: Dict[int, int] = {}
+        for _, row in labelled.iterrows():
+            bk = int((row["median"] - x_lo) / max(bin_w, 1e-9))
+            slot = buckets.get(bk, 0)
+            buckets[bk] = slot + 1
+            # Alternate above / below; spread further on later slots
+            offsets = [(8, 8), (8, -12), (-8, 8), (-8, -12),
+                       (10, 18), (10, -20), (-10, 18), (-10, -20)]
+            dx, dy = offsets[slot % len(offsets)]
+            ha = "left" if dx > 0 else "right"
+            on_front = row["model"] in on_frontier
+            ax2.annotate(_short_name(row["model"]),
+                         (row["median"], row["rate"]),
+                         xytext=(dx, dy), textcoords="offset points",
+                         fontsize=7.0, ha=ha,
+                         color="#111827" if on_front else "#4b5563",
+                         fontweight="bold" if on_front else "normal",
+                         arrowprops=dict(arrowstyle="-", color="#9ca3af",
+                                         linewidth=0.5, shrinkA=0, shrinkB=2))
+        plot_df.drop(columns="_rb", inplace=True, errors="ignore")
+    else:
+        ax2.axis("off")
+        ax2.text(0.5, 0.5, "No pass-rate data", ha="center", va="center",
+                 fontsize=10, color="#6b7280", transform=ax2.transAxes)
+
+    providers = sorted(
+        {_provider_from_model(m) for m in g["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle("Wall-clock latency", fontsize=11,
+                 fontweight="bold", y=1.06)
     return fig
 
 
@@ -2404,6 +2883,49 @@ def main() -> None:
                 print(f"[ok]   recovery_tier_summary → "
                       f"{fig_dir/'recovery_tier_summary'}.pdf")
 
+            # Per-fault × per-model heatmap — the cross-model comparison
+            heat = recovery_per_fault_heatmap(df)
+            if heat is not None:
+                _save(heat, fig_dir / "recovery_per_fault_heatmap",
+                      svg=args.svg)
+                plt.close(heat)
+                print(f"[ok]   recovery_per_fault_heatmap → "
+                      f"{fig_dir/'recovery_per_fault_heatmap'}.pdf")
+
+            # Per-model recovery figures (one per model that ran).
+            # ``recovery_figure`` and ``recovery_tier_summary_figure``
+            # both accept a filtered df, so we just slice on the model
+            # column. Filename uses the short-name slug for legibility.
+            if "model" in df.columns:
+                per_model_dir = fig_dir / "recovery_per_model"
+                per_model_dir.mkdir(parents=True, exist_ok=True)
+                for m in sorted(df["model"].dropna().unique()):
+                    sub = df[df["model"] == m]
+                    if sub.empty:
+                        continue
+                    # Sanitise the model id into a filesystem-safe slug.
+                    # Replace ``.`` too — otherwise ``_save`` /
+                    # ``with_suffix`` truncates everything after the
+                    # last dot (gemini-2.5-flash → gemini-2.pdf).
+                    slug = (
+                        str(m).replace("/", "_").replace(":", "_")
+                              .replace(" ", "_").replace(".", "_")
+                    )
+                    pmf = recovery_figure(sub)
+                    if pmf is not None:
+                        _save(pmf, per_model_dir / f"recovery_{slug}",
+                              svg=args.svg)
+                        plt.close(pmf)
+                    pmt = recovery_tier_summary_figure(sub)
+                    if pmt is not None:
+                        _save(pmt,
+                              per_model_dir / f"recovery_tier_{slug}",
+                              svg=args.svg)
+                        plt.close(pmt)
+                print(f"[ok]   per-model recovery figures → "
+                      f"{per_model_dir}/recovery_<model>.pdf "
+                      f"(+ recovery_tier_<model>.pdf)")
+
             # Unrecoverable-tier taxonomy (correct / misdiagnosed /
             # unsafe / silent). Uses per_cell.csv from the latest
             # recovery_taxonomy.py run; regenerates if absent.
@@ -2419,6 +2941,14 @@ def main() -> None:
                     plt.close(taxfig)
                     print(f"[ok]   recovery_taxonomy → "
                           f"{fig_dir/'recovery_taxonomy'}.pdf")
+
+                split = recovery_reasoning_split_figure(tax_df)
+                if split is not None:
+                    _save(split, fig_dir / "recovery_reasoning_split",
+                          svg=args.svg)
+                    plt.close(split)
+                    print(f"[ok]   recovery_reasoning_split → "
+                          f"{fig_dir/'recovery_reasoning_split'}.pdf")
 
         # Companion heatmap for the head-to-head
         if bench_name == "competitors":
@@ -2455,6 +2985,13 @@ def main() -> None:
                 plt.close(fig3)
                 print(f"[ok]   planning_cost_quality → "
                       f"{fig_dir/'planning_cost_quality'}.pdf")
+
+            fig3b = latency_figure(df)
+            if fig3b is not None:
+                _save(fig3b, fig_dir / "planning_latency", svg=args.svg)
+                plt.close(fig3b)
+                print(f"[ok]   planning_latency → "
+                      f"{fig_dir/'planning_latency'}.pdf")
 
             fig4 = cost_summary_figure(df)
             if fig4 is not None:

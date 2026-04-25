@@ -265,12 +265,14 @@ models:
   # Pro models have tiered pricing: standard for ≤200K tokens,
   # 2× input for >200K tokens. Flash models are flat-rate.
 
-  # ── Gemini 3.x (latest) ────────────────────────────────────
-  - id: gemini-3.1-pro
+  # ── Gemini 3.x (preview) ───────────────────────────────────
+  # Gemini 3 family is preview-only on v1beta as of 2026-04-25.
+  # Public IDs all carry an explicit ``-preview`` suffix.
+  - id: gemini-3.1-pro-preview
     provider: google
     env_var: GOOGLE_API_KEY
     family: gemini-3
-    tier: current
+    tier: preview
     context_k: 1000
     pricing: {input_per_1k: 0.00200, output_per_1k: 0.01200}
     notes: "2x input rate for prompts >200K tokens"
@@ -283,11 +285,11 @@ models:
     context_k: 1000
     pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
 
-  - id: gemini-3-flash
+  - id: gemini-3-flash-preview
     provider: google
     env_var: GOOGLE_API_KEY
     family: gemini-3
-    tier: current
+    tier: preview
     context_k: 1000
     pricing: {input_per_1k: 0.00050, output_per_1k: 0.00300}
 
@@ -318,19 +320,19 @@ models:
     pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
 
   # ── Gemini 1.5 (legacy, still callable) ────────────────────
-  - id: gemini-1.5-pro
-    provider: google
-    env_var: GOOGLE_API_KEY
-    family: gemini-1.5
-    tier: legacy
-    context_k: 2000
-    pricing: {input_per_1k: 0.00125, output_per_1k: 0.00500}
-    notes: "3.5x pricing above 128K tokens"
+#  - id: gemini-1.5-pro
+#    provider: google
+#    env_var: GOOGLE_API_KEY
+#    family: gemini-1.5
+#    tier: legacy
+#    context_k: 2000
+#    pricing: {input_per_1k: 0.00125, output_per_1k: 0.00500}
+#    notes: "3.5x pricing above 128K tokens"
 
-  - id: gemini-1.5-flash
-    provider: google
-    env_var: GOOGLE_API_KEY
-    family: gemini-1.5
-    tier: legacy
-    context_k: 1000
-    pricing: {input_per_1k: 0.000075, output_per_1k: 0.00030}
+#  - id: gemini-1.5-flash
+#     provider: google
+#    env_var: GOOGLE_API_KEY
+#    family: gemini-1.5
+#    tier: legacy
+#    context_k: 1000
+#    pricing: {input_per_1k: 0.000075, output_per_1k: 0.00030}
