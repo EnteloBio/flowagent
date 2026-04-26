@@ -3,147 +3,155 @@
   <!-- Generator: Adobe Illustrator 30.3.0, SVG Export Plug-In . SVG Version: 2.1.3 Build 182)  -->
   <defs>
     <style>
-      .st0, .st1, .st2, .st3 {
-        fill: none;
-      }
-
-      .st4 {
+      .st0 {
         mask: url(#mask);
       }
 
-      .st5, .st6, .st7, .st8, .st9, .st10, .st11, .st12, .st13, .st14, .st15, .st16, .st17, .st18, .st19, .st20, .st21, .st22, .st23, .st24, .st25, .st26, .st27, .st28, .st29, .st30, .st31, .st32, .st33, .st34, .st35, .st36, .st37, .st38, .st39, .st40, .st41, .st42, .st43, .st44, .st45, .st46, .st47, .st48, .st49, .st50 {
+      .st1, .st2, .st3, .st4, .st5, .st6, .st7, .st8, .st9, .st10, .st11, .st12, .st13, .st14, .st15, .st16, .st17, .st18, .st19, .st20, .st21, .st22, .st23, .st24, .st25, .st26, .st27, .st28, .st29, .st30, .st31, .st32, .st33, .st34, .st35, .st36, .st37, .st38, .st39, .st40, .st41, .st42, .st43, .st44, .st45, .st46, .st47, .st48, .st49 {
         isolation: isolate;
       }
 
-      .st5, .st51, .st10, .st15, .st18, .st30, .st40, .st44, .st52, .st50 {
-        font-family: ArialMT, Arial;
-      }
-
-      .st5, .st51, .st13, .st15, .st18, .st25, .st53 {
+      .st1, .st5, .st6, .st12, .st15, .st28, .st50 {
         fill: #374151;
       }
 
-      .st5, .st14, .st29, .st40, .st43, .st44, .st50 {
+      .st1, .st5, .st8, .st12, .st15, .st17, .st21, .st22, .st32, .st41, .st49 {
+        font-family: ArialMT, Arial;
+      }
+
+      .st1, .st11, .st31, .st41, .st44, .st49 {
         font-size: 10.5px;
       }
 
-      .st54, .st42 {
+      .st51, .st43 {
         fill: #15803d;
       }
 
-      .st6 {
+      .st2 {
         font-family: Menlo-Bold, Menlo;
       }
 
-      .st6, .st7, .st8, .st11, .st12, .st16, .st17, .st20, .st23, .st25, .st26, .st33, .st34, .st35, .st36, .st38, .st39, .st41, .st42, .st55, .st46, .st49 {
+      .st2, .st3, .st4, .st9, .st10, .st13, .st14, .st18, .st25, .st28, .st34, .st35, .st36, .st37, .st39, .st40, .st42, .st43, .st45, .st47, .st48 {
         font-weight: 700;
       }
 
-      .st6, .st19, .st22, .st27 {
-        font-size: 10px;
-      }
-
-      .st6, .st19, .st29, .st37, .st46, .st48 {
+      .st2, .st52, .st16, .st22, .st30, .st31, .st38, .st45 {
         fill: #065f46;
       }
 
-      .st56, .st57 {
+      .st2, .st16, .st24, .st29 {
+        font-size: 10px;
+      }
+
+      .st53, .st54 {
         fill: #e5e7eb;
       }
 
-      .st56, .st57, .st3 {
+      .st53, .st54, .st55 {
         stroke: #6b7280;
       }
 
-      .st7, .st8, .st11, .st12, .st16, .st17, .st20, .st23, .st25, .st26, .st33, .st34, .st35, .st36, .st38, .st39, .st41, .st42, .st55, .st46, .st49 {
+      .st3, .st4, .st9, .st10, .st13, .st14, .st18, .st25, .st28, .st34, .st35, .st36, .st37, .st39, .st40, .st42, .st43, .st45, .st47, .st48 {
         font-family: Arial-BoldMT, Arial;
       }
 
-      .st7, .st11 {
+      .st3, .st9 {
         font-size: 20px;
       }
 
-      .st7, .st21, .st23, .st31, .st35 {
+      .st3, .st20, .st25, .st33, .st36 {
         fill: #111827;
       }
 
-      .st8, .st10 {
+      .st4, .st8 {
         font-size: 19px;
       }
 
-      .st8, .st10, .st33, .st41, .st58, .st49 {
+      .st4, .st8, .st34, .st42, .st56, .st48 {
         fill: #0072b2;
       }
 
-      .st59 {
+      .st57 {
         fill: #00b95c;
       }
 
-      .st60 {
+      .st58 {
         fill: #ffe432;
       }
 
-      .st61, .st62 {
+      .st59, .st60 {
         fill: #dcfce7;
         stroke: #15803d;
       }
 
-      .st51, .st9, .st12, .st15, .st20, .st28, .st34, .st38, .st39, .st42, .st45, .st49 {
-        font-size: 11.5px;
+      .st5, .st25 {
+        font-size: 13px;
       }
 
-      .st9, .st14, .st17, .st26, .st30, .st38, .st44 {
-        fill: #6b7280;
-      }
-
-      .st11, .st63, .st64, .st65, .st66 {
-        fill: #fff;
-      }
-
-      .st12, .st50 {
-        fill: #1e3a8a;
-      }
-
-      .st13, .st16, .st17, .st18, .st21, .st30, .st32, .st37, .st47, .st48 {
+      .st6, .st7, .st13, .st14, .st15, .st17, .st20, .st21, .st22, .st23, .st30, .st32, .st38 {
         font-size: 11px;
       }
 
-      .st67, .st68, .st69, .st1, .st57, .st62, .st66 {
+      .st6, .st7, .st19, .st23, .st26, .st30, .st46 {
+        font-family: MyriadPro-Regular, 'Myriad Pro';
+      }
+
+      .st7, .st17, .st18, .st44 {
+        fill: #92400e;
+      }
+
+      .st9, .st61, .st62, .st63, .st64 {
+        fill: #fff;
+      }
+
+      .st10, .st12, .st18, .st19, .st26, .st35, .st39, .st40, .st43, .st46, .st48 {
+        font-size: 11.5px;
+      }
+
+      .st10, .st49 {
+        fill: #1e3a8a;
+      }
+
+      .st65, .st66, .st67, .st68, .st54, .st60, .st64 {
         stroke-width: 1.5px;
       }
 
-      .st67, .st1, .st70 {
+      .st65, .st68, .st69 {
         stroke: #b91c1c;
       }
 
-      .st67, .st70 {
+      .st65, .st69 {
         fill: #fee2e2;
       }
 
-      .st71 {
+      .st70 {
         fill: #eff6ff;
         stroke: #1d4ed8;
       }
 
-      .st71, .st72, .st3 {
+      .st70, .st71, .st55 {
         stroke-width: 1.2px;
       }
 
-      .st73, .st69 {
+      .st72, .st67 {
         fill: #fef3c7;
         stroke: #e69f00;
       }
 
-      .st14, .st22, .st29, .st31, .st37, .st43 {
+      .st11, .st14, .st73, .st32, .st39, .st46, .st47 {
+        fill: #6b7280;
+      }
+
+      .st11, .st24, .st31, .st33, .st38, .st44 {
         font-family: Arial-ItalicMT, Arial;
         font-style: italic;
       }
 
-      .st63 {
+      .st61 {
         stroke-width: 2px;
       }
 
-      .st63, .st64 {
+      .st61, .st62 {
         stroke: #0072b2;
       }
 
@@ -151,443 +159,710 @@
         fill: #6b21a8;
       }
 
-      .st16, .st22, .st27, .st32, .st36 {
+      .st13, .st21, .st23, .st24, .st29, .st37, .st75 {
         fill: #7f1d1d;
       }
 
-      .st75 {
+      .st76 {
         fill: #009e73;
       }
 
-      .st19, .st21, .st27 {
+      .st16, .st20, .st29 {
         font-family: Menlo-Regular, Menlo;
       }
 
-      .st68 {
+      .st66 {
         fill: #f9fafb;
         stroke: #e5e7eb;
       }
 
-      .st20, .st43, .st47 {
-        fill: #92400e;
-      }
-
-      .st76 {
+      .st77 {
         fill: #749bff;
       }
 
-      .st77 {
+      .st78 {
         fill: #d77655;
         fill-rule: evenodd;
       }
 
-      .st78 {
+      .st79 {
         fill: url(#linear-gradient);
       }
 
-      .st23 {
-        font-size: 13px;
-      }
-
-      .st25, .st26, .st31, .st33, .st36, .st46 {
-        font-size: 12px;
-      }
-
-      .st26 {
-        letter-spacing: 0em;
-      }
-
-      .st64 {
-        stroke-width: 2.5px;
-      }
-
-      .st79, .st39, .st45 {
-        fill: #b91c1c;
-      }
-
-      .st80 {
-        font-family: MyriadPro-Regular, 'Myriad Pro';
-      }
-
-      .st28, .st34, .st81 {
+      .st19, .st35, .st80 {
         fill: #e69f00;
       }
 
-      .st1 {
+      .st26, .st81, .st40 {
+        fill: #b91c1c;
+      }
+
+      .st28, .st33, .st34, .st37, .st45, .st47 {
+        font-size: 12px;
+      }
+
+      .st62 {
+        stroke-width: 2.5px;
+      }
+
+      .st68 {
         stroke-dasharray: 3 2;
       }
 
-      .st82 {
+      .st68, .st82, .st55 {
+        fill: none;
+      }
+
+      .st83 {
         fill: #fbbc04;
       }
 
-      .st35 {
+      .st36 {
         font-size: 16px;
       }
 
-      .st72 {
+      .st71 {
         fill: #fffbeb;
         stroke: #d97706;
       }
 
-      .st40 {
+      .st41 {
         fill: #78350f;
       }
 
-      .st57 {
+      .st54 {
         stroke-dasharray: 4 2;
       }
 
-      .st41 {
+      .st42 {
         font-size: 22px;
       }
 
-      .st83 {
+      .st84 {
         fill: #cc79a7;
       }
 
-      .st84 {
+      .st85 {
         fill: #fc413d;
       }
 
-      .st2 {
+      .st82 {
         stroke: #9ca3af;
       }
 
-      .st85 {
+      .st86 {
         fill: #ffee48;
       }
 
-      .st86 {
+      .st87 {
         fill: #3186ff;
       }
 
-      .st66 {
+      .st64 {
         stroke: #cbd5e1;
       }
 
-      .st87 {
+      .st88 {
         fill: #fcf2ee;
       }
     </style>
-    <linearGradient id="linear-gradient" x1="354.6" y1="748.8" x2="377" y2="767.7" gradientTransform="translate(0 1060) scale(1 -1)" gradientUnits="userSpaceOnUse">
+    <linearGradient id="linear-gradient" x1="365.5" y1="747" x2="389.6" y2="767.3" gradientTransform="translate(0 1060) scale(1 -1)" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#4893fc"/>
       <stop offset=".3" stop-color="#4893fc"/>
       <stop offset=".8" stop-color="#969dff"/>
       <stop offset="1" stop-color="#bd99fe"/>
     </linearGradient>
-    <mask id="mask" x="328" y="269" width="71.1" height="68" maskUnits="userSpaceOnUse">
+    <mask id="mask" x="336.9" y="267.7" width="76.4" height="73" maskUnits="userSpaceOnUse">
       <g id="maskme">
-        <path d="M363.6,282c.5,0,.8.3,1,.7.3,1.3.8,2.7,1.3,3.9,1.4,3.3,3.4,6.2,5.9,8.7,2.5,2.5,5.4,4.5,8.7,5.9,1.3.5,2.6,1,3.9,1.3.4.1.7.5.7,1s-.3.8-.7,1c-1.3.3-2.7.8-3.9,1.3-3.3,1.4-6.2,3.4-8.7,5.9-2.5,2.5-4.5,5.4-5.9,8.7-.5,1.3-1,2.6-1.3,3.9-.1.4-.5.7-1,.7-.5,0-.8-.3-1-.7-.3-1.3-.8-2.7-1.3-3.9-1.4-3.3-3.4-6.2-5.9-8.7-2.5-2.5-5.4-4.5-8.7-5.9-1.3-.5-2.6-1-3.9-1.3-.4-.1-.7-.5-.7-1,0-.5.3-.8.7-1,1.3-.3,2.7-.8,3.9-1.3,3.3-1.4,6.2-3.4,8.7-5.9,2.5-2.5,4.5-5.4,5.9-8.7.5-1.3,1-2.6,1.3-3.9.1-.4.5-.7,1-.7Z"/>
-        <path class="st78" d="M363.6,282c.5,0,.8.3,1,.7.3,1.3.8,2.7,1.3,3.9,1.4,3.3,3.4,6.2,5.9,8.7,2.5,2.5,5.4,4.5,8.7,5.9,1.3.5,2.6,1,3.9,1.3.4.1.7.5.7,1s-.3.8-.7,1c-1.3.3-2.7.8-3.9,1.3-3.3,1.4-6.2,3.4-8.7,5.9-2.5,2.5-4.5,5.4-5.9,8.7-.5,1.3-1,2.6-1.3,3.9-.1.4-.5.7-1,.7-.5,0-.8-.3-1-.7-.3-1.3-.8-2.7-1.3-3.9-1.4-3.3-3.4-6.2-5.9-8.7-2.5-2.5-5.4-4.5-8.7-5.9-1.3-.5-2.6-1-3.9-1.3-.4-.1-.7-.5-.7-1,0-.5.3-.8.7-1,1.3-.3,2.7-.8,3.9-1.3,3.3-1.4,6.2-3.4,8.7-5.9,2.5-2.5,4.5-5.4,5.9-8.7.5-1.3,1-2.6,1.3-3.9.1-.4.5-.7,1-.7Z"/>
+        <path d="M375.2,281.7c.5,0,.9.3,1,.8.4,1.4.8,2.9,1.4,4.2,1.5,3.6,3.6,6.7,6.3,9.4,2.7,2.7,5.8,4.8,9.4,6.3,1.4.6,2.8,1.1,4.2,1.4.5.1.8.5.8,1s-.3.9-.8,1c-1.4.4-2.9.8-4.2,1.4-3.6,1.5-6.7,3.6-9.4,6.3-2.7,2.7-4.8,5.8-6.3,9.4-.6,1.4-1.1,2.8-1.4,4.2-.1.5-.5.8-1,.8-.5,0-.9-.3-1-.8-.4-1.4-.8-2.9-1.4-4.2-1.5-3.6-3.6-6.7-6.3-9.4-2.7-2.7-5.8-4.8-9.4-6.3-1.4-.6-2.8-1.1-4.2-1.4-.5-.1-.8-.5-.8-1,0-.5.3-.9.8-1,1.4-.4,2.9-.8,4.2-1.4,3.6-1.5,6.7-3.6,9.4-6.3,2.7-2.7,4.8-5.8,6.3-9.4.6-1.4,1.1-2.8,1.4-4.2.1-.5.5-.8,1-.8Z"/>
+        <path class="st79" d="M375.2,281.7c.5,0,.9.3,1,.8.4,1.4.8,2.9,1.4,4.2,1.5,3.6,3.6,6.7,6.3,9.4,2.7,2.7,5.8,4.8,9.4,6.3,1.4.6,2.8,1.1,4.2,1.4.5.1.8.5.8,1s-.3.9-.8,1c-1.4.4-2.9.8-4.2,1.4-3.6,1.5-6.7,3.6-9.4,6.3-2.7,2.7-4.8,5.8-6.3,9.4-.6,1.4-1.1,2.8-1.4,4.2-.1.5-.5.8-1,.8-.5,0-.9-.3-1-.8-.4-1.4-.8-2.9-1.4-4.2-1.5-3.6-3.6-6.7-6.3-9.4-2.7-2.7-5.8-4.8-9.4-6.3-1.4-.6-2.8-1.1-4.2-1.4-.5-.1-.8-.5-.8-1,0-.5.3-.9.8-1,1.4-.4,2.9-.8,4.2-1.4,3.6-1.5,6.7-3.6,9.4-6.3,2.7-2.7,4.8-5.8,6.3-9.4.6-1.4,1.1-2.8,1.4-4.2.1-.5.5-.8,1-.8Z"/>
       </g>
     </mask>
   </defs>
-  <rect class="st65" width="1600" height="1060"/>
-  <text class="st7" transform="translate(191 36)"><tspan x="0" y="0">Figure 1. FlowAgent: LLM-orchestrated bioinformatics pipelines with autonomous error recovery and end-to-end benchmarking.</tspan></text>
-  <rect class="st68" x="30" y="70" width="750" height="450" rx="10" ry="10"/>
-  <text class="st41" transform="translate(50 102)"><tspan x="0" y="0">A</tspan></text>
-  <text class="st35" transform="translate(85 102)"><tspan x="0" y="0">Natural-language prompt → LLM planner → structured workflow plan</tspan></text>
-  <rect class="st66" x="60" y="140" width="220" height="300" rx="8" ry="8"/>
-  <text class="st26" transform="translate(123.2 164)"><tspan x="0" y="0">USER PROMPT</tspan></text>
-  <text class="st31" transform="translate(75 200)"><tspan x="0" y="0">&quot;Download GSE52778 from</tspan></text>
-  <text class="st31" transform="translate(75 220)"><tspan x="0" y="0">GEO and run a human RNA-seq</tspan></text>
-  <text class="st31" transform="translate(75 240)"><tspan x="0" y="0">kallisto pipeline on the bulk</tspan></text>
-  <text class="st31" transform="translate(75 260)"><tspan x="0" y="0">samples, then run DESeq2</tspan></text>
-  <text class="st31" transform="translate(75 280)"><tspan x="0" y="0">differential expression</tspan></text>
-  <text class="st31" transform="translate(75 300)"><tspan x="0" y="0">between Dex-treated and</tspan></text>
-  <text class="st31" transform="translate(75 320)"><tspan x="0" y="0">untreated conditions.&quot;</tspan></text>
-  <text class="st30" transform="translate(75 365)"><tspan x="0" y="0">41 prompts in the benchmark</tspan></text>
-  <text class="st30" transform="translate(75 382)"><tspan x="0" y="0">corpus (23 standard + 18 hard)</tspan></text>
-  <path class="st0" d=""/>
-  <path class="st53" d="M288.6,284.4l14,7-14,7v-14Z"/>
-  <path class="st53" d="M350,290" marker-end="url(#arrow)"/>
-  <circle class="st64" cx="415" cy="291.4" r="92"/>
-  <text class="st8" transform="translate(395.7 247.6)"><tspan x="0" y="0">LLM</tspan></text>
-  <text class="st10" transform="translate(383.4 266.4)"><tspan x="0" y="0">planner</tspan></text>
-  <path class="st0" d=""/>
-  <path class="st53" d="M527.4,283l14,7-14,7v-14Z"/>
-  <path class="st53" d="M540,290" marker-end="url(#arrow)"/>
-  <rect class="st66" x="550" y="140" width="200" height="300" rx="8" ry="8"/>
-  <text class="st26" transform="translate(592.1 164)"><tspan x="0" y="0">WORKFLOW PLAN</tspan></text>
-  <text class="st21" transform="translate(565 188)"><tspan x="0" y="0">{</tspan></text>
-  <text class="st21" transform="translate(575 204)"><tspan x="0" y="0">&quot;steps&quot;: [</tspan></text>
-  <text class="st21" transform="translate(585 222)"><tspan x="0" y="0">{&quot;name&quot;: &quot;create_dirs&quot;,</tspan></text>
-  <text class="st21" transform="translate(595 237)"><tspan x="0" y="0">&quot;command&quot;: &quot;mkdir…&quot;},</tspan></text>
-  <text class="st21" transform="translate(585 257)"><tspan x="0" y="0">{&quot;name&quot;: &quot;download_</tspan></text>
-  <text class="st21" transform="translate(595 272)"><tspan x="0" y="0">fastq_files&quot;, …},</tspan></text>
-  <text class="st21" transform="translate(585 292)"><tspan x="0" y="0">{&quot;name&quot;: &quot;fastqc&quot;, …},</tspan></text>
-  <text class="st21" transform="translate(585 312)"><tspan x="0" y="0">{&quot;name&quot;: &quot;kallisto_</tspan></text>
-  <text class="st21" transform="translate(595 327)"><tspan x="0" y="0">quant&quot;, …},</tspan></text>
-  <text class="st21" transform="translate(585 347)"><tspan x="0" y="0">{&quot;name&quot;: &quot;tximport&quot;, …},</tspan></text>
-  <text class="st21" transform="translate(585 367)"><tspan x="0" y="0">{&quot;name&quot;: &quot;deseq2&quot;, …},</tspan></text>
-  <text class="st21" transform="translate(585 387)"><tspan x="0" y="0">{&quot;name&quot;: &quot;multiqc&quot;, …}</tspan></text>
-  <text class="st21" transform="translate(575 405)"><tspan x="0" y="0">]</tspan></text>
-  <text class="st21" transform="translate(565 421)"><tspan x="0" y="0">}</tspan></text>
-  <text class="st15" transform="translate(60 480)"><tspan x="0" y="0">Auto-routed between agent and workflow modes via an LLM classifier (model = user-configured).</tspan></text>
-  <text class="st15" transform="translate(60 497)"><tspan x="0" y="0">Swept across 33 provider × model combinations (OpenAI, Anthropic, Google families).</tspan></text>
-  <g>
-    <rect class="st68" x="820" y="70" width="750" height="450" rx="10" ry="10"/>
-    <text class="st41" transform="translate(840 102)"><tspan x="0" y="0">B</tspan></text>
-    <text class="st35" transform="translate(875 102)"><tspan x="0" y="0">DAG-parallel execution with smart-resume + self-healing</tspan></text>
-    <rect class="st66" x="850" y="170" width="90" height="120" rx="6" ry="6"/>
-    <text class="st17" transform="translate(880 192)"><tspan x="0" y="0">PLAN</tspan></text>
-    <line class="st2" x1="862" y1="210" x2="930" y2="210"/>
-    <line class="st2" x1="862" y1="225" x2="918" y2="225"/>
-    <line class="st2" x1="862" y1="240" x2="925" y2="240"/>
-    <line class="st2" x1="862" y1="255" x2="912" y2="255"/>
-    <line class="st2" x1="862" y1="270" x2="922" y2="270"/>
-    <path class="st0" d=""/>
-    <path class="st53" d="M965.4,223l14,7-14,7v-14Z"/>
-    <path class="st53" d="M978,230" marker-end="url(#arrow)"/>
-    <g>
-      <rect class="st62" x="990" y="205" width="120" height="32" rx="6" ry="6"/>
-      <text class="st48" transform="translate(1017.1 225)"><tspan class="st52" x="0" y="0">create_dirs </tspan><tspan class="st80" x="57.5" y="0">✓</tspan></text>
-    </g>
-    <g>
-      <rect class="st57" x="1140" y="145" width="130" height="32" rx="6" ry="6"/>
-      <text class="st13" transform="translate(1160.8 165)"><tspan class="st52" x="0" y="0">download_fastq </tspan><tspan class="st80" x="80.1" y="0">↻</tspan></text>
-    </g>
-    <g>
-      <rect class="st57" x="1140" y="190" width="130" height="32" rx="6" ry="6"/>
-      <text class="st13" transform="translate(1166.3 210)"><tspan class="st52" x="0" y="0">download_ref </tspan><tspan class="st80" x="69.1" y="0">↻</tspan></text>
-    </g>
-    <g>
-      <rect class="st62" x="1140" y="235" width="130" height="32" rx="6" ry="6"/>
-      <text class="st48" transform="translate(1165.1 255)"><tspan class="st52" x="0" y="0">sample_sheet </tspan><tspan class="st80" x="71.5" y="0">✓</tspan></text>
-    </g>
-    <g>
-      <rect class="st62" x="1140" y="285" width="130" height="32" rx="6" ry="6"/>
-      <text class="st48" transform="translate(1184.7 305)"><tspan class="st52" x="0" y="0">fastqc </tspan><tspan class="st80" x="32.4" y="0">✓</tspan></text>
-    </g>
-    <g>
-      <rect class="st62" x="1295" y="145" width="130" height="32" rx="6" ry="6"/>
-      <text class="st48" transform="translate(1321.3 165)"><tspan class="st52" x="0" y="0">kallisto_index </tspan><tspan class="st80" x="69.1" y="0">✓</tspan></text>
-    </g>
-    <g>
-      <rect class="st62" x="1295" y="190" width="130" height="32" rx="6" ry="6"/>
-      <text class="st48" transform="translate(1320.7 210)"><tspan class="st52" x="0" y="0">kallisto_quant </tspan><tspan class="st80" x="70.3" y="0">✓</tspan></text>
-    </g>
-    <g>
-      <rect class="st69" x="1295" y="235" width="130" height="32" rx="6" ry="6"/>
-      <text class="st47" transform="translate(1334.8 255)"><tspan class="st52" x="0" y="0">tximport </tspan><tspan class="st80" x="42.2" y="0">⚙</tspan></text>
-    </g>
-    <g>
-      <rect class="st62" x="1445" y="190" width="110" height="32" rx="6" ry="6"/>
-      <text class="st48" transform="translate(1476.3 210)"><tspan class="st52" x="0" y="0">deseq2 </tspan><tspan class="st80" x="39.1" y="0">✓</tspan></text>
-    </g>
-    <g>
-      <rect class="st67" x="1295" y="310" width="130" height="32" rx="6" ry="6"/>
-      <text class="st32" transform="translate(1318.9 330)"><tspan class="st52" x="0" y="0">contam_check </tspan><tspan class="st80" x="74" y="0">✗</tspan></text>
-    </g>
-    <g>
-      <rect class="st62" x="1445" y="285" width="110" height="32" rx="6" ry="6"/>
-      <text class="st48" transform="translate(1476.9 305)"><tspan class="st52" x="0" y="0">multiqc </tspan><tspan class="st80" x="37.9" y="0">✓</tspan></text>
-    </g>
-    <g>
-      <path class="st3" d="M1110,221l30-60"/>
-      <path class="st3" d="M1110,221l30-15"/>
-      <path class="st3" d="M1110,221l30,30"/>
-      <path class="st3" d="M1110,221l30,80"/>
-      <path class="st3" d="M1270,161l25,45"/>
-      <path class="st3" d="M1270,206l25-45"/>
-      <path class="st3" d="M1270,206l25,45"/>
-      <path class="st3" d="M1270,301l25-131"/>
-      <path class="st3" d="M1360,177v13"/>
-      <path class="st3" d="M1360,222v13"/>
-      <path class="st3" d="M1270,161l25,165"/>
-      <path class="st3" d="M1270,251l175-45"/>
-      <path class="st3" d="M1425,251l20-40"/>
-      <path class="st3" d="M1425,206l20,89"/>
-      <path class="st3" d="M1500,222v63"/>
-    </g>
-    <path class="st0" d=""/>
-    <path class="st81" d="M1283.7,228.7l12.6,6.3-12.6,6.3v-12.6Z"/>
-    <path class="st81" d="M2115,627" marker-end="url(#arrowAmber)"/>
-    <text class="st43" transform="translate(1320 122)"><tspan x="0" y="0">Level-1 recovery (≤3 attempts)</tspan></text>
-    <path class="st1" d="M1428,326c34.7,6,55.3,12.3,62,19"/>
-    <text class="st22" transform="translate(1435 360)"><tspan x="0" y="0">correct refusal</tspan></text>
-    <text class="st22" transform="translate(1435 373)"><tspan x="0" y="0">(LLM refused to</tspan></text>
-    <text class="st22" transform="translate(1435 386)"><tspan x="0" y="0">&quot;fix&quot; bad data)</tspan></text>
-    <g>
-      <text class="st25" transform="translate(850 360)"><tspan x="0" y="0">Step status:</tspan></text>
-      <rect class="st61" x="850" y="372" width="14" height="14" rx="3" ry="3"/>
-      <text class="st18" transform="translate(870 383)"><tspan x="0" y="0">Completed</tspan></text>
-      <rect class="st73" x="960" y="372" width="14" height="14" rx="3" ry="3"/>
-      <text class="st18" transform="translate(980 383)"><tspan x="0" y="0">Recovered (self-healed)</tspan></text>
-      <rect class="st70" x="1170" y="372" width="14" height="14" rx="3" ry="3"/>
-      <text class="st18" transform="translate(1190 383)"><tspan x="0" y="0">Failed / unrecoverable</tspan></text>
-      <rect class="st56" x="1340" y="372" width="14" height="14" rx="3" ry="3"/>
-      <text class="st18" transform="translate(1360 383)"><tspan x="0" y="0">Skipped (smart-resume)</tspan></text>
-    </g>
-    <g class="st24">
-      <text class="st9" transform="translate(850 425)"><tspan class="st80" x="0" y="0">↻</tspan><tspan class="st55" x="5.8" y="0" xml:space="preserve"> Skipped</tspan></text>
-      <text class="st51" transform="translate(906.6 425)"><tspan x="0" y="0">: smart-resume found valid cached outputs from a prior run. </tspan></text>
-      <text class="st28" transform="translate(1212.1 425)"><tspan class="st80" x="0" y="0">⚙</tspan><tspan class="st55" x="5.8" y="0" xml:space="preserve"> Recovered</tspan></text>
-      <text class="st51" transform="translate(1282.7 425)"><tspan x="0" y="0">: LLM patched a failed command</tspan></text>
-    </g>
-    <g>
-      <text class="st15" transform="translate(850 442)"><tspan x="0" y="0">(real case: tximport Ensembl version-suffix mismatch → + ignoreTxVersion=TRUE). </tspan></text>
-      <text class="st45" transform="translate(1278 442)"><tspan class="st80" x="0" y="0">✗</tspan><tspan class="st55" x="5.8" y="0" xml:space="preserve"> Correct refusal</tspan></text>
-      <text class="st51" transform="translate(1371.6 442)"><tspan x="0" y="0">:</tspan></text>
-    </g>
-    <text class="st15" transform="translate(850 459)"><tspan x="0" y="0">unrecoverable data fault (e.g. truncated FASTQ); LLM correctly declined to &quot;fix&quot; corrupt input.</tspan></text>
-    <text class="st15" transform="translate(850 481)"><tspan x="0" y="0">Executor backends: local shell · Nextflow · Snakemake · SLURM · SGE · Kubernetes.</tspan></text>
+  <rect class="st63" width="1600" height="1060"/>
+  <g class="st27">
+    <text class="st3" transform="translate(191 36)"><tspan x="0" y="0">Figure 1. FlowAgent: LLM-orchestrated bioinformatics pipelines with autonomous error recovery and end-to-end benchmarking.</tspan></text>
+  </g>
+  <rect class="st66" x="30" y="70" width="750" height="450" rx="10" ry="10"/>
+  <g class="st27">
+    <text class="st42" transform="translate(50 102)"><tspan x="0" y="0">A</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st36" transform="translate(85 102)"><tspan x="0" y="0">Natural-language prompt → LLM planner → structured workflow plan</tspan></text>
+  </g>
+  <rect class="st64" x="60" y="140" width="220" height="300" rx="8" ry="8"/>
+  <g class="st27">
+    <text class="st47" transform="translate(123.2 164)"><tspan x="0" y="0">USER PROMPT</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st33" transform="translate(75 200)"><tspan x="0" y="0">&quot;Download GSE52778 from</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st33" transform="translate(75 220)"><tspan x="0" y="0">GEO and run a human RNA-seq</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st33" transform="translate(75 240)"><tspan x="0" y="0">kallisto pipeline on the bulk</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st33" transform="translate(75 260)"><tspan x="0" y="0">samples, then run DESeq2</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st33" transform="translate(75 280)"><tspan x="0" y="0">differential expression</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st33" transform="translate(75 300)"><tspan x="0" y="0">between Dex-treated and</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st33" transform="translate(75 320)"><tspan x="0" y="0">untreated conditions.&quot;</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st32" transform="translate(75 365)"><tspan x="0" y="0">41 prompts in the benchmark</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st32" transform="translate(75 382)"><tspan x="0" y="0">corpus (23 standard + 18 hard)</tspan></text>
+  </g>
+  <path class="st73" d="M0,0"/>
+  <path class="st50" d="M288.6,284.4l14,7-14,7v-14Z"/>
+  <path class="st50" d="M350,290" marker-end="url(#arrow)"/>
+  <circle class="st62" cx="415" cy="291.4" r="92"/>
+  <g class="st27">
+    <text class="st4" transform="translate(395.7 247.6)"><tspan x="0" y="0">LLM</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st8" transform="translate(383.4 266.4)"><tspan x="0" y="0">planner</tspan></text>
+  </g>
+  <path class="st56" d="M0,0"/>
+  <path class="st50" d="M527.4,283l14,7-14,7v-14Z"/>
+  <path class="st50" d="M540,290" marker-end="url(#arrow)"/>
+  <rect class="st64" x="550" y="140" width="200" height="300" rx="8" ry="8"/>
+  <g class="st27">
+    <text class="st47" transform="translate(592.1 164)"><tspan x="0" y="0">WORKFLOW PLAN</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(565 188)"><tspan x="0" y="0">{</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(575 204)"><tspan x="0" y="0">&quot;steps&quot;: [</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(585 222)"><tspan x="0" y="0">{&quot;name&quot;: &quot;create_dirs&quot;,</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(595 237)"><tspan x="0" y="0">&quot;command&quot;: &quot;mkdir…&quot;},</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(585 257)"><tspan x="0" y="0">{&quot;name&quot;: &quot;download_</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(595 272)"><tspan x="0" y="0">fastq_files&quot;, …},</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(585 292)"><tspan x="0" y="0">{&quot;name&quot;: &quot;fastqc&quot;, …},</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(585 312)"><tspan x="0" y="0">{&quot;name&quot;: &quot;kallisto_</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(595 327)"><tspan x="0" y="0">quant&quot;, …},</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(585 347)"><tspan x="0" y="0">{&quot;name&quot;: &quot;tximport&quot;, …},</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(585 367)"><tspan x="0" y="0">{&quot;name&quot;: &quot;deseq2&quot;, …},</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(585 387)"><tspan x="0" y="0">{&quot;name&quot;: &quot;multiqc&quot;, …}</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(575 405)"><tspan x="0" y="0">]</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st20" transform="translate(565 421)"><tspan x="0" y="0">}</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st5" transform="translate(60 480)"><tspan x="0" y="0">Auto-routed between agent and workflow modes via an LLM classifier (model = user-configured).</tspan></text>
+  </g>
+  <g class="st27">
+    <text class="st5" transform="translate(60 497)"><tspan x="0" y="0">Swept across 33 provider × model combinations (OpenAI, Anthropic, Google families).</tspan></text>
   </g>
   <g>
-    <rect class="st68" x="30" y="550" width="750" height="480" rx="10" ry="10"/>
-    <text class="st41" transform="translate(50 582)"><tspan x="0" y="0">C</tspan></text>
-    <text class="st35" transform="translate(85 582)"><tspan x="0" y="0">Autonomous error-recovery loop (per-step, max 3 attempts)</tspan></text>
+    <rect class="st66" x="820" y="70" width="750" height="450" rx="10" ry="10"/>
+    <g class="st27">
+      <text class="st42" transform="translate(840 102)"><tspan x="0" y="0">B</tspan></text>
+    </g>
+    <g class="st27">
+      <text class="st36" transform="translate(875 102)"><tspan x="0" y="0">DAG-parallel execution with smart-resume + self-healing</tspan></text>
+    </g>
+    <rect class="st64" x="850" y="170" width="90" height="120" rx="6" ry="6"/>
+    <g class="st27">
+      <text class="st14" transform="translate(880 192)"><tspan x="0" y="0">PLAN</tspan></text>
+    </g>
+    <line class="st82" x1="862" y1="210" x2="930" y2="210"/>
+    <line class="st82" x1="862" y1="225" x2="918" y2="225"/>
+    <line class="st82" x1="862" y1="240" x2="925" y2="240"/>
+    <line class="st82" x1="862" y1="255" x2="912" y2="255"/>
+    <line class="st82" x1="862" y1="270" x2="922" y2="270"/>
+    <path class="st82" d="M0,0"/>
+    <path class="st50" d="M965.4,223l14,7-14,7v-14Z"/>
+    <path class="st50" d="M978,230" marker-end="url(#arrow)"/>
     <g>
-      <rect class="st67" x="60" y="630" width="200" height="160" rx="8" ry="8"/>
-      <text class="st36" transform="translate(117.1 652)"><tspan x="0" y="0">STEP FAILURE</tspan></text>
-      <text class="st16" transform="translate(74 676)"><tspan x="0" y="0">tximport (R)</tspan></text>
-      <g>
-        <text class="st27" transform="translate(74 698)"><tspan x="0" y="0">Error: None of the</tspan></text>
-        <text class="st27" transform="translate(74 712)"><tspan x="0" y="0">transcripts in the</tspan></text>
-        <text class="st27" transform="translate(74 726)"><tspan x="0" y="0">quantification files</tspan></text>
-        <text class="st27" transform="translate(74 740)"><tspan x="0" y="0">are present in the</tspan></text>
-        <text class="st27" transform="translate(74 754)"><tspan x="0" y="0">first column of</tspan></text>
-        <text class="st27" transform="translate(74 768)"><tspan x="0" y="0">tx2gene…</tspan></text>
+      <rect class="st60" x="990" y="205" width="120" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st22" transform="translate(1017.1 225)"><tspan x="0" y="0">create_dirs </tspan></text>
+        <text class="st30" transform="translate(1074.6 225)"><tspan x="0" y="0">✓</tspan></text>
       </g>
     </g>
-    <path class="st0" d=""/>
-    <path class="st79" d="M292.4,703l14,7-14,7v-14Z"/>
-    <path class="st79" d="M305,710" marker-end="url(#arrowRed)"/>
     <g>
-      <rect class="st63" x="310" y="630" width="200" height="160" rx="8" ry="8"/>
-      <text class="st33" transform="translate(362.7 652)"><tspan x="0" y="0">RECOVERY LLM</tspan></text>
-      <text class="st5" transform="translate(324 676)"><tspan x="0" y="0">• step description</tspan></text>
-      <text class="st5" transform="translate(324 693)"><tspan x="0" y="0">• original command</tspan></text>
-      <text class="st5" transform="translate(324 710)"><tspan x="0" y="0">• exit code · stderr</tspan></text>
-      <text class="st5" transform="translate(324 727)"><tspan x="0" y="0">• platform · tool availability</tspan></text>
-      <text class="st14" transform="translate(324 748)"><tspan x="0" y="0">Domain hints: R/Bioconductor,</tspan></text>
-      <text class="st14" transform="translate(324 762)"><tspan x="0" y="0">Python deps, shell semantics,</tspan></text>
-      <text class="st14" transform="translate(324 776)"><tspan x="0" y="0">GEO/SRA quirks, file perms.</tspan></text>
-    </g>
-    <path class="st0" d=""/>
-    <path class="st54" d="M542.4,703l14,7-14,7v-14Z"/>
-    <path class="st54" d="M555,710" marker-end="url(#arrowGreen)"/>
-    <g>
-      <rect class="st62" x="560" y="630" width="200" height="160" rx="8" ry="8"/>
-      <text class="st46" transform="translate(608.7 652)"><tspan x="0" y="0">FIXED COMMAND</tspan></text>
-      <g>
-        <text class="st19" transform="translate(574 678)"><tspan x="0" y="0">tximport(files,</tspan></text>
-        <text class="st19" transform="translate(574 692)"><tspan x="0" y="0">type=&quot;kallisto&quot;,</tspan></text>
-        <text class="st19" transform="translate(574 706)"><tspan x="0" y="0">tx2gene=tx2gene,</tspan></text>
-        <text class="st6" transform="translate(574 720)"><tspan x="0" y="0">ignoreTxVersion=TRUE,</tspan></text>
-        <text class="st6" transform="translate(574 734)"><tspan x="0" y="0">ignoreAfterBar=TRUE)</tspan></text>
+      <rect class="st54" x="1140" y="145" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st15" transform="translate(1160.8 165)"><tspan x="0" y="0">download_fastq </tspan></text>
+        <text class="st6" transform="translate(1240.9 165)"><tspan x="0" y="0">↻</tspan></text>
       </g>
-      <text class="st29" transform="translate(574 764)"><tspan x="0" y="0">+ diagnosis + explanation</tspan></text>
-    </g>
-    <path class="st0" d=""/>
-    <path class="st54" d="M418.7,808.7l12.6,6.3-12.6,6.3v-12.6Z"/>
-    <path class="st54" d="M430,815" marker-end="url(#arrowGreen)"/>
-    <text class="st37" transform="translate(370 875)"><tspan x="0" y="0">Retry (≤3 attempts)</tspan></text>
-    <g>
-      <rect class="st72" x="60" y="845" width="680" height="55" rx="8" ry="8"/>
-      <text class="st20" transform="translate(74 867)"><tspan x="0" y="0">Short-circuit rejection</tspan></text>
-      <text class="st40" transform="translate(74 885)"><tspan x="0" y="0">Python SyntaxError / ImportError in imported code → structured refusal without an LLM call.</tspan></text>
     </g>
     <g>
-      <text class="st15" transform="translate(60 928)"><tspan x="0" y="0">The recovery harness distinguishes five outcomes: </tspan></text>
-      <text class="st42" transform="translate(321.4 928)"><tspan x="0" y="0">correct refusal</tspan></text>
-      <text class="st51" transform="translate(401.3 928)"><tspan x="0" y="0">, </tspan></text>
-      <text class="st34" transform="translate(407.7 928)"><tspan x="0" y="0">misdiagnosed refusal</tspan></text>
-      <text class="st51" transform="translate(525.9 928)"><tspan x="0" y="0">,</tspan></text>
+      <rect class="st54" x="1140" y="190" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st15" transform="translate(1166.3 210)"><tspan x="0" y="0">download_ref </tspan></text>
+        <text class="st6" transform="translate(1235.4 210)"><tspan x="0" y="0">↻</tspan></text>
+      </g>
     </g>
-    <g class="st24">
-      <text class="st49" transform="translate(60 945)"><tspan x="0" y="0">attempted repair</tspan></text>
-      <text class="st51" transform="translate(150.1 945)"><tspan x="0" y="0">, </tspan></text>
-      <text class="st38" transform="translate(156.5 945)"><tspan x="0" y="0">silent failure</tspan></text>
-      <text class="st51" transform="translate(224.2 945)"><tspan x="0" y="0">, and </tspan></text>
-      <text class="st39" transform="translate(253 945)"><tspan x="0" y="0">unsafe repair</tspan></text>
-      <text class="st51" transform="translate(325.2 945)"><tspan x="0" y="0" xml:space="preserve"> (most dangerous class — plausible but wrong fix).</tspan></text>
+    <g>
+      <rect class="st60" x="1140" y="235" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st22" transform="translate(1165.1 255)"><tspan x="0" y="0">sample_sheet </tspan></text>
+        <text class="st30" transform="translate(1236.6 255)"><tspan x="0" y="0">✓</tspan></text>
+      </g>
     </g>
-    <text class="st15" transform="translate(60 970)"><tspan x="0" y="0">28-fault injection catalogue across 3 tiers: easy (15), hard (9), unrecoverable (4 — correct answer is refusal).</tspan></text>
-    <text class="st15" transform="translate(60 992)"><tspan x="0" y="0">Same mechanism enables runtime LLM-authored scripts (e.g. DESeq2 R code from actual sample IDs).</tspan></text>
+    <g>
+      <rect class="st60" x="1140" y="285" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st22" transform="translate(1184.7 305)"><tspan x="0" y="0">fastqc </tspan></text>
+        <text class="st30" transform="translate(1217.1 305)"><tspan x="0" y="0">✓</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st60" x="1295" y="145" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st22" transform="translate(1321.3 165)"><tspan x="0" y="0">kallisto_index </tspan></text>
+        <text class="st30" transform="translate(1390.4 165)"><tspan x="0" y="0">✓</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st60" x="1295" y="190" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st22" transform="translate(1320.7 210)"><tspan x="0" y="0">kallisto_quant </tspan></text>
+        <text class="st30" transform="translate(1391 210)"><tspan x="0" y="0">✓</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st67" x="1295" y="235" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st17" transform="translate(1334.8 255)"><tspan x="0" y="0">tximport </tspan></text>
+        <text class="st7" transform="translate(1377 255)"><tspan x="0" y="0">⚙</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st60" x="1445" y="190" width="110" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st22" transform="translate(1476.3 210)"><tspan x="0" y="0">deseq2 </tspan></text>
+        <text class="st30" transform="translate(1515.4 210)"><tspan x="0" y="0">✓</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st65" x="1295" y="310" width="130" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st21" transform="translate(1318.9 330)"><tspan x="0" y="0">contam_check </tspan></text>
+        <text class="st23" transform="translate(1392.9 330)"><tspan x="0" y="0">✗</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st60" x="1445" y="285" width="110" height="32" rx="6" ry="6"/>
+      <g class="st27">
+        <text class="st22" transform="translate(1476.9 305)"><tspan x="0" y="0">multiqc </tspan></text>
+        <text class="st30" transform="translate(1514.8 305)"><tspan x="0" y="0">✓</tspan></text>
+      </g>
+    </g>
+    <g>
+      <path class="st55" d="M1110,221l30-60"/>
+      <path class="st55" d="M1110,221l30-15"/>
+      <path class="st55" d="M1110,221l30,30"/>
+      <path class="st55" d="M1110,221l30,80"/>
+      <path class="st55" d="M1270,161l25,45"/>
+      <path class="st55" d="M1270,206l25-45"/>
+      <path class="st55" d="M1270,206l25,45"/>
+      <path class="st55" d="M1270,301l25-131"/>
+      <path class="st55" d="M1360,177v13"/>
+      <path class="st55" d="M1360,222v13"/>
+      <path class="st55" d="M1270,161l25,165"/>
+      <path class="st55" d="M1270,251l175-45"/>
+      <path class="st55" d="M1425,251l20-40"/>
+      <path class="st55" d="M1425,206l20,89"/>
+      <path class="st55" d="M1500,222v63"/>
+    </g>
+    <path class="st55" d="M0,0"/>
+    <path class="st80" d="M1283.7,228.7l12.6,6.3-12.6,6.3v-12.6Z"/>
+    <path class="st80" d="M2115,627" marker-end="url(#arrowAmber)"/>
+    <g class="st27">
+      <text class="st44" transform="translate(1320 122)"><tspan x="0" y="0">Level-1 recovery (≤3 attempts)</tspan></text>
+    </g>
+    <path class="st68" d="M1428,326c34.7,6,55.3,12.3,62,19"/>
+    <g class="st27">
+      <text class="st24" transform="translate(1435 360)"><tspan x="0" y="0">correct refusal</tspan></text>
+    </g>
+    <g class="st27">
+      <text class="st24" transform="translate(1435 373)"><tspan x="0" y="0">(LLM refused to</tspan></text>
+    </g>
+    <g class="st27">
+      <text class="st24" transform="translate(1435 386)"><tspan x="0" y="0">&quot;fix&quot; bad data)</tspan></text>
+    </g>
+    <g>
+      <g class="st27">
+        <text class="st28" transform="translate(850 360)"><tspan x="0" y="0">Step status:</tspan></text>
+      </g>
+      <rect class="st59" x="850" y="372" width="14" height="14" rx="3" ry="3"/>
+      <g class="st27">
+        <text class="st15" transform="translate(870 383)"><tspan x="0" y="0">Completed</tspan></text>
+      </g>
+      <rect class="st72" x="960" y="372" width="14" height="14" rx="3" ry="3"/>
+      <g class="st27">
+        <text class="st15" transform="translate(980 383)"><tspan x="0" y="0">Recovered (self-healed)</tspan></text>
+      </g>
+      <rect class="st69" x="1170" y="372" width="14" height="14" rx="3" ry="3"/>
+      <g class="st27">
+        <text class="st15" transform="translate(1190 383)"><tspan x="0" y="0">Failed / unrecoverable</tspan></text>
+      </g>
+      <rect class="st53" x="1340" y="372" width="14" height="14" rx="3" ry="3"/>
+      <g class="st27">
+        <text class="st15" transform="translate(1360 383)"><tspan x="0" y="0">Skipped (smart-resume)</tspan></text>
+      </g>
+    </g>
+    <g class="st27">
+      <g class="st27">
+        <text class="st46" transform="translate(850 425)"><tspan x="0" y="0">↻</tspan></text>
+        <text class="st39" transform="translate(855.8 425)"><tspan x="0" y="0" xml:space="preserve"> Skipped</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(906.6 425)"><tspan x="0" y="0">: smart-resume found valid cached outputs from a prior run.</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st19" transform="translate(1212.1 425)"><tspan x="0" y="0">⚙</tspan></text>
+        <text class="st35" transform="translate(1217.9 425)"><tspan x="0" y="0" xml:space="preserve"> Recovered</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(1282.7 425)"><tspan x="0" y="0">: LLM patched a failed command</tspan></text>
+      </g>
+    </g>
+    <g>
+      <g class="st27">
+        <text class="st12" transform="translate(850 442)"><tspan x="0" y="0">(real case: tximport Ensembl version-suffix mismatch → + ignoreTxVersion=TRUE).</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st26" transform="translate(1278 442)"><tspan x="0" y="0">✗</tspan></text>
+        <text class="st40" transform="translate(1283.8 442)"><tspan x="0" y="0" xml:space="preserve"> Correct refusal</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(1371.6 442)"><tspan x="0" y="0">:</tspan></text>
+      </g>
+    </g>
+    <g class="st27">
+      <text class="st12" transform="translate(850 459)"><tspan x="0" y="0">unrecoverable data fault (e.g. truncated FASTQ); LLM correctly declined to &quot;fix&quot; corrupt input.</tspan></text>
+    </g>
+    <g class="st27">
+      <text class="st12" transform="translate(850 481)"><tspan x="0" y="0">Executor backends: local shell · Nextflow · Snakemake · SLURM · SGE · Kubernetes.</tspan></text>
+    </g>
   </g>
   <g>
-    <rect class="st68" x="820" y="550" width="750" height="480" rx="10" ry="10"/>
-    <text class="st41" transform="translate(840 582)"><tspan x="0" y="0">D</tspan></text>
-    <text class="st35" transform="translate(875 582)"><tspan x="0" y="0">Five-pronged benchmark harness with reproducible figures</tspan></text>
-    <g>
-      <rect class="st58" x="850" y="620" width="45" height="45" rx="8" ry="8"/>
-      <text class="st11" transform="translate(864.8 650)"><tspan x="0" y="0">A</tspan></text>
-      <text class="st23" transform="translate(910 640)"><tspan x="0" y="0">Planning correctness &amp; cost</tspan></text>
-      <text class="st18" transform="translate(910 658)"><tspan x="0" y="0">41 prompts × 33 models × 3 replicates — plan scoring + per-cell token tally.</tspan></text>
-      <path class="st0" d=""/>
-      <path class="st53" d="M1380.6,636.8l10.5,5.2-10.5,5.2v-10.5Z"/>
-      <path class="st53" d="M1390,642" marker-end="url(#arrow)"/>
-      <text class="st5" transform="translate(1405 637)"><tspan x="0" y="0">planning.pdf</tspan></text>
-      <text class="st5" transform="translate(1405 650)"><tspan x="0" y="0">cost_quality.pdf</tspan></text>
+    <rect class="st66" x="30" y="550" width="750" height="480" rx="10" ry="10"/>
+    <g class="st27">
+      <text class="st42" transform="translate(50 582)"><tspan x="0" y="0">C</tspan></text>
+    </g>
+    <g class="st27">
+      <text class="st36" transform="translate(85 582)"><tspan x="0" y="0">Autonomous error-recovery loop (per-step, max 3 attempts)</tspan></text>
     </g>
     <g>
-      <rect class="st81" x="850" y="685" width="45" height="45" rx="8" ry="8"/>
-      <text class="st11" transform="translate(864.8 715)"><tspan x="0" y="0">B</tspan></text>
-      <text class="st23" transform="translate(910 705)"><tspan x="0" y="0">Autonomous error recovery</tspan></text>
-      <text class="st18" transform="translate(910 723)"><tspan x="0" y="0">28 injected faults × 3 tiers (easy / hard / unrecoverable) — recovery rate &amp; taxonomy.</tspan></text>
-      <path class="st0" d=""/>
-      <path class="st53" d="M1380.6,701.8l10.5,5.2-10.5,5.2v-10.5Z"/>
-      <path class="st53" d="M1390,707" marker-end="url(#arrow)"/>
-      <text class="st5" transform="translate(1405 702)"><tspan x="0" y="0">recovery.pdf</tspan></text>
-      <text class="st5" transform="translate(1405 715)"><tspan x="0" y="0">recovery_tier.pdf</tspan></text>
+      <rect class="st65" x="60" y="630" width="200" height="160" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st37" transform="translate(117.1 652)"><tspan x="0" y="0">STEP FAILURE</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st13" transform="translate(74 676)"><tspan x="0" y="0">tximport (R)</tspan></text>
+      </g>
+      <g>
+        <g class="st27">
+          <text class="st29" transform="translate(74 698)"><tspan x="0" y="0">Error: None of the</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st29" transform="translate(74 712)"><tspan x="0" y="0">transcripts in the</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st29" transform="translate(74 726)"><tspan x="0" y="0">quantification files</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st29" transform="translate(74 740)"><tspan x="0" y="0">are present in the</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st29" transform="translate(74 754)"><tspan x="0" y="0">first column of</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st29" transform="translate(74 768)"><tspan x="0" y="0">tx2gene…</tspan></text>
+        </g>
+      </g>
+    </g>
+    <path class="st75" d="M0,0"/>
+    <path class="st81" d="M292.4,703l14,7-14,7v-14Z"/>
+    <path class="st81" d="M305,710" marker-end="url(#arrowRed)"/>
+    <g>
+      <rect class="st61" x="310" y="630" width="200" height="160" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st34" transform="translate(362.7 652)"><tspan x="0" y="0">RECOVERY LLM</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st1" transform="translate(324 676)"><tspan x="0" y="0">• step description</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st1" transform="translate(324 693)"><tspan x="0" y="0">• original command</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st1" transform="translate(324 710)"><tspan x="0" y="0">• exit code · stderr</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st1" transform="translate(324 727)"><tspan x="0" y="0">• platform · tool availability</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st11" transform="translate(324 748)"><tspan x="0" y="0">Domain hints: R/Bioconductor,</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st11" transform="translate(324 762)"><tspan x="0" y="0">Python deps, shell semantics,</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st11" transform="translate(324 776)"><tspan x="0" y="0">GEO/SRA quirks, file perms.</tspan></text>
+      </g>
+    </g>
+    <path class="st73" d="M0,0"/>
+    <path class="st51" d="M542.4,703l14,7-14,7v-14Z"/>
+    <path class="st51" d="M555,710" marker-end="url(#arrowGreen)"/>
+    <g>
+      <rect class="st60" x="560" y="630" width="200" height="160" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st45" transform="translate(608.7 652)"><tspan x="0" y="0">FIXED COMMAND</tspan></text>
+      </g>
+      <g>
+        <g class="st27">
+          <text class="st16" transform="translate(574 678)"><tspan x="0" y="0">tximport(files,</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st16" transform="translate(574 692)"><tspan x="0" y="0">type=&quot;kallisto&quot;,</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st16" transform="translate(574 706)"><tspan x="0" y="0">tx2gene=tx2gene,</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st2" transform="translate(574 720)"><tspan x="0" y="0">ignoreTxVersion=TRUE,</tspan></text>
+        </g>
+        <g class="st27">
+          <text class="st2" transform="translate(574 734)"><tspan x="0" y="0">ignoreAfterBar=TRUE)</tspan></text>
+        </g>
+      </g>
+      <g class="st27">
+        <text class="st31" transform="translate(574 764)"><tspan x="0" y="0">+ diagnosis + explanation</tspan></text>
+      </g>
+    </g>
+    <path class="st52" d="M0,0"/>
+    <path class="st51" d="M418.7,808.7l12.6,6.3-12.6,6.3v-12.6Z"/>
+    <path class="st51" d="M430,815" marker-end="url(#arrowGreen)"/>
+    <g class="st27">
+      <text class="st38" transform="translate(370 875)"><tspan x="0" y="0">Retry (≤3 attempts)</tspan></text>
     </g>
     <g>
-      <rect class="st75" x="850" y="750" width="45" height="45" rx="8" ry="8"/>
-      <text class="st11" transform="translate(864.8 780)"><tspan x="0" y="0">C</tspan></text>
-      <text class="st23" transform="translate(910 770)"><tspan x="0" y="0">Generator fidelity</tspan></text>
-      <text class="st18" transform="translate(910 788)"><tspan x="0" y="0">Plan → Nextflow / Snakemake codegen; syntax-valid and intent-preserving.</tspan></text>
-      <path class="st0" d=""/>
-      <path class="st53" d="M1380.6,766.8l10.5,5.2-10.5,5.2v-10.5Z"/>
-      <path class="st53" d="M1390,772" marker-end="url(#arrow)"/>
-      <text class="st5" transform="translate(1405 772)"><tspan x="0" y="0">generation.pdf</tspan></text>
+      <rect class="st71" x="60" y="845" width="680" height="55" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st18" transform="translate(74 867)"><tspan x="0" y="0">Short-circuit rejection</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st41" transform="translate(74 885)"><tspan x="0" y="0">Python SyntaxError / ImportError in imported code → structured refusal without an LLM call.</tspan></text>
+      </g>
     </g>
     <g>
-      <rect class="st83" x="850" y="815" width="45" height="45" rx="8" ry="8"/>
-      <text class="st11" transform="translate(864.8 845)"><tspan x="0" y="0">D</tspan></text>
-      <text class="st23" transform="translate(910 835)"><tspan x="0" y="0">Executor coverage</tspan></text>
-      <text class="st18" transform="translate(910 853)"><tspan x="0" y="0">Six backends: local · Nextflow · Snakemake · SLURM · SGE · Kubernetes.</tspan></text>
-      <path class="st0" d=""/>
-      <path class="st53" d="M1380.6,831.8l10.5,5.2-10.5,5.2v-10.5Z"/>
-      <path class="st53" d="M1390,837" marker-end="url(#arrow)"/>
-      <text class="st5" transform="translate(1405 837)"><tspan x="0" y="0">executors.pdf</tspan></text>
+      <g class="st27">
+        <text class="st12" transform="translate(60 928)"><tspan x="0" y="0">The recovery harness distinguishes five outcomes:</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st43" transform="translate(321.4 928)"><tspan x="0" y="0">correct refusal</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(401.3 928)"><tspan x="0" y="0">,</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st35" transform="translate(407.7 928)"><tspan x="0" y="0">misdiagnosed refusal</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(525.9 928)"><tspan x="0" y="0">,</tspan></text>
+      </g>
+    </g>
+    <g class="st27">
+      <g class="st27">
+        <text class="st48" transform="translate(60 945)"><tspan x="0" y="0">attempted repair</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(150.1 945)"><tspan x="0" y="0">,</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st39" transform="translate(156.5 945)"><tspan x="0" y="0">silent failure</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(224.2 945)"><tspan x="0" y="0">, and</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st40" transform="translate(253 945)"><tspan x="0" y="0">unsafe repair</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st12" transform="translate(325.2 945)"><tspan x="0" y="0" xml:space="preserve"> (most dangerous class — plausible but wrong fix).</tspan></text>
+      </g>
+    </g>
+    <g class="st27">
+      <text class="st12" transform="translate(60 970)"><tspan x="0" y="0">28-fault injection catalogue across 3 tiers: easy (15), hard (9), unrecoverable (4 — correct answer is refusal).</tspan></text>
+    </g>
+    <g class="st27">
+      <text class="st12" transform="translate(60 992)"><tspan x="0" y="0">Same mechanism enables runtime LLM-authored scripts (e.g. DESeq2 R code from actual sample IDs).</tspan></text>
+    </g>
+  </g>
+  <g>
+    <rect class="st66" x="820" y="550" width="750" height="480" rx="10" ry="10"/>
+    <g class="st27">
+      <text class="st42" transform="translate(840 582)"><tspan x="0" y="0">D</tspan></text>
+    </g>
+    <g class="st27">
+      <text class="st36" transform="translate(875 582)"><tspan x="0" y="0">Five-pronged benchmark harness with reproducible figures</tspan></text>
+    </g>
+    <g>
+      <rect class="st56" x="850" y="620" width="45" height="45" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st9" transform="translate(864.8 650)"><tspan x="0" y="0">A</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st25" transform="translate(910 640)"><tspan x="0" y="0">Planning correctness &amp; cost</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st15" transform="translate(910 658)"><tspan x="0" y="0">41 prompts × 33 models × 3 replicates — plan scoring + per-cell token tally.</tspan></text>
+      </g>
+      <path class="st50" d="M0,0"/>
+      <path class="st50" d="M1380.6,636.8l10.5,5.2-10.5,5.2v-10.5h0Z"/>
+      <path class="st50" d="M1390,642" marker-end="url(#arrow)"/>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 637)"><tspan x="0" y="0">planning.pdf</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 650)"><tspan x="0" y="0">cost_quality.pdf</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st80" x="850" y="685" width="45" height="45" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st9" transform="translate(864.8 715)"><tspan x="0" y="0">B</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st25" transform="translate(910 705)"><tspan x="0" y="0">Autonomous error recovery</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st15" transform="translate(910 723)"><tspan x="0" y="0">28 injected faults × 3 tiers (easy / hard / unrecoverable) — recovery rate &amp; taxonomy.</tspan></text>
+      </g>
+      <path class="st50" d="M0,0"/>
+      <path class="st50" d="M1380.6,701.8l10.5,5.2-10.5,5.2v-10.5h0Z"/>
+      <path class="st50" d="M1390,707" marker-end="url(#arrow)"/>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 702)"><tspan x="0" y="0">recovery.pdf</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 715)"><tspan x="0" y="0">recovery_tier.pdf</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st76" x="850" y="750" width="45" height="45" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st9" transform="translate(864.8 780)"><tspan x="0" y="0">C</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st25" transform="translate(910 770)"><tspan x="0" y="0">Generator fidelity</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st15" transform="translate(910 788)"><tspan x="0" y="0">Plan → Nextflow / Snakemake codegen; syntax-valid and intent-preserving.</tspan></text>
+      </g>
+      <path class="st50" d="M0,0"/>
+      <path class="st50" d="M1380.6,766.8l10.5,5.2-10.5,5.2v-10.5h0Z"/>
+      <path class="st50" d="M1390,772" marker-end="url(#arrow)"/>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 772)"><tspan x="0" y="0">generation.pdf</tspan></text>
+      </g>
+    </g>
+    <g>
+      <rect class="st84" x="850" y="815" width="45" height="45" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st9" transform="translate(864.8 845)"><tspan x="0" y="0">D</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st25" transform="translate(910 835)"><tspan x="0" y="0">Executor coverage</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st15" transform="translate(910 853)"><tspan x="0" y="0">Six backends: local · Nextflow · Snakemake · SLURM · SGE · Kubernetes.</tspan></text>
+      </g>
+      <path class="st50" d="M0,0"/>
+      <path class="st50" d="M1380.6,831.8l10.5,5.2-10.5,5.2v-10.5h0Z"/>
+      <path class="st50" d="M1390,837" marker-end="url(#arrow)"/>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 837)"><tspan x="0" y="0">executors.pdf</tspan></text>
+      </g>
     </g>
     <g>
       <rect class="st74" x="850" y="880" width="45" height="45" rx="8" ry="8"/>
-      <text class="st11" transform="translate(865.3 910)"><tspan x="0" y="0">E</tspan></text>
-      <text class="st23" transform="translate(910 900)"><tspan x="0" y="0">Head-to-head vs competitors</tspan></text>
-      <text class="st18" transform="translate(910 918)"><tspan x="0" y="0">Same prompt corpus, same scoring: FlowAgent · BioMaster · AutoBA.</tspan></text>
-      <path class="st0" d=""/>
-      <path class="st53" d="M1380.6,896.8l10.5,5.2-10.5,5.2v-10.5Z"/>
-      <path class="st53" d="M1390,902" marker-end="url(#arrow)"/>
-      <text class="st5" transform="translate(1405 897)"><tspan x="0" y="0">competitors.tsv</tspan></text>
-      <text class="st5" transform="translate(1405 910)"><tspan x="0" y="0">pass-fail-crash</tspan></text>
+      <g class="st27">
+        <text class="st9" transform="translate(865.3 910)"><tspan x="0" y="0">E</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st25" transform="translate(910 900)"><tspan x="0" y="0">Head-to-head vs competitors</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st15" transform="translate(910 918)"><tspan x="0" y="0">Same prompt corpus, same scoring: FlowAgent · BioMaster · AutoBA.</tspan></text>
+      </g>
+      <path class="st50" d="M0,0"/>
+      <path class="st50" d="M1380.6,896.8l10.5,5.2-10.5,5.2v-10.5h0Z"/>
+      <path class="st50" d="M1390,902" marker-end="url(#arrow)"/>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 897)"><tspan x="0" y="0">competitors.tsv</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st1" transform="translate(1405 910)"><tspan x="0" y="0">pass-fail-crash</tspan></text>
+      </g>
     </g>
     <g>
-      <rect class="st71" x="850" y="945" width="690" height="58" rx="8" ry="8"/>
-      <text class="st12" transform="translate(864 967)"><tspan x="0" y="0">Per-run reproducibility manifest</tspan></text>
-      <text class="st50" transform="translate(864 985)"><tspan x="0" y="0">git SHA · Python + package versions · model IDs · timestamp · random seeds · redacted env snapshot.</tspan></text>
-      <text class="st50" transform="translate(864 1000)"><tspan x="0" y="0">Deterministic rescore / merge / report pipeline: re-score archived runs against current metrics without re-spending API budget.</tspan></text>
+      <rect class="st70" x="850" y="945" width="690" height="58" rx="8" ry="8"/>
+      <g class="st27">
+        <text class="st10" transform="translate(864 967)"><tspan x="0" y="0">Per-run reproducibility manifest</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st49" transform="translate(864 985)"><tspan x="0" y="0">git SHA · Python + package versions · model IDs · timestamp · random seeds · redacted env snapshot.</tspan></text>
+      </g>
+      <g class="st27">
+        <text class="st49" transform="translate(864 1000)"><tspan x="0" y="0">Deterministic rescore / merge / report pipeline: re-score archived runs against current metrics without re-spending API budget.</tspan></text>
+      </g>
     </g>
   </g>
-  <text class="st44" transform="translate(475.2 1048)"><tspan x="0" y="0">Palette: Okabe-Ito colour-blind-safe. Editable SVG — open in Inkscape / Illustrator / Figma to refine labels or panel sizes before submission.</tspan></text>
-  <g class="st4">
+  <path class="st78" d="M401.1,321.9h17.8c4,0,7.3,3.3,7.3,7.3v17.6c0,4-3.3,7.3-7.3,7.3h-17.8c-4,0-7.3-3.3-7.3-7.3v-17.6c0-4,3.3-7.3,7.3-7.3Z"/>
+  <path class="st88" d="M402.8,341.9l4.7-2.6v-.2h0c0-.1-.2-.1-.2-.1h-3.5l-2.3-.2h-2.2c0-.1-.6-.2-.6-.2l-.5-.7v-.3l.5-.3h.7l1.5.2,2.2.2h1.6l2.4.3h.4v-.2h-.1l-2.3-1.7-2.5-1.7-1.3-1-.7-.5-.4-.5-.2-1,.6-.7h1.1c0,.1.9.8.9.8l1.9,1.5,2.5,1.8.4.3h.1v-.2l-.2-.3-1.3-2.4-1.4-2.5-.6-1-.2-.6c0-.3-.1-.5-.1-.7l.7-1h.4c0-.1,1,0,1,0l.4.4.6,1.4,1,2.2,1.5,3,.4.9.2.8v.3h.2c0-.1.1-1.8.1-1.8l.2-2.1.2-2.7v-.8l.4-.9.7-.5.6.3.5.7v.4l-.3,1.8-.6,2.9-.4,1.9h.2l.2-.2,1-1.3,1.6-2,.7-.8.8-.9.5-.4h1l.8,1.1-.3,1.2-1,1.3-.9,1.1-1.2,1.7-.8,1.3h0c0,.1.2,0,.2,0l2.8-.6,1.5-.3,1.8-.3.8.4v.4l-.2.8-1.9.5-2.3.5-3.4.8h1.5c0,.1.7.2.7.2h1.6l3,.2.8.5.5.6v.5l-1.3.6-1.6-.4-3.8-.9-1.3-.3h-.2c0,.1,1.1,1.2,1.1,1.2l2,1.8,2.5,2.3v.6c.1,0-.2.4-.2.4h-.3l-2.2-1.7-.8-.7-1.9-1.6h-.1v.2l.4.6,2.3,3.5v1.1c.1,0,0,.3,0,.3l-.6.2h-.7c0-.1-1.4-2-1.4-2l-1.4-2.1-1.1-1.9h-.1l-.7,7.2-.3.4-.7.3-.6-.5-.3-.7.3-1.5.4-1.9.3-1.5.3-1.9.2-.6h-.1l-1.4,1.9-2.2,2.9-1.7,1.8-.4.2-.7-.4v-.7l.5-.6,2.4-3,1.4-1.9.9-1.1v-.2h0l-6.3,4.1h-1.1c0,.1-.5-.3-.5-.3v-.7l.3-.2,1.9-1.3h.1Z"/>
+  <path d="M476.7,302c.9-2.8.6-5.8-.9-8.3-2.2-3.8-6.6-5.8-11-4.9-3.8-4.2-10.2-4.5-14.4-.8-1.3,1.2-2.3,2.7-2.9,4.4-2.8.6-5.3,2.4-6.7,4.9-2.2,3.8-1.7,8.7,1.2,11.9-.9,2.7-.6,5.8.9,8.3,2.2,3.8,6.6,5.8,11,4.9,1.9,2.2,4.7,3.4,7.6,3.4,4.4,0,8.4-2.9,9.7-7.1,2.8-.6,5.3-2.4,6.7-4.9,2.2-3.8,1.7-8.6-1.3-11.9h0ZM461.5,323.2c-1.8,0-3.5-.6-4.8-1.8h.2c0-.1,8-4.8,8-4.8.4-.2.7-.7.7-1.1v-11.3l3.4,2h0v9.4c0,4.2-3.4,7.6-7.6,7.6h0ZM445.3,316.2c-.9-1.5-1.2-3.3-.9-5.1h.2c0,.1,8,4.8,8,4.8.4.2.9.2,1.3,0l9.8-5.7v3.9h0c0,.1-8.1,4.8-8.1,4.8-3.6,2.1-8.2.8-10.3-2.8h0ZM443.2,298.7c.9-1.5,2.3-2.7,4-3.3v9.6c0,.5.2.9.7,1.1l9.8,5.6-3.4,2h-.1l-8.1-4.7c-3.6-2.1-4.8-6.7-2.8-10.3h-.1ZM471.1,305.2l-9.8-5.7,3.4-2h.1l8.1,4.7c3.6,2.1,4.9,6.7,2.8,10.3-.9,1.5-2.3,2.7-3.9,3.3v-9.6c0-.5-.3-.9-.7-1.1h0ZM474.5,300.1h-.2c0-.1-8-4.8-8-4.8-.4-.2-.9-.2-1.3,0l-9.8,5.7v-3.9h0c0-.1,8.1-4.8,8.1-4.8,3.6-2.1,8.3-.8,10.3,2.8.9,1.5,1.2,3.3.9,5.1h0ZM453.2,307.1l-3.4-2h0v-9.4c0-4.2,3.4-7.6,7.6-7.6s3.5.6,4.8,1.7h-.2c0,.1-8,4.8-8,4.8-.4.2-.7.7-.7,1.1v11.3h0ZM455.1,303.1l4.4-2.5,4.4,2.5v5l-4.4,2.5-4.4-2.5v-5Z"/>
+  <g class="st0">
     <g>
-      <path class="st60" d="M338.2,315.8c5,1.8,10.7-1.5,12.8-7.4,2.1-5.9-.3-12.1-5.3-13.8-5-1.8-10.7,1.5-12.8,7.4-2.1,5.9.3,12.1,5.3,13.8Z"/>
-      <path class="st84" d="M360.3,296.4c6.9,0,12.4-5.7,12.4-12.7s-5.6-12.7-12.4-12.7-12.4,5.7-12.4,12.7,5.6,12.7,12.4,12.7h0Z"/>
-      <path class="st59" d="M355.5,337c7.2-.3,12.6-8.1,12.1-17.4-.5-9.3-6.6-16.5-13.8-16.1-7.2.3-12.6,8.1-12.1,17.4.5,9.3,6.6,16.5,13.8,16.1Z"/>
-      <path class="st59" d="M355.5,337c7.2-.3,12.6-8.1,12.1-17.4-.5-9.3-6.6-16.5-13.8-16.1-7.2.3-12.6,8.1-12.1,17.4.5,9.3,6.6,16.5,13.8,16.1Z"/>
-      <path class="st59" d="M362.7,331.4c6-3.6,7.6-12,3.6-18.6-4-6.6-12.1-9-18.1-5.3-6,3.6-7.6,12-3.6,18.6,4,6.6,12.1,9,18.1,5.3Z"/>
-      <path class="st86" d="M386.9,310.6c6.7,0,12.2-5.3,12.2-11.8s-5.5-11.8-12.2-11.8-12.2,5.3-12.2,11.8,5.5,11.8,12.2,11.8Z"/>
-      <path class="st82" d="M333.4,309.3c6.2,4.7,15.3,3.2,20.3-3.3,5-6.5,4-15.7-2.2-20.4-6.2-4.7-15.3-3.2-20.3,3.3-5,6.5-4,15.7,2.2,20.4Z"/>
-      <path class="st86" d="M365.2,316.2c7.4,5.1,17.2,3.7,21.9-3.2,4.7-6.8,2.5-16.5-4.9-21.6-7.4-5.1-17.2-3.7-21.9,3.2-4.7,6.8-2.5,16.5,4.9,21.6h0Z"/>
-      <path class="st76" d="M378.6,280.5c1.9,2.6-.5,7.5-5.4,11.1-4.9,3.6-10.3,4.4-12.2,1.8-1.9-2.6.5-7.5,5.4-11.1,4.9-3.6,10.3-4.4,12.2-1.8h0Z"/>
-      <path class="st84" d="M363.2,292.7c7.5-7,10.1-16.5,5.8-21.1-4.3-4.7-14-2.8-21.5,4.2s-10.1,16.5-5.8,21.1c4.3,4.7,14,2.8,21.5-4.2Z"/>
-      <path class="st85" d="M347.7,317.8c4.5,3.2,9.6,3.7,11.5,1.1,1.9-2.6-.3-7.3-4.7-10.5-4.5-3.2-9.6-3.7-11.5-1.1-1.9,2.6.3,7.3,4.7,10.5Z"/>
+      <path class="st58" d="M347.9,317.9c5.4,1.9,11.5-1.7,13.8-8,2.2-6.3-.3-13-5.7-14.9-5.4-1.9-11.5,1.7-13.8,8-2.2,6.3.3,13,5.7,14.9Z"/>
+      <path class="st85" d="M371.7,297.1c7.4,0,13.3-6.1,13.3-13.6s-6-13.6-13.3-13.6-13.3,6.1-13.3,13.6,6,13.6,13.3,13.6h0Z"/>
+      <path class="st57" d="M366.5,340.7c7.7-.4,13.5-8.8,13-18.7-.5-10-7.1-17.7-14.8-17.4-7.7.4-13.5,8.8-13,18.7.5,10,7.1,17.7,14.8,17.4Z"/>
+      <path class="st57" d="M366.5,340.7c7.7-.4,13.5-8.8,13-18.7-.5-10-7.1-17.7-14.8-17.4-7.7.4-13.5,8.8-13,18.7.5,10,7.1,17.7,14.8,17.4Z"/>
+      <path class="st57" d="M374.2,334.7c6.4-3.9,8.2-12.9,3.9-19.9-4.3-7.1-13-9.7-19.5-5.7-6.4,3.9-8.2,12.9-3.9,19.9,4.3,7.1,13,9.7,19.5,5.7Z"/>
+      <path class="st87" d="M400.2,312.4c7.2,0,13.1-5.7,13.1-12.6s-5.9-12.6-13.1-12.6-13.1,5.7-13.1,12.6,5.9,12.6,13.1,12.6Z"/>
+      <path class="st83" d="M342.7,310.9c6.7,5.1,16.4,3.5,21.8-3.6,5.3-7,4.3-16.8-2.4-21.9-6.7-5.1-16.4-3.5-21.8,3.6-5.3,7-4.3,16.9,2.4,21.9Z"/>
+      <path class="st87" d="M376.9,318.4c8,5.5,18.5,3.9,23.6-3.4,5.1-7.4,2.7-17.8-5.3-23.2-8-5.5-18.5-3.9-23.6,3.4-5.1,7.4-2.7,17.8,5.3,23.2h0Z"/>
+      <path class="st77" d="M391.4,280c2,2.8-.6,8.1-5.8,12-5.2,3.9-11.1,4.7-13.1,2-2-2.8.6-8.1,5.8-12,5.2-3.9,11.1-4.7,13.1-2h0Z"/>
+      <path class="st85" d="M374.7,293.2c8.1-7.5,10.9-17.7,6.2-22.7-4.7-5-15-3-23.1,4.5-8.1,7.5-10.9,17.7-6.2,22.7,4.7,5,15,3,23.1-4.5Z"/>
+      <path class="st86" d="M358.1,320.1c4.8,3.4,10.3,4,12.3,1.2,2-2.8-.3-7.9-5.1-11.3-4.8-3.4-10.3-4-12.3-1.2-2,2.8.3,7.9,5.1,11.3Z"/>
     </g>
   </g>
-  <path class="st77" d="M401.1,321.9h17.8c4,0,7.3,3.3,7.3,7.3v17.6c0,4-3.3,7.3-7.3,7.3h-17.8c-4,0-7.3-3.3-7.3-7.3v-17.6c0-4,3.3-7.3,7.3-7.3Z"/>
-  <path class="st87" d="M402.8,341.9l4.7-2.6v-.2c0,0,0-.1,0-.1h-.2s-.8,0-.8,0h-2.7c0,0-2.3-.2-2.3-.2h-2.2c0-.1-.6-.2-.6-.2l-.5-.7v-.3c0,0,.5-.3.5-.3h.7c0,0,1.5.2,1.5.2l2.2.2h1.6c0,0,2.4.3,2.4.3h.4v-.2c0,0,0,0,0,0h-.1c0,0-2.3-1.7-2.3-1.7l-2.5-1.7-1.3-1-.7-.5-.4-.5-.2-1,.6-.7h.9c0,0,.2.1.2.1l.9.7,1.9,1.5,2.5,1.8.4.3h.1c0-.1,0-.2,0-.2l-.2-.3-1.3-2.4-1.4-2.5-.6-1-.2-.6c0-.3-.1-.5-.1-.7l.7-1h.4c0-.1,1,0,1,0l.4.4.6,1.4,1,2.2,1.5,3,.4.9.2.8v.3c0,0,.2,0,.2,0h0c0-.1.1-1.8.1-1.8l.2-2.1.2-2.7v-.8c0,0,.4-.9.4-.9l.7-.5.6.3.5.7v.4c0,0-.3,1.8-.3,1.8l-.6,2.9-.4,1.9h.2l.2-.2,1-1.3,1.6-2,.7-.8.8-.9.5-.4h1s.8,1.1.8,1.1l-.3,1.2-1,1.3-.9,1.1-1.2,1.7-.8,1.3h0c0,.1.2,0,.2,0l2.8-.6,1.5-.3,1.8-.3.8.4v.4c0,0-.2.8-.2.8l-1.9.5-2.3.5-3.4.8h0s0,0,0,0h1.5c0,.1.7.2.7.2h1.6l3,.2.8.5.5.6v.5c0,0-1.3.6-1.3.6l-1.6-.4-3.8-.9-1.3-.3h-.2s0,.1,0,.1l1.1,1.1,2,1.8,2.5,2.3v.6c.1,0-.2.4-.2.4h-.3s-2.2-1.7-2.2-1.7l-.8-.7-1.9-1.6h-.1s0,.2,0,.2l.4.6,2.3,3.5v1.1c.1,0,0,.3,0,.3l-.6.2h-.7c0-.1-1.4-2-1.4-2l-1.4-2.1-1.1-1.9h-.1c0,0-.7,7.2-.7,7.2l-.3.4-.7.3-.6-.5-.3-.7.3-1.5.4-1.9.3-1.5.3-1.9.2-.6h0s-.1,0-.1,0l-1.4,1.9-2.2,2.9-1.7,1.8-.4.2-.7-.4v-.7c0,0,.5-.6.5-.6l2.4-3,1.4-1.9.9-1.1v-.2h0l-6.3,4.1h-1.1c0,.1-.5-.3-.5-.3v-.7c0,0,.3-.2.3-.2l1.9-1.3h0s0,0,0,0h0Z"/>
-  <path d="M476.7,302c.9-2.8.6-5.8-.9-8.3-2.2-3.8-6.6-5.8-11-4.9-3.8-4.2-10.2-4.5-14.4-.8-1.3,1.2-2.3,2.7-2.9,4.4-2.8.6-5.3,2.4-6.7,4.9-2.2,3.8-1.7,8.7,1.2,11.9-.9,2.7-.6,5.8.9,8.3,2.2,3.8,6.6,5.8,11,4.9,1.9,2.2,4.7,3.4,7.6,3.4,4.4,0,8.4-2.9,9.7-7.1,2.8-.6,5.3-2.4,6.7-4.9,2.2-3.8,1.7-8.6-1.3-11.9h0ZM461.5,323.2c-1.8,0-3.5-.6-4.8-1.8h.2c0-.1,8-4.8,8-4.8.4-.2.7-.7.7-1.1v-11.3l3.4,2s0,0,0,0v9.4c0,4.2-3.4,7.6-7.6,7.6ZM445.3,316.2c-.9-1.5-1.2-3.3-.9-5.1h.2c0,.1,8,4.8,8,4.8.4.2.9.2,1.3,0l9.8-5.7v3.9s0,0,0,.1l-8.1,4.7c-3.6,2.1-8.2.8-10.3-2.8h0ZM443.2,298.7c.9-1.5,2.3-2.7,4-3.3v9.6c0,.5.2.9.7,1.1l9.8,5.6-3.4,2s0,0-.1,0l-8.1-4.7c-3.6-2.1-4.8-6.7-2.8-10.3h0ZM471.1,305.2l-9.8-5.7,3.4-2s0,0,.1,0l8.1,4.7c3.6,2.1,4.9,6.7,2.8,10.3-.9,1.5-2.3,2.7-3.9,3.3v-9.6c0-.5-.3-.9-.7-1.1h0ZM474.5,300.1h-.2c0-.1-8-4.8-8-4.8-.4-.2-.9-.2-1.3,0l-9.8,5.7v-3.9s0,0,0-.1l8.1-4.7c3.6-2.1,8.3-.8,10.3,2.8.9,1.5,1.2,3.3.9,5.1h0ZM453.2,307.1l-3.4-2s0,0,0,0v-9.4c0-4.2,3.4-7.6,7.6-7.6,1.8,0,3.5.6,4.8,1.7h-.2c0,.1-8,4.8-8,4.8-.4.2-.7.7-.7,1.1v11.3ZM455.1,303.1l4.4-2.5,4.4,2.5v5l-4.4,2.5-4.4-2.5v-5Z"/>
 </svg>
