@@ -1,0 +1,68 @@
+# Benchmark F — Output fidelity cases.
+#
+# Each case names a published bioinformatics dataset, the FlowAgent prompt
+# that should reproduce its primary analysis, the path to a reference
+# output table from the original publication, and a comparison method.
+#
+# The fidelity runner does NOT execute the workflow itself — it is a
+# pure scoring layer. Run FlowAgent end-to-end on the prompt first
+# (or use a prior run dir), then point ``--candidate-dir`` at the
+# results directory containing the file specified by ``output_relpath``.
+#
+# Comparison methods:
+#   de_table      — Spearman ρ on log2FoldChange across genes present in
+#                   both tables; Jaccard on top-N significant genes
+#                   (padj < ``alpha``, |log2FC| > ``min_lfc``).
+#   peak_bed      — Jaccard on intervals (50% reciprocal overlap).
+#   vcf           — F1 on (chrom, pos, ref, alt) tuples.
+
+cases:
+  - id: gse52778_dex_de
+    description: >-
+      Dexamethasone vs untreated airway smooth muscle DE (Himes et al. 2014,
+      airway dataset). FlowAgent should reproduce a DESeq2 contrast that
+      ranks the canonical GR-target genes (DUSP1, KLF15, CRISPLD2, etc.)
+      among the top up-regulated.
+    accession: GSE52778
+    prompt: |-
+      Download GSE52778 from GEO and run a human (GRCh38) RNA-seq
+      kallisto pipeline on the bulk samples, then run DESeq2 differential
+      expression between Dexamethasone and untreated conditions, with
+      untreated as the reference.
+    output_relpath: results/rna_seq_kallisto/deseq2/deseq2_results.csv
+    reference: references/gse52778_himes_DE.tsv
+    comparison: de_table
+    params:
+      gene_id_column: gene_id          # column name in BOTH files
+      log2fc_column:  log2FoldChange
+      padj_column:    padj
+      alpha:          0.05
+      min_lfc:        1.0
+      top_n:          200              # for Jaccard on top-N
+
+  # ── Placeholder cases ─────────────────────────────────────────────
+  # Populate ``reference`` paths and uncomment as published deposits
+  # are curated. These are sketched here so the YAML records the
+  # intended scope and scoring method.
+
+  # - id: encode_chipseq_h3k27ac_jurkat
+  #   description: H3K27ac peak set in Jurkat cells (ENCODE).
+  #   accession: ENCSR000EUQ
+  #   prompt: |-
+  #     Download the H3K27ac ChIP-seq dataset ENCSR000EUQ and run a
+  #     standard bowtie2 + MACS2 peak-calling pipeline on hg38.
+  #   output_relpath: results/macs2/peaks.narrowPeak
+  #   reference:      references/encsr000euq_peaks.narrowPeak
+  #   comparison:     peak_bed
+  #   params: {min_overlap: 0.5}
+
+  # - id: gnomad_chr22_variant_calling
+  #   description: Truth-set variant calls on a 1000G chr22 trio.
+  #   accession: NA12878-chr22
+  #   prompt: |-
+  #     Run GATK HaplotypeCaller on the NA12878 chr22 BAM and produce
+  #     a filtered VCF.
+  #   output_relpath: results/gatk/filtered.vcf.gz
+  #   reference:      references/na12878_chr22_truth.vcf.gz
+  #   comparison:     vcf
+  #   params: {region: "chr22:16000000-50000000"}

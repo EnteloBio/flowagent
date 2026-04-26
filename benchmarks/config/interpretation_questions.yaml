@@ -1,0 +1,175 @@
+# Benchmark G — Biological-interpretation evaluation.
+#
+# Each entry stresses the *reporting* module, not the planner or executor.
+# The runner feeds (question_text + analysis_outputs) to the model under
+# test and grades the response.
+#
+# Two question types:
+#   mcq        — Multiple choice. Scored by exact match against ``answer``.
+#                The ``refusal_acceptable`` flag gates whether picking
+#                the refusal option counts as correct (use True only on
+#                questions where the supplied outputs genuinely lack the
+#                evidence to answer — calibrates abstention behaviour).
+#   open_ended — Free-text. Scored by an LLM-as-judge against
+#                ``rubric`` and ``reference_answer``; the judge model is
+#                set on the runner CLI (default: gpt-5.4).
+#
+# Each entry's ``inputs`` paths are relative to ``--inputs-base`` on
+# the runner. They are passed to the model as raw file contents (CSV/TSV
+# tables) or as text snippets (logs, summaries).
+
+datasets:
+
+  # ── GSE52778: dexamethasone vs untreated airway smooth muscle ────
+  - id: gse52778
+    accession: GSE52778
+    description: >-
+      Himes et al. 2014 dexamethasone-treated airway smooth muscle RNA-seq.
+      Reporting agent input: deseq2_results.csv (DE table) + multiqc summary.
+    inputs:
+      de_table:    references/gse52778_himes_DE.tsv
+      multiqc_log: references/gse52778_multiqc_general_stats.txt
+
+    questions:
+
+      # ─── MCQ ───
+      - id: gse52778_q01_top_up
+        type: mcq
+        question: >-
+          Based on the supplied DESeq2 results, which of the following
+          genes is most strongly up-regulated (largest positive log2
+          fold-change with padj < 0.05) in dexamethasone-treated samples
+          compared to untreated controls?
+        choices:
+          A: DUSP1
+          B: CRISPLD2
+          C: KLF15
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+        reference_explanation: >-
+          CRISPLD2 is one of the canonical, large-effect glucocorticoid-
+          induced genes in airway smooth muscle and consistently appears
+          at the top of DEX-vs-untreated DE rankings in this dataset.
+
+      - id: gse52778_q02_direction
+        type: mcq
+        question: >-
+          With ``untreated`` set as the reference level, a *positive*
+          log2FoldChange in this DE table corresponds to:
+        choices:
+          A: Higher expression in untreated samples.
+          B: Higher expression in dexamethasone-treated samples.
+          C: No directional information — the sign is arbitrary.
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+
+      - id: gse52778_q03_pathway
+        type: mcq
+        question: >-
+          Which biological process is most coherently represented among
+          the top up-regulated genes in this contrast?
+        choices:
+          A: Glucocorticoid response / steroid-receptor signalling.
+          B: Mitochondrial oxidative phosphorylation.
+          C: Spliceosomal assembly.
+          D: I cannot determine this from the supplied data.
+        answer: A
+        refusal_acceptable: false
+
+      - id: gse52778_q04_n_sig
+        type: mcq
+        question: >-
+          Roughly how many genes are differentially expressed at
+          padj < 0.05 in this contrast?
+        choices:
+          A: Fewer than 10.
+          B: 50 – 200.
+          C: Several hundred to a few thousand.
+          D: I cannot determine this from the supplied data.
+        answer: C
+        refusal_acceptable: false
+
+      - id: gse52778_q05_qc_refusal
+        type: mcq
+        question: >-
+          What was the per-base sequencing quality (Phred Q30 fraction)
+          in the SRR1039517 library?
+        choices:
+          A: ≥ 95% Q30.
+          B: 80–95% Q30.
+          C: < 80% Q30.
+          D: I cannot determine this from the supplied data.
+        # The MultiQC general-stats snippet does NOT report Q30 fractions,
+        # so the calibrated answer is D — refusal. Tests whether the
+        # reporting agent fabricates plausible-but-unsupported numbers.
+        answer: D
+        refusal_acceptable: true
+
+      # ─── Open-ended ───
+      - id: gse52778_q06_summary
+        type: open_ended
+        question: >-
+          In two to three sentences, summarise the primary biological
+          finding of this DE analysis for a reader with general
+          molecular-biology training but no prior exposure to GSE52778.
+          Mention direction, scale of effect, and at least one
+          biologically interpretable gene or pathway.
+        rubric: |-
+          Award credit for: (i) correct direction (DEX up-regulates a
+          coherent gene set vs untreated); (ii) acknowledgement of the
+          glucocorticoid / steroid-response context; (iii) at least one
+          named gene that is genuinely top-ranked in the supplied table
+          (e.g. CRISPLD2, KLF15, DUSP1, FKBP5, TSC22D3); (iv) plausible
+          effect-size language ("hundreds of genes", "moderate to large
+          fold-changes"). Penalise: fabricated gene names, wrong
+          direction, citing pathways absent from the rankings, or
+          claims about phenotypes/clinical outcomes the data cannot
+          support.
+        reference_answer: >-
+          Dexamethasone treatment of airway smooth muscle cells
+          drives a coherent glucocorticoid-receptor transcriptional
+          response: hundreds of genes pass the padj < 0.05 threshold,
+          with the largest up-regulated effects on canonical GR
+          targets including CRISPLD2, KLF15, DUSP1, FKBP5 and TSC22D3.
+          The effect is unidirectional in the sense that the signature
+          is dominated by DEX-induced (positive log2FC) genes rather
+          than DEX-repressed genes, consistent with the established
+          role of glucocorticoids as transcriptional activators of
+          this programme.
+
+      - id: gse52778_q07_caveats
+        type: open_ended
+        question: >-
+          What caveats should the reader bear in mind when interpreting
+          this DE result? Restrict your answer to caveats that are
+          actually supported by the supplied table and QC summary —
+          do not speculate beyond the evidence shown.
+        rubric: |-
+          Award credit for at least two of: (i) limited sample size /
+          biological replicates per condition (n=4 donors); (ii)
+          single cell type / tissue context (airway smooth muscle —
+          findings may not generalise); (iii) absence of any time-course
+          or dose-response in the design; (iv) reliance on padj
+          thresholds that depend on independent filtering choices;
+          (v) any QC-driven caveat that IS visible in the supplied
+          MultiQC log (e.g. flagged samples). Penalise: fabricated
+          caveats not supported by the inputs, or over-confident
+          extrapolation to disease/clinical outcomes.
+
+      - id: gse52778_q08_followup
+        type: open_ended
+        question: >-
+          Suggest one concrete follow-up analysis that would
+          strengthen the conclusions of this study, given the data
+          actually available in this experiment.
+        rubric: |-
+          Strong answers propose an analysis that uses the existing
+          design (e.g. donor-paired analysis using the four matched
+          donors; gene-set enrichment with a curated GR-target set;
+          comparison to other glucocorticoid datasets in airway
+          tissues). Weak answers propose experiments that would
+          require new data the user does not have (CRISPR validation,
+          ChIP-seq, single-cell). Penalise the latter unless explicitly
+          framed as "would require new data".

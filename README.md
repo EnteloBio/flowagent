@@ -19,14 +19,15 @@ FlowAgent is a multi-agent framework for automating bioinformatics workflows. It
 9. [Web interface (Chainlit)](#web-interface-chainlit)
 10. [Workflow presets](#workflow-presets)
 11. [Analysis reports](#analysis-reports)
-12. [Checkpoints and resume](#checkpoints-and-resume)
-13. [Custom scripts](#custom-scripts)
-14. [HPC and cluster notes](#hpc-and-cluster-notes)
-15. [Architecture](#architecture)
-16. [Development](#development)
-17. [Benchmarking](#benchmarking)
-18. [Documentation (MkDocs)](#documentation-mkdocs)
-19. [Contributing and license](#contributing-and-license)
+12. [Notebook output](#notebook-output)
+13. [Checkpoints and resume](#checkpoints-and-resume)
+14. [Custom scripts](#custom-scripts)
+15. [HPC and cluster notes](#hpc-and-cluster-notes)
+16. [Architecture](#architecture)
+17. [Development](#development)
+18. [Benchmarking](#benchmarking)
+19. [Documentation (MkDocs)](#documentation-mkdocs)
+20. [Contributing and license](#contributing-and-license)
 
 ---
 
@@ -253,6 +254,94 @@ The tool searches for FastQC, MultiQC, Kallisto outputs, logs, and similar artif
 
 ---
 
+## Notebook output
+
+Every workflow run emits **three** sibling artefacts next to
+`workflow.json` in the output directory:
+
+| File | Role |
+|---|---|
+| `notebook.ipynb` | Jupyter notebook for re-execution / sharing on GitHub. |
+| `notebook.html`  | Rendered HTML of the `.ipynb` — opens in any browser, no Jupyter install needed. |
+| `notebook.Rmd`   | R Markdown for users who prefer RStudio. Inline `Rscript -e '...'` invocations are extracted into native `{r}` chunks; everything else is `{bash}`. Knit to HTML/PDF/Word with `rmarkdown::render("notebook.Rmd")`. |
+
+All three share the same content but cater to different downstream
+audiences (Jupyter, browser-only, RStudio). The `.ipynb` and `.Rmd` are
+built in two layers — a deterministic scaffold and an optional
+LLM-generated assay-aware narrative that's woven into the cells.
+
+**Deterministic scaffold (always present):**
+
+- Title cell with run metadata (model, provider, executor, git SHA).
+- Original natural-language prompt verbatim.
+- Workflow plan rendered as a markdown table.
+- One markdown header + `%%bash` code cell per step, with status badges
+  (🟢 completed, 🟡 recovered, 🔴 failed, ⚪ skipped) and pre-populated
+  stdout/stderr from the actual run.
+- Run summary block with counts of completed / recovered / failed steps.
+- Trailing "load results" cells auto-detected from disk (DESeq2 results
+  CSV, MACS2 narrowPeak, GATK VCF, MultiQC HTML).
+
+**LLM-generated narrative (added on top, when an LLM is configured):**
+
+After execution, FlowAgent makes one additional LLM call that examines
+the prompt, the executed plan, and the captured results, and returns
+structured JSON containing:
+
+1. **Analysis overview** — 2-3 paragraphs scientific introduction tailored
+   to the assay (RNA-seq, ChIP-seq, methylation, variant calling, etc.),
+   the dataset accession, and the reference genome.
+2. **Per-step rationale** — 1-2 sentences below each step header
+   explaining *why* this step exists in this specific pipeline (e.g. why
+   kallisto pseudo-alignment was chosen over STAR for this RNA-seq run).
+3. **Results interpretation** — 2-3 paragraphs citing specific outputs
+   that completed successfully, naming filenames, exit codes, and
+   anything that warrants follow-up.
+4. **Suggested follow-up analyses** — a short bullet list of 2-3 plausible
+   next steps appropriate to the assay, using only the data already in
+   hand (or marked otherwise).
+
+This makes the notebook content tailored to the *specific* pipeline that
+ran — an RNA-seq notebook reads about transcript quantification and
+glucocorticoid signalling; a ChIP-seq notebook reads about peak calling
+and motif enrichment.
+
+The narrative call is best-effort: any failure logs a warning and ships
+the deterministic notebook unchanged. To disable it (for `--mock`, CI, or
+offline use), set:
+
+```bash
+export FLOWAGENT_NOTEBOOK_NARRATIVE=0
+```
+
+This format is the FlowAgent equivalent of a BixBench capsule —
+self-contained, re-executable, and reviewable in JupyterLab without
+re-running FlowAgent.
+
+You can also export an existing run on demand (always deterministic;
+the narrative path is currently only available via `WorkflowManager`):
+
+```bash
+# Jupyter notebook (.ipynb), with .html rendered alongside automatically
+python -m flowagent.utils.export_notebook \
+    --workflow flowagent_output/Unnamed_Workflow/workflow.json \
+    --results  flowagent_output/Unnamed_Workflow/run_results.json \
+    --prompt   "Download GSE52778 …" \
+    --out      flowagent_output/Unnamed_Workflow/notebook.ipynb
+
+# R Markdown (.Rmd) — knit with `rmarkdown::render()` in R
+python -m flowagent.utils.export_rmarkdown \
+    --workflow flowagent_output/Unnamed_Workflow/workflow.json \
+    --results  flowagent_output/Unnamed_Workflow/run_results.json \
+    --prompt   "Download GSE52778 …" \
+    --out      flowagent_output/Unnamed_Workflow/notebook.Rmd
+```
+
+`--results` is optional in both; without it the notebook is emitted
+with empty output sections and is ready to re-execute.
+
+---
+
 ## Checkpoints and resume
 
 ```bash
@@ -353,14 +442,16 @@ Optional: `mypy`, `ruff`, `black`, `isort` as in your team conventions.
 ## Benchmarking
 
 FlowAgent ships with a reproducible benchmark suite under [`benchmarks/`](benchmarks/)
-that measures the five core claims of the tool: planning correctness,
-LLM-driven error recovery, generator fidelity, executor coverage, and
-head-to-head performance against other agentic bioinformatics systems. Each
-benchmark writes timestamped results (JSON + CSV + `manifest.json`) and the
-`make report` target renders publication-ready figures. See
-[`benchmarks/README.md`](benchmarks/README.md) for the full reference.
+that measures the seven core claims of the tool: planning correctness,
+LLM-driven error recovery, generator fidelity, executor coverage,
+head-to-head performance against other agentic bioinformatics systems,
+output fidelity against published references, and biological-interpretation
+quality. Each benchmark writes timestamped results (JSON + CSV +
+`manifest.json`) and the `make report` target renders publication-ready
+figures. See [`benchmarks/README.md`](benchmarks/README.md) for the full
+reference.
 
-### The five benchmarks
+### The seven benchmarks
 
 | ID | Claim tested | API key? | Extra infra? |
 |---|---|---|---|
@@ -369,6 +460,8 @@ benchmark writes timestamped results (JSON + CSV + `manifest.json`) and the
 | **C** | Generated Nextflow/Snakemake code is valid and preserves plan intent | no | `nextflow`/`snakemake` improve validation |
 | **D** | All six execution backends (local, cgat, hpc, kubernetes, nextflow, snakemake) function | no | best-effort; uses mocks when infra absent |
 | **E** | FlowAgent is competitive with other agentic bio systems (BioMaster, AutoBA) on the same prompt corpus | required | clones of BioMaster + AutoBA on disk |
+| **F** | FlowAgent's *outputs* match published references (DE tables, peaks, VCFs) — Spearman ρ / Jaccard / F1 | no (pure scorer) | end-to-end FlowAgent run + reference files |
+| **G** | The reporting agent answers biological-interpretation MCQs and open-ended questions correctly, and abstains when evidence is insufficient | required | analysis outputs from a prior FlowAgent run |
 
 ### Install benchmark-only dependencies
 
@@ -424,6 +517,24 @@ make exec
 # ── Benchmark E — head-to-head vs competitors ─────────────
 # Requires BIOMASTER_DIR and/or AUTOBA_DIR in .env; see benchmarks/README.md
 make competitors MODEL=gpt-4.1 REPLICATES=3
+
+# ── Benchmark F — output fidelity (no LLM calls; pure scorer) ─────
+# Score the OUTPUTS of a finished FlowAgent run against a published
+# reference table. See config/fidelity_cases.yaml for the case schema;
+# drop reference files under references/ before invoking.
+python bench_fidelity.py \
+    --case gse52778_dex_de \
+    --candidate-dir results/realworld_GSE52778 \
+    --model gpt-4.1 --replicate 0
+# Or bulk-score a directory of <case>__<model>__rep<N> subdirs:
+python bench_fidelity.py --bulk-dir results/fidelity_runs
+
+# ── Benchmark G — biological-interpretation quality ──────────
+# 5 MCQs + 3 open-ended per dataset (LLM-as-judge for open-ended).
+# --mock skips all LLM calls (deterministic stub answers, exercises
+# the scoring path; useful for CI smoke tests).
+python bench_interpretation.py --model gpt-4.1 --judge gpt-5.4
+python bench_interpretation.py --model gpt-4.1 --mock        # smoke
 
 # ── Post-processing (no API calls) ────────────────────────
 make rescore    # re-evaluate latest planning run with current scoring logic

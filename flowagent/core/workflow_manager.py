@@ -664,12 +664,20 @@ class WorkflowManager:
                 workflow_steps_with_status.append(step_copy)
             
             dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
-            
+
             # Write workflow manifest for reproducibility
             try:
                 self._write_manifest(output_dir, prompt, workflow_plan, results)
             except Exception as manifest_err:
                 self.logger.warning("Failed to write manifest: %s", manifest_err)
+
+            # Emit a Jupyter notebook capturing the workflow + results.
+            # Best-effort: a notebook export failure must not abort the
+            # workflow's reported status.
+            try:
+                self._emit_notebook(output_dir, prompt, results)
+            except Exception as nb_err:
+                self.logger.warning("Failed to emit notebook: %s", nb_err)
 
             # Return results
             result_dict = {
@@ -1017,13 +1025,113 @@ class WorkflowManager:
                 dag.add_edge(dep, step.name)
         return dag
 
+    def _emit_notebook(self, output_dir: str, prompt: Optional[str],
+                       results: List[Dict[str, Any]]) -> Optional[Path]:
+        """Render the executed workflow as a Jupyter notebook.
+
+        Looks for ``workflow.json`` already saved under ``output_dir``;
+        builds a step-name → result dict from ``results``; optionally
+        asks the LLM for assay-aware narrative content (intro paragraph,
+        per-step rationale, results interpretation, follow-up suggestions);
+        and delegates to
+        :func:`flowagent.utils.export_notebook.export_workflow_to_notebook`.
+
+        The narrative call is best-effort and gated by
+        ``FLOWAGENT_NOTEBOOK_NARRATIVE`` (default on; set to ``0`` to
+        skip the LLM call and emit the deterministic notebook only).
+        Any failure here is non-fatal: the deterministic notebook is
+        always written.
+        """
+        if not output_dir:
+            return None
+        wf_json = Path(output_dir) / "workflow.json"
+        if not wf_json.exists():
+            return None
+
+        from flowagent.utils.export_notebook import export_workflow_to_notebook
+        run_results: Dict[str, Dict[str, Any]] = {}
+        for r in results or []:
+            name = r.get("step_name") or r.get("name")
+            if name:
+                run_results[name] = r
+
+        metadata = {
+            "model":    os.environ.get("LLM_MODEL"),
+            "provider": os.environ.get("LLM_PROVIDER"),
+            "executor": getattr(self, "executor_type", None),
+        }
+
+        # Optional: LLM-generated assay-aware narrative woven into cells.
+        # Skipped on FLOWAGENT_NOTEBOOK_NARRATIVE=0 (CI / mock / offline).
+        narrative: Optional[Dict[str, Any]] = None
+        if os.environ.get("FLOWAGENT_NOTEBOOK_NARRATIVE", "1") != "0":
+            try:
+                import asyncio
+                from flowagent.utils.notebook_narrative import (
+                    generate_notebook_narrative,
+                )
+                workflow = json.loads(wf_json.read_text())
+
+                # Run the async narrative generator from a sync context.
+                # In an asyncio context we cannot call asyncio.run(); fall
+                # back to an event-loop-aware coro driver.
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                coro = generate_notebook_narrative(
+                    workflow, prompt=prompt,
+                    results=results or [], llm=self.llm,
+                )
+                if loop is None:
+                    narrative = asyncio.run(coro)
+                else:
+                    # Already inside a loop — run synchronously in a thread.
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                        narrative = ex.submit(asyncio.run, coro).result()
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.warning("Notebook narrative skipped: %s", exc)
+
+        nb_path = export_workflow_to_notebook(
+            workflow_json=wf_json,
+            out_path=wf_json.parent / "notebook.ipynb",
+            run_results=run_results,
+            prompt=prompt,
+            metadata={k: v for k, v in metadata.items() if v},
+            narrative=narrative,
+        )
+
+        # Also emit an R-Markdown sibling — natural format for the
+        # R-heavy DESeq2/tximport/edgeR end of bioinformatics workflows,
+        # and round-trips into RStudio without conversion. Cheap (~1ms)
+        # and does not require any LLM call (the narrative dict we
+        # already have is reused).
+        try:
+            from flowagent.utils.export_rmarkdown import (
+                export_workflow_to_rmarkdown,
+            )
+            export_workflow_to_rmarkdown(
+                workflow_json=wf_json,
+                out_path=wf_json.parent / "notebook.Rmd",
+                run_results=run_results,
+                prompt=prompt,
+                metadata={k: v for k, v in metadata.items() if v},
+                narrative=narrative,
+            )
+        except Exception as rmd_err:
+            self.logger.warning("Failed to emit Rmarkdown: %s", rmd_err)
+
+        return nb_path
+
     def _save_workflow_dag(self, workflow_steps: List[WorkflowStep], output_dir: str) -> Optional[Path]:
         """Generate and save workflow DAG visualization.
-        
+
         Args:
             workflow_steps: List of workflow steps
             output_dir: Directory to save the DAG image
-            
+
         Returns:
             Path to the saved DAG image, or None if visualization failed
         """
@@ -1450,11 +1558,21 @@ class WorkflowManager:
                 workflow_steps_with_status.append(step_copy)
             
             dag_image_path = self._save_workflow_dag(workflow_steps_with_status, output_dir)
-            
+
             # Only add dag_visualization if it was successfully created
             if dag_image_path:
                 result["dag_visualization"] = str(dag_image_path)
-            
+
+            # Emit a Jupyter notebook of the executed workflow.
+            try:
+                self._emit_notebook(
+                    output_dir,
+                    prompt=result.get("prompt") or "",
+                    results=result.get("results", []),
+                )
+            except Exception as nb_err:
+                self.logger.warning("Failed to emit notebook: %s", nb_err)
+
             return result
             
         except Exception as e:
