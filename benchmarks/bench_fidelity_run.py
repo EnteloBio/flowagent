@@ -68,6 +68,24 @@ import yaml
 
 _HERE = Path(__file__).parent
 
+# Load .env into our own process so the keys flow through to every
+# flowagent subprocess via the inherited environment. flowagent's own
+# dotenv loader (flowagent/config/settings.py) only checks ``./env`` and
+# ``$USER_EXECUTION_DIR/.env``, neither of which resolve from a cell
+# four directories deep — so the shim here is what makes
+# ``flowagent prompt`` work in cell working directories.
+def _load_dotenv_walking_up() -> Optional[Path]:
+    sys.path.insert(0, str(_HERE))
+    try:
+        from harness.runner import _DOTENV_PATH  # type: ignore  # noqa: F401
+        return _DOTENV_PATH
+    except Exception:
+        return None
+
+
+_DOTENV_PATH = _load_dotenv_walking_up()
+
+
 # ── Helpers ───────────────────────────────────────────────────────
 
 def _slug(*parts: str) -> str:
@@ -168,13 +186,22 @@ async def _run_cell(cell: Cell, *, flowagent_bin: str, force: bool,
                     cell.workdir.name, cell.model, timeout_seconds)
 
         t0 = time.perf_counter()
+        # flowagent's settings loader looks at ``$USER_EXECUTION_DIR/.env``
+        # as one of its fallback locations. We've already merged .env into
+        # our own environment above, so the subprocess inherits the keys
+        # directly; pointing USER_EXECUTION_DIR at the benchmarks dir is
+        # belt-and-suspenders so a user who deletes the parent .env load
+        # but leaves benchmarks/.env in place still gets a working sweep.
+        env = os.environ.copy()
+        if _DOTENV_PATH is not None:
+            env.setdefault("USER_EXECUTION_DIR", str(_DOTENV_PATH.parent))
         with cell.log_path.open("w", buffering=1) as log_fh:
             log_fh.write(f"# command: {' '.join(cmd[:5])} <prompt elided>\n")
             log_fh.write(f"# started: {datetime.now(timezone.utc).isoformat()}\n\n")
             log_fh.flush()
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    *cmd, cwd=str(cell.workdir),
+                    *cmd, cwd=str(cell.workdir), env=env,
                     stdout=log_fh, stderr=subprocess.STDOUT,
                 )
                 rc = await asyncio.wait_for(proc.wait(),
@@ -289,6 +316,13 @@ def main():
     logger.info("  cases:        %s", [c["id"] for c in cases])
     logger.info("  bulk dir:     %s", base)
     logger.info("  driver log:   %s", driver_log)
+    logger.info("  .env loaded:  %s",
+                _DOTENV_PATH if _DOTENV_PATH else "NOT FOUND — flowagent will fail")
+    if _DOTENV_PATH is None or not os.environ.get("OPENAI_API_KEY"):
+        logger.warning("OPENAI_API_KEY is not set in the driver's "
+                       "environment — every cell will fail with "
+                       "'Missing API key'. Either source your .env "
+                       "before running or place .env at benchmarks/.env.")
     logger.info("=" * 64)
 
     if args.score_only:
