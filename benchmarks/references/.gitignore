@@ -1,0 +1,80 @@
+# Benchmark F reference data — materialised on demand by
+# download_references.py. None of it should be committed:
+#
+#   * Sizes vary (some files are 10s of MB)
+#   * Licences vary (some have attribution requirements)
+#   * The build recipes in this directory are the authoritative source
+#     of truth — anyone can reproduce the references with `make references`
+
+# ── Tabular references (DE tables, gene counts, MultiQC summaries) ──
+*.tsv
+*.csv
+*.txt
+
+# ── Genomic interval / annotation files ─────────────────────────────
+*.bed
+*.bed.gz
+*.narrowPeak
+*.broadPeak
+*.gappedPeak
+*.bedGraph
+*.bigwig
+*.bw
+*.gtf
+*.gff
+*.gff3
+
+# ── Variant calls + indexes ─────────────────────────────────────────
+*.vcf
+*.vcf.gz
+*.tbi
+*.csi
+
+# ── Sequence + alignment files (in case anyone caches them here) ────
+*.fa
+*.fa.gz
+*.fasta
+*.fasta.gz
+*.fai
+*.dict
+*.bam
+*.bam.bai
+*.bai
+*.cram
+*.crai
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+
+# ── Compressed downloads + spreadsheets + temp files ────────────────
+*.gz
+*.bz2
+*.zip
+*.tar
+*.xlsx
+*.xls
+*.part
+
+# ── R / RStudio cruft ───────────────────────────────────────────────
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+.Rproj.user/
+omnipathr-log/
+*-log/
+
+# ── Python cache ────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── Always keep the orchestrators, recipes, and docs ────────────────
+!download_references.py
+!install_r_deps.R
+!make_reference_*.R
+!macs_txt_to_bed.py
+!counts_tsv_to_bed.py
+!subset_giab_chr20.sh
+!README.md
+!.gitignore

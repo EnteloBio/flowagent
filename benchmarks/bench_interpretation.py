@@ -228,7 +228,10 @@ async def _run_sweep(datasets: List[Dict[str, Any]],
                 detail = {"error": f"{type(exc).__name__}: {exc}"}
             wall = round(time.perf_counter() - t0, 3)
 
-            rows.append({
+            # Schema-stable row: always include ``correct`` so downstream
+            # plotting code can group/aggregate even when every cell errored
+            # out (e.g. invalid API key killed the whole sweep).
+            row: Dict[str, Any] = {
                 "dataset":       ds["id"],
                 "accession":     ds.get("accession", ""),
                 "question_id":   q["id"],
@@ -237,8 +240,17 @@ async def _run_sweep(datasets: List[Dict[str, Any]],
                 "provider":      model_cfg["provider"],
                 "judge_model":   judge_cfg["id"] if q["type"] == "open_ended" else "",
                 "wall_seconds":  wall,
-                **detail,
-            })
+                "correct":       False,
+                "answer_given":  "",
+                "answer_truth":  q.get("answer", ""),
+                "is_refusal":    False,
+                "judge_score":   None,
+                "raw_response":  "",
+                "candidate_answer":     "",
+                "judge_justification":  "",
+            }
+            row.update(detail)
+            rows.append(row)
             print(f"  [{q['type']:9}]  {q['id']}  "
                   f"correct={detail.get('correct')}  ({wall:.1f}s)")
     return rows
@@ -260,8 +272,11 @@ def main():
     ap.add_argument("--models-yaml", default="config/models.yaml")
     ap.add_argument("--inputs-base", default=".")
     ap.add_argument("--out",         default="results")
-    ap.add_argument("--model",       required=True,
-                    help="Model ID (under test) from models.yaml")
+    grp = ap.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--model",      help="Single model ID under test")
+    grp.add_argument("--models",     help="Comma-separated model IDs to sweep")
+    grp.add_argument("--all-models", action="store_true",
+                     help="Sweep every model in models.yaml")
     ap.add_argument("--judge",       default="gpt-5.4",
                     help="Judge model for open-ended scoring (default: gpt-5.4)")
     ap.add_argument("--datasets",    default="",
@@ -284,29 +299,51 @@ def main():
     if not datasets:
         sys.exit("no datasets selected")
 
-    model_cfg = _resolve_model(mcfg, args.model)
-    judge_cfg = _resolve_model(mcfg, args.judge)
+    # Resolve the model list under test. ``--model`` runs one; ``--models``
+    # takes a comma-separated list; ``--all-models`` sweeps the registry.
+    if args.all_models:
+        model_ids = [m["id"] for m in mcfg.get("models", [])]
+    elif args.models:
+        model_ids = [s.strip() for s in args.models.split(",") if s.strip()]
+    else:
+        model_ids = [args.model]
+    model_cfgs = [_resolve_model(mcfg, mid) for mid in model_ids]
+    judge_cfg  = _resolve_model(mcfg, args.judge)
 
-    rows = asyncio.run(_run_sweep(
-        datasets, model_cfg, judge_cfg,
-        inputs_base=Path(args.inputs_base), mock=args.mock,
-    ))
+    # Run each model in turn under a single event loop. Using one
+    # ``asyncio.run`` per model would close the loop between iterations,
+    # which leaves httpx's async cleanup tasks orphaned and prints
+    # "Event loop is closed" warnings — harmless but noisy. One loop
+    # for the whole sweep avoids that.
+    async def _run_all():
+        rows: List[Dict[str, Any]] = []
+        for i, mc in enumerate(model_cfgs, 1):
+            print(f"\n[{i}/{len(model_cfgs)}] sweeping model={mc['id']}")
+            rows.extend(await _run_sweep(
+                datasets, mc, judge_cfg,
+                inputs_base=Path(args.inputs_base), mock=args.mock,
+            ))
+        return rows
 
-    # Roll up per-(dataset, type) summary for the manifest
-    by = {}
+    rows = asyncio.run(_run_all())
+
+    # Roll up per-(model, dataset, type) summary for the manifest.
+    by: Dict[tuple, Dict[str, Any]] = {}
     for r in rows:
-        key = (r["dataset"], r["question_type"])
-        d = by.setdefault(key, {"n": 0, "correct": 0, "judge_sum": 0.0})
+        key = (r["model"], r["dataset"], r["question_type"])
+        d = by.setdefault(key, {"n": 0, "correct": 0, "judge_sum": 0.0,
+                                 "judge_n": 0})
         d["n"] += 1
         d["correct"] += int(bool(r.get("correct")))
         if r["question_type"] == "open_ended" and r.get("judge_score") is not None:
             d["judge_sum"] += r["judge_score"]
+            d["judge_n"]   += 1
     summary = []
-    for (ds, qt), d in by.items():
-        row = {"dataset": ds, "type": qt, "n": d["n"],
+    for (model, ds, qt), d in by.items():
+        row = {"model": model, "dataset": ds, "type": qt, "n": d["n"],
                "accuracy": d["correct"] / d["n"] if d["n"] else None}
-        if qt == "open_ended" and d["n"]:
-            row["mean_judge_score"] = d["judge_sum"] / d["n"]
+        if qt == "open_ended" and d["judge_n"]:
+            row["mean_judge_score"] = d["judge_sum"] / d["judge_n"]
         summary.append(row)
 
     out_dir = timestamped_dir(Path(args.out), "interpretation")
@@ -314,22 +351,35 @@ def main():
     (out_dir / "results.json").write_text(json.dumps(rows, indent=2, default=str))
     write_manifest(
         out_dir, benchmark="interpretation",
-        models=[model_cfg, judge_cfg],
+        models=model_cfgs + [judge_cfg],
         extra={
-            "model_under_test": model_cfg["id"],
-            "judge_model":      judge_cfg["id"],
-            "datasets":         [d["id"] for d in datasets],
-            "summary":          summary,
-            "mock":             args.mock,
+            "models_under_test": [m["id"] for m in model_cfgs],
+            "judge_model":       judge_cfg["id"],
+            "datasets":          [d["id"] for d in datasets],
+            "summary":           summary,
+            "mock":              args.mock,
         },
     )
     print(f"\n[ok] wrote {len(rows)} rows → {out_dir}/metrics.csv")
+    # Print a compact per-model overview so the user can sanity-check
+    # before running the report stage.
+    by_model: Dict[str, Dict[str, Any]] = {}
     for s in summary:
-        extra = (f"  judge_mean={s['mean_judge_score']:.1f}"
-                 if s.get("mean_judge_score") is not None else "")
-        acc = f"{s['accuracy']:.0%}" if s.get("accuracy") is not None else "—"
-        print(f"     {s['dataset']:20s} {s['type']:10s} "
-              f"n={s['n']:2d}  acc={acc}{extra}")
+        m = by_model.setdefault(s["model"], {"mcq_n": 0, "mcq_c": 0,
+                                              "open_n": 0, "open_sum": 0.0})
+        if s["type"] == "mcq":
+            m["mcq_n"] += s["n"]
+            m["mcq_c"] += int(round(s["accuracy"] * s["n"]))
+        else:
+            if s.get("mean_judge_score") is not None:
+                m["open_n"]   += s["n"]
+                m["open_sum"] += s["mean_judge_score"] * s["n"]
+    print("\n[summary] per-model rollup:")
+    for model, d in by_model.items():
+        mcq_acc = d["mcq_c"] / d["mcq_n"] if d["mcq_n"] else 0.0
+        open_mean = d["open_sum"] / d["open_n"] if d["open_n"] else float("nan")
+        print(f"   {model:35s}  mcq={mcq_acc:.0%} ({d['mcq_c']}/{d['mcq_n']})"
+              f"  open_judge_mean={open_mean:.1f}")
 
 
 if __name__ == "__main__":

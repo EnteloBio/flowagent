@@ -89,9 +89,11 @@ def _discover_runs(base: Path, bench: str = "planning") -> List[Path]:
 # Benchmark → list of columns that together identify a unique cell.
 # Used for deduplication when the same cell appears in multiple runs.
 _DEDUP_KEYS_BY_BENCH = {
-    "planning":    ("model", "input_id", "replicate"),
-    "competitors": ("competitor", "input_id", "replicate"),
-    "recovery":    ("model", "fault_id", "seed"),
+    "planning":       ("model", "input_id", "replicate"),
+    "competitors":    ("competitor", "input_id", "replicate"),
+    "recovery":       ("model", "fault_id", "seed"),
+    "interpretation": ("model", "dataset", "question_id"),
+    "fidelity":       ("case_id", "model", "replicate"),
 }
 
 
@@ -126,6 +128,26 @@ def _merge_benchmark(
             print(f"  [skip] no metrics.csv: {run}")
             continue
         df = pd.read_csv(csv)
+
+        # Drop rows from runs that errored out before the schema-stable
+        # row layout was in place. For the interpretation benchmark a
+        # row is meaningless without ``correct``; for fidelity it's
+        # meaningless without at least one comparator metric. Filtering
+        # at merge time keeps the per-model rollup honest — an erroring
+        # run shouldn't be silently counted as ``correct=False`` for
+        # every cell it failed on.
+        if bench == "interpretation":
+            if "correct" not in df.columns:
+                # Whole CSV pre-dates the schema-stable fix and has no
+                # signal we can rescue. Skip it entirely.
+                print(f"  [skip] {run.name}: no 'correct' column "
+                      f"(all-error run; pre-schema-fix)")
+                continue
+            n_before = len(df)
+            df = df[df["correct"].notna()].copy()
+            if len(df) < n_before:
+                print(f"  [info] {run.name}: dropped "
+                      f"{n_before - len(df)} schema-incomplete rows")
         df["_source_run"] = str(run.name)
         df["_source_csv_mtime"] = csv.stat().st_mtime
         csv_frames.append(df)
@@ -233,9 +255,9 @@ def main():
                     help="Use original metrics.csv even if rescored_* exists")
     ap.add_argument("--refresh", action="store_true",
                     help="Delete previous results/<bench>/_merged/ first")
-    ap.add_argument("--benchmarks", default="planning,competitors",
+    ap.add_argument("--benchmarks", default="planning,competitors,interpretation,fidelity",
                     help="Comma-separated list of benchmarks to merge "
-                         "(default: planning,competitors)")
+                         "(default: planning,competitors,interpretation,fidelity)")
     args = ap.parse_args()
 
     base = Path(args.results_base)

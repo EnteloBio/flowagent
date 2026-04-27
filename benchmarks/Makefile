@@ -8,6 +8,7 @@
 # setting PY on the command line, e.g. `make plan PY=/path/to/venv/bin/python`.
 PY          ?= $(shell command -v python 2>/dev/null || command -v python3)
 MODEL       ?= gpt-4.1
+JUDGE       ?= gpt-5.4
 REPLICATES  ?= 3
 SEEDS       ?= 5
 RESULTS_DIR ?= results
@@ -16,7 +17,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors rescore merge report test clean help
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -51,7 +52,7 @@ rescore:
 	$(PY) rescore_planning.py --results-base=$(RESULTS_DIR)
 
 merge:
-	$(PY) merge_runs.py --results-base=$(RESULTS_DIR)
+	$(PY) merge_runs.py --results-base=$(RESULTS_DIR) $(if $(REFRESH),--refresh,)
 
 recovery:
 	$(PY) bench_recovery.py --model=$(MODEL) --seeds=$(SEEDS) --out=$(RESULTS_DIR)
@@ -64,6 +65,38 @@ exec:
 
 competitors:
 	$(PY) bench_competitors.py --model=$(MODEL) --replicates=$(REPLICATES) --out=$(RESULTS_DIR)
+
+# Benchmark F — output fidelity (pure scoring; no LLM calls).
+# Use this when the candidate dirs already exist on disk.
+fidelity:
+	$(PY) bench_fidelity.py --bulk-dir=$(RESULTS_DIR)/fidelity_runs
+
+# Benchmark F end-to-end driver: runs flowagent on every fidelity case,
+# checkpoints by output-existence, then auto-scores. Each cell can be
+# hours; pipelines download FASTQs and run kallisto/MACS2/etc.
+fidelity-run:
+	$(PY) bench_fidelity_run.py \
+	    $(if $(MODELS),--models $(MODELS),--model $(MODEL)) \
+	    --replicates=$(REPLICATES) \
+	    --concurrency=$(if $(CONCURRENCY),$(CONCURRENCY),1) \
+	    --results-base=$(RESULTS_DIR) \
+	    $(if $(FORCE),--force,)
+
+# Materialise the reference outputs that bench_fidelity.py scores against.
+# Most direct-URL fetches need only network access. The R-script builds
+# additionally need an R install with the Bioconductor packages listed in
+# benchmarks/references/README.md; pass SKIP_R=1 to skip those (CI use).
+references:
+	$(PY) references/download_references.py $(if $(SKIP_R),--skip-r-scripts,)
+
+# Install all R / Bioconductor packages required by the R-script
+# reference builds (DESeq2, edgeR, limma, recount3, ...). Idempotent.
+install-r-deps:
+	Rscript references/install_r_deps.R
+
+# Benchmark G — biological-interpretation quality
+interpretation:
+	$(PY) bench_interpretation.py --model=$(MODEL) --judge=$(JUDGE) $(EXTRA)
 
 test:
 	$(PY) -m pytest tests -v

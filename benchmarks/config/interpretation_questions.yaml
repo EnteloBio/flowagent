@@ -21,7 +21,7 @@
 datasets:
 
   # ── GSE52778: dexamethasone vs untreated airway smooth muscle ────
-  - id: gse52778
+  - id: gse52778_dex_de
     accession: GSE52778
     description: >-
       Himes et al. 2014 dexamethasone-treated airway smooth muscle RNA-seq.
@@ -173,3 +173,370 @@ datasets:
           require new data the user does not have (CRISPR validation,
           ChIP-seq, single-cell). Penalise the latter unless explicitly
           framed as "would require new data".
+
+  # ── GSE60450: mouse mammary basal vs luminal RNA-seq ─────────────
+  - id: gse60450_mammary_de
+    accession: GSE60450
+    description: >-
+      Fu et al. 2015 mouse mammary RNA-seq across luminal, basal and
+      stromal cell populations through pregnancy / lactation.
+    inputs:
+      de_table: references/gse60450_fu_DE.tsv
+    questions:
+      - id: gse60450_q01_lineage_marker
+        type: mcq
+        question: >-
+          With ``luminal`` set as the reference, which gene is
+          expected to show a strong positive log2 fold-change (i.e.
+          basal-enriched) in this contrast?
+        choices:
+          A: Csn2 (β-casein)
+          B: Krt14 (keratin 14)
+          C: Wap (whey acidic protein)
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+      - id: gse60450_q02_direction
+        type: mcq
+        question: >-
+          A negative log2FoldChange in this DE table corresponds to:
+        choices:
+          A: Higher expression in basal cells.
+          B: Higher expression in luminal cells.
+          C: No directional information — the sign is arbitrary.
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+      - id: gse60450_q03_stage_refusal
+        type: mcq
+        question: >-
+          What is the magnitude of the lactation-vs-virgin effect in
+          luminal cells from this DE table alone?
+        choices:
+          A: At least 4-fold up-regulated.
+          B: Negligible (<0.5-fold).
+          C: Approximately 2-fold down-regulated.
+          D: I cannot determine this from the supplied data.
+        # The DE table contains only the basal-vs-luminal contrast;
+        # stage information is not part of the supplied evidence.
+        answer: D
+        refusal_acceptable: true
+      - id: gse60450_q04_summary
+        type: open_ended
+        question: >-
+          In two to three sentences, summarise the cell-type
+          distinction captured by this DE analysis, naming at least
+          one canonical marker per population.
+        rubric: |-
+          Award credit for: (i) correctly identifying the contrast
+          as basal vs luminal mammary epithelial cells; (ii) naming
+          at least one canonical marker per population (basal:
+          Krt14/Krt5/Trp63; luminal: Krt8/Krt18/Csn2/Wap); (iii)
+          referring to direction in a way consistent with the
+          ``luminal=ref`` framing. Penalise mention of stromal
+          contamination unless explicitly hedged as inferred.
+
+  # ── GSE152418: COVID-19 vs healthy whole blood ───────────────────
+  - id: gse152418_covid_blood_de
+    accession: GSE152418
+    description: >-
+      Arunachalam et al. 2020 — whole-blood RNA-seq from 16 COVID-19
+      patients vs 17 age- and sex-matched healthy controls.
+    inputs:
+      de_table: references/gse152418_covid_blood_DE.tsv
+    questions:
+      - id: gse152418_q01_pathway
+        type: mcq
+        question: >-
+          Which pathway is most coherently up-regulated in COVID-19
+          whole blood relative to healthy controls?
+        choices:
+          A: Type-I interferon and antiviral response (ISG15, IFI6, OAS1).
+          B: Mitochondrial oxidative phosphorylation.
+          C: Cell cycle / mitotic spindle assembly.
+          D: I cannot determine this from the supplied data.
+        answer: A
+        refusal_acceptable: false
+      - id: gse152418_q02_direction
+        type: mcq
+        question: >-
+          With ``Healthy`` as the reference, type-I interferon-
+          stimulated genes such as ``OAS1`` and ``IFI6`` are expected
+          to show what direction in this contrast?
+        choices:
+          A: Strongly negative log2FoldChange.
+          B: Strongly positive log2FoldChange.
+          C: Effectively zero.
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+      - id: gse152418_q03_severity_refusal
+        type: mcq
+        question: >-
+          How does the differential expression magnitude differ
+          between mild and severe COVID-19 patients in this DE table?
+        choices:
+          A: Severe patients show ~3× larger fold-changes.
+          B: Mild patients show larger fold-changes.
+          C: No detectable difference.
+          D: I cannot determine this from the supplied data.
+        # The DE table collapses the COVID-19 group; severity is not in
+        # the supplied evidence, so refusal is the calibrated answer.
+        answer: D
+        refusal_acceptable: true
+      - id: gse152418_q04_caveats
+        type: open_ended
+        question: >-
+          Identify two caveats that apply to interpreting a whole-blood
+          COVID-vs-healthy DE result, restricting yourself to caveats
+          supported by the supplied DE table.
+        rubric: |-
+          Strong answers cite: (i) cell-composition shifts in whole
+          blood between COVID and healthy that confound bulk RNA-seq
+          (lymphopenia, neutrophilia); (ii) heterogeneity in disease
+          severity / time-from-onset across the COVID-19 cohort;
+          (iii) batch/site effects (Hong Kong + Atlanta cohorts);
+          (iv) dependence of padj on independent filtering choices;
+          (v) limited ability to distinguish direct viral effects
+          from secondary inflammatory programmes from RNA-seq alone.
+
+  # ── ENCODE SUZ12 H1-hESC ChIP-seq peaks ─────────────────────────
+  - id: encsr000euq_suz12_h1
+    accession: ENCSR000EUQ
+    description: >-
+      ENCODE SUZ12 ChIP-seq in H1 human embryonic stem cells.
+    inputs:
+      peaks: references/encsr000euq_suz12_idr_peaks.narrowPeak
+    questions:
+      - id: encsr000euq_q01_target
+        type: mcq
+        question: >-
+          SUZ12 is a core component of which complex, primarily
+          deposited at which chromatin mark in pluripotent cells?
+        choices:
+          A: PRC2; H3K27me3.
+          B: PRC1; H2AK119ub1.
+          C: COMPASS; H3K4me3.
+          D: I cannot determine this from the supplied data.
+        answer: A
+        refusal_acceptable: false
+      - id: encsr000euq_q02_distribution
+        type: mcq
+        question: >-
+          Where would you expect SUZ12 binding sites to be enriched
+          in pluripotent cells, based on the published biology?
+        choices:
+          A: Active promoters of housekeeping genes.
+          B: Bivalent / poised promoters of developmental regulators.
+          C: Centromeric repeat regions.
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+      - id: encsr000euq_q03_motif_refusal
+        type: mcq
+        question: >-
+          What sequence motif is most enriched within these peaks?
+        choices:
+          A: CACGTG (E-box).
+          B: GGGCGG (Sp1).
+          C: A GC-rich CpG-island consensus.
+          D: I cannot determine this from the supplied data.
+        # No motif analysis was supplied — refusal is correct.
+        answer: D
+        refusal_acceptable: true
+      - id: encsr000euq_q04_summary
+        type: open_ended
+        question: >-
+          In two to three sentences, describe the biological role
+          of SUZ12 binding patterns one would expect from this
+          experiment.
+        rubric: |-
+          Strong answers mention PRC2 / H3K27me3, repression of
+          developmental / lineage-specifying transcription factors,
+          bivalent chromatin in ES cells, and the role in
+          maintaining pluripotency by preventing premature
+          differentiation. Penalise claims about specific
+          downstream effects not supported by the peak file alone.
+
+  # ── GSE32222: ER-α ChIP-seq in MCF7 ─────────────────────────────
+  - id: gse32222_er_chip
+    accession: GSE32222
+    description: >-
+      Ross-Innes et al. 2012 — ER-α ChIP-seq across responsive and
+      tamoxifen-resistant MCF7-derived lines.
+    inputs:
+      peaks: references/gse32222_er_consensus.bed
+    questions:
+      - id: gse32222_q01_target
+        type: mcq
+        question: >-
+          The protein under ChIP in this experiment is ER-α, the
+          oestrogen receptor encoded by which gene?
+        choices:
+          A: ESR1
+          B: ESR2
+          C: AR (androgen receptor)
+          D: I cannot determine this from the supplied data.
+        answer: A
+        refusal_acceptable: false
+      - id: gse32222_q02_cofactor
+        type: mcq
+        question: >-
+          Which pioneer factor is most strongly associated with
+          functional ER-α binding sites in breast-cancer cell lines?
+        choices:
+          A: FOXA1
+          B: REST
+          C: CTCF
+          D: I cannot determine this from the supplied data.
+        answer: A
+        refusal_acceptable: false
+      - id: gse32222_q03_response_refusal
+        type: mcq
+        question: >-
+          Based on this consensus peak file alone, what fraction of
+          peaks are differentially bound between tamoxifen-responsive
+          and tamoxifen-resistant lines?
+        choices:
+          A: "Fewer than 5%."
+          B: "Around 30%."
+          C: "More than 70%."
+          D: "I cannot determine this from the supplied data."
+        # The consensus BED has no per-condition statistics — refusal correct.
+        answer: D
+        refusal_acceptable: true
+      - id: gse32222_q04_summary
+        type: open_ended
+        question: >-
+          In two to three sentences, place this ER-α binding atlas
+          in its breast-cancer biology context, mentioning at least
+          one expected co-factor or downstream target.
+        rubric: |-
+          Strong answers reference FOXA1 / GATA3 as pioneer factors,
+          mention canonical ER-α targets (e.g. TFF1/PS2, GREB1,
+          PGR), and connect to oestrogen-driven proliferation
+          and / or endocrine-therapy resistance. Penalise drift
+          into claims about clinical outcomes the peak file
+          cannot substantiate.
+
+  # ── GSE74912: ATAC-seq atlas of sorted human immune subsets ─────
+  - id: gse74912_atac_immune
+    accession: GSE74912
+    description: >-
+      Corces et al. 2016 ATAC-seq across HSC, MPP, CMP, GMP, MEP,
+      CD4 T, CD8 T, B, NK and monocyte populations.
+    inputs:
+      peaks: references/gse74912_corces_consensus.bed
+    questions:
+      - id: gse74912_q01_assay
+        type: mcq
+        question: >-
+          ATAC-seq peaks predominantly mark which functional
+          chromatin state?
+        choices:
+          A: Heterochromatin / silenced regions.
+          B: Open chromatin / accessible regulatory elements.
+          C: Constitutive lamin-associated domains.
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+      - id: gse74912_q02_lineage
+        type: mcq
+        question: >-
+          Differential ATAC accessibility across these immune
+          populations is most informative about:
+        choices:
+          A: Lineage-specifying transcription-factor binding.
+          B: Codon-usage bias in expressed genes.
+          C: Replication-timing differences across cell types.
+          D: I cannot determine this from the supplied data.
+        answer: A
+        refusal_acceptable: false
+      - id: gse74912_q03_tf_refusal
+        type: mcq
+        question: >-
+          Which transcription-factor binding motif is most enriched
+          specifically in the lymphoid (T / B / NK) accessible
+          peaks vs the myeloid peaks?
+        choices:
+          A: PU.1 (SPI1) motif.
+          B: GATA1 motif.
+          C: ETS-family / Runx-family composite motifs.
+          D: I cannot determine this from the supplied data.
+        # The supplied BED has no motif annotations — refusal correct.
+        answer: D
+        refusal_acceptable: true
+      - id: gse74912_q04_summary
+        type: open_ended
+        question: >-
+          Summarise in two to three sentences what an immune-subset
+          consensus ATAC atlas like this is typically used for.
+        rubric: |-
+          Strong answers describe (i) defining lineage-specific
+          regulatory landscapes; (ii) anchoring downstream TF
+          motif / footprinting analyses; (iii) interpreting GWAS
+          variants in non-coding regions; (iv) characterising
+          differentiation trajectories. Penalise unhedged claims
+          about specific disease associations.
+
+  # ── GIAB NA12878 chr20 truth-set variant calling ────────────────
+  - id: giab_na12878_chr20
+    accession: NA12878-HG001-chr20
+    description: >-
+      Genome in a Bottle NA12878 chr20 truth set, NIST v4.2.1.
+      Used to score the F1 of a candidate variant call set against
+      a published gold standard.
+    inputs:
+      truth_vcf: references/giab_na12878_chr20_truth.vcf.gz
+    questions:
+      - id: giab_q01_titv
+        type: mcq
+        question: >-
+          For a high-quality whole-genome SNP call set in a healthy
+          European individual, the expected transition / transversion
+          (Ti/Tv) ratio is approximately:
+        choices:
+          A: 0.5
+          B: 1.0
+          C: 2.0–2.1
+          D: I cannot determine this from the supplied data.
+        answer: C
+        refusal_acceptable: false
+      - id: giab_q02_indel_snp
+        type: mcq
+        question: >-
+          In a typical chr20 GIAB high-confidence truth set, the
+          ratio of indels to SNPs is approximately:
+        choices:
+          A: 1:1
+          B: 1:7
+          C: 7:1
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
+      - id: giab_q03_sv_refusal
+        type: mcq
+        question: >-
+          How many structural variants (>50 bp) are present in the
+          chr20 truth set v4.2.1?
+        choices:
+          A: ~50
+          B: ~500
+          C: ~5,000
+          D: I cannot determine this from the supplied data.
+        # The v4.2.1 truth set is small-variant only; SVs are not in scope.
+        answer: D
+        refusal_acceptable: true
+      - id: giab_q04_summary
+        type: open_ended
+        question: >-
+          In two to three sentences, explain what GIAB truth sets
+          are, why they are restricted to "high-confidence regions",
+          and how F1 against this truth set should be interpreted.
+        rubric: |-
+          Strong answers cover (i) GIAB / NIST RM-derived consensus
+          calls integrated across multiple sequencing technologies;
+          (ii) high-confidence regions exclude tandem repeats,
+          segmental duplications, MHC, etc., where ground truth is
+          unreliable; (iii) F1 outside those regions is not
+          meaningful; (iv) truth set v4.2.1 is small-variant only.

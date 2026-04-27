@@ -2409,6 +2409,175 @@ def latency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     return fig
 
 
+# ── Benchmark G — interpretation quality ─────────────────────────
+
+def interpretation_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Three-panel summary of Benchmark G (LLM interpretation quality).
+
+    Panel a:  Per-model overall MCQ accuracy with Wilson 95% CIs,
+              ordered top→bottom by accuracy. Provider-coloured bars.
+    Panel b:  Per-(model × dataset) MCQ accuracy heatmap. Cells with
+              n=0 (model not run on that dataset) are greyed out.
+    Panel c:  Per-model open-ended judge mean (0–100) with SD error
+              bars. Models with no open-ended judgements are dropped.
+
+    Returns ``None`` if the dataframe is empty or lacks the columns the
+    interpretation runner emits (``model``, ``question_type``,
+    ``correct``, ``judge_score``, ``dataset``).
+    """
+    required = {"model", "question_type", "correct", "dataset"}
+    if df.empty or not required.issubset(df.columns):
+        return None
+
+    df = df.copy()
+    # Coerce ``correct`` to {0,1}. Older runs (before the schema-stable
+    # fix) and rows where the LLM call errored out leave NaN here;
+    # treat those as 0 — a row with no answer is, for accuracy
+    # purposes, an incorrect answer.
+    def _coerce_correct(v):
+        if v is None:
+            return 0
+        if isinstance(v, float) and np.isnan(v):
+            return 0
+        if isinstance(v, (bool, int)):
+            return int(bool(v))
+        if isinstance(v, float):
+            return int(bool(v))
+        return int(str(v).strip().lower() in ("true", "1", "yes"))
+    df["correct"] = df["correct"].map(_coerce_correct).astype(int)
+
+    # MCQ subset for panels a + b
+    mcq = df[df["question_type"] == "mcq"]
+    open_ = df[df["question_type"] == "open_ended"].copy()
+    if "judge_score" in open_.columns:
+        open_["judge_score"] = pd.to_numeric(
+            open_["judge_score"], errors="coerce")
+
+    # ── Panel a: per-model overall MCQ accuracy with Wilson CIs ──
+    g_mcq = (mcq.groupby("model")
+                .agg(k=("correct", "sum"), n=("correct", "count"))
+                .reset_index())
+    g_mcq["acc"] = g_mcq["k"] / g_mcq["n"]
+    g_mcq[["mean", "lo", "hi"]] = g_mcq.apply(
+        lambda r: pd.Series(_wilson_ci(int(r["k"]), int(r["n"]))),
+        axis=1,
+    )
+    g_mcq = g_mcq.sort_values("mean", ascending=True).reset_index(drop=True)
+
+    # ── Panel b: model × dataset MCQ heatmap ─────────────────────
+    pivot = (mcq.groupby(["model", "dataset"])
+                .agg(k=("correct", "sum"), n=("correct", "count"))
+                .reset_index())
+    pivot["acc"] = pivot.apply(
+        lambda r: r["k"] / r["n"] if r["n"] else float("nan"), axis=1)
+    heat = pivot.pivot(index="model", columns="dataset", values="acc")
+    # Order rows by panel-a ranking; columns alphabetically.
+    heat = heat.reindex(g_mcq["model"].tolist())
+    heat = heat[sorted(heat.columns)]
+
+    # ── Panel c: per-model open-ended judge mean ─────────────────
+    judge_g = pd.DataFrame()
+    if not open_.empty and open_["judge_score"].notna().any():
+        judge_g = (open_.dropna(subset=["judge_score"])
+                        .groupby("model")["judge_score"]
+                        .agg(mean="mean", std="std", n="count")
+                        .reset_index()
+                        .sort_values("mean", ascending=True)
+                        .reset_index(drop=True))
+
+    # ── Layout ───────────────────────────────────────────────────
+    n_models = len(g_mcq)
+    fig_h = max(4.0, 0.32 * n_models + 1.6)
+    if not judge_g.empty:
+        fig, (ax1, ax2, ax3) = plt.subplots(
+            1, 3, figsize=(13.0, fig_h),
+            gridspec_kw={"width_ratios": [1.0, 1.4, 0.85], "wspace": 0.42},
+        )
+    else:
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(11.0, fig_h),
+            gridspec_kw={"width_ratios": [1.0, 1.4], "wspace": 0.42},
+        )
+        ax3 = None
+
+    # Panel a — bars + Wilson CIs
+    y = np.arange(n_models)
+    cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+            for m in g_mcq["model"]]
+    err_lo = (g_mcq["mean"] - g_mcq["lo"]).clip(lower=0).to_numpy()
+    err_hi = (g_mcq["hi"] - g_mcq["mean"]).clip(lower=0).to_numpy()
+    ax1.barh(y, g_mcq["mean"], xerr=[err_lo, err_hi],
+             color=cols, edgecolor="white", linewidth=0.6, height=0.72,
+             capsize=2, error_kw={"elinewidth": 0.8, "capthick": 0.8,
+                                  "color": "#1f2937"})
+    for i, (m, n) in enumerate(zip(g_mcq["mean"], g_mcq["n"])):
+        ax1.text(min(m + 0.025, 0.98), i, f"{m:.0%} (n={int(n)})",
+                 va="center", ha="left", fontsize=7.5, color="#1f2937")
+    ax1.set_yticks(y)
+    ax1.set_yticklabels([_short_name(m) for m in g_mcq["model"]])
+    ax1.set_xlim(0, 1.04)
+    ax1.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax1.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax1.set_xlabel("MCQ accuracy (Wilson 95% CI)")
+    ax1.set_title("a  Overall MCQ accuracy",
+                  loc="left", fontweight="bold")
+    _style_value_axis(ax1, x=True)
+
+    # Panel b — heatmap
+    cmap = LinearSegmentedColormap.from_list(
+        "interp", ["#fde2e4", "#fff8c4", "#cdebd6", "#1f9d4d"], N=256)
+    im = ax2.imshow(heat.fillna(-1).to_numpy(), aspect="auto",
+                    cmap=cmap, vmin=0.0, vmax=1.0)
+    # Mask NaN (n=0) cells with grey overlay
+    nan_mask = heat.isna().to_numpy()
+    grey = np.zeros((*nan_mask.shape, 4))
+    grey[nan_mask] = (0.85, 0.85, 0.85, 1.0)
+    ax2.imshow(grey, aspect="auto", interpolation="none")
+    ax2.set_xticks(np.arange(heat.shape[1]))
+    ax2.set_xticklabels([str(c) for c in heat.columns],
+                        rotation=45, ha="right", fontsize=7.5)
+    ax2.set_yticks(np.arange(heat.shape[0]))
+    ax2.set_yticklabels([_short_name(m) for m in heat.index], fontsize=7.5)
+    ax2.set_title("b  MCQ accuracy by dataset",
+                  loc="left", fontweight="bold")
+    cbar = fig.colorbar(im, ax=ax2, fraction=0.04, pad=0.02,
+                        ticks=[0, 0.25, 0.5, 0.75, 1.0])
+    cbar.ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    cbar.ax.tick_params(labelsize=7.5)
+
+    # Panel c — open-ended judge means
+    if ax3 is not None and not judge_g.empty:
+        y3 = np.arange(len(judge_g))
+        cols3 = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+                 for m in judge_g["model"]]
+        ax3.barh(y3, judge_g["mean"], xerr=judge_g["std"].fillna(0),
+                 color=cols3, edgecolor="white", linewidth=0.6, height=0.72,
+                 capsize=2, error_kw={"elinewidth": 0.8, "capthick": 0.8,
+                                      "color": "#1f2937"})
+        for i, (m, n) in enumerate(zip(judge_g["mean"], judge_g["n"])):
+            ax3.text(m + 1.0, i, f"{m:.0f}", va="center", ha="left",
+                     fontsize=7.5, color="#1f2937")
+        ax3.set_yticks(y3)
+        ax3.set_yticklabels([_short_name(m) for m in judge_g["model"]],
+                            fontsize=7.5)
+        ax3.set_xlim(0, 100)
+        ax3.set_xticks([0, 25, 50, 75, 100])
+        ax3.set_xlabel("Judge score (mean ±1 SD)")
+        ax3.set_title("c  Open-ended quality",
+                      loc="left", fontweight="bold")
+        _style_value_axis(ax3, x=True)
+
+    providers = sorted(
+        {_provider_from_model(m) for m in g_mcq["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle("Biological-interpretation quality (Benchmark G)",
+                 fontsize=11, fontweight="bold", y=1.06)
+    return fig
+
+
 # ── Turns-to-completion ──────────────────────────────────────────
 
 def turns_to_completion_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
@@ -2840,11 +3009,12 @@ def main() -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     for bench_name, fn in (
-        ("planning",    planning_figure),
-        ("recovery",    recovery_figure),
-        ("generation",  generation_figure),
-        ("executors",   executor_matrix_figure),
-        ("competitors", competitors_figure),
+        ("planning",       planning_figure),
+        ("recovery",       recovery_figure),
+        ("generation",     generation_figure),
+        ("executors",      executor_matrix_figure),
+        ("competitors",    competitors_figure),
+        ("interpretation", interpretation_figure),
     ):
         # Recovery is special: a sweep across models produces one dir per
         # model, and the per-fault figure is far more informative when

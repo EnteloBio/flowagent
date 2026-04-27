@@ -18,6 +18,28 @@ from scipy import stats
 
 # ── DE-table comparison ──────────────────────────────────────────
 
+# DESeq2's ``write.csv(res, ...)`` puts the rownames in an unnamed first
+# column, which pandas reads as ``Unnamed: 0``. tximport-summarised
+# tables sometimes use ``Gene`` / ``gene`` / ``ensembl_id``. We try the
+# canonical name first, then accept any of these aliases and rename to
+# the canonical name so downstream code can assume one schema.
+_GENE_ID_ALIASES = (
+    "gene_id", "Gene", "gene", "feature_id",
+    "ensembl_id", "ensembl_gene_id", "GeneID",
+    "Unnamed: 0", "",
+)
+
+
+def _resolve_gene_col(df: pd.DataFrame, want: str) -> Optional[str]:
+    """Return the column name that should be treated as the gene ID."""
+    if want in df.columns:
+        return want
+    for alias in _GENE_ID_ALIASES:
+        if alias in df.columns:
+            return alias
+    return None
+
+
 def compare_de_table(candidate: Path, reference: Path,
                      params: Dict[str, Any]) -> Dict[str, Any]:
     """Score a DE-results table against a reference.
@@ -41,11 +63,29 @@ def compare_de_table(candidate: Path, reference: Path,
 
     cand = _read_table(candidate)
     refr = _read_table(reference)
-    for need in (gid, lfc):
-        if need not in cand.columns:
-            return {"error": f"candidate missing column: {need}"}
-        if need not in refr.columns:
-            return {"error": f"reference missing column: {need}"}
+
+    # Resolve the gene-ID column on each side. Both tables get renamed
+    # to the canonical ``gid`` so the rest of the function only needs
+    # one column name regardless of which alias the candidate used.
+    cand_gid = _resolve_gene_col(cand, gid)
+    refr_gid = _resolve_gene_col(refr, gid)
+    if cand_gid is None:
+        return {"error": f"candidate has no recognised gene-ID column "
+                         f"(tried {gid!r} and aliases); columns are "
+                         f"{list(cand.columns)[:8]}"}
+    if refr_gid is None:
+        return {"error": f"reference has no recognised gene-ID column "
+                         f"(tried {gid!r} and aliases); columns are "
+                         f"{list(refr.columns)[:8]}"}
+    if cand_gid != gid:
+        cand = cand.rename(columns={cand_gid: gid})
+    if refr_gid != gid:
+        refr = refr.rename(columns={refr_gid: gid})
+
+    if lfc not in cand.columns:
+        return {"error": f"candidate missing log2FC column: {lfc}"}
+    if lfc not in refr.columns:
+        return {"error": f"reference missing log2FC column: {lfc}"}
 
     cand = cand[[gid, lfc] + ([padj] if padj in cand.columns else [])].copy()
     refr = refr[[gid, lfc] + ([padj] if padj in refr.columns else [])].copy()

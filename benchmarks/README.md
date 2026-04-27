@@ -1,41 +1,57 @@
 # FlowAgent Benchmarks
 
-Reproducible benchmarks that measure FlowAgent's core claims: natural-language
+Reproducible benchmarks that measure FlowAgent's seven core claims: natural-language
 **planning correctness**, **per-model cost**, **adaptive error recovery**,
-**generator fidelity**, and **executor coverage**. Drive the manuscript figures.
+**generator fidelity**, **executor coverage**, **output fidelity** against
+published references, and **biological-interpretation quality**. Drive the
+manuscript figures.
 
 ## Layout
 
 ```
 benchmarks/
 ├── config/
-│   ├── models.yaml          # LLMs to sweep (OpenAI, Anthropic, Google, ...)
-│   └── faults.yaml          # Fault catalogue (for Benchmark B)
+│   ├── models.yaml                     # LLMs to sweep (OpenAI, Anthropic, Google)
+│   ├── faults.yaml                     # Fault catalogue (Benchmark B)
+│   ├── fidelity_cases.yaml             # Output-fidelity cases (Benchmark F)
+│   └── interpretation_questions.yaml   # MCQ + open-ended questions (Benchmark G)
 ├── corpus/
-│   └── prompts.yaml         # 41 prompts (23 standard + 18 hard) with expected properties
+│   └── prompts.yaml                    # 41 prompts (23 standard + 18 hard)
+├── references/                         # Materialised gold-standard outputs (gitignored)
+│   ├── download_references.py          # Orchestrator — fetches each Benchmark F reference
+│   ├── install_r_deps.R                # Installs Bioconductor packages used by R recipes
+│   ├── make_reference_*.R              # Frozen Bioconductor recipes (DE-table cases)
+│   ├── macs_txt_to_bed.py              # MACS .txt → 3-col BED post-processor
+│   ├── counts_tsv_to_bed.py            # Corces counts-matrix → consensus BED
+│   ├── subset_giab_chr20.sh            # bcftools/zgrep chr20 subset of GIAB v4.2.1
+│   └── README.md                       # What each reference is + license notes
 ├── harness/
-│   ├── runner.py            # Provider switching, sweep, .env loader
-│   ├── metrics.py           # Scoring + cost helpers
-│   ├── fault_inject.py      # Fault implementations
-│   ├── env_detect.py        # Which executor backends are live-testable
-│   ├── executor_probes.py   # Per-backend probes for Benchmark D
-│   ├── competitors.py       # Competitor interface + FlowAgent/BioMaster/AutoBA adapters
-│   ├── biomaster_shim.py    # Subprocess shim driving upstream BioMaster
-│   ├── autoba_shim.py       # Subprocess shim driving upstream AutoBA
-│   └── plot.py              # Publication-ready figures (colour-blind safe)
-├── bench_planning.py        # Benchmark A: planning correctness + cost
-├── bench_recovery.py        # Benchmark B: error recovery
-├── bench_generation.py      # Benchmark C: Nextflow/Snakemake codegen fidelity
-├── bench_executors.py       # Benchmark D: executor-coverage matrix
-├── bench_competitors.py     # Benchmark E: head-to-head vs other agentic systems
-├── rescore_planning.py      # Re-evaluate existing plans with updated metrics (no API calls)
-├── recovery_taxonomy.py     # Classify Benchmark B responses (correct_refusal / misdiagnosed / unsafe_repair / …)
-├── merge_runs.py            # Combine runs across models/sessions into one CSV
-├── Makefile                 # Convenience orchestration
-└── results/                 # Gitignored outputs (CSV, JSON, PDF)
+│   ├── runner.py                       # Provider switching, sweep, .env loader
+│   ├── metrics.py                      # Scoring + cost helpers
+│   ├── fault_inject.py                 # Fault implementations (Benchmark B)
+│   ├── env_detect.py                   # Which executor backends are live-testable
+│   ├── executor_probes.py              # Per-backend probes (Benchmark D)
+│   ├── competitors.py                  # Competitor interface + adapters
+│   ├── biomaster_shim.py               # Subprocess shim driving upstream BioMaster
+│   ├── autoba_shim.py                  # Subprocess shim driving upstream AutoBA
+│   ├── fidelity_metrics.py             # de_table / peak_bed / vcf comparators (Benchmark F)
+│   └── plot.py                         # Publication-ready figures (colour-blind safe)
+├── bench_planning.py                   # A — planning correctness + cost
+├── bench_recovery.py                   # B — error recovery
+├── bench_generation.py                 # C — Nextflow/Snakemake codegen fidelity
+├── bench_executors.py                  # D — executor-coverage matrix
+├── bench_competitors.py                # E — head-to-head vs other agentic systems
+├── bench_fidelity.py                   # F — pure scoring layer for output fidelity
+├── bench_interpretation.py             # G — MCQ + open-ended interpretation
+├── rescore_planning.py                 # Re-evaluate existing plans with updated metrics
+├── recovery_taxonomy.py                # Classify Benchmark B responses
+├── merge_runs.py                       # Combine runs across models/sessions
+├── supp_table_models.py                # Supplementary Table 2 (model registry × empirical stats)
+├── Makefile                            # Convenience orchestration
+└── results/                            # Gitignored outputs (CSV, JSON, PDF)
 ```
 
-## The five benchmarks
+## The seven benchmarks
 
 | ID | Claim | Needs API key | Needs infra |
 |---|---|---|---|
@@ -43,7 +59,9 @@ benchmarks/
 | **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no |
 | **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` |
 | **D** | All six execution backends function | no | best-effort — mock mode if infra absent |
-| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA clones on disk (see below) |
+| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA clones on disk |
+| **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download |
+| **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F |
 
 ### Prompt corpus
 
@@ -84,19 +102,71 @@ Each fault produces a real failure signature (genuine exit code + stderr
 via shell stubs or real tools), so recovery is judged on the LLM's ability
 to read and fix an authentic error.
 
+### Fidelity cases (Benchmark F)
+
+`config/fidelity_cases.yaml` declares **7 cases** spanning three assay
+families. Each case has a `comparison` key (`de_table`, `peak_bed`, or
+`vcf`) and a `reference_source` block that tells the orchestrator how to
+materialise the gold-standard file (`direct_url` HTTPS download or
+`r_script` Bioconductor recipe).
+
+| Case ID | Assay | Reference build | Comparator |
+|---|---|---|---|
+| `gse52778_dex_de` | RNA-seq DE (DEX/airway) | R script: airway pkg + DESeq2 | de_table |
+| `gse60450_mammary_de` | RNA-seq DE (mouse mammary) | R script: edgeR/limma-voom on NCBI counts | de_table |
+| `gse152418_covid_blood_de` | RNA-seq DE (COVID-19 vs healthy) | R script: DESeq2 on GEO counts | de_table |
+| `encsr000euq_suz12_h1` | ChIP-seq peaks (SUZ12) | Direct URL: ENCODE IDR-thresholded peaks | peak_bed |
+| `gse32222_er_chip` | ChIP-seq peaks (ER-α) | Direct URL: GSM-deposited MACS peaks | peak_bed |
+| `gse74912_atac_immune` | ATAC-seq peaks (immune atlas) | Direct URL: GEO counts → consensus BED | peak_bed |
+| `giab_na12878_chr20` | Germline variants | Direct URL: GIAB v4.2.1 → bcftools chr20 | vcf |
+
+The runner is a **pure scoring layer** — it does not invoke FlowAgent. Run
+FlowAgent end-to-end on each prompt yourself, then score against the
+materialised references with `bench_fidelity.py`.
+
+### Interpretation questions (Benchmark G)
+
+`config/interpretation_questions.yaml` contains **32 questions across the
+same 7 datasets** as Benchmark F (24 MCQ + 8 open-ended), with a
+calibrated refusal-correct question per dataset to test whether models
+abstain when the supplied evidence is insufficient. Open-ended responses
+are graded by an LLM judge (default `gpt-5.4`) against a per-question
+rubric and reference answer.
+
+The benchmark feeds each dataset's reference file (DE table, peak BED,
+truth VCF) directly to the model under test — FlowAgent itself is not in
+the loop. This makes Benchmark G a model-vs-model comparison on
+deterministic inputs, in the spirit of BixBench.
+
+### Reference data
+
+Reference files for Benchmarks F and G are **not committed**; materialise
+them once before scoring:
+
+```bash
+make install-r-deps    # one-time: BiocManager::install for the R recipes
+make references        # fetches every reference declared in fidelity_cases.yaml
+```
+
+See [`references/README.md`](references/README.md) for per-file source
+notes, sizes, and license caveats. CI / no-R-install runs:
+`make references SKIP_R=1`.
+
 ### Models
 
-`config/models.yaml` defines 20 models across three tiers:
+`config/models.yaml` defines **30 models** across three tiers, plus
+several legacy/preview aliases for back-compatibility with archived runs:
 
 | Tier | OpenAI | Anthropic | Google |
 |---|---|---|---|
-| legacy | `gpt-3.5-turbo`, `gpt-4` | `claude-3-haiku`, `claude-3-sonnet` | `gemini-1.5-flash` |
-| mid | `gpt-4-turbo`, `gpt-4o-mini` | `claude-3-5-haiku`, `claude-3-5-sonnet` | `gemini-1.5-pro` |
-| frontier | `gpt-4o`, `gpt-4.1`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano` | `claude-sonnet-4`, `claude-opus-4-5`, `claude-opus-4-6`, `claude-opus-4-7` | `gemini-2.5-flash` |
+| current | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `o3`, `o3-mini`, `o4-mini` | `claude-opus-4-5/6/7`, `claude-sonnet-4-5/6`, `claude-haiku-4-5` | `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| preview | — | — | `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite-preview`, `gemini-3-flash-preview` |
+| legacy | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o1` | `claude-opus-4`, `claude-opus-4-1`, `claude-sonnet-4`, `claude-haiku-3-5` | `gemini-1.5-pro`, `gemini-1.5-flash` |
 
-Add or remove a model by editing `config/models.yaml` — the harness, scoring,
-and plot code pick up new IDs automatically (so long as the short name is
-registered in [`harness/plot.py`](harness/plot.py) for axis labels).
+Add or remove a model by editing `config/models.yaml` — the harness,
+scoring, and plot code pick up new IDs automatically (so long as the
+short name is registered in [`harness/plot.py`](harness/plot.py) for
+axis labels).
 
 ## API keys
 
@@ -363,17 +433,154 @@ python benchmarks/harness/autoba_shim.py \
 - AutoBA's `app.py` has a top-level `import torch.cuda`, so `torch` must
   be installed even if you never invoke its GPU paths.
 
+### Benchmark F — output fidelity
+
+Two pieces: a **driver** (`bench_fidelity_run.py`) that invokes FlowAgent
+on every case's prompt, and a **scorer** (`bench_fidelity.py`) that
+compares each candidate's outputs against the materialised reference.
+The driver auto-invokes the scorer after all cells finish.
+
+```bash
+# Run every case at gpt-4.1, 1 replicate; auto-scores at the end
+make fidelity-run MODEL=gpt-4.1
+
+# Multi-model + multi-replicate
+make fidelity-run MODELS=gpt-4.1,claude-sonnet-4-6,gemini-2.5-flash REPLICATES=2
+
+# Just one case (e.g. iterating on the GSE52778 pipeline)
+python bench_fidelity_run.py --model gpt-4.1 --case gse52778_dex_de
+
+# Already have outputs on disk — just score them
+python bench_fidelity_run.py --score-only
+
+# Score one existing FlowAgent run dir directly (legacy single-case path)
+python bench_fidelity.py \
+    --case gse52778_dex_de \
+    --candidate-dir results/realworld_GSE52778 \
+    --model gpt-4.1 --replicate 0
+```
+
+**Directory layout.** Each cell lives at:
+
+```
+results/fidelity_runs/
+├── _driver.log                                  # cross-cell progress
+├── _driver_summary.json                         # per-cell status JSON
+├── gse52778_dex_de__gpt-4.1__rep0/
+│   ├── prompt.txt                               # exact prompt that was run
+│   ├── run.log                                  # FlowAgent stdout/stderr
+│   ├── flowagent_output/Unnamed_Workflow/...
+│   └── results/rna_seq_kallisto/deseq2/deseq2_results.csv
+├── gse52778_dex_de__claude-sonnet-4-6__rep0/
+│   └── ...
+└── encsr000euq_suz12_h1__gpt-4.1__rep0/
+    └── ...
+```
+
+**Checkpointing.** A cell is considered complete when its
+`output_relpath` (declared in `fidelity_cases.yaml`) exists and is
+non-empty. Re-running the driver skips completed cells automatically.
+Pass `--force` to bypass the skip and re-run everything. Per-cell
+timeouts default to 24 h (`--timeout-hours`).
+
+**Logging.** Top-level driver log streams to both stdout *and*
+`_driver.log`; per-cell logs are at `<cell>/run.log`. Tail one in
+another terminal to watch a single pipeline:
+
+```bash
+tail -f results/fidelity_runs/gse52778_dex_de__gpt-4.1__rep0/run.log
+```
+
+**Concurrency.** `--concurrency N` runs N cells in flight at once;
+default 1 because pipelines are bandwidth- and disk-heavy (RNA-seq cases
+download 10s of GB of FASTQ data per cell). Be conservative on a
+laptop; safe to bump on a workstation.
+
+**Cost.** Each cell is a real bioinformatics pipeline — downloads FASTQs,
+runs kallisto / MACS2 / GATK, calls the LLM dozens of times for plan +
+recovery. Realistic per-cell budgets: $0.50–$5 in API spend, 2–8 h
+wall time, 5–50 GB disk. Six cases × 10 models × 1 replicate is
+**not** something to fire off lightly.
+
+**Score-only mode.** `--score-only` skips all FlowAgent invocations and
+runs the scorer over whatever cells already exist. Useful when iterating
+on the comparator code:
+
+```bash
+python bench_fidelity_run.py --score-only
+```
+
+The `de_table` comparator strips Ensembl version suffixes and tolerates
+common gene-ID column aliases (`gene_id`, `Gene`, `Unnamed: 0`, etc.) so
+candidate outputs from kallisto + tximport, STAR + featureCounts, or
+salmon all join correctly to the reference. Output rows include
+`spearman_lfc`, `jaccard_top_n`, `n_overlap`; for peak/VCF cases:
+`jaccard_peak`, `precision`, `recall`, `f1`.
+
+**Typical numbers** for `gse52778_dex_de` against the `airway` package
+canonical reference:
+
+```
+spearman_lfc=0.75   jaccard_top_n=0.45   n_overlap=20933
+```
+
+Spearman 0.75 is in the "different quantifier, same biology" range
+(kallisto vs STAR+HTSeq); Jaccard top-200 captures the moderate drift in
+which genes sit just above the |log2FC|>1 cutoff.
+
+### Benchmark G — biological-interpretation quality
+
+```bash
+# Single model
+make interpretation MODEL=gpt-4.1 JUDGE=gpt-5.4
+
+# Multi-model sweep (recommended for the manuscript figure)
+python bench_interpretation.py \
+  --models gpt-5.4,gpt-5.4-mini,o3,gpt-4.1,claude-opus-4-7,claude-sonnet-4-6,claude-haiku-4-5,gemini-2.5-pro,gemini-2.5-flash,gemini-3.1-flash-lite-preview \
+  --judge gpt-5.4
+
+# Every model in models.yaml
+python bench_interpretation.py --all-models --judge gpt-5.4
+
+# Mock mode (no LLM calls; deterministic stub answers — CI smoke)
+python bench_interpretation.py --models gpt-4.1 --mock
+```
+
+Each row in the output `metrics.csv` carries `(model, dataset,
+question_id, question_type, correct, judge_score,
+judge_justification, raw_response, candidate_answer)` so the
+interpretation figure can split MCQ accuracy from open-ended judge
+scores and refusal calibration. The schema is stable even when LLM calls
+error out — every row gets `correct=False` as a default so a partial
+sweep still produces a plottable CSV.
+
+The `interpretation_figure` in `harness/plot.py` renders three panels:
+
+- **Per-model overall MCQ accuracy** with Wilson 95% CIs.
+- **Model × dataset MCQ-accuracy heatmap** (grey cells = no data).
+- **Per-model open-ended judge mean** ± 1 SD.
+
 ### Everything at once
 
 ```bash
 make all         # single MODEL (default gpt-4.1): plan + recovery + gen + exec + report
-make all-sweep   # full 20-model sweep: plan-all + recovery + gen + exec + rescore + merge + report
+make all-sweep   # full 30-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report
 ```
 
 Use `make all` for a quick end-to-end smoke of one model (fast, cheap). Use
 `make all-sweep` for the multi-model manuscript run — it automatically chains
 `rescore → merge → report` in the right order so all models appear in the
 final figures.
+
+Benchmarks F and G are **not** included in `all-sweep` because they have
+distinct workflow shapes (F needs prior FlowAgent runs to score; G is an
+LLM-only sweep against fixed reference inputs). Run them separately:
+
+```bash
+make references                                # one-time, materialises Benchmark F refs
+make fidelity                                  # bulk-score a fidelity_runs/ tree
+make interpretation MODEL=gpt-4.1 JUDGE=gpt-5.4
+```
 
 ## Post-processing (important order)
 
@@ -390,14 +597,32 @@ make report     # 3. Render figures from the merged CSV
   current `metrics.py`, preserves token counts, and re-computes `cost_usd`
   using the current `models.yaml` pricing. Outputs land under
   `results/planning/<run>/rescored_<ts>/`.
-- `merge` prefers the latest `rescored_*` subdir inside each run and
-  deduplicates by `(model, input_id, replicate)` so re-running a single model
-  cleanly replaces stale rows.
-- `report` generates figures from `results/planning/_merged/<latest>` if
-  present, falling back to the newest single run.
+- `merge` collates runs across all benchmarks (planning, competitors,
+  recovery, interpretation, fidelity), preferring the latest `rescored_*`
+  subdir for each. Dedup keys per benchmark:
+
+  | Benchmark | Dedup key |
+  |---|---|
+  | planning | `(model, input_id, replicate)` |
+  | competitors | `(competitor, input_id, replicate)` |
+  | recovery | `(model, fault_id, seed)` |
+  | interpretation | `(model, dataset, question_id)` |
+  | fidelity | `(case_id, model, replicate)` |
+
+  Re-running a single model cleanly replaces stale rows. Schema-incomplete
+  rows from runs that errored out (no `correct` column for interpretation,
+  no comparator metric for fidelity) are dropped at merge time so they
+  don't bias per-model rollups.
+
+- `report` generates figures from `results/<bench>/_merged/<latest>` if
+  present, falling back to the newest single run per benchmark.
 
 **If you run `merge` before `rescore`**, the merged CSV captures the
 pre-rescore numbers. Always rescore first.
+
+**Force a clean re-merge:** `make merge REFRESH=1` (or
+`python merge_runs.py --refresh`). Useful after the question YAML or
+dedup keys change.
 
 ## Cost tracking
 
@@ -438,13 +663,29 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 | File | Content |
 |---|---|
 | `planning.pdf` | Pass rate by model, split into standard vs. hard prompts |
-| `planning_heatmap.pdf` | Per-prompt × per-model pass-rate heatmap (hard prompts) |
+| `planning_heatmap.pdf` | Per-prompt × per-model pass-rate heatmap |
+| `planning_heatmap_by_tier.pdf` | Heatmap split into current vs legacy model panels |
 | `planning_cost_summary.pdf` | Per-model cost bar chart (two panels) |
-| `planning_cost_quality.pdf` | Pass-rate vs. cost scatter (log x-axis) |
-| `recovery.pdf` | Benchmark B per-fault recovery, grouped into Easy / Hard / Unrecoverable |
-| `recovery_tier_summary.pdf` | Compact per-tier summary: recovery rate for Easy + Hard, correct-rejection rate for Unrecoverable |
+| `planning_cost_quality.pdf` | Pass-rate vs cost scatter (log x-axis), Pareto frontier |
+| `planning_latency.pdf` | Per-model wall-clock + speed-vs-quality trade-off |
+| `planning_turns.pdf` | Mean LLM calls per plan (turns to completion) |
+| `planning_consistency.pdf` | Inter-replicate unanimity per model |
+| `planning_hallucination.pdf` | Hallucinated-tool fraction per model |
+| `planning_tokens.pdf` | Mean prompt + completion tokens per plan |
+| `recovery.pdf` | Benchmark B per-fault recovery, grouped Easy / Hard / Unrecoverable |
+| `recovery_tier_summary.pdf` | Compact per-tier summary |
+| `recovery_per_fault_heatmap.pdf` | Cross-model per-fault recovery heatmap |
+| `recovery_taxonomy.pdf` | 5-outcome taxonomy on the unrecoverable tier |
+| `recovery_reasoning_split.pdf` | Reasoning vs non-reasoning model recovery comparison |
+| `recovery_per_model/recovery_<model>.pdf` | Per-model breakdown across all faults |
 | `generation.pdf` | Benchmark C generator-fidelity heatmap |
 | `executors.pdf` | Benchmark D executor-coverage matrix |
+| `competitors.pdf` | Benchmark E pass / fail / crash per competitor |
+| `competitors_perprompt.pdf` | Competitor × prompt outcome heatmap |
+| `competitors_agentic.pdf` | FlowAgent vs BioMaster vs AutoBA focused comparison |
+| `interpretation.pdf` | Benchmark G three-panel: MCQ accuracy + heatmap + open-ended judge mean |
+| `planning_cost_summary.tsv` | Per-model cost / pass-rate / token table for the manuscript |
+| `supp_table2_models.tsv` | Supplementary Table 2: model registry × empirical token / cost / latency stats |
 
 Pass `--svg` to also emit editable SVGs for Illustrator / Inkscape:
 
@@ -496,23 +737,30 @@ make report
 
 ## Cost + wall-clock estimates
 
-Rough guide at current (Apr 2026) rates across the full 20-model sweep.
+Rough guide at current (Apr 2026) rates across the full 30-model registry.
 
 | Target | Models | Wall time | API cost |
 |---|---|---|---|
 | `make plan` | 1 | ~5–15 min | ~$0.05–$2 (depends on model tier) |
-| `make plan-all` | 20 | ~30–60 min (concurrent) | ~$15–30 |
+| `make plan-all` | 30 | ~45–90 min (concurrent) | ~$20–40 |
 | `make recovery` | 1 | ~35–45 min (28 faults × 5 seeds) | ~$2–3 |
 | `make gen` | — | <1 min | $0 |
 | `make exec` | — | <1 min | $0 |
-| `make rescore` | — | ~5 s | $0 |
-| `make merge` | — | ~1 s | $0 |
-| `make report` | — | ~3 s | $0 |
+| `make competitors` | 1 | ~10–30 min (depends on BioMaster RAG) | ~$1–4 |
+| `make references SKIP_R=1` | — | ~30 s (one-off) | $0 (network only) |
+| `make references` | — | ~5–10 min (R-script cases) | $0 |
+| `make fidelity --bulk-dir=…` | — | <1 s per case | $0 (pure scoring) |
+| `make interpretation` | 1 | ~5–10 min (32 questions) | ~$0.50–$2 |
+| `bench_interpretation.py --models=…` | 10 | ~30–60 min | ~$5–15 |
+| `make rescore` / `merge` / `report` | — | ~5 s | $0 |
+| `make install-r-deps` | — | ~5–10 min (one-off) | $0 |
 
 Cheapest frontier model for `plan-all`: roughly $0.05 for the full 123-cell
-sweep (`gpt-5.4-nano` or `gemini-1.5-flash`). Most expensive: ~$10+ for
-`claude-opus-4-7` or `gpt-4` alone. The exact per-model breakdown is in
-`planning_cost_summary.tsv` after the first real run.
+sweep (`gpt-5.4-nano` or `gemini-2.5-flash-lite`). Most expensive: ~$10+ for
+`claude-opus-4-7` or `o1` alone. The exact per-model breakdown is in
+`planning_cost_summary.tsv` after the first real run; the consolidated
+manuscript-ready table sits in `supp_table2_models.tsv` (joined with
+registry metadata via `python supp_table_models.py`).
 
 ## Reproducibility
 
@@ -551,6 +799,43 @@ Re-run `make plan` / `make plan-all` to populate `prompt_tokens`,
 registered in `harness/plot.py::_short_name` (axis labels only; the harness
 itself accepts any model ID the provider accepts). A typo'd model ID will
 surface as an API-side 404 or 400 in the `error` column.
+
+**Benchmark F: `candidate missing column: gene_id`** — the comparator now
+recognises common aliases (`Unnamed: 0`, `Gene`, `gene`, `feature_id`,
+`ensembl_id`, `ensembl_gene_id`, `GeneID`). If your candidate uses a
+different column name, declare it via `params.gene_id_column` in
+`config/fidelity_cases.yaml`.
+
+**Benchmark F: `candidate not found: …`** — the path is built as
+`<candidate-dir>/<output_relpath>`. From inside `benchmarks/`, drop the
+leading `benchmarks/` from `--candidate-dir` (e.g. `--candidate-dir
+results/realworld_GSE52778`).
+
+**Benchmark F R script: `cannot open URL '…bioconductor.org/…'`** — older
+script versions pointed at retired Bioc course-materials URLs. Pull
+latest of this directory; URLs were migrated to NCBI mirrors.
+
+**Benchmark F R script: `there is no package called 'recount3' / 'DiffBind'`** —
+older recipes depended on these heavy packages. Current recipes use only
+`airway`, `DESeq2`, `edgeR`, `limma`, `Glimma`, `SummarizedExperiment`.
+Run `make install-r-deps` to install the current set.
+
+**Benchmark G: `ValueError: cannot convert float NaN to integer`** in
+`make report` — the merge picked up a partial CSV from a run that errored
+out before the schema-stable fix. Refresh: `make merge REFRESH=1` then
+`make report`. Schema-incomplete rows are now dropped at merge time so
+this only affects archived data.
+
+**Benchmark G: `Event loop is closed` warnings during multi-model sweep** —
+cosmetic only; data still written correctly. The patched runner uses one
+event loop for the whole sweep so these no longer appear after pulling
+latest.
+
+**Benchmark G: `AuthenticationError: Incorrect API key provided`** — your
+shell has a stale `OPENAI_API_KEY` overriding `.env` (the harness's
+dotenv loader uses `setdefault`, so shell wins). Fix: `unset
+OPENAI_API_KEY` and re-run; the working key in `.env` will then take
+effect.
 
 ## Out of scope (documented explicitly)
 
