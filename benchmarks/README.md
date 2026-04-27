@@ -42,6 +42,7 @@ benchmarks/
 ├── bench_executors.py                  # D — executor-coverage matrix
 ├── bench_competitors.py                # E — head-to-head vs other agentic systems
 ├── bench_fidelity.py                   # F — pure scoring layer for output fidelity
+├── bench_fidelity_run.py               # F — end-to-end driver (runs flowagent then scores)
 ├── bench_interpretation.py             # G — MCQ + open-ended interpretation
 ├── rescore_planning.py                 # Re-evaluate existing plans with updated metrics
 ├── recovery_taxonomy.py                # Classify Benchmark B responses
@@ -750,6 +751,8 @@ Rough guide at current (Apr 2026) rates across the full 30-model registry.
 | `make references SKIP_R=1` | — | ~30 s (one-off) | $0 (network only) |
 | `make references` | — | ~5–10 min (R-script cases) | $0 |
 | `make fidelity --bulk-dir=…` | — | <1 s per case | $0 (pure scoring) |
+| `make fidelity-run` (1 model) | 1 | ~12–24 h sequential, ~6–10 h at CONCURRENCY=3 | ~$3–15 (7 cases × 1 model) |
+| `make fidelity-run MODELS=a,b,c` | 3 | ~30+ h sequential | ~$10–45 (21 cells) |
 | `make interpretation` | 1 | ~5–10 min (32 questions) | ~$0.50–$2 |
 | `bench_interpretation.py --models=…` | 10 | ~30–60 min | ~$5–15 |
 | `make rescore` / `merge` / `report` | — | ~5 s | $0 |
