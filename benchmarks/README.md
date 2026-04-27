@@ -503,6 +503,49 @@ recovery. Realistic per-cell budgets: $0.50–$5 in API spend, 2–8 h
 wall time, 5–50 GB disk. Six cases × 10 models × 1 replicate is
 **not** something to fire off lightly.
 
+**Disk cleanup.** Pass `CLEANUP=1` to delete heavy intermediates
+(`raw_data/`, kallisto index, FastQC HTML) immediately after each
+*successful* cell. Recovers ~50–80 GB per RNA-seq cell while preserving
+the candidate output file the scorer needs:
+
+```bash
+make fidelity-run MODEL=gpt-4.1 CONCURRENCY=3 CLEANUP=1
+```
+
+Three safety properties:
+- Cleanup only fires when the declared `output_relpath` exists and is
+  non-empty — never on a failed or partial cell, so you can always
+  re-run cells that died.
+- Cleanup is opt-in (default off) so existing workflows don't lose
+  data unexpectedly.
+- The driver's skip-path *also* runs cleanup, so you can recover space
+  from already-completed cells mid-sweep without re-running them:
+
+```bash
+# Already finished some cells — now want the disk back without re-running
+make fidelity-run MODEL=gpt-4.1 CLEANUP=1
+# logs:
+#   [skip]    gse52778_dex_de__gpt-4.1__rep0: output already exists
+#   [cleanup] gse52778_dex_de__gpt-4.1__rep0: freed 78.3 GB
+```
+
+What gets deleted vs preserved per cell:
+
+| Deleted on success | Preserved (always) |
+|---|---|
+| `raw_data/` (FASTQs + SRA cache + reference genome + GEO metadata) | `prompt.txt`, `run.log`, `flowagent_output/` (workflow.json, notebook.ipynb) |
+| `results/rna_seq_kallisto/kallisto_index/` (~3 GB index) | `results/rna_seq_kallisto/deseq2/` (DE table, gene counts) |
+| `results/rna_seq_kallisto/fastqc/` (HTML reports) | `results/rna_seq_kallisto/kallisto_quant/<sample>/abundance.h5` |
+| `results/macs2/bowtie2_alignments/` (ChIP/ATAC intermediates) | `results/macs2/peaks.narrowPeak` |
+| `results/gatk/aligned/` (variant-calling intermediates) | `results/gatk/filtered.vcf.gz` |
+
+**Caveat after cleanup:** re-running a cleaned cell from scratch
+(via `FORCE=1` plus a deleted output file) will re-download `raw_data/`
+— costing 50+ GB and several hours. Only enable cleanup when you're
+confident the run is final. Smart-resume's normal "output exists →
+skip" path is unaffected: cleaned cells re-run instantly because the
+scorer-relevant output is preserved.
+
 **Score-only mode.** `--score-only` skips all FlowAgent invocations and
 runs the scorer over whatever cells already exist. Useful when iterating
 on the comparator code:
@@ -751,8 +794,9 @@ Rough guide at current (Apr 2026) rates across the full 30-model registry.
 | `make references SKIP_R=1` | — | ~30 s (one-off) | $0 (network only) |
 | `make references` | — | ~5–10 min (R-script cases) | $0 |
 | `make fidelity --bulk-dir=…` | — | <1 s per case | $0 (pure scoring) |
-| `make fidelity-run` (1 model) | 1 | ~12–24 h sequential, ~6–10 h at CONCURRENCY=3 | ~$3–15 (7 cases × 1 model) |
-| `make fidelity-run MODELS=a,b,c` | 3 | ~30+ h sequential | ~$10–45 (21 cells) |
+| `make fidelity-run` (1 model) | 1 | ~12–24 h sequential, ~6–10 h at CONCURRENCY=3 | ~$3–15 (7 cases × 1 model); ~50–80 GB/RNA-seq cell on disk |
+| `make fidelity-run CLEANUP=1` | 1 | same wall time | same cost; only output files retained, ~5 MB total |
+| `make fidelity-run MODELS=a,b,c` | 3 | ~30+ h sequential | ~$10–45 (21 cells); without `CLEANUP=1`, **>1 TB peak disk** |
 | `make interpretation` | 1 | ~5–10 min (32 questions) | ~$0.50–$2 |
 | `bench_interpretation.py --models=…` | 10 | ~30–60 min | ~$5–15 |
 | `make rescore` / `merge` / `report` | — | ~5 s | $0 |
@@ -839,6 +883,41 @@ shell has a stale `OPENAI_API_KEY` overriding `.env` (the harness's
 dotenv loader uses `setdefault`, so shell wins). Fix: `unset
 OPENAI_API_KEY` and re-run; the working key in `.env` will then take
 effect.
+
+**Benchmark F: `No .env file found` from cells four directories deep** —
+FlowAgent's own dotenv loader (in `flowagent/config/settings.py`) only
+checks `./env` and `$USER_EXECUTION_DIR/.env`, neither of which resolve
+from a cell at `results/fidelity_runs/<cell>/`. The driver
+(`bench_fidelity_run.py`) loads `.env` at startup via the harness's
+walk-up loader and propagates the keys + `USER_EXECUTION_DIR` to every
+subprocess, so this only manifests if you invoke `flowagent prompt`
+directly inside a cell dir without the driver. Use `make fidelity-run`
+or set `OPENAI_API_KEY` in your shell first.
+
+**Benchmark F: pipeline died in <30 s with `rc=0 produced=False`** —
+nine times out of ten this is the planner emitting a truncated
+4-step "GEO download only" workflow because the prompt didn't trigger
+the kallisto/DE expansion. Verify by inspecting the cell's
+`flowagent_output/Unnamed_Workflow/workflow.json` — if it has 4 steps,
+the prompt didn't trigger the analysis branch. The case prompts in
+`config/fidelity_cases.yaml` are deliberately worded with
+"RNA-seq kallisto pipeline" + "DESeq2 differential expression" to
+get score ≥ 2 in `_detect_workflow_type`'s keyword scoring; if the
+plan still truncates, check that the case's `prompt:` field hasn't
+been edited to drop those keywords.
+
+**Benchmark F: filling up disk** — pass `CLEANUP=1` to delete `raw_data/`
++ kallisto index + FastQC HTML after each successful cell. Recovers
+~50–80 GB per RNA-seq cell. The driver's skip-path also runs cleanup,
+so re-running with `CLEANUP=1` recovers space from already-completed
+cells without re-running their pipelines. See "Disk cleanup" under
+the Benchmark F section.
+
+**Benchmark F: `pipefail` errors on Debian-based images** — `/bin/sh =
+dash` on Debian/Ubuntu doesn't support `set -o pipefail`. The recovery
+loop fires automatically and patches the command on first attempt;
+no action needed. If you want to skip the recovery overhead entirely,
+symlink `/bin/bash` over `/bin/sh` in your container.
 
 ## Out of scope (documented explicitly)
 

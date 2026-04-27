@@ -99,6 +99,63 @@ def _candidate_complete(cell_dir: Path, output_relpath: str) -> bool:
     return out.exists() and out.stat().st_size > 0
 
 
+# Per-cell directories / paths that can safely be deleted after a successful
+# pipeline run. These hold raw inputs and large intermediates that the
+# scorer doesn't need — only the file at ``output_relpath`` is preserved.
+_CLEANUP_TARGETS = (
+    "raw_data",                                          # FASTQs + SRA cache + reference genome
+    "results/rna_seq_kallisto/kallisto_index",           # ~3 GB index
+    "results/rna_seq_kallisto/fastqc",                   # FastQC HTML reports
+    "results/rna_seq/fastqc",                            # alt path for non-kallisto runs
+    "results/macs2/bowtie2_alignments",                  # ChIP/ATAC alignments (if produced here)
+    "results/gatk/aligned",                              # variant-calling intermediates
+)
+
+
+def _du_bytes(path: Path) -> int:
+    """Recursive size of a directory (in bytes), 0 if missing."""
+    if not path.exists():
+        return 0
+    total = 0
+    for p in path.rglob("*"):
+        try:
+            if p.is_file() and not p.is_symlink():
+                total += p.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _cleanup_cell(cell_dir: Path, output_relpath: str,
+                  logger: logging.Logger) -> int:
+    """Delete heavy intermediates after a successful cell.
+
+    Returns the number of bytes freed. Refuses to act unless the cell's
+    declared ``output_relpath`` already exists and is non-empty — that's
+    the marker that the pipeline finished and the intermediate files
+    are safely no longer needed for scoring.
+    """
+    if not _candidate_complete(cell_dir, output_relpath):
+        return 0  # never delete intermediates of a partial / failed run
+    freed = 0
+    for rel in _CLEANUP_TARGETS:
+        target = cell_dir / rel
+        if not target.exists():
+            continue
+        size = _du_bytes(target)
+        try:
+            shutil.rmtree(target)
+        except OSError as exc:
+            logger.warning("[cleanup] %s: failed to remove %s: %s",
+                           cell_dir.name, rel, exc)
+            continue
+        freed += size
+    if freed:
+        logger.info("[cleanup] %s: freed %.1f GB",
+                    cell_dir.name, freed / (1 << 30))
+    return freed
+
+
 def _resolve_flowagent() -> str:
     """Find the flowagent CLI for the active Python environment."""
     # Prefer the same Python that's running this script — keeps everyone on
@@ -157,6 +214,7 @@ def _build_cells(cases: List[Dict[str, Any]],
 async def _run_cell(cell: Cell, *, flowagent_bin: str, force: bool,
                     timeout_seconds: int,
                     semaphore: asyncio.Semaphore,
+                    cleanup: bool,
                     logger: logging.Logger) -> Dict[str, Any]:
     """Invoke ``flowagent prompt`` for one cell.
 
@@ -171,6 +229,11 @@ async def _run_cell(cell: Cell, *, flowagent_bin: str, force: bool,
         if cell.is_complete() and not force:
             logger.info("[skip] %s: output already exists",
                         cell.workdir.name)
+            # Belt-and-suspenders: even on a skipped cell, run cleanup so
+            # users who add ``--cleanup`` mid-sweep can recover space from
+            # already-completed cells without re-running them.
+            if cleanup:
+                _cleanup_cell(cell.workdir, cell.output_relpath, logger)
             return {"cell": cell.workdir.name, "status": "skip",
                     "wall_seconds": 0.0}
 
@@ -225,18 +288,28 @@ async def _run_cell(cell: Cell, *, flowagent_bin: str, force: bool,
                   else "fail")
         logger.info("[done] %s  rc=%s  produced=%s  wall=%.1fs",
                     cell.workdir.name, rc, produced, wall)
+
+        # Free disk on success only — never delete intermediates of a
+        # failed cell, since the user may want to re-run it.
+        freed_bytes = 0
+        if cleanup and produced:
+            freed_bytes = _cleanup_cell(cell.workdir, cell.output_relpath,
+                                        logger)
+
         return {"cell": cell.workdir.name, "status": status,
                 "returncode": rc, "wall_seconds": wall,
-                "produced_output": produced}
+                "produced_output": produced,
+                "bytes_freed": freed_bytes}
 
 
 async def _run_all(cells: List[Cell], *, flowagent_bin: str, force: bool,
                    timeout_seconds: int, concurrency: int,
+                   cleanup: bool,
                    logger: logging.Logger) -> List[Dict[str, Any]]:
     sem = asyncio.Semaphore(concurrency)
     tasks = [_run_cell(c, flowagent_bin=flowagent_bin, force=force,
                        timeout_seconds=timeout_seconds,
-                       semaphore=sem, logger=logger)
+                       semaphore=sem, cleanup=cleanup, logger=logger)
              for c in cells]
     return await asyncio.gather(*tasks)
 
@@ -289,6 +362,17 @@ def main():
                     help="Per-cell timeout (default: 24h). Killed if exceeded")
     ap.add_argument("--force", action="store_true",
                     help="Re-run cells even if their output already exists")
+    ap.add_argument("--cleanup", action="store_true",
+                    help="After each successful cell, delete heavy "
+                         "intermediates (raw_data/ — FASTQs + SRA cache + "
+                         "reference genome; kallisto index; FastQC HTML) "
+                         "to recover disk space. Output file declared in "
+                         "fidelity_cases.yaml is preserved. Re-running a "
+                         "cleaned cell would re-download — only use after "
+                         "you're confident the run is final.")
+    ap.add_argument("--no-cleanup", action="store_true",
+                    help="Disable cleanup even if --cleanup was set "
+                         "(used by the Makefile to allow CLEANUP=0).")
     ap.add_argument("--no-score", action="store_true",
                     help="Skip the scoring step at the end")
     ap.add_argument("--score-only", action="store_true",
@@ -346,21 +430,31 @@ def main():
     flowagent_bin = _resolve_flowagent()
     timeout_s = int(args.timeout_hours * 3600)
 
+    cleanup_enabled = bool(args.cleanup) and not args.no_cleanup
+    if cleanup_enabled:
+        logger.info("cleanup: ON — raw_data/ + kallisto_index/ + fastqc/ "
+                    "deleted after each successful cell")
+
     t_total = time.perf_counter()
     results = asyncio.run(_run_all(
         cells, flowagent_bin=flowagent_bin, force=args.force,
         timeout_seconds=timeout_s, concurrency=args.concurrency,
-        logger=logger,
+        cleanup=cleanup_enabled, logger=logger,
     ))
     wall = time.perf_counter() - t_total
 
     by_status: Dict[str, int] = {}
+    total_freed = 0
     for r in results:
         by_status[r["status"]] = by_status.get(r["status"], 0) + 1
+        total_freed += r.get("bytes_freed") or 0
     logger.info("=" * 64)
     logger.info("driver finished in %.1f min", wall / 60.0)
     for status, n in sorted(by_status.items()):
         logger.info("  %-12s  %d", status, n)
+    if total_freed:
+        logger.info("  cleanup freed %.1f GB across all cells",
+                    total_freed / (1 << 30))
     logger.info("=" * 64)
 
     # Persist the per-cell summary alongside the driver log

@@ -80,7 +80,8 @@ fidelity-run:
 	    --replicates=$(REPLICATES) \
 	    --concurrency=$(if $(CONCURRENCY),$(CONCURRENCY),1) \
 	    --results-base=$(RESULTS_DIR) \
-	    $(if $(FORCE),--force,)
+	    $(if $(FORCE),--force,) \
+	    $(if $(CLEANUP),--cleanup,)
 
 # Materialise the reference outputs that bench_fidelity.py scores against.
 # Most direct-URL fetches need only network access. The R-script builds

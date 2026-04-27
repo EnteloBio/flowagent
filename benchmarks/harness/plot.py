@@ -2861,16 +2861,43 @@ def token_usage_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
 # ── Saving helpers ───────────────────────────────────────────────
 
+# Output formats are enabled-by-default for PDF/PNG/SVG/EPS so a single
+# ``make report`` produces every artefact a manuscript could need. CLI
+# flags (``--no-svg`` / ``--no-eps`` / ``--no-png`` / ``--no-pdf``) opt
+# out individual formats; flags removed from this set are skipped.
+_OUTPUT_FORMATS: Set[str] = {"pdf", "png", "svg", "eps"}
+
+
 def _save(fig: plt.Figure, out_base: Path, *,
-          pdf: bool = True, png: bool = True, svg: bool = False) -> None:
-    """Save a figure in multiple vector / raster formats at publication DPI."""
+          pdf: bool = True, png: bool = True,
+          svg: bool = False, eps: bool = False) -> None:
+    """Save a figure in multiple vector / raster formats at publication DPI.
+
+    By default every figure is written as PDF + PNG + SVG + EPS so that
+    one ``make report`` invocation produces all the formats a journal
+    submission might need (PDF for manuscripts, PNG for READMEs, SVG
+    for editing in Illustrator / Inkscape, EPS for legacy journal
+    pipelines). Per-call-site kwargs (``svg=True`` / ``eps=True``) force
+    a format on regardless of the global set, but the global set itself
+    is what main() drives off the CLI flags.
+    """
     out_base.parent.mkdir(parents=True, exist_ok=True)
-    if pdf:
+    do_pdf = pdf and "pdf" in _OUTPUT_FORMATS
+    do_png = png and "png" in _OUTPUT_FORMATS
+    do_svg = svg or "svg" in _OUTPUT_FORMATS
+    do_eps = eps or "eps" in _OUTPUT_FORMATS
+    if do_pdf:
         fig.savefig(out_base.with_suffix(".pdf"), bbox_inches="tight")
-    if png:
+    if do_png:
         fig.savefig(out_base.with_suffix(".png"), dpi=300, bbox_inches="tight")
-    if svg:
+    if do_svg:
         fig.savefig(out_base.with_suffix(".svg"), bbox_inches="tight")
+    if do_eps:
+        # EPS is line-drawn vector; rasterised elements (heatmaps, scatter
+        # density) need a fallback DPI for embedding. matplotlib uses
+        # savefig.dpi for this — we set it at module load (300 DPI).
+        fig.savefig(out_base.with_suffix(".eps"), bbox_inches="tight",
+                    format="eps")
 
 
 # ── CLI: regenerate all figures ──────────────────────────────────
@@ -3000,9 +3027,29 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--results", default="results",
                     help="Root results directory (default: results)")
+    # Output-format opt-outs. All four formats are emitted by default;
+    # pass ``--no-<fmt>`` to skip one (e.g. for a faster local iteration
+    # build that only needs PNG previews).
+    ap.add_argument("--no-pdf", action="store_true",
+                    help="Skip PDF output")
+    ap.add_argument("--no-png", action="store_true",
+                    help="Skip PNG output")
+    ap.add_argument("--no-svg", action="store_true",
+                    help="Skip SVG output")
+    ap.add_argument("--no-eps", action="store_true",
+                    help="Skip EPS output (slowest of the four; ~3-5s "
+                         "extra per figure for the heatmaps)")
+    # Legacy ``--svg`` flag kept as a no-op so old scripts don't break;
+    # SVG is now on by default.
     ap.add_argument("--svg", action="store_true",
-                    help="Also emit SVG alongside PDF/PNG")
+                    help="(deprecated, no-op — SVG is on by default)")
     args = ap.parse_args()
+
+    # Apply opt-outs against the global default of {pdf, png, svg, eps}.
+    if args.no_pdf: _OUTPUT_FORMATS.discard("pdf")
+    if args.no_png: _OUTPUT_FORMATS.discard("png")
+    if args.no_svg: _OUTPUT_FORMATS.discard("svg")
+    if args.no_eps: _OUTPUT_FORMATS.discard("eps")
 
     root    = Path(args.results)
     fig_dir = root / "figures"
