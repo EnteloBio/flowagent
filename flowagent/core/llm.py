@@ -1904,10 +1904,10 @@ If you are being asked to generate a title, set "success" to false.
                     # resolves the cross-reference server-side and returns
                     # exactly the runs belonging to this series.
                     #
-                    # ``set -o pipefail`` + a row-count guard surface silent
+                    # ``set -e -o pipefail 2>/dev/null || set -e`` + a row-count guard surface silent
                     # NCBI failures instead of letting empty files cascade.
                     "command": (
-                        f"cd raw_data && set -o pipefail && "
+                        f"cd raw_data && set -e -o pipefail 2>/dev/null || set -e && "
                         f"esearch -db gds -query '{geo_accession}[Accession]' | "
                         f"elink -target sra | "
                         f"efetch -format runinfo > {geo_accession}_runinfo.csv && "
@@ -1928,7 +1928,7 @@ If you are being asked to generate a title, set "success" to false.
                     # file is empty rather than cascading to silent
                     # zero-work downstream steps.
                     "command": (
-                        f"cd raw_data && set -o pipefail && "
+                        f"cd raw_data && set -e -o pipefail 2>/dev/null || set -e && "
                         f"( if head -1 {geo_accession}_runinfo.csv | grep -q '^Run,'; then "
                         f"tail -n +2 {geo_accession}_runinfo.csv; "
                         f"else cat {geo_accession}_runinfo.csv; fi ) | "
@@ -2065,15 +2065,49 @@ If you are being asked to generate a title, set "success" to false.
                 },
                 {
                     "name": "kallisto_quant",
-                    "command": f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr && kallisto quant -i {index_path} -o results/rna_seq_kallisto/kallisto_quant/$srr raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; done",
+                    # Self-detecting paired vs single end. ``fasterq-dump
+                    # --split-files`` writes ``<srr>_1.fastq.gz`` +
+                    # ``<srr>_2.fastq.gz`` for paired libraries, but a
+                    # single ``<srr>.fastq.gz`` for single-end ones (e.g.
+                    # GSE60450 — Fu et al. 2015 used single-end Illumina).
+                    # Without this branch the kallisto_quant step
+                    # mis-fires on single-end studies with
+                    # "file not found raw_data/<srr>_1.fastq.gz".
+                    # The fragment-length defaults (-l 200 -s 20) are
+                    # the kallisto-recommended fall-backs when the
+                    # library spec isn't known.
+                    "command": (
+                        f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do "
+                        f"mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr && "
+                        f"if [ -f raw_data/${{srr}}_1.fastq.gz ] && [ -f raw_data/${{srr}}_2.fastq.gz ]; then "
+                        f"kallisto quant -i {index_path} "
+                        f"-o results/rna_seq_kallisto/kallisto_quant/$srr "
+                        f"raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; "
+                        f"elif [ -f raw_data/${{srr}}.fastq.gz ]; then "
+                        f"kallisto quant -i {index_path} "
+                        f"-o results/rna_seq_kallisto/kallisto_quant/$srr "
+                        f"--single -l 200 -s 20 raw_data/${{srr}}.fastq.gz; "
+                        f"else echo \"FAIL: no FASTQ found for $srr\"; exit 1; "
+                        f"fi; done"
+                    ),
                     "parameters": {},
                     "dependencies": ["kallisto_index"],
                     "outputs": ["results/rna_seq_kallisto/kallisto_quant"],
-                    "description": "Quantify transcripts using kallisto",
+                    "description": "Quantify transcripts using kallisto (auto-detects paired vs single end)",
                     "profile_name": "multi_thread"
                 },
                 {
                     "name": "tximport",
+                    # Self-detecting HDF5 vs plaintext output. Conda
+                    # kallisto packages on some platforms (notably the
+                    # nebius docker image we benchmarked on) are built
+                    # without HDF5 support — they silently emit only
+                    # ``abundance.tsv`` + ``run_info.json``, no
+                    # ``abundance.h5``. tximport defaults to the .h5
+                    # path; if it's missing the call fails with no
+                    # quantifications. The R block below picks the
+                    # available format per-sample, so the same step
+                    # works on both kallisto builds.
                     "command": (
                         "mkdir -p results/rna_seq_kallisto/deseq2 && "
                         "Rscript -e 'library(tximport); library(rtracklayer); "
@@ -2083,7 +2117,12 @@ If you are being asked to generate a title, set "success" to false.
                         "tx2gene$TXNAME <- sub(\"[.].*$\", \"\", tx2gene$TXNAME); "
                         "quant_dir <- \"results/rna_seq_kallisto/kallisto_quant\"; "
                         "samples <- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); "
-                        "files <- setNames(file.path(quant_dir, samples, \"abundance.h5\"), samples); "
+                        "use_h5 <- all(file.exists(file.path(quant_dir, samples, \"abundance.h5\"))); "
+                        "fname <- if (use_h5) \"abundance.h5\" else \"abundance.tsv\"; "
+                        "files <- setNames(file.path(quant_dir, samples, fname), samples); "
+                        "cat(sprintf(\"tximport: using %s format (%d samples)\\n\", fname, length(samples))); "
+                        # tximport's ``type=\"kallisto\"`` auto-detects from the
+                        # file extension — .h5 and .tsv both work.
                         "txi <- tximport(files, type=\"kallisto\", tx2gene=tx2gene, ignoreTxVersion=TRUE, ignoreAfterBar=TRUE); "
                         "saveRDS(txi, \"results/rna_seq_kallisto/deseq2/txi.rds\"); "
                         "write.csv(txi$counts, \"results/rna_seq_kallisto/deseq2/gene_counts.csv\")'"
