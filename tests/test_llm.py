@@ -125,10 +125,20 @@ async def test_error_handling_invalid_type(llm_interface):
 
 @pytest.mark.asyncio
 async def test_error_handling_no_files(llm_interface, mock_file_pattern_response):
-    """Test error when no files match patterns."""
+    """Test error when no files match patterns and no download source can be inferred.
+
+    The planner first tries to infer a download source from the prompt
+    (10X / ENCODE / GIAB / etc.); only when that also fails does it raise
+    ValueError. Since the mocked LLM here just returns the file-patterns
+    response (no workflow_type / steps keys), the inferred-download
+    branch returns None and the outer ``ValueError`` fires as expected.
+    The error message changed from "No files found matching patterns"
+    to "no local files match patterns" — the regex below tolerates
+    either wording.
+    """
     llm_interface.provider.chat = AsyncMock(return_value=mock_file_pattern_response)
     with patch('glob.glob', return_value=[]):
-        with pytest.raises(ValueError, match="No files found matching patterns"):
+        with pytest.raises(ValueError, match=r"(?i)no .*files .*match"):
             await llm_interface.generate_workflow_plan("test prompt")
 
 
