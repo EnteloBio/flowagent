@@ -2294,9 +2294,126 @@ If you are being asked to generate a title, set "success" to false.
             # Add RNA-seq analysis steps with HISAT2
             # Implementation for other workflow types would go here
             pass
-        # Add more workflow types as needed
-        
+        else:
+            # No hardcoded recipe for this workflow_type (chip_seq,
+            # single_cell_*, hic, custom, …). Delegate to LLM-driven
+            # step generation, using the type's WORKFLOW_TYPES rules
+            # as few-shot guidance — that's the architectural intent
+            # behind storing example commands in WORKFLOW_TYPES.
+            #
+            # This mirrors how the local-files path does planning
+            # (generate_workflow_plan around line 1060), so a ChIP-seq
+            # prompt with a GEO accession produces the same calibre of
+            # plan as a ChIP-seq prompt with FASTQs already on disk.
+            try:
+                rules = workflow_config.get("rules", []) if isinstance(workflow_config, dict) else []
+                new_steps = await self._generate_analysis_steps_via_llm(
+                    prompt=prompt,
+                    geo_accession=geo_accession,
+                    workflow_type=workflow_type,
+                    rules=rules,
+                    existing_steps=workflow_plan["steps"],
+                )
+                if new_steps:
+                    workflow_plan["steps"].extend(new_steps)
+                    self.logger.info(
+                        "Added %d LLM-generated analysis steps for "
+                        "workflow_type=%s", len(new_steps), workflow_type,
+                    )
+            except Exception as exc:
+                self.logger.warning(
+                    "LLM-driven analysis-step generation failed for "
+                    "workflow_type=%s: %s — emitting download-only plan",
+                    workflow_type, exc,
+                )
+
         return workflow_plan
+
+    async def _generate_analysis_steps_via_llm(
+        self, *, prompt: str, geo_accession: str, workflow_type: str,
+        rules: List[str], existing_steps: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Ask the LLM to produce analysis steps for an arbitrary assay.
+
+        Used by the GEO-download path when the detected workflow_type
+        isn't one of the three hardcoded RNA-seq recipes. The LLM gets
+        the existing download steps (so it knows the FASTQs land at
+        ``raw_data/<SRR>_*.fastq.gz``), the rules from
+        ``WORKFLOW_TYPES[workflow_type]`` as exemplars, and the
+        original natural-language prompt — and returns the analysis
+        steps in the standard step-dict format.
+        """
+        download_summary = "\n".join(
+            f"- {s.get('name', '?')}: {s.get('description', '')[:120]}"
+            for s in existing_steps
+        )
+        rules_block = "\n".join(f"- {r}" for r in (rules or [])) or "(no examples)"
+        # FASTQ layout note — depends on whether download_fastq_files
+        # produced paired or single. We have no way to know in advance,
+        # so explicitly tell the LLM to emit a self-detecting
+        # paired-vs-single shell idiom (same trick we use for kallisto).
+        system = (
+            "You are a senior bioinformatics workflow engineer. Given a "
+            "set of GEO-download steps that have already been added to a "
+            "workflow plan, you must append the analysis steps required "
+            "to fulfill the user's request. Emit ONLY a JSON object with "
+            "a single key 'steps' whose value is a list of step dicts. "
+            "Each step dict has keys: name, command, parameters, "
+            "dependencies, outputs, description, profile_name."
+        )
+        user = (
+            f"Workflow type: {workflow_type}\n"
+            f"Original prompt: {prompt}\n\n"
+            f"Existing download steps (already in the plan):\n"
+            f"{download_summary}\n\n"
+            f"FASTQs land at:\n"
+            f"  paired-end: raw_data/<SRR>_1.fastq.gz + raw_data/<SRR>_2.fastq.gz\n"
+            f"  single-end: raw_data/<SRR>.fastq.gz\n"
+            f"Always emit shell idioms that detect both layouts at runtime\n"
+            f"(``if [ -f raw_data/${{srr}}_1.fastq.gz ]; then ... else ... fi``)\n"
+            f"so the same plan works for either library type.\n\n"
+            f"Tool / command exemplars for {workflow_type}:\n"
+            f"{rules_block}\n\n"
+            f"Each step's ``dependencies`` field must reference one of the "
+            f"existing step names above OR a previously-emitted step in "
+            f"this list. Place outputs under "
+            f"``results/{workflow_type}/<step-specific-subdir>/``.\n"
+            f"Append a final ``multiqc`` step that aggregates all per-step "
+            f"reports.\n"
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ]
+        reply = await self._call_openai(messages)
+        # Robust JSON extraction — the LLM occasionally wraps in ```json
+        cleaned = self._clean_llm_response(reply)
+        m = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if not m:
+            self.logger.warning("LLM analysis-steps reply has no JSON object")
+            return []
+        try:
+            obj = json.loads(self._repair_truncated_json(m.group(0)))
+        except json.JSONDecodeError as exc:
+            self.logger.warning("LLM analysis-steps JSON parse failed: %s", exc)
+            return []
+        steps = obj.get("steps", [])
+        if not isinstance(steps, list):
+            return []
+        # Light validation — drop entries missing required keys.
+        valid: List[Dict[str, Any]] = []
+        for s in steps:
+            if not isinstance(s, dict):
+                continue
+            if not s.get("name") or not s.get("command"):
+                continue
+            s.setdefault("parameters", {})
+            s.setdefault("dependencies", [])
+            s.setdefault("outputs", [])
+            s.setdefault("description", "")
+            s.setdefault("profile_name", "default")
+            valid.append(s)
+        return valid
 
     async def analyze_run_prompt(self, prompt: str) -> Dict[str, Any]:
         """Analyze the prompt to extract options for running a workflow."""
