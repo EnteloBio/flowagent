@@ -4836,7 +4836,46 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2385</span>
 <span class="normal">2386</span>
 <span class="normal">2387</span>
-<span class="normal">2388</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">2388</span>
+<span class="normal">2389</span>
+<span class="normal">2390</span>
+<span class="normal">2391</span>
+<span class="normal">2392</span>
+<span class="normal">2393</span>
+<span class="normal">2394</span>
+<span class="normal">2395</span>
+<span class="normal">2396</span>
+<span class="normal">2397</span>
+<span class="normal">2398</span>
+<span class="normal">2399</span>
+<span class="normal">2400</span>
+<span class="normal">2401</span>
+<span class="normal">2402</span>
+<span class="normal">2403</span>
+<span class="normal">2404</span>
+<span class="normal">2405</span>
+<span class="normal">2406</span>
+<span class="normal">2407</span>
+<span class="normal">2408</span>
+<span class="normal">2409</span>
+<span class="normal">2410</span>
+<span class="normal">2411</span>
+<span class="normal">2412</span>
+<span class="normal">2413</span>
+<span class="normal">2414</span>
+<span class="normal">2415</span>
+<span class="normal">2416</span>
+<span class="normal">2417</span>
+<span class="normal">2418</span>
+<span class="normal">2419</span>
+<span class="normal">2420</span>
+<span class="normal">2421</span>
+<span class="normal">2422</span>
+<span class="normal">2423</span>
+<span class="normal">2424</span>
+<span class="normal">2425</span>
+<span class="normal">2426</span>
+<span class="normal">2427</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -6716,10 +6755,10 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="c1"># resolves the cross-reference server-side and returns</span>
                     <span class="c1"># exactly the runs belonging to this series.</span>
                     <span class="c1">#</span>
-                    <span class="c1"># ``set -o pipefail`` + a row-count guard surface silent</span>
+                    <span class="c1"># ``set -e -o pipefail 2&gt;/dev/null || set -e`` + a row-count guard surface silent</span>
                     <span class="c1"># NCBI failures instead of letting empty files cascade.</span>
                     <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; set -o pipefail &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; set -e -o pipefail 2&gt;/dev/null || set -e &amp;&amp; &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;esearch -db gds -query &#39;</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">[Accession]&#39; | &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;elink -target sra | &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;efetch -format runinfo &gt; </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv &amp;&amp; &quot;</span>
@@ -6740,7 +6779,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="c1"># file is empty rather than cascading to silent</span>
                     <span class="c1"># zero-work downstream steps.</span>
                     <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; set -o pipefail &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;cd raw_data &amp;&amp; set -e -o pipefail 2&gt;/dev/null || set -e &amp;&amp; &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;( if head -1 </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv | grep -q &#39;^Run,&#39;; then &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;tail -n +2 </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv; &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;else cat </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv; fi ) | &quot;</span>
@@ -6877,15 +6916,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="p">},</span>
                 <span class="p">{</span>
                     <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;kallisto_quant&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;for srr in $(cat raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt); do mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr &amp;&amp; kallisto quant -i </span><span class="si">{</span><span class="n">index_path</span><span class="si">}</span><span class="s2"> -o results/rna_seq_kallisto/kallisto_quant/$srr raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz; done&quot;</span><span class="p">,</span>
+                    <span class="c1"># Self-detecting paired vs single end. ``fasterq-dump</span>
+                    <span class="c1"># --split-files`` writes ``&lt;srr&gt;_1.fastq.gz`` +</span>
+                    <span class="c1"># ``&lt;srr&gt;_2.fastq.gz`` for paired libraries, but a</span>
+                    <span class="c1"># single ``&lt;srr&gt;.fastq.gz`` for single-end ones (e.g.</span>
+                    <span class="c1"># GSE60450 — Fu et al. 2015 used single-end Illumina).</span>
+                    <span class="c1"># Without this branch the kallisto_quant step</span>
+                    <span class="c1"># mis-fires on single-end studies with</span>
+                    <span class="c1"># &quot;file not found raw_data/&lt;srr&gt;_1.fastq.gz&quot;.</span>
+                    <span class="c1"># The fragment-length defaults (-l 200 -s 20) are</span>
+                    <span class="c1"># the kallisto-recommended fall-backs when the</span>
+                    <span class="c1"># library spec isn&#39;t known.</span>
+                    <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;for srr in $(cat raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt); do &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;if [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz ] &amp;&amp; [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz ]; then &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;kallisto quant -i </span><span class="si">{</span><span class="n">index_path</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;-o results/rna_seq_kallisto/kallisto_quant/$srr &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;elif [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz ]; then &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;kallisto quant -i </span><span class="si">{</span><span class="n">index_path</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;-o results/rna_seq_kallisto/kallisto_quant/$srr &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;--single -l 200 -s 20 raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;else echo </span><span class="se">\&quot;</span><span class="s2">FAIL: no FASTQ found for $srr</span><span class="se">\&quot;</span><span class="s2">; exit 1; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;fi; done&quot;</span>
+                    <span class="p">),</span>
                     <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
                     <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;kallisto_index&quot;</span><span class="p">],</span>
                     <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;results/rna_seq_kallisto/kallisto_quant&quot;</span><span class="p">],</span>
-                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Quantify transcripts using kallisto&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Quantify transcripts using kallisto (auto-detects paired vs single end)&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span>
                 <span class="p">},</span>
                 <span class="p">{</span>
                     <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;tximport&quot;</span><span class="p">,</span>
+                    <span class="c1"># Self-detecting HDF5 vs plaintext output. Conda</span>
+                    <span class="c1"># kallisto packages on some platforms (notably the</span>
+                    <span class="c1"># nebius docker image we benchmarked on) are built</span>
+                    <span class="c1"># without HDF5 support — they silently emit only</span>
+                    <span class="c1"># ``abundance.tsv`` + ``run_info.json``, no</span>
+                    <span class="c1"># ``abundance.h5``. tximport defaults to the .h5</span>
+                    <span class="c1"># path; if it&#39;s missing the call fails with no</span>
+                    <span class="c1"># quantifications. The R block below picks the</span>
+                    <span class="c1"># available format per-sample, so the same step</span>
+                    <span class="c1"># works on both kallisto builds.</span>
                     <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
                         <span class="s2">&quot;mkdir -p results/rna_seq_kallisto/deseq2 &amp;&amp; &quot;</span>
                         <span class="s2">&quot;Rscript -e &#39;library(tximport); library(rtracklayer); &quot;</span>
@@ -6895,7 +6968,12 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                         <span class="s2">&quot;tx2gene$TXNAME &lt;- sub(</span><span class="se">\&quot;</span><span class="s2">[.].*$</span><span class="se">\&quot;</span><span class="s2">, </span><span class="se">\&quot;\&quot;</span><span class="s2">, tx2gene$TXNAME); &quot;</span>
                         <span class="s2">&quot;quant_dir &lt;- </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/kallisto_quant</span><span class="se">\&quot;</span><span class="s2">; &quot;</span>
                         <span class="s2">&quot;samples &lt;- list.dirs(quant_dir, recursive=FALSE, full.names=FALSE); &quot;</span>
-                        <span class="s2">&quot;files &lt;- setNames(file.path(quant_dir, samples, </span><span class="se">\&quot;</span><span class="s2">abundance.h5</span><span class="se">\&quot;</span><span class="s2">), samples); &quot;</span>
+                        <span class="s2">&quot;use_h5 &lt;- all(file.exists(file.path(quant_dir, samples, </span><span class="se">\&quot;</span><span class="s2">abundance.h5</span><span class="se">\&quot;</span><span class="s2">))); &quot;</span>
+                        <span class="s2">&quot;fname &lt;- if (use_h5) </span><span class="se">\&quot;</span><span class="s2">abundance.h5</span><span class="se">\&quot;</span><span class="s2"> else </span><span class="se">\&quot;</span><span class="s2">abundance.tsv</span><span class="se">\&quot;</span><span class="s2">; &quot;</span>
+                        <span class="s2">&quot;files &lt;- setNames(file.path(quant_dir, samples, fname), samples); &quot;</span>
+                        <span class="s2">&quot;cat(sprintf(</span><span class="se">\&quot;</span><span class="s2">tximport: using </span><span class="si">%s</span><span class="s2"> format (</span><span class="si">%d</span><span class="s2"> samples)</span><span class="se">\\</span><span class="s2">n</span><span class="se">\&quot;</span><span class="s2">, fname, length(samples))); &quot;</span>
+                        <span class="c1"># tximport&#39;s ``type=\&quot;kallisto\&quot;`` auto-detects from the</span>
+                        <span class="c1"># file extension — .h5 and .tsv both work.</span>
                         <span class="s2">&quot;txi &lt;- tximport(files, type=</span><span class="se">\&quot;</span><span class="s2">kallisto</span><span class="se">\&quot;</span><span class="s2">, tx2gene=tx2gene, ignoreTxVersion=TRUE, ignoreAfterBar=TRUE); &quot;</span>
                         <span class="s2">&quot;saveRDS(txi, </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/deseq2/txi.rds</span><span class="se">\&quot;</span><span class="s2">); &quot;</span>
                         <span class="s2">&quot;write.csv(txi$counts, </span><span class="se">\&quot;</span><span class="s2">results/rna_seq_kallisto/deseq2/gene_counts.csv</span><span class="se">\&quot;</span><span class="s2">)&#39;&quot;</span>
@@ -7351,49 +7429,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2315</span>
-<span class="normal">2316</span>
-<span class="normal">2317</span>
-<span class="normal">2318</span>
-<span class="normal">2319</span>
-<span class="normal">2320</span>
-<span class="normal">2321</span>
-<span class="normal">2322</span>
-<span class="normal">2323</span>
-<span class="normal">2324</span>
-<span class="normal">2325</span>
-<span class="normal">2326</span>
-<span class="normal">2327</span>
-<span class="normal">2328</span>
-<span class="normal">2329</span>
-<span class="normal">2330</span>
-<span class="normal">2331</span>
-<span class="normal">2332</span>
-<span class="normal">2333</span>
-<span class="normal">2334</span>
-<span class="normal">2335</span>
-<span class="normal">2336</span>
-<span class="normal">2337</span>
-<span class="normal">2338</span>
-<span class="normal">2339</span>
-<span class="normal">2340</span>
-<span class="normal">2341</span>
-<span class="normal">2342</span>
-<span class="normal">2343</span>
-<span class="normal">2344</span>
-<span class="normal">2345</span>
-<span class="normal">2346</span>
-<span class="normal">2347</span>
-<span class="normal">2348</span>
-<span class="normal">2349</span>
-<span class="normal">2350</span>
-<span class="normal">2351</span>
-<span class="normal">2352</span>
-<span class="normal">2353</span>
-<span class="normal">2354</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2354</span>
 <span class="normal">2355</span>
 <span class="normal">2356</span>
-<span class="normal">2357</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">2357</span>
+<span class="normal">2358</span>
+<span class="normal">2359</span>
+<span class="normal">2360</span>
+<span class="normal">2361</span>
+<span class="normal">2362</span>
+<span class="normal">2363</span>
+<span class="normal">2364</span>
+<span class="normal">2365</span>
+<span class="normal">2366</span>
+<span class="normal">2367</span>
+<span class="normal">2368</span>
+<span class="normal">2369</span>
+<span class="normal">2370</span>
+<span class="normal">2371</span>
+<span class="normal">2372</span>
+<span class="normal">2373</span>
+<span class="normal">2374</span>
+<span class="normal">2375</span>
+<span class="normal">2376</span>
+<span class="normal">2377</span>
+<span class="normal">2378</span>
+<span class="normal">2379</span>
+<span class="normal">2380</span>
+<span class="normal">2381</span>
+<span class="normal">2382</span>
+<span class="normal">2383</span>
+<span class="normal">2384</span>
+<span class="normal">2385</span>
+<span class="normal">2386</span>
+<span class="normal">2387</span>
+<span class="normal">2388</span>
+<span class="normal">2389</span>
+<span class="normal">2390</span>
+<span class="normal">2391</span>
+<span class="normal">2392</span>
+<span class="normal">2393</span>
+<span class="normal">2394</span>
+<span class="normal">2395</span>
+<span class="normal">2396</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -7753,46 +7831,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2262</span>
-<span class="normal">2263</span>
-<span class="normal">2264</span>
-<span class="normal">2265</span>
-<span class="normal">2266</span>
-<span class="normal">2267</span>
-<span class="normal">2268</span>
-<span class="normal">2269</span>
-<span class="normal">2270</span>
-<span class="normal">2271</span>
-<span class="normal">2272</span>
-<span class="normal">2273</span>
-<span class="normal">2274</span>
-<span class="normal">2275</span>
-<span class="normal">2276</span>
-<span class="normal">2277</span>
-<span class="normal">2278</span>
-<span class="normal">2279</span>
-<span class="normal">2280</span>
-<span class="normal">2281</span>
-<span class="normal">2282</span>
-<span class="normal">2283</span>
-<span class="normal">2284</span>
-<span class="normal">2285</span>
-<span class="normal">2286</span>
-<span class="normal">2287</span>
-<span class="normal">2288</span>
-<span class="normal">2289</span>
-<span class="normal">2290</span>
-<span class="normal">2291</span>
-<span class="normal">2292</span>
-<span class="normal">2293</span>
-<span class="normal">2294</span>
-<span class="normal">2295</span>
-<span class="normal">2296</span>
-<span class="normal">2297</span>
-<span class="normal">2298</span>
-<span class="normal">2299</span>
-<span class="normal">2300</span>
-<span class="normal">2301</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2301</span>
 <span class="normal">2302</span>
 <span class="normal">2303</span>
 <span class="normal">2304</span>
@@ -7804,7 +7843,46 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2310</span>
 <span class="normal">2311</span>
 <span class="normal">2312</span>
-<span class="normal">2313</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">2313</span>
+<span class="normal">2314</span>
+<span class="normal">2315</span>
+<span class="normal">2316</span>
+<span class="normal">2317</span>
+<span class="normal">2318</span>
+<span class="normal">2319</span>
+<span class="normal">2320</span>
+<span class="normal">2321</span>
+<span class="normal">2322</span>
+<span class="normal">2323</span>
+<span class="normal">2324</span>
+<span class="normal">2325</span>
+<span class="normal">2326</span>
+<span class="normal">2327</span>
+<span class="normal">2328</span>
+<span class="normal">2329</span>
+<span class="normal">2330</span>
+<span class="normal">2331</span>
+<span class="normal">2332</span>
+<span class="normal">2333</span>
+<span class="normal">2334</span>
+<span class="normal">2335</span>
+<span class="normal">2336</span>
+<span class="normal">2337</span>
+<span class="normal">2338</span>
+<span class="normal">2339</span>
+<span class="normal">2340</span>
+<span class="normal">2341</span>
+<span class="normal">2342</span>
+<span class="normal">2343</span>
+<span class="normal">2344</span>
+<span class="normal">2345</span>
+<span class="normal">2346</span>
+<span class="normal">2347</span>
+<span class="normal">2348</span>
+<span class="normal">2349</span>
+<span class="normal">2350</span>
+<span class="normal">2351</span>
+<span class="normal">2352</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
