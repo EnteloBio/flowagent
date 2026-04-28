@@ -490,13 +490,24 @@ Use the exact sample name '{sample_name}' for output directories.""",
     # so the user does not have to stage reference files manually.
     _GENOME_REFERENCES = {
         # prompt keyword (lowercase): (species, assembly, ensembl_release)
+        # Mouse: GRCm39 is current; GRCm38 (mm10) was last in Ensembl
+        # release-102 (Nov 2020) and is still widely cited.
         "grcm39": ("mus_musculus", "GRCm39", 112),
         "mm39":   ("mus_musculus", "GRCm39", 112),
+        "grcm38": ("mus_musculus", "GRCm38", 102),
+        "mm10":   ("mus_musculus", "GRCm38", 102),
+        # Human: GRCh38 is current; GRCh37 (hg19) is still common in
+        # clinical pipelines and was last in Ensembl release-75.
         "grch38": ("homo_sapiens", "GRCh38", 112),
         "hg38":   ("homo_sapiens", "GRCh38", 112),
+        "grch37": ("homo_sapiens", "GRCh37", 75),
+        "hg19":   ("homo_sapiens", "GRCh37", 75),
         "grcz11": ("danio_rerio", "GRCz11", 112),
         "wbcel235": ("caenorhabditis_elegans", "WBcel235", 112),
         "bdgp6":  ("drosophila_melanogaster", "BDGP6.46", 112),
+        # Rat — GSE-style RNA-seq case studies sometimes use these
+        "mratbn7":   ("rattus_norvegicus", "mRatBN7.2", 112),
+        "rnor6":     ("rattus_norvegicus", "Rnor_6.0", 104),
     }
 
     _PRIMARY_TOOLS = {

@@ -60,10 +60,11 @@ cases:
       using a frozen edgeR/limma-voom recipe (the canonical analysis
       from the RNAseq123 Bioconductor workflow).
     accession: GSE60450
-    organism: Mus musculus (GRCm38)
+    organism: Mus musculus (GRCm39)
     prompt: |-
-      Download GSE60450 from GEO, align mouse RNA-seq reads to GRCm38,
-      and run differential expression between the basal and luminal
+      Download GSE60450 from GEO and run a mouse (GRCm39) RNA-seq
+      kallisto pipeline on the bulk samples, then run differential
+      expression with edgeR/limma-voom between the basal and luminal
       mammary cell populations, with luminal as the reference.
     output_relpath: results/rna_seq/de_results.csv
     reference: references/gse60450_fu_DE.tsv
