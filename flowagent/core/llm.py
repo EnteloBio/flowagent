@@ -1050,10 +1050,33 @@ Return a JSON object in this EXACT format:
                     response = await self._call_openai(messages)
                     workflow_plan = json.loads(self._clean_llm_response(response))
                     return workflow_plan
-                
+
+                # Last resort: no GEO accession in the prompt and no
+                # local files match. Ask the LLM to infer where the
+                # data could be downloaded from based on the dataset
+                # name — covers 10X Genomics public datasets, ENCODE,
+                # GIAB / NIST, 1000 Genomes, TCGA/GDC, ArrayExpress,
+                # and other public repos the LLM knows from training
+                # data. If the LLM can't identify a source, raise a
+                # clean error so the user knows to stage manually.
+                self.logger.info(
+                    "No local files + no GEO accession — asking LLM "
+                    "to infer the data source from the prompt."
+                )
+                workflow_plan = await self._create_inferred_download_workflow(
+                    prompt, file_info,
+                )
+                if workflow_plan is not None:
+                    return workflow_plan
                 patterns_str = ", ".join(file_info["patterns"])
-                raise ValueError(f"No files found matching patterns: {patterns_str}")
-            
+                raise ValueError(
+                    f"Could not infer a download source from the prompt "
+                    f"and no local files match patterns: {patterns_str}. "
+                    f"Either stage the data manually under raw_data/ or "
+                    f"include a recognised accession (GSE…, ENCSR…) in "
+                    f"the prompt."
+                )
+
             self.logger.info(f"Found input files: {matched_files}")
 
             # Detect workflow type
@@ -1724,9 +1747,158 @@ If you are being asked to generate a title, set "success" to false.
                 "paired_end": paired_end
             }
 
+    async def _create_inferred_download_workflow(
+        self, prompt: str, file_info: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Ask the LLM to infer a data source when there's no GEO accession.
+
+        Used by ``generate_workflow_plan`` as the fallback when (a) no
+        local files match the inferred patterns and (b) no recognised
+        accession (GSE…) is present in the prompt. The LLM is asked to
+        identify the dataset, find a download source from its training-
+        data knowledge of public bioinformatics repositories
+        (10X Genomics CDN, ENCODE, GIAB/NIST, 1000 Genomes, TCGA/GDC,
+        ArrayExpress, EGA, …), and emit a complete workflow plan that
+        starts with concrete download steps.
+
+        Returns ``None`` if the LLM can't identify a clear source —
+        the caller then raises a clean error rather than running a
+        plan with hallucinated paths. Hallucinated placeholder paths
+        like ``/path/to/your/...`` are filtered out before returning.
+        """
+        system = (
+            "You are a senior bioinformatics workflow engineer. The "
+            "user has requested a pipeline but the data is not present "
+            "locally and no GEO accession was detected in the prompt. "
+            "Your job is:\n"
+            "1. Identify what dataset the user is asking about by name.\n"
+            "2. Recall (from training-data knowledge) where it can be "
+            "downloaded from a public repository.\n"
+            "3. Emit a complete workflow plan that begins with concrete "
+            "download steps (curl / wget) for that data source, then "
+            "proceeds with the requested analysis.\n\n"
+            "Common public bioinformatics data sources you should "
+            "recognise:\n"
+            "- 10X Genomics public datasets — https://cf.10xgenomics.com/"
+            "samples/cell-exp/<version>/<dataset>/<dataset>_fastqs.tar\n"
+            "- ENCODE — https://www.encodeproject.org/files/<ENCFF…>/"
+            "@@download/<ENCFF…>.<ext>.gz\n"
+            "- GIAB / NIST — https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/\n"
+            "- 1000 Genomes — https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/\n"
+            "- TCGA / GDC — https://api.gdc.cancer.gov/data/<file_uuid>\n"
+            "- ArrayExpress / Biostudies — https://www.ebi.ac.uk/"
+            "biostudies/files/<E-…>/<file>\n"
+            "- Sequence Read Archive (SRA) — via prefetch + "
+            "fasterq-dump on an SRR accession\n"
+            "- ENA — https://ftp.sra.ebi.ac.uk/vol1/fastq/<SRR-prefix>/<SRR>\n"
+            "- HMP DACC — https://hmpdacc.org/hmp/\n"
+            "- 4DN portal — https://data.4dnucleome.org/files-fastq/<accession>\n\n"
+            "Return EXACTLY a JSON object with these keys:\n"
+            "  workflow_type: a short string label (e.g. "
+            "  'inferred_10x_pbmc', 'inferred_giab_hg001', 'inferred_encode')\n"
+            "  data_source:  one-line description of where the data is from\n"
+            "  steps:        list of step dicts with keys "
+            "  (name, command, parameters, dependencies, outputs, "
+            "  description, profile_name)\n\n"
+            "If you CANNOT confidently identify a download source for "
+            "the dataset named in the prompt, return JSON: "
+            '{\"error\": \"<concise reason>\"} and the planner will '
+            "fall back to manual data-staging.\n\n"
+            "Hard rules:\n"
+            "- NEVER emit placeholder paths like /path/to/your/... or "
+            "<insert path here>. If you don't know the URL, return the "
+            "error JSON instead.\n"
+            "- The first step must always be ``create_directories`` "
+            "with mkdir -p creating raw_data and results subdirs.\n"
+            "- Download steps must use real, well-formed HTTPS URLs "
+            "from your training data, not invented paths.\n"
+            "- Subsequent analysis steps follow the same conventions as "
+            "the GEO-download workflows: paths under raw_data/ for "
+            "inputs, results/<workflow>/ for outputs.\n"
+            "- Append a final multiqc step that aggregates per-step "
+            "QC reports, when applicable."
+        )
+        user = (
+            f"User request:\n{prompt}\n\n"
+            f"Return only the JSON object — no markdown fences, no "
+            f"preamble, no commentary."
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ]
+        try:
+            reply = await self._call_openai(messages)
+        except Exception as exc:
+            self.logger.warning(
+                "LLM call for inferred-download workflow failed: %s", exc,
+            )
+            return None
+        cleaned = self._clean_llm_response(reply or "")
+        m = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if not m:
+            self.logger.warning("Inferred-download reply has no JSON object")
+            return None
+        try:
+            obj = json.loads(self._repair_truncated_json(m.group(0)))
+        except json.JSONDecodeError as exc:
+            self.logger.warning("Inferred-download JSON parse failed: %s", exc)
+            return None
+        if "error" in obj:
+            self.logger.warning(
+                "LLM declined to infer download source: %s",
+                obj.get("error", "(no reason given)"),
+            )
+            return None
+        steps = obj.get("steps") or []
+        if not isinstance(steps, list) or not steps:
+            return None
+
+        # Defensive: reject plans that contain placeholder paths
+        # (we hit this exact failure mode earlier — the LLM emitting
+        # /path/to/your/reference.fa as if it were a real path).
+        _PLACEHOLDER_RE = re.compile(
+            r"/path/to/(your|the)/|<(insert|your|path|placeholder)|"
+            r"<\.\.\.>|REPLACE_ME|TODO_PATH",
+            flags=re.IGNORECASE,
+        )
+        for s in steps:
+            cmd = str(s.get("command", ""))
+            if _PLACEHOLDER_RE.search(cmd):
+                self.logger.warning(
+                    "Inferred-download plan rejected — placeholder path "
+                    "detected in step %r: %s", s.get("name"),
+                    _PLACEHOLDER_RE.search(cmd).group(0),
+                )
+                return None
+
+        # Light validation — ensure required keys
+        valid_steps: List[Dict[str, Any]] = []
+        for s in steps:
+            if not isinstance(s, dict):
+                continue
+            if not s.get("name") or not s.get("command"):
+                continue
+            s.setdefault("parameters", {})
+            s.setdefault("dependencies", [])
+            s.setdefault("outputs", [])
+            s.setdefault("description", "")
+            s.setdefault("profile_name", "default")
+            valid_steps.append(s)
+        if not valid_steps:
+            return None
+        self.logger.info(
+            "Inferred-download workflow: %d steps from source '%s'",
+            len(valid_steps), obj.get("data_source", "?"),
+        )
+        return {
+            "workflow_type": obj.get("workflow_type", "inferred_download"),
+            "steps": valid_steps,
+        }
+
     async def _create_geo_download_workflow(self, geo_accession: str, prompt: str, file_info: Dict[str, Any]) -> Dict[str, Any]:
         """Create a workflow plan for downloading data from GEO.
-        
+
         Routes to supplementary-file download or raw FASTQ download depending
         on what the user asked for.
         """

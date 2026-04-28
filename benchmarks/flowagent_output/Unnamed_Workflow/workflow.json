@@ -1,0 +1,204 @@
+{
+  "name": "Unnamed Workflow",
+  "description": "",
+  "steps": [
+    {
+      "name": "create_directories",
+      "description": "Create directories for raw data and results.",
+      "tool": "",
+      "command": "mkdir -p raw_data results/kb_python results/scanpy results/qc",
+      "args": {},
+      "dependencies": [],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "download_10x_pbmc10k_v3_fastqs",
+      "description": "Download the 10X Genomics PBMC 10k v3 FASTQ files.",
+      "tool": "",
+      "command": "wget -O raw_data/pbmc_10k_v3_fastqs.tar https://cf.10xgenomics.com/samples/cell-exp/3.0.0/pbmc_10k_v3/pbmc_10k_v3_fastqs.tar",
+      "args": {},
+      "dependencies": [
+        "create_directories"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "extract_fastqs",
+      "description": "Extract FASTQ files from the downloaded tarball.",
+      "tool": "",
+      "command": "tar -xf raw_data/pbmc_10k_v3_fastqs.tar -C raw_data/",
+      "args": {},
+      "dependencies": [
+        "download_10x_pbmc10k_v3_fastqs"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "download_kallisto_bustools_index",
+      "description": "Download prebuilt kallisto index for GRCh38 (Ensembl 99).",
+      "tool": "",
+      "command": "wget -O raw_data/transcriptome.idx https://github.com/pachterlab/kallisto-transcriptome-indices/releases/download/grch38_ensembl_release99/kallisto_GRCh38_ensembl99.idx",
+      "args": {},
+      "dependencies": [
+        "create_directories"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "kb_count",
+      "description": "Pseudo-align reads and generate cell \u00d7 gene matrix with kb-python (kallisto | bustools).",
+      "tool": "",
+      "command": "kb count -i raw_data/transcriptome.idx -g raw_data/transcripts_to_genes.txt -x 10xv3 -o results/kb_python/ raw_data/pbmc_10k_v3_fastqs/*_R1_*.fastq.gz raw_data/pbmc_10k_v3_fastqs/*_R2_*.fastq.gz",
+      "args": {},
+      "dependencies": [
+        "extract_fastqs",
+        "download_kallisto_bustools_index"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "scanpy_qc_filtering",
+      "description": "Perform standard QC filtering (min genes/cell, max mitochondrial content, etc.) using Scanpy.",
+      "tool": "",
+      "command": "python3 scripts/scanpy_qc_filter.py --input results/kb_python/counts_unfiltered/ --output results/scanpy/qc_filtered.h5ad",
+      "args": {},
+      "dependencies": [
+        "kb_count"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "scanpy_clustering_leiden",
+      "description": "Cluster cells using Scanpy's Leiden algorithm and generate UMAP plot.",
+      "tool": "",
+      "command": "python3 scripts/scanpy_leiden_cluster.py --input results/scanpy/qc_filtered.h5ad --output results/scanpy/leiden_clusters.h5ad",
+      "args": {},
+      "dependencies": [
+        "scanpy_qc_filtering"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "scanpy_marker_gene_table",
+      "description": "Identify top differentially-expressed marker genes per cluster using Scanpy.",
+      "tool": "",
+      "command": "python3 scripts/scanpy_marker_genes.py --input results/scanpy/leiden_clusters.h5ad --output results/scanpy/marker_genes_per_cluster.csv",
+      "args": {},
+      "dependencies": [
+        "scanpy_clustering_leiden"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    },
+    {
+      "name": "multiqc",
+      "description": "Aggregate QC reports from kb-python and Scanpy steps.",
+      "tool": "",
+      "command": "multiqc -o results/qc/ .",
+      "args": {},
+      "dependencies": [
+        "kb_count",
+        "scanpy_qc_filtering"
+      ],
+      "output_files": [],
+      "critical": true,
+      "resource_requirements": {
+        "cpu": 1,
+        "memory": "1G",
+        "time": "1:00:00"
+      },
+      "status": "pending",
+      "error": null,
+      "output": null,
+      "action": null,
+      "parameters": null
+    }
+  ]
+}

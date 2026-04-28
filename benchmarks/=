@@ -1,0 +1,57 @@
+conda-forge/noarch                                          Using cache
+conda-forge/osx-arm64                                       Using cache
+bioconda/noarch                                             Using cache
+bioconda/osx-arm64                                          Using cache
+
+Pinned packages:
+
+  - python=3.11
+
+
+Transaction
+
+  Prefix: /opt/homebrew/Caskroom/miniconda/base/envs/flowagent
+
+  Updating specs:
+
+   - leidenalg
+
+
+  Package          Version  Build               Channel          Size
+───────────────────────────────────────────────────────────────────────
+  Install:
+───────────────────────────────────────────────────────────────────────
+
+  + arpack           3.9.1  nompi_h1f29f7c_102  conda-forge     120kB
+  + glpk               5.0  h6d7a090_0          conda-forge       1MB
+  + gmp              6.3.0  h7bae524_2          conda-forge     365kB
+  + igraph           1.0.1  h1ee73af_0          conda-forge       2MB
+  + leidenalg       0.11.0  py311h251fd82_0     conda-forge      84kB
+  + libleidenalg    0.12.0  ha7d2532_0          conda-forge      78kB
+  + libxml2-devel   2.14.6  h762f11a_3          conda-forge      80kB
+  + python-igraph    1.0.0  py311h251fd82_0     conda-forge     641kB
+  + texttable        1.7.0  pyhd8ed1ab_1        conda-forge      20kB
+
+  Summary:
+
+  Install: 9 packages
+
+  Total download: 4MB
+
+───────────────────────────────────────────────────────────────────────
+
+
+
+Transaction starting
+Linking libxml2-devel-2.14.6-h762f11a_3
+Linking arpack-3.9.1-nompi_h1f29f7c_102
+Linking gmp-6.3.0-h7bae524_2
+Linking glpk-5.0-h6d7a090_0
+Linking igraph-1.0.1-h1ee73af_0
+Linking libleidenalg-0.12.0-ha7d2532_0
+Linking texttable-1.7.0-pyhd8ed1ab_1
+Linking python-igraph-1.0.0-py311h251fd82_0
+Linking leidenalg-0.11.0-py311h251fd82_0
+
+Transaction finished
+

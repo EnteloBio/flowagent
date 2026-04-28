@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import gzip
 import io
+import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
+import numpy as np
 import pandas as pd
 from scipy import stats
 
@@ -249,8 +251,252 @@ def _jaccard(a: Set[str], b: Set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+# ── Methylation table (Benchmark F case 8 — WGBS) ────────────────
+
+def compare_methylation_table(candidate: Path, reference: Path,
+                              params: Dict[str, Any]) -> Dict[str, Any]:
+    """Per-CpG β-value comparison.
+
+    Both candidate and reference are TSVs with at least
+    ``(chrom, pos, beta)`` columns. We join on (chrom, pos), compute
+    Spearman ρ on β-values across the intersection, plus a binary
+    concordance: fraction of CpGs where both calls agree on the
+    hypo (β < ``hypo_threshold``) / mid / hyper (β > ``hyper_threshold``)
+    classification. Concordance is more robust than Spearman to the
+    inevitable ~10% disagreement at borderline-methylated sites.
+    """
+    chrom_col = params.get("chrom_column", "chrom")
+    pos_col   = params.get("pos_column",   "pos")
+    beta_col  = params.get("beta_column",  "beta_value")
+    hypo  = float(params.get("hypo_threshold",  0.25))
+    hyper = float(params.get("hyper_threshold", 0.75))
+    min_n = int(params.get("min_intersection", 1000))
+
+    cand = _read_table(candidate)
+    refr = _read_table(reference)
+    for need in (chrom_col, pos_col, beta_col):
+        if need not in cand.columns:
+            return {"error": f"candidate missing column: {need}"}
+        if need not in refr.columns:
+            return {"error": f"reference missing column: {need}"}
+
+    merged = cand[[chrom_col, pos_col, beta_col]].merge(
+        refr[[chrom_col, pos_col, beta_col]],
+        on=[chrom_col, pos_col], suffixes=("_cand", "_ref"),
+    )
+    n_overlap = len(merged)
+    out: Dict[str, Any] = {
+        "n_candidate":  len(cand),
+        "n_reference":  len(refr),
+        "n_overlap":    n_overlap,
+    }
+    if n_overlap < min_n:
+        out["error"] = f"intersection too small: {n_overlap} < {min_n}"
+        out["spearman_beta"] = float("nan")
+        out["concordance"]   = float("nan")
+        return out
+
+    cand_b = pd.to_numeric(merged[f"{beta_col}_cand"], errors="coerce")
+    refr_b = pd.to_numeric(merged[f"{beta_col}_ref"],  errors="coerce")
+    keep = cand_b.notna() & refr_b.notna()
+    cand_b, refr_b = cand_b[keep], refr_b[keep]
+    rho, p = stats.spearmanr(cand_b, refr_b)
+    out["spearman_beta"] = float(rho)
+    out["spearman_p"]    = float(p)
+
+    def _bin(s):
+        return pd.cut(s, bins=[-0.001, hypo, hyper, 1.001],
+                      labels=["hypo", "mid", "hyper"])
+    out["concordance"] = float((_bin(cand_b) == _bin(refr_b)).mean())
+    return out
+
+
+# ── Single-cell cluster markers (Benchmark F case 9) ─────────────
+
+def compare_cluster_markers(candidate: Path, reference: Path,
+                            params: Dict[str, Any]) -> Dict[str, Any]:
+    """Per-cluster top-N marker-gene Jaccard with name harmonisation.
+
+    Both files have a ``cluster_label`` column and a ``gene`` column;
+    rows are ranked by ``rank_column`` (default ``log2FC``). We compute
+    Jaccard on the top-N markers per cluster after harmonising cluster
+    names via ``params["cluster_alias_map"]`` (so a candidate calling a
+    cluster "CD14 Mono" matches the reference's "Monocyte"). Returns
+    mean Jaccard across recovered clusters and a recovery count
+    (clusters with Jaccard ≥ ``min_cluster_recovery``).
+    """
+    cluster_col = params.get("cluster_column", "cluster_label")
+    gene_col    = params.get("gene_column",    "gene")
+    rank_col    = params.get("rank_column",    "log2FC")
+    top_n       = int(params.get("top_n_per_cluster", 20))
+    min_recov   = float(params.get("min_cluster_recovery", 0.5))
+    aliases     = params.get("cluster_alias_map") or {}
+
+    # Build alias lookup: {alternative_name: canonical_name}
+    canon: Dict[str, str] = {}
+    for canonical, alts in aliases.items():
+        canon[canonical.lower().strip()] = canonical
+        for a in alts:
+            canon[a.lower().strip()] = canonical
+
+    def _canonicalise(s: str) -> str:
+        return canon.get(str(s).lower().strip(), str(s).strip())
+
+    cand = _read_table(candidate)
+    refr = _read_table(reference)
+    for need in (cluster_col, gene_col):
+        if need not in cand.columns:
+            return {"error": f"candidate missing column: {need}"}
+        if need not in refr.columns:
+            return {"error": f"reference missing column: {need}"}
+
+    cand[cluster_col] = cand[cluster_col].map(_canonicalise)
+    refr[cluster_col] = refr[cluster_col].map(_canonicalise)
+
+    def _top_n(df):
+        out: Dict[str, Set[str]] = {}
+        if rank_col in df.columns:
+            df = df.assign(_abs=pd.to_numeric(df[rank_col], errors="coerce").abs())
+            df = df.sort_values("_abs", ascending=False)
+        for cluster, g in df.groupby(cluster_col):
+            out[str(cluster)] = set(g[gene_col].astype(str).head(top_n).tolist())
+        return out
+
+    cand_markers = _top_n(cand)
+    refr_markers = _top_n(refr)
+    shared = set(cand_markers) & set(refr_markers)
+    if not shared:
+        return {"error": "no overlapping cluster names after harmonisation",
+                "n_candidate_clusters": len(cand_markers),
+                "n_reference_clusters": len(refr_markers)}
+
+    per_cluster_jaccard = {
+        c: _jaccard(cand_markers[c], refr_markers[c]) for c in shared
+    }
+    n_recovered = sum(1 for j in per_cluster_jaccard.values() if j >= min_recov)
+    return {
+        "n_candidate_clusters": len(cand_markers),
+        "n_reference_clusters": len(refr_markers),
+        "n_shared_clusters":    len(shared),
+        "n_recovered_clusters": n_recovered,
+        "mean_jaccard":         float(np.mean(list(per_cluster_jaccard.values()))),
+        "median_jaccard":       float(np.median(list(per_cluster_jaccard.values()))),
+        "per_cluster_jaccard":  json.dumps(per_cluster_jaccard),
+        "top_n_used":           top_n,
+    }
+
+
+# ── Taxonomic profile (Benchmark F case 10 — metagenomics) ───────
+
+def compare_taxonomic_profile(candidate: Path, reference: Path,
+                              params: Dict[str, Any]) -> Dict[str, Any]:
+    """Relative-abundance vector comparison at a fixed taxonomic rank.
+
+    Both files have ``(taxon, rel_abundance)`` columns. We compute
+    Spearman ρ on the log10 abundance vector across the union of taxa
+    (zero-fill missing taxa with a small pseudocount), plus
+    Bray-Curtis dissimilarity (0 = identical, 1 = totally disjoint).
+    """
+    taxon_col = params.get("taxon_column",     "taxon")
+    abund_col = params.get("abundance_column", "rel_abundance")
+    min_n     = int(params.get("min_intersection", 5))
+    pseudo    = 1e-6
+
+    cand = _read_table(candidate)
+    refr = _read_table(reference)
+    for need in (taxon_col, abund_col):
+        if need not in cand.columns:
+            return {"error": f"candidate missing column: {need}"}
+        if need not in refr.columns:
+            return {"error": f"reference missing column: {need}"}
+
+    cand_v = cand.set_index(taxon_col)[abund_col].astype(float)
+    refr_v = refr.set_index(taxon_col)[abund_col].astype(float)
+    union  = cand_v.index.union(refr_v.index)
+    cand_v = cand_v.reindex(union, fill_value=0.0)
+    refr_v = refr_v.reindex(union, fill_value=0.0)
+    intersection = (cand.index.intersection(refr.index)
+                    if hasattr(cand, "index") else set())
+    n_intersection = (cand_v > 0).astype(int).add((refr_v > 0).astype(int)).eq(2).sum()
+
+    out: Dict[str, Any] = {
+        "n_candidate_taxa": int((cand_v > 0).sum()),
+        "n_reference_taxa": int((refr_v > 0).sum()),
+        "n_intersection":   int(n_intersection),
+        "n_union":          int(len(union)),
+    }
+    if n_intersection < min_n:
+        out["error"] = f"intersection too small: {n_intersection} < {min_n}"
+        out["spearman_log_abundance"] = float("nan")
+        out["bray_curtis"] = float("nan")
+        return out
+
+    rho, p = stats.spearmanr(np.log10(cand_v + pseudo),
+                              np.log10(refr_v + pseudo))
+    out["spearman_log_abundance"] = float(rho)
+    out["spearman_p"]             = float(p)
+    # Bray-Curtis on raw relative abundances (sum to 1)
+    cand_norm = cand_v / cand_v.sum() if cand_v.sum() > 0 else cand_v
+    refr_norm = refr_v / refr_v.sum() if refr_v.sum() > 0 else refr_v
+    num = np.abs(cand_norm - refr_norm).sum()
+    den = (cand_norm + refr_norm).sum()
+    out["bray_curtis"] = float(num / den) if den > 0 else float("nan")
+    return out
+
+
+# ── Plan-constraint check (Benchmark F case 11 — adversarial) ────
+
+def compare_plan_constraint(candidate: Path, reference: Path,
+                            params: Dict[str, Any]) -> Dict[str, Any]:
+    """Inspect a candidate ``workflow.json`` for forbidden / required tools.
+
+    The "candidate" is FlowAgent's emitted workflow.json. We scan all
+    step commands + names for the tools listed in ``forbidden_in_plan``
+    (must NOT appear) and ``required_anywhere`` (at least one MUST
+    appear). Score: 1.0 if both conditions met, 0.5 if one met,
+    0.0 if neither. The reference path here is a stub — used only to
+    confirm the constraint definition file exists; the real check is
+    against ``params``.
+    """
+    forbidden = {t.lower() for t in params.get("forbidden_in_plan") or []}
+    required  = {t.lower() for t in params.get("required_anywhere") or []}
+    min_score = float(params.get("min_correction_score", 1.0))
+
+    if not candidate.exists():
+        return {"error": f"workflow.json not found: {candidate}"}
+    try:
+        wf = json.loads(candidate.read_text())
+    except json.JSONDecodeError as exc:
+        return {"error": f"workflow.json parse failed: {exc}"}
+    steps = wf.get("steps", [])
+
+    haystack = " ".join(
+        f"{s.get('name','')} {s.get('command','')}" for s in steps
+    ).lower()
+    forbidden_hits = {t for t in forbidden if t in haystack}
+    required_hits  = {t for t in required  if t in haystack}
+
+    forbidden_ok = not forbidden_hits
+    required_ok  = bool(required_hits) if required else True
+    score = (0.5 * int(forbidden_ok)) + (0.5 * int(required_ok))
+
+    return {
+        "n_steps":            len(steps),
+        "forbidden_hits":     ",".join(sorted(forbidden_hits)) or "",
+        "required_hits":      ",".join(sorted(required_hits)) or "",
+        "forbidden_ok":       bool(forbidden_ok),
+        "required_ok":        bool(required_ok),
+        "constraint_score":   float(score),
+        "passed":             bool(score >= min_score),
+    }
+
+
 COMPARATORS = {
-    "de_table": compare_de_table,
-    "peak_bed": compare_peak_bed,
-    "vcf":      compare_vcf,
+    "de_table":           compare_de_table,
+    "peak_bed":           compare_peak_bed,
+    "vcf":                compare_vcf,
+    "methylation_table":  compare_methylation_table,
+    "cluster_markers":    compare_cluster_markers,
+    "taxonomic_profile":  compare_taxonomic_profile,
+    "plan_constraint":    compare_plan_constraint,
 }

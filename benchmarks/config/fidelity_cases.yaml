@@ -188,26 +188,41 @@ cases:
     params:
       min_overlap: 0.5
 
-  # ── 7. Germline variant calling: GIAB NA12878 chr20 truth ────────
-  - id: giab_na12878_chr20
+  # ── 7. scRNA-seq cell-typing: PBMC 10K v3 ────────────────────────
+  - id: pbmc10k_celltypes
     description: >-
-      Genome in a Bottle NA12878 (HG001) chr20 truth set, NIST v4.2.1.
-      Reference VCF + high-confidence BED are downloaded directly from
-      the GIAB FTP. Comparison restricts variants to the
-      high-confidence regions and excludes structural variants.
-    accession: NA12878-HG001-chr20
+      10X Genomics PBMC 10K v3 — canonical scRNA-seq dataset. The
+      expected pipeline is kb-python (or salmon alevin) → AnnData
+      → Scanpy / Seurat clustering → marker-gene identification per
+      cluster. Reference is the published canonical marker-gene set
+      per cell type (CD4 T, CD8 T, B, NK, monocyte, dendritic). The
+      cluster_markers comparator computes Jaccard on top-N marker
+      genes per cluster after cluster-name harmonisation.
+    accession: pbmc10k-v3
     organism: Homo sapiens (GRCh38)
     prompt: |-
-      Run BWA-MEM alignment of the NA12878 chr20 reads to GRCh38, mark
-      duplicates, and call germline variants with GATK HaplotypeCaller;
-      apply VQSR-style filtering and produce a final VCF restricted to
-      chr20.
-    output_relpath: results/gatk/filtered.vcf.gz
-    reference: references/giab_na12878_chr20_truth.vcf.gz
+      Run a single-cell RNA-seq pipeline on the 10X Genomics PBMC
+      10K v3 dataset: pseudo-align reads to GRCh38 with kb-python,
+      build the cell × gene matrix, perform standard QC filtering,
+      cluster with Scanpy's Leiden algorithm, and produce a marker-
+      gene table identifying the top differentially-expressed genes
+      per cluster.
+    output_relpath: results/scanpy/cluster_markers.tsv
+    reference: references/pbmc10k_canonical_markers.tsv
     reference_source:
-      kind: direct_url
-      url: https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
-      post_process: references/subset_giab_chr20.sh
-    comparison: vcf
+      kind: r_script
+      script: references/make_reference_pbmc10k.R
+      bioc_packages: [Seurat, SeuratData]
+    comparison: cluster_markers
     params:
-      region: "chr20"
+      cluster_column:  cluster_label
+      gene_column:     gene
+      rank_column:     log2FC          # or 'p_val_adj' for p-value ranking
+      top_n_per_cluster: 20
+      min_cluster_recovery: 0.5        # Jaccard ≥ 0.5 to count as recovered
+      cluster_alias_map:               # harmonise scanpy / seurat label drift
+        "CD4 T cell": ["CD4 T", "T_CD4", "CD4+ T cells"]
+        "CD8 T cell": ["CD8 T", "T_CD8", "CD8+ T cells"]
+        "Monocyte":   ["CD14 Mono", "Mono", "Monocytes", "CD14+ Mono"]
+        "B cell":     ["B", "B cells", "B_cell"]
+        "NK cell":    ["NK", "NK cells", "NK_cell"]

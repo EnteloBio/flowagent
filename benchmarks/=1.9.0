@@ -1,0 +1,93 @@
+
+Pinned packages:
+
+  - python=3.11
+
+
+Transaction
+
+  Prefix: /opt/homebrew/Caskroom/miniconda/base/envs/flowagent
+
+  Updating specs:
+
+   - scanpy
+
+
+  Package              Version  Build                  Channel          Size
+──────────────────────────────────────────────────────────────────────────────
+  Install:
+──────────────────────────────────────────────────────────────────────────────
+
+  + anndata             0.11.4  pyhd8ed1ab_0           conda-forge     115kB
+  + array-api-compat    1.14.0  pyhc364b38_0           conda-forge      47kB
+  + contourpy            1.3.3  py311h7d85929_4        conda-forge     286kB
+  + fonttools           4.62.1  py311hc290fe0_0        conda-forge       3MB
+  + joblib               1.5.3  pyhd8ed1ab_0           conda-forge     226kB
+  + kiwisolver           1.5.0  py311h7d85929_0        conda-forge      67kB
+  + legacy-api-wrap        1.5  pyhd8ed1ab_0           conda-forge      16kB
+  + libhwloc            2.12.2  default_ha3cc4f2_1000  conda-forge       2MB
+  + llvmlite            0.47.0  py311h5d75059_1        conda-forge      24MB
+  + matplotlib-base     3.10.9  py311h68bafec_0        conda-forge       8MB
+  + natsort              8.4.0  pyhcf101f3_2           conda-forge      39kB
+  + numba               0.65.0  py311h7b83a5e_1        conda-forge       6MB
+  + numpy                2.4.3  py311h49b76aa_0        conda-forge       7MB
+  + packaging             26.2  pyhc364b38_0           conda-forge      92kB
+  + patsy                1.0.2  pyhcf101f3_0           conda-forge     193kB
+  + pillow              11.3.0  py311h1f9957d_3        conda-forge     966kB
+  + pynndescent         0.5.13  pyhd8ed1ab_1           conda-forge      50kB
+  + pyparsing            3.3.2  pyhcf101f3_0           conda-forge     111kB
+  + scanpy              1.11.5  pyhd8ed1ab_0           conda-forge       2MB
+  + scikit-learn         1.8.0  np2py311hf1dd2ad_1     conda-forge       9MB
+  + seaborn             0.13.2  hd8ed1ab_3             conda-forge       7kB
+  + seaborn-base        0.13.2  pyhd8ed1ab_3           conda-forge     228kB
+  + session-info2        0.4.1  pyhd8ed1ab_0           conda-forge      23kB
+  + setuptools          82.0.1  pyh332efcf_0           conda-forge     640kB
+  + statsmodels         0.14.6  py311h09efe57_0        conda-forge      12MB
+  + tbb               2022.3.0  h4ddebb9_2             conda-forge     120kB
+  + threadpoolctl        3.6.0  pyhecae5ae_0           conda-forge      24kB
+  + tqdm                4.67.3  pyh8f84b5b_0           conda-forge      94kB
+  + umap-learn          0.5.12  py311h267d04e_0        conda-forge     200kB
+
+  Summary:
+
+  Install: 29 packages
+
+  Total download: 78MB
+
+──────────────────────────────────────────────────────────────────────────────
+
+
+
+Transaction starting
+Linking legacy-api-wrap-1.5-pyhd8ed1ab_0
+Linking natsort-8.4.0-pyhcf101f3_2
+Linking packaging-26.2-pyhc364b38_0
+Linking session-info2-0.4.1-pyhd8ed1ab_0
+Linking tqdm-4.67.3-pyh8f84b5b_0
+Linking setuptools-82.0.1-pyh332efcf_0
+Linking array-api-compat-1.14.0-pyhc364b38_0
+Linking pyparsing-3.3.2-pyhcf101f3_0
+Linking threadpoolctl-3.6.0-pyhecae5ae_0
+Linking joblib-1.5.3-pyhd8ed1ab_0
+Linking numpy-2.4.3-py311h49b76aa_0
+Linking llvmlite-0.47.0-py311h5d75059_1
+Linking libhwloc-2.12.2-default_ha3cc4f2_1000
+Linking fonttools-4.62.1-py311hc290fe0_0
+Linking kiwisolver-1.5.0-py311h7d85929_0
+Linking pillow-11.3.0-py311h1f9957d_3
+Linking scikit-learn-1.8.0-np2py311hf1dd2ad_1
+Linking contourpy-1.3.3-py311h7d85929_4
+Linking numba-0.65.0-py311h7b83a5e_1
+Linking tbb-2022.3.0-h4ddebb9_2
+Linking matplotlib-base-3.10.9-py311h68bafec_0
+Linking patsy-1.0.2-pyhcf101f3_0
+Linking anndata-0.11.4-pyhd8ed1ab_0
+Linking pynndescent-0.5.13-pyhd8ed1ab_1
+Linking seaborn-base-0.13.2-pyhd8ed1ab_3
+Linking statsmodels-0.14.6-py311h09efe57_0
+Linking umap-learn-0.5.12-py311h267d04e_0
+Linking seaborn-0.13.2-hd8ed1ab_3
+Linking scanpy-1.11.5-pyhd8ed1ab_0
+
+Transaction finished
+
