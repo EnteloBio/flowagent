@@ -5550,7 +5550,88 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3099</span>
 <span class="normal">3100</span>
 <span class="normal">3101</span>
-<span class="normal">3102</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3102</span>
+<span class="normal">3103</span>
+<span class="normal">3104</span>
+<span class="normal">3105</span>
+<span class="normal">3106</span>
+<span class="normal">3107</span>
+<span class="normal">3108</span>
+<span class="normal">3109</span>
+<span class="normal">3110</span>
+<span class="normal">3111</span>
+<span class="normal">3112</span>
+<span class="normal">3113</span>
+<span class="normal">3114</span>
+<span class="normal">3115</span>
+<span class="normal">3116</span>
+<span class="normal">3117</span>
+<span class="normal">3118</span>
+<span class="normal">3119</span>
+<span class="normal">3120</span>
+<span class="normal">3121</span>
+<span class="normal">3122</span>
+<span class="normal">3123</span>
+<span class="normal">3124</span>
+<span class="normal">3125</span>
+<span class="normal">3126</span>
+<span class="normal">3127</span>
+<span class="normal">3128</span>
+<span class="normal">3129</span>
+<span class="normal">3130</span>
+<span class="normal">3131</span>
+<span class="normal">3132</span>
+<span class="normal">3133</span>
+<span class="normal">3134</span>
+<span class="normal">3135</span>
+<span class="normal">3136</span>
+<span class="normal">3137</span>
+<span class="normal">3138</span>
+<span class="normal">3139</span>
+<span class="normal">3140</span>
+<span class="normal">3141</span>
+<span class="normal">3142</span>
+<span class="normal">3143</span>
+<span class="normal">3144</span>
+<span class="normal">3145</span>
+<span class="normal">3146</span>
+<span class="normal">3147</span>
+<span class="normal">3148</span>
+<span class="normal">3149</span>
+<span class="normal">3150</span>
+<span class="normal">3151</span>
+<span class="normal">3152</span>
+<span class="normal">3153</span>
+<span class="normal">3154</span>
+<span class="normal">3155</span>
+<span class="normal">3156</span>
+<span class="normal">3157</span>
+<span class="normal">3158</span>
+<span class="normal">3159</span>
+<span class="normal">3160</span>
+<span class="normal">3161</span>
+<span class="normal">3162</span>
+<span class="normal">3163</span>
+<span class="normal">3164</span>
+<span class="normal">3165</span>
+<span class="normal">3166</span>
+<span class="normal">3167</span>
+<span class="normal">3168</span>
+<span class="normal">3169</span>
+<span class="normal">3170</span>
+<span class="normal">3171</span>
+<span class="normal">3172</span>
+<span class="normal">3173</span>
+<span class="normal">3174</span>
+<span class="normal">3175</span>
+<span class="normal">3176</span>
+<span class="normal">3177</span>
+<span class="normal">3178</span>
+<span class="normal">3179</span>
+<span class="normal">3180</span>
+<span class="normal">3181</span>
+<span class="normal">3182</span>
+<span class="normal">3183</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -7532,7 +7613,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">/soft/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_family.soft.gz&quot;</span>
         <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_build_sample_sheet_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geo_accession</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_build_sample_sheet_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geo_accession</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Build the ``build_sample_sheet`` step shared by STAR and Kallisto.</span>
 
 <span class="sd">        Downloads the GEO SOFT family file and runs</span>
@@ -7541,7 +7622,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="sd">        from the prompt (``between A and B``), the output is a two-column</span>
 <span class="sd">        DESeq2-ready TSV; otherwise a template is written for manual fill-in.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_condition_labels</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+        <span class="n">labels</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_condition_labels</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
         <span class="n">labels_arg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;--labels &#39;</span><span class="si">{</span><span class="s1">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39; &quot;</span> <span class="k">if</span> <span class="n">labels</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
         <span class="n">soft_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geo_soft_url</span><span class="p">(</span><span class="n">geo_accession</span><span class="p">)</span>
         <span class="k">return</span> <span class="p">{</span>
@@ -7565,28 +7646,109 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;minimal&quot;</span><span class="p">,</span>
         <span class="p">}</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_extract_condition_labels</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Pull a pair of condition labels out of a prompt.</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_extract_condition_labels</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extract the two contrast labels for a DE comparison from a prompt.</span>
 
-<span class="sd">        Recognises ``between X and Y``, ``X vs Y`` (and ``X vs. Y``), and</span>
-<span class="sd">        ``compar(e|ing) X {and|to|with} Y``. Returns ``[]`` when only</span>
-<span class="sd">        bracketed placeholders (``[condition A]``) are present or when the</span>
-<span class="sd">        two labels are identical (meaning we probably matched a generic</span>
-<span class="sd">        phrase like &quot;compare condition and condition&quot;).</span>
+<span class="sd">        Two-tier strategy. First a fast regex pass for unambiguous</span>
+<span class="sd">        phrasings (``between X and Y`` / ``X vs Y`` / ``compare X and</span>
+<span class="sd">        Y``) — covers the bulk of prompts at zero cost. Multi-word</span>
+<span class="sd">        labels and unusual phrasings fall through to an LLM call:</span>
+<span class="sd">        the LLM reads the full prompt, identifies the contrast, and</span>
+<span class="sd">        returns short keywords suitable for fuzzy-matching against</span>
+<span class="sd">        GEO sample metadata (the ``build_sample_sheet`` helper does</span>
+<span class="sd">        substring matching). Returns ``[]`` if neither path can</span>
+<span class="sd">        identify a clean pair, in which case</span>
+<span class="sd">        ``build_sample_sheet`` writes a fill-in template.</span>
+
+<span class="sd">        Examples the regex handles directly:</span>
+<span class="sd">          &quot;between Dexamethasone and untreated&quot;   → [&quot;Dexamethasone&quot;, &quot;untreated&quot;]</span>
+<span class="sd">          &quot;between the basal and luminal …&quot;       → [&quot;basal&quot;, &quot;luminal&quot;]</span>
+<span class="sd">        Examples that fall through to the LLM:</span>
+<span class="sd">          &quot;between the COVID-19 patient samples and the age- and</span>
+<span class="sd">           sex-matched healthy controls&quot; → [&quot;COVID&quot;, &quot;Healthy&quot;]</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Tier 1 — regex. Tolerant of leading determiners</span>
+        <span class="c1"># (``between THE basal and luminal …``).</span>
+        <span class="n">det</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;(?:the|a|an)\s+&quot;</span>
         <span class="n">patterns</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="sa">r</span><span class="s2">&quot;between\s+([A-Za-z0-9_\-]+)\s+and\s+([A-Za-z0-9_\-]+)&quot;</span><span class="p">,</span>
+            <span class="sa">rf</span><span class="s2">&quot;between\s+(?:</span><span class="si">{</span><span class="n">det</span><span class="si">}</span><span class="s2">)?([A-Za-z0-9_\-]+)\s+and\s+(?:</span><span class="si">{</span><span class="n">det</span><span class="si">}</span><span class="s2">)?([A-Za-z0-9_\-]+)&quot;</span><span class="p">,</span>
             <span class="sa">r</span><span class="s2">&quot;\b([A-Za-z0-9_\-]+)\s+vs\.?\s+([A-Za-z0-9_\-]+)&quot;</span><span class="p">,</span>
-            <span class="sa">r</span><span class="s2">&quot;compar(?:e|ing)\s+([A-Za-z0-9_\-]+)\s+(?:and|to|with)\s+([A-Za-z0-9_\-]+)&quot;</span><span class="p">,</span>
+            <span class="sa">rf</span><span class="s2">&quot;compar(?:e|ing)\s+(?:</span><span class="si">{</span><span class="n">det</span><span class="si">}</span><span class="s2">)?([A-Za-z0-9_\-]+)\s+(?:and|to|with)\s+(?:</span><span class="si">{</span><span class="n">det</span><span class="si">}</span><span class="s2">)?([A-Za-z0-9_\-]+)&quot;</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="c1"># Words that signal &quot;I matched part of a generic phrase, not a</span>
+        <span class="c1"># real label&quot; — usually because the prompt has multi-word labels</span>
+        <span class="c1"># the regex couldn&#39;t span. Fall through to the LLM in those cases.</span>
+        <span class="n">regex_noise</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;the&quot;</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;an&quot;</span><span class="p">,</span> <span class="s2">&quot;samples&quot;</span><span class="p">,</span> <span class="s2">&quot;sample&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">,</span> <span class="s2">&quot;group&quot;</span><span class="p">,</span> <span class="s2">&quot;groups&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;condition&quot;</span><span class="p">,</span> <span class="s2">&quot;conditions&quot;</span><span class="p">,</span> <span class="s2">&quot;controls&quot;</span><span class="p">,</span> <span class="s2">&quot;control&quot;</span><span class="p">,</span> <span class="s2">&quot;treatment&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;treatments&quot;</span><span class="p">,</span> <span class="s2">&quot;experiment&quot;</span><span class="p">,</span> <span class="s2">&quot;experiments&quot;</span><span class="p">,</span> <span class="s2">&quot;datasets&quot;</span><span class="p">,</span> <span class="s2">&quot;dataset&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;patient&quot;</span><span class="p">,</span> <span class="s2">&quot;patients&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
         <span class="k">for</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">patterns</span><span class="p">:</span>
             <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">pat</span><span class="p">,</span> <span class="n">prompt</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
-                <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">b</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
-                    <span class="k">continue</span>
-                <span class="k">return</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">]</span>
-        <span class="k">return</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">b</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">regex_noise</span> <span class="ow">or</span> <span class="n">b</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">regex_noise</span><span class="p">:</span>
+                <span class="c1"># Regex partially matched but landed on a generic word</span>
+                <span class="c1"># — likely the real labels are multi-word. Let the LLM</span>
+                <span class="c1"># have a go.</span>
+                <span class="k">break</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">]</span>
+
+        <span class="c1"># Tier 2 — LLM. Cheap (one short JSON call) and handles the</span>
+        <span class="c1"># multi-word / awkwardly-phrased prompts the regex can&#39;t span.</span>
+        <span class="n">system</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;You extract differential-expression condition labels from &quot;</span>
+            <span class="s2">&quot;a user&#39;s natural-language pipeline prompt. Return JSON &quot;</span>
+            <span class="s2">&quot;with one key, ``labels``, whose value is a list of &quot;</span>
+            <span class="s2">&quot;exactly two short strings, OR null if no contrast is &quot;</span>
+            <span class="s2">&quot;expressed. The labels you choose will be substring-matched &quot;</span>
+            <span class="s2">&quot;against GEO sample metadata (``title`` and &quot;</span>
+            <span class="s2">&quot;``characteristics`` fields), so prefer single-word or &quot;</span>
+            <span class="s2">&quot;compact keywords that uniquely identify each group &quot;</span>
+            <span class="s2">&quot;(e.g. ``Dexamethasone`` / ``untreated``, ``COVID`` / &quot;</span>
+            <span class="s2">&quot;``Healthy``, ``basal`` / ``luminal``). Avoid full noun &quot;</span>
+            <span class="s2">&quot;phrases like ``COVID-19 patient samples`` — they rarely &quot;</span>
+            <span class="s2">&quot;match GEO metadata literally. Return only the JSON, no &quot;</span>
+            <span class="s2">&quot;prose.&quot;</span>
+        <span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Prompt:</span><span class="se">\n</span><span class="si">{</span><span class="n">prompt</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">JSON:&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">reply</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_openai</span><span class="p">([</span>
+                <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;system&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">system</span><span class="p">},</span>
+                <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span>   <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">user</span><span class="p">},</span>
+            <span class="p">])</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;LLM condition-label extraction failed: </span><span class="si">%s</span><span class="s2"> — falling &quot;</span>
+                <span class="s2">&quot;back to template sample sheet&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">cleaned</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clean_llm_response</span><span class="p">(</span><span class="n">reply</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\{.*\}&quot;</span><span class="p">,</span> <span class="n">cleaned</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">obj</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_repair_truncated_json</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)))</span>
+        <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">labels</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;labels&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">x</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">labels</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">b</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;LLM extracted condition labels: </span><span class="si">%r</span><span class="s2"> vs </span><span class="si">%r</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_geo_download_page_url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geo_accession</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Construct the GEO bulk-download URL that returns a tar of all supplementary files.&quot;&quot;&quot;</span>
@@ -7827,7 +7989,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="p">)</span>
 
             <span class="n">workflow_plan</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_build_sample_sheet_step</span><span class="p">(</span><span class="n">geo_accession</span><span class="p">,</span> <span class="n">prompt</span><span class="p">)</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_sample_sheet_step</span><span class="p">(</span><span class="n">geo_accession</span><span class="p">,</span> <span class="n">prompt</span><span class="p">)</span>
             <span class="p">)</span>
 
             <span class="n">workflow_plan</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span>
@@ -7994,7 +8156,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="n">gtf</span> <span class="o">=</span> <span class="n">file_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;annotation&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;annotation.gtf&quot;</span>
 
             <span class="n">workflow_plan</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_build_sample_sheet_step</span><span class="p">(</span><span class="n">geo_accession</span><span class="p">,</span> <span class="n">prompt</span><span class="p">)</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_sample_sheet_step</span><span class="p">(</span><span class="n">geo_accession</span><span class="p">,</span> <span class="n">prompt</span><span class="p">)</span>
             <span class="p">)</span>
 
             <span class="n">star_index_deps</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;fastqc&quot;</span><span class="p">]</span>
@@ -8779,49 +8941,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3029</span>
-<span class="normal">3030</span>
-<span class="normal">3031</span>
-<span class="normal">3032</span>
-<span class="normal">3033</span>
-<span class="normal">3034</span>
-<span class="normal">3035</span>
-<span class="normal">3036</span>
-<span class="normal">3037</span>
-<span class="normal">3038</span>
-<span class="normal">3039</span>
-<span class="normal">3040</span>
-<span class="normal">3041</span>
-<span class="normal">3042</span>
-<span class="normal">3043</span>
-<span class="normal">3044</span>
-<span class="normal">3045</span>
-<span class="normal">3046</span>
-<span class="normal">3047</span>
-<span class="normal">3048</span>
-<span class="normal">3049</span>
-<span class="normal">3050</span>
-<span class="normal">3051</span>
-<span class="normal">3052</span>
-<span class="normal">3053</span>
-<span class="normal">3054</span>
-<span class="normal">3055</span>
-<span class="normal">3056</span>
-<span class="normal">3057</span>
-<span class="normal">3058</span>
-<span class="normal">3059</span>
-<span class="normal">3060</span>
-<span class="normal">3061</span>
-<span class="normal">3062</span>
-<span class="normal">3063</span>
-<span class="normal">3064</span>
-<span class="normal">3065</span>
-<span class="normal">3066</span>
-<span class="normal">3067</span>
-<span class="normal">3068</span>
-<span class="normal">3069</span>
-<span class="normal">3070</span>
-<span class="normal">3071</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3110</span>
+<span class="normal">3111</span>
+<span class="normal">3112</span>
+<span class="normal">3113</span>
+<span class="normal">3114</span>
+<span class="normal">3115</span>
+<span class="normal">3116</span>
+<span class="normal">3117</span>
+<span class="normal">3118</span>
+<span class="normal">3119</span>
+<span class="normal">3120</span>
+<span class="normal">3121</span>
+<span class="normal">3122</span>
+<span class="normal">3123</span>
+<span class="normal">3124</span>
+<span class="normal">3125</span>
+<span class="normal">3126</span>
+<span class="normal">3127</span>
+<span class="normal">3128</span>
+<span class="normal">3129</span>
+<span class="normal">3130</span>
+<span class="normal">3131</span>
+<span class="normal">3132</span>
+<span class="normal">3133</span>
+<span class="normal">3134</span>
+<span class="normal">3135</span>
+<span class="normal">3136</span>
+<span class="normal">3137</span>
+<span class="normal">3138</span>
+<span class="normal">3139</span>
+<span class="normal">3140</span>
+<span class="normal">3141</span>
+<span class="normal">3142</span>
+<span class="normal">3143</span>
+<span class="normal">3144</span>
+<span class="normal">3145</span>
+<span class="normal">3146</span>
+<span class="normal">3147</span>
+<span class="normal">3148</span>
+<span class="normal">3149</span>
+<span class="normal">3150</span>
+<span class="normal">3151</span>
+<span class="normal">3152</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -9181,58 +9343,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2976</span>
-<span class="normal">2977</span>
-<span class="normal">2978</span>
-<span class="normal">2979</span>
-<span class="normal">2980</span>
-<span class="normal">2981</span>
-<span class="normal">2982</span>
-<span class="normal">2983</span>
-<span class="normal">2984</span>
-<span class="normal">2985</span>
-<span class="normal">2986</span>
-<span class="normal">2987</span>
-<span class="normal">2988</span>
-<span class="normal">2989</span>
-<span class="normal">2990</span>
-<span class="normal">2991</span>
-<span class="normal">2992</span>
-<span class="normal">2993</span>
-<span class="normal">2994</span>
-<span class="normal">2995</span>
-<span class="normal">2996</span>
-<span class="normal">2997</span>
-<span class="normal">2998</span>
-<span class="normal">2999</span>
-<span class="normal">3000</span>
-<span class="normal">3001</span>
-<span class="normal">3002</span>
-<span class="normal">3003</span>
-<span class="normal">3004</span>
-<span class="normal">3005</span>
-<span class="normal">3006</span>
-<span class="normal">3007</span>
-<span class="normal">3008</span>
-<span class="normal">3009</span>
-<span class="normal">3010</span>
-<span class="normal">3011</span>
-<span class="normal">3012</span>
-<span class="normal">3013</span>
-<span class="normal">3014</span>
-<span class="normal">3015</span>
-<span class="normal">3016</span>
-<span class="normal">3017</span>
-<span class="normal">3018</span>
-<span class="normal">3019</span>
-<span class="normal">3020</span>
-<span class="normal">3021</span>
-<span class="normal">3022</span>
-<span class="normal">3023</span>
-<span class="normal">3024</span>
-<span class="normal">3025</span>
-<span class="normal">3026</span>
-<span class="normal">3027</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3057</span>
+<span class="normal">3058</span>
+<span class="normal">3059</span>
+<span class="normal">3060</span>
+<span class="normal">3061</span>
+<span class="normal">3062</span>
+<span class="normal">3063</span>
+<span class="normal">3064</span>
+<span class="normal">3065</span>
+<span class="normal">3066</span>
+<span class="normal">3067</span>
+<span class="normal">3068</span>
+<span class="normal">3069</span>
+<span class="normal">3070</span>
+<span class="normal">3071</span>
+<span class="normal">3072</span>
+<span class="normal">3073</span>
+<span class="normal">3074</span>
+<span class="normal">3075</span>
+<span class="normal">3076</span>
+<span class="normal">3077</span>
+<span class="normal">3078</span>
+<span class="normal">3079</span>
+<span class="normal">3080</span>
+<span class="normal">3081</span>
+<span class="normal">3082</span>
+<span class="normal">3083</span>
+<span class="normal">3084</span>
+<span class="normal">3085</span>
+<span class="normal">3086</span>
+<span class="normal">3087</span>
+<span class="normal">3088</span>
+<span class="normal">3089</span>
+<span class="normal">3090</span>
+<span class="normal">3091</span>
+<span class="normal">3092</span>
+<span class="normal">3093</span>
+<span class="normal">3094</span>
+<span class="normal">3095</span>
+<span class="normal">3096</span>
+<span class="normal">3097</span>
+<span class="normal">3098</span>
+<span class="normal">3099</span>
+<span class="normal">3100</span>
+<span class="normal">3101</span>
+<span class="normal">3102</span>
+<span class="normal">3103</span>
+<span class="normal">3104</span>
+<span class="normal">3105</span>
+<span class="normal">3106</span>
+<span class="normal">3107</span>
+<span class="normal">3108</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
