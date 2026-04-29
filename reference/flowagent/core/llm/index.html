@@ -5442,7 +5442,115 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2991</span>
 <span class="normal">2992</span>
 <span class="normal">2993</span>
-<span class="normal">2994</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">2994</span>
+<span class="normal">2995</span>
+<span class="normal">2996</span>
+<span class="normal">2997</span>
+<span class="normal">2998</span>
+<span class="normal">2999</span>
+<span class="normal">3000</span>
+<span class="normal">3001</span>
+<span class="normal">3002</span>
+<span class="normal">3003</span>
+<span class="normal">3004</span>
+<span class="normal">3005</span>
+<span class="normal">3006</span>
+<span class="normal">3007</span>
+<span class="normal">3008</span>
+<span class="normal">3009</span>
+<span class="normal">3010</span>
+<span class="normal">3011</span>
+<span class="normal">3012</span>
+<span class="normal">3013</span>
+<span class="normal">3014</span>
+<span class="normal">3015</span>
+<span class="normal">3016</span>
+<span class="normal">3017</span>
+<span class="normal">3018</span>
+<span class="normal">3019</span>
+<span class="normal">3020</span>
+<span class="normal">3021</span>
+<span class="normal">3022</span>
+<span class="normal">3023</span>
+<span class="normal">3024</span>
+<span class="normal">3025</span>
+<span class="normal">3026</span>
+<span class="normal">3027</span>
+<span class="normal">3028</span>
+<span class="normal">3029</span>
+<span class="normal">3030</span>
+<span class="normal">3031</span>
+<span class="normal">3032</span>
+<span class="normal">3033</span>
+<span class="normal">3034</span>
+<span class="normal">3035</span>
+<span class="normal">3036</span>
+<span class="normal">3037</span>
+<span class="normal">3038</span>
+<span class="normal">3039</span>
+<span class="normal">3040</span>
+<span class="normal">3041</span>
+<span class="normal">3042</span>
+<span class="normal">3043</span>
+<span class="normal">3044</span>
+<span class="normal">3045</span>
+<span class="normal">3046</span>
+<span class="normal">3047</span>
+<span class="normal">3048</span>
+<span class="normal">3049</span>
+<span class="normal">3050</span>
+<span class="normal">3051</span>
+<span class="normal">3052</span>
+<span class="normal">3053</span>
+<span class="normal">3054</span>
+<span class="normal">3055</span>
+<span class="normal">3056</span>
+<span class="normal">3057</span>
+<span class="normal">3058</span>
+<span class="normal">3059</span>
+<span class="normal">3060</span>
+<span class="normal">3061</span>
+<span class="normal">3062</span>
+<span class="normal">3063</span>
+<span class="normal">3064</span>
+<span class="normal">3065</span>
+<span class="normal">3066</span>
+<span class="normal">3067</span>
+<span class="normal">3068</span>
+<span class="normal">3069</span>
+<span class="normal">3070</span>
+<span class="normal">3071</span>
+<span class="normal">3072</span>
+<span class="normal">3073</span>
+<span class="normal">3074</span>
+<span class="normal">3075</span>
+<span class="normal">3076</span>
+<span class="normal">3077</span>
+<span class="normal">3078</span>
+<span class="normal">3079</span>
+<span class="normal">3080</span>
+<span class="normal">3081</span>
+<span class="normal">3082</span>
+<span class="normal">3083</span>
+<span class="normal">3084</span>
+<span class="normal">3085</span>
+<span class="normal">3086</span>
+<span class="normal">3087</span>
+<span class="normal">3088</span>
+<span class="normal">3089</span>
+<span class="normal">3090</span>
+<span class="normal">3091</span>
+<span class="normal">3092</span>
+<span class="normal">3093</span>
+<span class="normal">3094</span>
+<span class="normal">3095</span>
+<span class="normal">3096</span>
+<span class="normal">3097</span>
+<span class="normal">3098</span>
+<span class="normal">3099</span>
+<span class="normal">3100</span>
+<span class="normal">3101</span>
+<span class="normal">3102</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -7227,7 +7335,8 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;the dataset named in the prompt, return JSON: &quot;</span>
             <span class="s1">&#39;{</span><span class="se">\&quot;</span><span class="s1">error</span><span class="se">\&quot;</span><span class="s1">: </span><span class="se">\&quot;</span><span class="s1">&lt;concise reason&gt;</span><span class="se">\&quot;</span><span class="s1">} and the planner will &#39;</span>
             <span class="s2">&quot;fall back to manual data-staging.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;Hard rules:</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;Hard rules — violating any of these causes the plan to &quot;</span>
+            <span class="s2">&quot;be rejected:</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- NEVER emit placeholder paths like /path/to/your/... or &quot;</span>
             <span class="s2">&quot;&lt;insert path here&gt;. If you don&#39;t know the URL, return the &quot;</span>
             <span class="s2">&quot;error JSON instead.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -7238,6 +7347,21 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;- Subsequent analysis steps follow the same conventions as &quot;</span>
             <span class="s2">&quot;the GEO-download workflows: paths under raw_data/ for &quot;</span>
             <span class="s2">&quot;inputs, results/&lt;workflow&gt;/ for outputs.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;- NEVER invoke a script that the plan does not write. If &quot;</span>
+            <span class="s2">&quot;you need custom Python or R logic, EITHER inline it as &quot;</span>
+            <span class="s2">&quot;``python -c &#39;…&#39;`` / ``Rscript -e &#39;…&#39;`` OR emit an upstream &quot;</span>
+            <span class="s2">&quot;step that writes the script to disk (heredoc into a file) &quot;</span>
+            <span class="s2">&quot;and declares it in that step&#39;s ``outputs`` list. Commands &quot;</span>
+            <span class="s2">&quot;of the form ``python scripts/foo.py`` where no step &quot;</span>
+            <span class="s2">&quot;creates ``scripts/foo.py`` are forbidden.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;- Every step must declare ``outputs`` with the actual &quot;</span>
+            <span class="s2">&quot;files / directories it produces, so the executor can &quot;</span>
+            <span class="s2">&quot;validate that the step did real work.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;- Every for-loop must guard its input: ``[ -s LIST ] || &quot;</span>
+            <span class="s2">&quot;{ echo FAIL; exit 1; }`` for cat-loops; &quot;</span>
+            <span class="s2">&quot;``shopt -s nullglob 2&gt;/dev/null || true; files=(GLOB); &quot;</span>
+            <span class="s2">&quot;[ ${#files[@]} -gt 0 ] || { echo FAIL; exit 1; }`` for &quot;</span>
+            <span class="s2">&quot;globs.</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- Append a final multiqc step that aggregates per-step &quot;</span>
             <span class="s2">&quot;QC reports, when applicable.&quot;</span>
         <span class="p">)</span>
@@ -7250,66 +7374,107 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;system&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">system</span><span class="p">},</span>
             <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span>   <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">user</span><span class="p">},</span>
         <span class="p">]</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">reply</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_openai</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;LLM call for inferred-download workflow failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">return</span> <span class="kc">None</span>
-        <span class="n">cleaned</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clean_llm_response</span><span class="p">(</span><span class="n">reply</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\{.*\}&quot;</span><span class="p">,</span> <span class="n">cleaned</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Inferred-download reply has no JSON object&quot;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">obj</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_repair_truncated_json</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)))</span>
-        <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Inferred-download JSON parse failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
-            <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">obj</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;LLM declined to infer download source: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
-                <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="s2">&quot;(no reason given)&quot;</span><span class="p">),</span>
-            <span class="p">)</span>
+
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_attempt</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;One round-trip: returns the parsed obj or None on</span>
+<span class="sd">            transport / parse / explicit-error failure.&quot;&quot;&quot;</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">reply</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_openai</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;LLM call for inferred-download workflow failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="n">cleaned</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clean_llm_response</span><span class="p">(</span><span class="n">reply</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">m_local</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\{.*\}&quot;</span><span class="p">,</span> <span class="n">cleaned</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">m_local</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Inferred-download reply has no JSON object&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">parsed</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_repair_truncated_json</span><span class="p">(</span><span class="n">m_local</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)))</span>
+            <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Inferred-download JSON parse failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">parsed</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;LLM declined to infer download source: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="n">parsed</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="s2">&quot;(no reason given)&quot;</span><span class="p">),</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="n">parsed</span>
+
+        <span class="n">obj</span> <span class="o">=</span> <span class="k">await</span> <span class="n">_attempt</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">obj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="n">steps</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;steps&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">steps</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">steps</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
 
-        <span class="c1"># Defensive: reject plans that contain placeholder paths</span>
-        <span class="c1"># (we hit this exact failure mode earlier — the LLM emitting</span>
-        <span class="c1"># /path/to/your/reference.fa as if it were a real path).</span>
-        <span class="n">_PLACEHOLDER_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
-            <span class="sa">r</span><span class="s2">&quot;/path/to/(your|the)/|&lt;(insert|your|path|placeholder)|&quot;</span>
-            <span class="sa">r</span><span class="s2">&quot;&lt;\.\.\.&gt;|REPLACE_ME|TODO_PATH&quot;</span><span class="p">,</span>
-            <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">steps</span><span class="p">:</span>
-            <span class="n">cmd</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">_PLACEHOLDER_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;Inferred-download plan rejected — placeholder path &quot;</span>
-                    <span class="s2">&quot;detected in step </span><span class="si">%r</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">),</span>
-                    <span class="n">_PLACEHOLDER_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
-                <span class="p">)</span>
-                <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># Schema-normalise (fill in optional keys with safe defaults)</span>
+        <span class="c1"># before running the structural validator — the validator reads</span>
+        <span class="c1"># ``outputs`` to decide whether script invocations are fictional.</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_normalise</span><span class="p">(</span><span class="n">raw_steps</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+            <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">raw_steps</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;parameters&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;dependencies&quot;</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;outputs&quot;</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;description&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;profile_name&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span>
 
-        <span class="c1"># Light validation — ensure required keys</span>
-        <span class="n">valid_steps</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">steps</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-                <span class="k">continue</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">):</span>
-                <span class="k">continue</span>
-            <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;parameters&quot;</span><span class="p">,</span> <span class="p">{})</span>
-            <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;dependencies&quot;</span><span class="p">,</span> <span class="p">[])</span>
-            <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;outputs&quot;</span><span class="p">,</span> <span class="p">[])</span>
-            <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;description&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-            <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;profile_name&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
-            <span class="n">valid_steps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="n">valid_steps</span> <span class="o">=</span> <span class="n">_normalise</span><span class="p">(</span><span class="n">steps</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">valid_steps</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="c1"># Run the same validator the GEO-path uses — placeholder paths,</span>
+        <span class="c1"># caps stand-ins, unguarded loops, fictional scripts. No SRR</span>
+        <span class="c1"># list path on this branch (no SRA layer), so pass None.</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_generated_steps</span><span class="p">(</span><span class="n">valid_steps</span><span class="p">,</span> <span class="n">srr_list_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;Inferred-download plan validation failed (attempt 1): &quot;</span>
+                <span class="s2">&quot;</span><span class="si">%s</span><span class="s2"> — retrying&quot;</span><span class="p">,</span> <span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">errors</span><span class="p">[:</span><span class="mi">5</span><span class="p">]),</span>
+            <span class="p">)</span>
+            <span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">&quot;workflow_type&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;workflow_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                                       <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="n">valid_steps</span><span class="p">}),</span>
+            <span class="p">})</span>
+            <span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="s2">&quot;Your previous response violated the hard rules. &quot;</span>
+                    <span class="s2">&quot;Specific violations:</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span>
+                    <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;- </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">errors</span><span class="p">)</span> <span class="o">+</span>
+                    <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">Regenerate the entire JSON object, fixing every &quot;</span>
+                    <span class="s2">&quot;violation. Same schema as before.&quot;</span>
+                <span class="p">),</span>
+            <span class="p">})</span>
+            <span class="n">obj2</span> <span class="o">=</span> <span class="k">await</span> <span class="n">_attempt</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">obj2</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="n">steps2</span> <span class="o">=</span> <span class="n">obj2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;steps&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">valid_steps</span> <span class="o">=</span> <span class="n">_normalise</span><span class="p">(</span><span class="n">steps2</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">valid_steps</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="n">errors2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_generated_steps</span><span class="p">(</span>
+                <span class="n">valid_steps</span><span class="p">,</span> <span class="n">srr_list_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">errors2</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;Inferred-download plan validation failed after &quot;</span>
+                    <span class="s2">&quot;retry: </span><span class="si">%s</span><span class="s2"> — aborting rather than shipping a broken &quot;</span>
+                    <span class="s2">&quot;plan&quot;</span><span class="p">,</span> <span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">errors2</span><span class="p">[:</span><span class="mi">5</span><span class="p">]),</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="n">obj</span> <span class="o">=</span> <span class="n">obj2</span>  <span class="c1"># use retry&#39;s metadata for logging below</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
             <span class="s2">&quot;Inferred-download workflow: </span><span class="si">%d</span><span class="s2"> steps from source &#39;</span><span class="si">%s</span><span class="s2">&#39;&quot;</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">valid_steps</span><span class="p">),</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_source&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
@@ -8135,10 +8300,12 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="k">return</span> <span class="n">valid</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_generated_steps</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">steps</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">srr_list_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">steps</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+        <span class="n">srr_list_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">existing_steps</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Scan LLM-generated steps for the failure modes that caused</span>
-<span class="sd">        the silent ChIP/ATAC cascades.</span>
+<span class="sd">        the silent cascades we&#39;ve seen.</span>
 
 <span class="sd">        Returns a list of human-readable violations. Empty list = clean.</span>
 <span class="sd">        Catches:</span>
@@ -8149,7 +8316,11 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="sd">            ``[ -f FILE ]`` guard in the same command</span>
 <span class="sd">          - ``for x in glob/*.ext`` with no nullglob/``-e`` guard</span>
 <span class="sd">          - referencing an SRR list at any path other than the one the</span>
-<span class="sd">            download scaffold actually produces</span>
+<span class="sd">            download scaffold actually produces (only checked when</span>
+<span class="sd">            ``srr_list_path`` is provided — i.e. on the GEO path)</span>
+<span class="sd">          - ``python &lt;relative.py&gt;`` / ``Rscript &lt;relative.R&gt;`` etc.</span>
+<span class="sd">            where no step in the plan writes that script (caught the</span>
+<span class="sd">            10X PBMC ``python scripts/scanpy_qc_filtering.py`` cascade)</span>
 
 <span class="sd">        Each violation tells the LLM what to fix in plain English so</span>
 <span class="sd">        the retry message is actionable.</span>
@@ -8158,6 +8329,19 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;no steps generated&quot;</span><span class="p">]</span>
 
         <span class="n">violations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c1"># Combined output set: every path declared by any step, plus</span>
+        <span class="c1"># every path declared by the upstream ``existing_steps`` (the</span>
+        <span class="c1"># GEO-download scaffold steps the analysis-step generator runs</span>
+        <span class="c1"># after). A script invocation is fictional iff its target</span>
+        <span class="c1"># doesn&#39;t appear in this set.</span>
+        <span class="n">produced_paths</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">(</span><span class="n">existing_steps</span> <span class="ow">or</span> <span class="p">[])</span> <span class="o">+</span> <span class="n">steps</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">out</span> <span class="ow">in</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outputs&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+                <span class="n">produced_paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">out</span><span class="p">))</span>
+                <span class="c1"># Also accept the basename — handy when a step writes</span>
+                <span class="c1"># ``scripts/foo.py`` and a later step calls ``python</span>
+                <span class="c1"># foo.py`` from inside ``scripts/`` (rare but valid).</span>
+                <span class="n">produced_paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">out</span><span class="p">)))</span>
 
         <span class="c1"># Placeholders we should never see.</span>
         <span class="n">placeholder_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
@@ -8269,17 +8453,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="p">)</span>
 
             <span class="c1"># --- SRR list path drift --------------------------------</span>
-            <span class="c1"># Anything that looks like an srr_ids list but doesn&#39;t</span>
-            <span class="c1"># match the canonical path is a fabrication.</span>
-            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[\w\-./]*srr[_\-]?ids?[\w\-./]*\.txt&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">):</span>
-                <span class="n">wrong_path</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">wrong_path</span> <span class="o">!=</span> <span class="n">srr_list_path</span><span class="p">:</span>
-                    <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; references SRR list at &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">wrong_path</span><span class="si">}</span><span class="s2">&#39; but the download scaffold &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;writes it to &#39;</span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2">&#39; — use the &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;canonical path&quot;</span>
-                    <span class="p">)</span>
+            <span class="c1"># Only relevant on the GEO path. When ``srr_list_path`` is</span>
+            <span class="c1"># None (inferred-download path, no SRA layer), skip.</span>
+            <span class="k">if</span> <span class="n">srr_list_path</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[\w\-./]*srr[_\-]?ids?[\w\-./]*\.txt&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">):</span>
+                    <span class="n">wrong_path</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">wrong_path</span> <span class="o">!=</span> <span class="n">srr_list_path</span><span class="p">:</span>
+                        <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; references SRR list at &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">wrong_path</span><span class="si">}</span><span class="s2">&#39; but the download scaffold &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;writes it to &#39;</span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2">&#39; — use the &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;canonical path&quot;</span>
+                        <span class="p">)</span>
+
+            <span class="c1"># --- Fictional script invocations -----------------------</span>
+            <span class="c1"># ``python scripts/foo.py`` (or Rscript, bash, perl, …) at</span>
+            <span class="c1"># a relative path that no step in the plan declares as an</span>
+            <span class="c1"># output. Caught the 10X PBMC cascade where the LLM emitted</span>
+            <span class="c1"># three separate ``python scripts/scanpy_*.py`` steps for</span>
+            <span class="c1"># scripts no step ever writes. We allow:</span>
+            <span class="c1">#   - absolute paths (``python /opt/.../foo.py``)</span>
+            <span class="c1">#   - module / one-liner forms (``python -m X``, ``-c &#39;…&#39;``)</span>
+            <span class="c1">#   - paths matching anything in the produced-paths set</span>
+            <span class="c1"># Note: tools shipping their own helpers (``flowagent.utils``)</span>
+            <span class="c1"># use ``python -m`` and are unaffected.</span>
+            <span class="n">script_invoke_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+                <span class="sa">r</span><span class="s2">&quot;\b(python3?|Rscript|bash|sh|perl|julia)\s+&quot;</span>
+                <span class="sa">r</span><span class="s2">&quot;(?!-[mc]\b)(?!/)&quot;</span>  <span class="c1"># not a flag, not absolute path</span>
+                <span class="sa">r</span><span class="s2">&quot;([A-Za-z0-9_./\-]+\.(?:py|R|sh|bash|pl|jl))\b&quot;</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">script_invoke_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="n">interp</span><span class="p">,</span> <span class="n">script_path</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">script_path</span> <span class="ow">in</span> <span class="n">produced_paths</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">script_path</span><span class="p">)</span> <span class="ow">in</span> <span class="n">produced_paths</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; invokes ``</span><span class="si">{</span><span class="n">interp</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">script_path</span><span class="si">}</span><span class="s2">`` &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;but no step in the plan writes that script. &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;Either inline the logic with ``</span><span class="si">{</span><span class="n">interp</span><span class="si">}</span><span class="s2"> -c &#39;...&#39;`` &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;OR add an upstream step that produces &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">script_path</span><span class="si">}</span><span class="s2">`` (e.g. with a heredoc) and &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;declares it in ``outputs``&quot;</span>
+                <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">violations</span>
 
@@ -8563,49 +8779,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2921</span>
-<span class="normal">2922</span>
-<span class="normal">2923</span>
-<span class="normal">2924</span>
-<span class="normal">2925</span>
-<span class="normal">2926</span>
-<span class="normal">2927</span>
-<span class="normal">2928</span>
-<span class="normal">2929</span>
-<span class="normal">2930</span>
-<span class="normal">2931</span>
-<span class="normal">2932</span>
-<span class="normal">2933</span>
-<span class="normal">2934</span>
-<span class="normal">2935</span>
-<span class="normal">2936</span>
-<span class="normal">2937</span>
-<span class="normal">2938</span>
-<span class="normal">2939</span>
-<span class="normal">2940</span>
-<span class="normal">2941</span>
-<span class="normal">2942</span>
-<span class="normal">2943</span>
-<span class="normal">2944</span>
-<span class="normal">2945</span>
-<span class="normal">2946</span>
-<span class="normal">2947</span>
-<span class="normal">2948</span>
-<span class="normal">2949</span>
-<span class="normal">2950</span>
-<span class="normal">2951</span>
-<span class="normal">2952</span>
-<span class="normal">2953</span>
-<span class="normal">2954</span>
-<span class="normal">2955</span>
-<span class="normal">2956</span>
-<span class="normal">2957</span>
-<span class="normal">2958</span>
-<span class="normal">2959</span>
-<span class="normal">2960</span>
-<span class="normal">2961</span>
-<span class="normal">2962</span>
-<span class="normal">2963</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3029</span>
+<span class="normal">3030</span>
+<span class="normal">3031</span>
+<span class="normal">3032</span>
+<span class="normal">3033</span>
+<span class="normal">3034</span>
+<span class="normal">3035</span>
+<span class="normal">3036</span>
+<span class="normal">3037</span>
+<span class="normal">3038</span>
+<span class="normal">3039</span>
+<span class="normal">3040</span>
+<span class="normal">3041</span>
+<span class="normal">3042</span>
+<span class="normal">3043</span>
+<span class="normal">3044</span>
+<span class="normal">3045</span>
+<span class="normal">3046</span>
+<span class="normal">3047</span>
+<span class="normal">3048</span>
+<span class="normal">3049</span>
+<span class="normal">3050</span>
+<span class="normal">3051</span>
+<span class="normal">3052</span>
+<span class="normal">3053</span>
+<span class="normal">3054</span>
+<span class="normal">3055</span>
+<span class="normal">3056</span>
+<span class="normal">3057</span>
+<span class="normal">3058</span>
+<span class="normal">3059</span>
+<span class="normal">3060</span>
+<span class="normal">3061</span>
+<span class="normal">3062</span>
+<span class="normal">3063</span>
+<span class="normal">3064</span>
+<span class="normal">3065</span>
+<span class="normal">3066</span>
+<span class="normal">3067</span>
+<span class="normal">3068</span>
+<span class="normal">3069</span>
+<span class="normal">3070</span>
+<span class="normal">3071</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -8965,58 +9181,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2868</span>
-<span class="normal">2869</span>
-<span class="normal">2870</span>
-<span class="normal">2871</span>
-<span class="normal">2872</span>
-<span class="normal">2873</span>
-<span class="normal">2874</span>
-<span class="normal">2875</span>
-<span class="normal">2876</span>
-<span class="normal">2877</span>
-<span class="normal">2878</span>
-<span class="normal">2879</span>
-<span class="normal">2880</span>
-<span class="normal">2881</span>
-<span class="normal">2882</span>
-<span class="normal">2883</span>
-<span class="normal">2884</span>
-<span class="normal">2885</span>
-<span class="normal">2886</span>
-<span class="normal">2887</span>
-<span class="normal">2888</span>
-<span class="normal">2889</span>
-<span class="normal">2890</span>
-<span class="normal">2891</span>
-<span class="normal">2892</span>
-<span class="normal">2893</span>
-<span class="normal">2894</span>
-<span class="normal">2895</span>
-<span class="normal">2896</span>
-<span class="normal">2897</span>
-<span class="normal">2898</span>
-<span class="normal">2899</span>
-<span class="normal">2900</span>
-<span class="normal">2901</span>
-<span class="normal">2902</span>
-<span class="normal">2903</span>
-<span class="normal">2904</span>
-<span class="normal">2905</span>
-<span class="normal">2906</span>
-<span class="normal">2907</span>
-<span class="normal">2908</span>
-<span class="normal">2909</span>
-<span class="normal">2910</span>
-<span class="normal">2911</span>
-<span class="normal">2912</span>
-<span class="normal">2913</span>
-<span class="normal">2914</span>
-<span class="normal">2915</span>
-<span class="normal">2916</span>
-<span class="normal">2917</span>
-<span class="normal">2918</span>
-<span class="normal">2919</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2976</span>
+<span class="normal">2977</span>
+<span class="normal">2978</span>
+<span class="normal">2979</span>
+<span class="normal">2980</span>
+<span class="normal">2981</span>
+<span class="normal">2982</span>
+<span class="normal">2983</span>
+<span class="normal">2984</span>
+<span class="normal">2985</span>
+<span class="normal">2986</span>
+<span class="normal">2987</span>
+<span class="normal">2988</span>
+<span class="normal">2989</span>
+<span class="normal">2990</span>
+<span class="normal">2991</span>
+<span class="normal">2992</span>
+<span class="normal">2993</span>
+<span class="normal">2994</span>
+<span class="normal">2995</span>
+<span class="normal">2996</span>
+<span class="normal">2997</span>
+<span class="normal">2998</span>
+<span class="normal">2999</span>
+<span class="normal">3000</span>
+<span class="normal">3001</span>
+<span class="normal">3002</span>
+<span class="normal">3003</span>
+<span class="normal">3004</span>
+<span class="normal">3005</span>
+<span class="normal">3006</span>
+<span class="normal">3007</span>
+<span class="normal">3008</span>
+<span class="normal">3009</span>
+<span class="normal">3010</span>
+<span class="normal">3011</span>
+<span class="normal">3012</span>
+<span class="normal">3013</span>
+<span class="normal">3014</span>
+<span class="normal">3015</span>
+<span class="normal">3016</span>
+<span class="normal">3017</span>
+<span class="normal">3018</span>
+<span class="normal">3019</span>
+<span class="normal">3020</span>
+<span class="normal">3021</span>
+<span class="normal">3022</span>
+<span class="normal">3023</span>
+<span class="normal">3024</span>
+<span class="normal">3025</span>
+<span class="normal">3026</span>
+<span class="normal">3027</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
