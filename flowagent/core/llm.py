@@ -1809,7 +1809,8 @@ If you are being asked to generate a title, set "success" to false.
             "the dataset named in the prompt, return JSON: "
             '{\"error\": \"<concise reason>\"} and the planner will '
             "fall back to manual data-staging.\n\n"
-            "Hard rules:\n"
+            "Hard rules — violating any of these causes the plan to "
+            "be rejected:\n"
             "- NEVER emit placeholder paths like /path/to/your/... or "
             "<insert path here>. If you don't know the URL, return the "
             "error JSON instead.\n"
@@ -1820,6 +1821,21 @@ If you are being asked to generate a title, set "success" to false.
             "- Subsequent analysis steps follow the same conventions as "
             "the GEO-download workflows: paths under raw_data/ for "
             "inputs, results/<workflow>/ for outputs.\n"
+            "- NEVER invoke a script that the plan does not write. If "
+            "you need custom Python or R logic, EITHER inline it as "
+            "``python -c '…'`` / ``Rscript -e '…'`` OR emit an upstream "
+            "step that writes the script to disk (heredoc into a file) "
+            "and declares it in that step's ``outputs`` list. Commands "
+            "of the form ``python scripts/foo.py`` where no step "
+            "creates ``scripts/foo.py`` are forbidden.\n"
+            "- Every step must declare ``outputs`` with the actual "
+            "files / directories it produces, so the executor can "
+            "validate that the step did real work.\n"
+            "- Every for-loop must guard its input: ``[ -s LIST ] || "
+            "{ echo FAIL; exit 1; }`` for cat-loops; "
+            "``shopt -s nullglob 2>/dev/null || true; files=(GLOB); "
+            "[ ${#files[@]} -gt 0 ] || { echo FAIL; exit 1; }`` for "
+            "globs.\n"
             "- Append a final multiqc step that aggregates per-step "
             "QC reports, when applicable."
         )
@@ -1832,66 +1848,107 @@ If you are being asked to generate a title, set "success" to false.
             {"role": "system", "content": system},
             {"role": "user",   "content": user},
         ]
-        try:
-            reply = await self._call_openai(messages)
-        except Exception as exc:
-            self.logger.warning(
-                "LLM call for inferred-download workflow failed: %s", exc,
-            )
-            return None
-        cleaned = self._clean_llm_response(reply or "")
-        m = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
-        if not m:
-            self.logger.warning("Inferred-download reply has no JSON object")
-            return None
-        try:
-            obj = json.loads(self._repair_truncated_json(m.group(0)))
-        except json.JSONDecodeError as exc:
-            self.logger.warning("Inferred-download JSON parse failed: %s", exc)
-            return None
-        if "error" in obj:
-            self.logger.warning(
-                "LLM declined to infer download source: %s",
-                obj.get("error", "(no reason given)"),
-            )
+
+        async def _attempt() -> Optional[Dict[str, Any]]:
+            """One round-trip: returns the parsed obj or None on
+            transport / parse / explicit-error failure."""
+            try:
+                reply = await self._call_openai(messages)
+            except Exception as exc:
+                self.logger.warning(
+                    "LLM call for inferred-download workflow failed: %s", exc,
+                )
+                return None
+            cleaned = self._clean_llm_response(reply or "")
+            m_local = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+            if not m_local:
+                self.logger.warning("Inferred-download reply has no JSON object")
+                return None
+            try:
+                parsed = json.loads(self._repair_truncated_json(m_local.group(0)))
+            except json.JSONDecodeError as exc:
+                self.logger.warning("Inferred-download JSON parse failed: %s", exc)
+                return None
+            if "error" in parsed:
+                self.logger.warning(
+                    "LLM declined to infer download source: %s",
+                    parsed.get("error", "(no reason given)"),
+                )
+                return None
+            return parsed
+
+        obj = await _attempt()
+        if obj is None:
             return None
         steps = obj.get("steps") or []
         if not isinstance(steps, list) or not steps:
             return None
 
-        # Defensive: reject plans that contain placeholder paths
-        # (we hit this exact failure mode earlier — the LLM emitting
-        # /path/to/your/reference.fa as if it were a real path).
-        _PLACEHOLDER_RE = re.compile(
-            r"/path/to/(your|the)/|<(insert|your|path|placeholder)|"
-            r"<\.\.\.>|REPLACE_ME|TODO_PATH",
-            flags=re.IGNORECASE,
-        )
-        for s in steps:
-            cmd = str(s.get("command", ""))
-            if _PLACEHOLDER_RE.search(cmd):
-                self.logger.warning(
-                    "Inferred-download plan rejected — placeholder path "
-                    "detected in step %r: %s", s.get("name"),
-                    _PLACEHOLDER_RE.search(cmd).group(0),
-                )
-                return None
+        # Schema-normalise (fill in optional keys with safe defaults)
+        # before running the structural validator — the validator reads
+        # ``outputs`` to decide whether script invocations are fictional.
+        def _normalise(raw_steps: List[Any]) -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            for s in raw_steps:
+                if not isinstance(s, dict):
+                    continue
+                if not s.get("name") or not s.get("command"):
+                    continue
+                s.setdefault("parameters", {})
+                s.setdefault("dependencies", [])
+                s.setdefault("outputs", [])
+                s.setdefault("description", "")
+                s.setdefault("profile_name", "default")
+                out.append(s)
+            return out
 
-        # Light validation — ensure required keys
-        valid_steps: List[Dict[str, Any]] = []
-        for s in steps:
-            if not isinstance(s, dict):
-                continue
-            if not s.get("name") or not s.get("command"):
-                continue
-            s.setdefault("parameters", {})
-            s.setdefault("dependencies", [])
-            s.setdefault("outputs", [])
-            s.setdefault("description", "")
-            s.setdefault("profile_name", "default")
-            valid_steps.append(s)
+        valid_steps = _normalise(steps)
         if not valid_steps:
             return None
+
+        # Run the same validator the GEO-path uses — placeholder paths,
+        # caps stand-ins, unguarded loops, fictional scripts. No SRR
+        # list path on this branch (no SRA layer), so pass None.
+        errors = self._validate_generated_steps(valid_steps, srr_list_path=None)
+        if errors:
+            self.logger.warning(
+                "Inferred-download plan validation failed (attempt 1): "
+                "%s — retrying", "; ".join(errors[:5]),
+            )
+            messages.append({
+                "role": "assistant",
+                "content": json.dumps({"workflow_type": obj.get("workflow_type", ""),
+                                       "steps": valid_steps}),
+            })
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Your previous response violated the hard rules. "
+                    "Specific violations:\n" +
+                    "\n".join(f"- {e}" for e in errors) +
+                    "\n\nRegenerate the entire JSON object, fixing every "
+                    "violation. Same schema as before."
+                ),
+            })
+            obj2 = await _attempt()
+            if obj2 is None:
+                return None
+            steps2 = obj2.get("steps") or []
+            valid_steps = _normalise(steps2)
+            if not valid_steps:
+                return None
+            errors2 = self._validate_generated_steps(
+                valid_steps, srr_list_path=None,
+            )
+            if errors2:
+                self.logger.warning(
+                    "Inferred-download plan validation failed after "
+                    "retry: %s — aborting rather than shipping a broken "
+                    "plan", "; ".join(errors2[:5]),
+                )
+                return None
+            obj = obj2  # use retry's metadata for logging below
+
         self.logger.info(
             "Inferred-download workflow: %d steps from source '%s'",
             len(valid_steps), obj.get("data_source", "?"),
@@ -2717,10 +2774,12 @@ If you are being asked to generate a title, set "success" to false.
         return valid
 
     def _validate_generated_steps(
-        self, steps: List[Dict[str, Any]], srr_list_path: str,
+        self, steps: List[Dict[str, Any]],
+        srr_list_path: Optional[str] = None,
+        existing_steps: Optional[List[Dict[str, Any]]] = None,
     ) -> List[str]:
         """Scan LLM-generated steps for the failure modes that caused
-        the silent ChIP/ATAC cascades.
+        the silent cascades we've seen.
 
         Returns a list of human-readable violations. Empty list = clean.
         Catches:
@@ -2731,7 +2790,11 @@ If you are being asked to generate a title, set "success" to false.
             ``[ -f FILE ]`` guard in the same command
           - ``for x in glob/*.ext`` with no nullglob/``-e`` guard
           - referencing an SRR list at any path other than the one the
-            download scaffold actually produces
+            download scaffold actually produces (only checked when
+            ``srr_list_path`` is provided — i.e. on the GEO path)
+          - ``python <relative.py>`` / ``Rscript <relative.R>`` etc.
+            where no step in the plan writes that script (caught the
+            10X PBMC ``python scripts/scanpy_qc_filtering.py`` cascade)
 
         Each violation tells the LLM what to fix in plain English so
         the retry message is actionable.
@@ -2740,6 +2803,19 @@ If you are being asked to generate a title, set "success" to false.
             return ["no steps generated"]
 
         violations: List[str] = []
+        # Combined output set: every path declared by any step, plus
+        # every path declared by the upstream ``existing_steps`` (the
+        # GEO-download scaffold steps the analysis-step generator runs
+        # after). A script invocation is fictional iff its target
+        # doesn't appear in this set.
+        produced_paths: set = set()
+        for s in (existing_steps or []) + steps:
+            for out in (s.get("outputs") or []):
+                produced_paths.add(str(out))
+                # Also accept the basename — handy when a step writes
+                # ``scripts/foo.py`` and a later step calls ``python
+                # foo.py`` from inside ``scripts/`` (rare but valid).
+                produced_paths.add(os.path.basename(str(out)))
 
         # Placeholders we should never see.
         placeholder_re = re.compile(
@@ -2851,17 +2927,49 @@ If you are being asked to generate a title, set "success" to false.
                     )
 
             # --- SRR list path drift --------------------------------
-            # Anything that looks like an srr_ids list but doesn't
-            # match the canonical path is a fabrication.
-            for m in re.finditer(r"[\w\-./]*srr[_\-]?ids?[\w\-./]*\.txt", cmd, re.IGNORECASE):
-                wrong_path = m.group(0)
-                if wrong_path != srr_list_path:
-                    violations.append(
-                        f"step '{name}' references SRR list at "
-                        f"'{wrong_path}' but the download scaffold "
-                        f"writes it to '{srr_list_path}' — use the "
-                        f"canonical path"
-                    )
+            # Only relevant on the GEO path. When ``srr_list_path`` is
+            # None (inferred-download path, no SRA layer), skip.
+            if srr_list_path:
+                for m in re.finditer(r"[\w\-./]*srr[_\-]?ids?[\w\-./]*\.txt", cmd, re.IGNORECASE):
+                    wrong_path = m.group(0)
+                    if wrong_path != srr_list_path:
+                        violations.append(
+                            f"step '{name}' references SRR list at "
+                            f"'{wrong_path}' but the download scaffold "
+                            f"writes it to '{srr_list_path}' — use the "
+                            f"canonical path"
+                        )
+
+            # --- Fictional script invocations -----------------------
+            # ``python scripts/foo.py`` (or Rscript, bash, perl, …) at
+            # a relative path that no step in the plan declares as an
+            # output. Caught the 10X PBMC cascade where the LLM emitted
+            # three separate ``python scripts/scanpy_*.py`` steps for
+            # scripts no step ever writes. We allow:
+            #   - absolute paths (``python /opt/.../foo.py``)
+            #   - module / one-liner forms (``python -m X``, ``-c '…'``)
+            #   - paths matching anything in the produced-paths set
+            # Note: tools shipping their own helpers (``flowagent.utils``)
+            # use ``python -m`` and are unaffected.
+            script_invoke_re = re.compile(
+                r"\b(python3?|Rscript|bash|sh|perl|julia)\s+"
+                r"(?!-[mc]\b)(?!/)"  # not a flag, not absolute path
+                r"([A-Za-z0-9_./\-]+\.(?:py|R|sh|bash|pl|jl))\b"
+            )
+            for m in script_invoke_re.finditer(cmd):
+                interp, script_path = m.group(1), m.group(2)
+                if script_path in produced_paths:
+                    continue
+                if os.path.basename(script_path) in produced_paths:
+                    continue
+                violations.append(
+                    f"step '{name}' invokes ``{interp} {script_path}`` "
+                    f"but no step in the plan writes that script. "
+                    f"Either inline the logic with ``{interp} -c '...'`` "
+                    f"OR add an upstream step that produces "
+                    f"``{script_path}`` (e.g. with a heredoc) and "
+                    f"declares it in ``outputs``"
+                )
 
         return violations
 
