@@ -1653,8 +1653,13 @@ If you are being asked to generate a title, set "success" to false.
         # Check for GEO accession first
         geo_accession = await self._detect_geo_accession(prompt)
         
-        # Extract reference file if mentioned
-        reference_pattern = r'reference\s+(\S+)'
+        # Extract reference file if mentioned. The pattern requires a
+        # FASTA-like extension so phrases like "with healthy as the
+        # reference level" don't capture "level" as a filename
+        # (we hit that exact bug on the GSE152418 prompt — every
+        # downstream step then referenced ``level.fa`` / ``level.idx``,
+        # which trips the recovery loop into unsafe-repair attempts).
+        reference_pattern = r'reference\s+([\w\-./]+\.f(?:a|asta|na))\b'
         reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
         reference = reference_match.group(1) if reference_match else ""
         
@@ -2149,7 +2154,7 @@ If you are being asked to generate a title, set "success" to false.
         # Extract reference from file_info or prompt
         reference = file_info.get("reference", "")
         if not reference:
-            reference_pattern = r'reference\s+(\S+)'
+            reference_pattern = r'reference\s+([\w\-./]+\.f(?:a|asta|na))\b'
             reference_match = re.search(reference_pattern, prompt, re.IGNORECASE)
             reference = reference_match.group(1) if reference_match else "reference.fa"
         
@@ -2207,10 +2212,36 @@ If you are being asked to generate a title, set "success" to false.
                 index_path = "raw_data/reference/transcriptome.idx"
                 index_source = transcriptome
                 index_deps = ["fastqc", "download_reference"]
-            else:
+            elif reference and reference != "reference.fa":
+                # The user supplied a concrete FASTA filename in the prompt
+                # (the regex above only captures real ``.fa``/``.fasta``/
+                # ``.fna`` filenames). We trust them to put the file at
+                # that path; index from it directly.
                 index_source = reference.rstrip('.')
                 index_path = f"{index_source}.idx"
                 index_deps = ["fastqc"]
+            else:
+                # Genome NOT detected and no concrete FASTA in the prompt.
+                # The previous behaviour was to emit
+                # ``kallisto index -i reference.fa.idx reference.fa`` with
+                # no upstream step producing ``reference.fa`` — guaranteed
+                # to fail at runtime, then trigger a recovery loop that
+                # fabricates increasingly nonsensical fixes (the
+                # ``level.idx``/``level`` cascade you've seen). Fail loud
+                # at planning time instead so the user can rephrase the
+                # prompt with a recognisable assembly name (GRCh38, mm10,
+                # etc.) or an explicit transcriptome path.
+                supported = ", ".join(
+                    sorted({a for a in self._GENOME_REFERENCES.keys()})
+                )
+                raise ValueError(
+                    f"Cannot plan an rna_seq_kallisto workflow: prompt "
+                    f"mentions no recognisable reference assembly and no "
+                    f"explicit transcriptome FASTA path. Add an assembly "
+                    f"name to the prompt (one of: {supported}) or include "
+                    f"an explicit ``reference path/to/transcriptome.fa`` "
+                    f"clause."
+                )
 
             workflow_plan["steps"].append(
                 self._build_sample_sheet_step(geo_accession, prompt)
@@ -2514,16 +2545,31 @@ If you are being asked to generate a title, set "success" to false.
         ``WORKFLOW_TYPES[workflow_type]`` as exemplars, and the
         original natural-language prompt — and returns the analysis
         steps in the standard step-dict format.
+
+        Generated steps are validated against three failure modes that
+        previously caused silent cascades: (1) placeholder paths the LLM
+        forgot to fill in (``/path/to/...``, all-caps tokens like
+        ``LINEAGE``); (2) for-loops over inputs that don't exist (which
+        exit 0 with zero iterations); (3) referencing files at paths the
+        download steps never produced (e.g. an SRR list at
+        ``results/custom/metadata/`` when the actual list lives at
+        ``raw_data/<ACC>_srr_ids.txt``). If validation fails on the first
+        attempt, we retry once with the specific errors fed back to the
+        LLM; persistent failures abort with a warning rather than ship
+        a broken plan.
         """
         download_summary = "\n".join(
             f"- {s.get('name', '?')}: {s.get('description', '')[:120]}"
             for s in existing_steps
         )
         rules_block = "\n".join(f"- {r}" for r in (rules or [])) or "(no examples)"
-        # FASTQ layout note — depends on whether download_fastq_files
-        # produced paired or single. We have no way to know in advance,
-        # so explicitly tell the LLM to emit a self-detecting
-        # paired-vs-single shell idiom (same trick we use for kallisto).
+        # Concrete upstream paths. The download scaffold writes the SRR
+        # list to ``raw_data/<ACC>_srr_ids.txt`` and the FASTQs into
+        # ``raw_data/`` directly. Telling the LLM these explicitly stops
+        # it from inventing new paths like
+        # ``results/custom/metadata/srr_ids.txt`` (which nothing creates).
+        srr_list_path = f"raw_data/{geo_accession}_srr_ids.txt"
+        runinfo_path = f"raw_data/{geo_accession}_runinfo.csv"
         system = (
             "You are a senior bioinformatics workflow engineer. Given a "
             "set of GEO-download steps that have already been added to a "
@@ -2531,34 +2577,118 @@ If you are being asked to generate a title, set "success" to false.
             "to fulfill the user's request. Emit ONLY a JSON object with "
             "a single key 'steps' whose value is a list of step dicts. "
             "Each step dict has keys: name, command, parameters, "
-            "dependencies, outputs, description, profile_name."
+            "dependencies, outputs, description, profile_name.\n\n"
+            "HARD RULES — violating any of these causes the plan to be "
+            "rejected:\n"
+            "1. NO PLACEHOLDER PATHS. Never emit ``/path/to/...``, "
+            "``<your_X>``, ``REPLACE_ME``, ``TODO``, or all-caps "
+            "stand-in tokens like ``LINEAGE``, ``SAMPLE_NAME``, "
+            "``LINEAGE_PATTERN``. Every path must be a real file the "
+            "plan creates or that exists at runtime.\n"
+            "2. REFERENCE GENOMES & INDEXES MUST BE EXPLICIT. If the "
+            "analysis needs a genome FASTA or aligner index (bowtie2, "
+            "bwa, STAR, kallisto, salmon, hisat2), emit a step that "
+            "downloads the FASTA from a real public URL (Ensembl, "
+            "UCSC, GENCODE, NCBI) and a step that builds the index "
+            "from it. Do NOT reference an index path that no upstream "
+            "step produced.\n"
+            "3. EVERY FOR-LOOP MUST GUARD ITS INPUT. A loop over a "
+            "list file must check the file exists and is non-empty: "
+            "``[ -s LIST ] || { echo 'FAIL: missing LIST'; exit 1; }`` "
+            "before the ``for`` keyword. A loop over a glob pattern "
+            "must check at least one file matched: ``shopt -s "
+            "nullglob 2>/dev/null || true; files=(PATTERN); [ "
+            "${#files[@]} -gt 0 ] || { echo 'FAIL: no PATTERN'; exit "
+            "1; }``. Skipping work silently when inputs are missing "
+            "is forbidden.\n"
+            "4. USE THE EXACT UPSTREAM PATHS GIVEN BELOW. The SRR list "
+            "lives at the path stated in the user message — do not "
+            "invent alternative paths under ``results/.../metadata/`` "
+            "or similar.\n"
+            "5. EVERY STEP MUST DECLARE ITS ``outputs``. Populate the "
+            "``outputs`` field with the actual file or directory paths "
+            "the step produces, so the executor can validate that the "
+            "step did real work."
         )
         user = (
             f"Workflow type: {workflow_type}\n"
+            f"GEO accession: {geo_accession}\n"
             f"Original prompt: {prompt}\n\n"
+            f"UPSTREAM PATHS (already produced by the download steps — "
+            f"reference these EXACTLY):\n"
+            f"  SRR list:        {srr_list_path}\n"
+            f"  SRA runinfo CSV: {runinfo_path}\n"
+            f"  FASTQs:          raw_data/<SRR>_1.fastq.gz + "
+            f"raw_data/<SRR>_2.fastq.gz   (paired)\n"
+            f"                   raw_data/<SRR>.fastq.gz                "
+            f"     (single-end)\n\n"
             f"Existing download steps (already in the plan):\n"
             f"{download_summary}\n\n"
-            f"FASTQs land at:\n"
-            f"  paired-end: raw_data/<SRR>_1.fastq.gz + raw_data/<SRR>_2.fastq.gz\n"
-            f"  single-end: raw_data/<SRR>.fastq.gz\n"
-            f"Always emit shell idioms that detect both layouts at runtime\n"
-            f"(``if [ -f raw_data/${{srr}}_1.fastq.gz ]; then ... else ... fi``)\n"
-            f"so the same plan works for either library type.\n\n"
+            f"Always emit shell idioms that detect paired vs single-end "
+            f"layouts at runtime, e.g.:\n"
+            f"  for srr in $(cat {srr_list_path}); do\n"
+            f"    if [ -f raw_data/${{srr}}_1.fastq.gz ]; then ... "
+            f"paired branch ...\n"
+            f"    elif [ -f raw_data/${{srr}}.fastq.gz ]; then ... "
+            f"single branch ...\n"
+            f"    else echo 'FAIL: no FASTQ for '${{srr}}; exit 1; fi\n"
+            f"  done\n"
+            f"so the same plan works for either library type. Wrap the "
+            f"loop input itself in a ``[ -s {srr_list_path} ] || {{ "
+            f"echo 'FAIL: missing srr list'; exit 1; }}`` guard.\n\n"
             f"Tool / command exemplars for {workflow_type}:\n"
             f"{rules_block}\n\n"
-            f"Each step's ``dependencies`` field must reference one of the "
-            f"existing step names above OR a previously-emitted step in "
-            f"this list. Place outputs under "
+            f"Each step's ``dependencies`` field must reference one of "
+            f"the existing step names above OR a previously-emitted "
+            f"step in this list. Place outputs under "
             f"``results/{workflow_type}/<step-specific-subdir>/``.\n"
-            f"Append a final ``multiqc`` step that aggregates all per-step "
-            f"reports.\n"
+            f"Append a final ``multiqc`` step that aggregates all "
+            f"per-step reports.\n"
         )
         messages = [
             {"role": "system", "content": system},
             {"role": "user",   "content": user},
         ]
+        # First attempt
+        steps = await self._llm_steps_attempt(messages)
+        errors = self._validate_generated_steps(steps, srr_list_path)
+        if not errors:
+            return steps
+
+        # Single retry, feeding the specific violations back to the LLM.
+        self.logger.warning(
+            "LLM analysis-steps validation failed (attempt 1): %s — retrying",
+            "; ".join(errors[:5]),
+        )
+        retry_msg = (
+            "Your previous response violated the hard rules. Specific "
+            "violations:\n" + "\n".join(f"- {e}" for e in errors) +
+            "\n\nRegenerate the entire ``steps`` list, fixing every "
+            "violation. Same JSON schema as before."
+        )
+        messages.append({"role": "assistant", "content": json.dumps({"steps": steps})})
+        messages.append({"role": "user", "content": retry_msg})
+        steps = await self._llm_steps_attempt(messages)
+        errors = self._validate_generated_steps(steps, srr_list_path)
+        if errors:
+            self.logger.warning(
+                "LLM analysis-steps validation failed after retry: %s — "
+                "aborting analysis-step generation rather than shipping a "
+                "broken plan", "; ".join(errors[:5]),
+            )
+            return []
+        return steps
+
+    async def _llm_steps_attempt(
+        self, messages: List[Dict[str, str]],
+    ) -> List[Dict[str, Any]]:
+        """One round-trip to the LLM that returns parsed step dicts.
+
+        Returns ``[]`` on any parse / schema failure; the caller decides
+        whether to retry. Kept as a tiny helper so the validation +
+        retry logic in the caller stays readable.
+        """
         reply = await self._call_openai(messages)
-        # Robust JSON extraction — the LLM occasionally wraps in ```json
         cleaned = self._clean_llm_response(reply)
         m = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
         if not m:
@@ -2572,7 +2702,6 @@ If you are being asked to generate a title, set "success" to false.
         steps = obj.get("steps", [])
         if not isinstance(steps, list):
             return []
-        # Light validation — drop entries missing required keys.
         valid: List[Dict[str, Any]] = []
         for s in steps:
             if not isinstance(s, dict):
@@ -2586,6 +2715,155 @@ If you are being asked to generate a title, set "success" to false.
             s.setdefault("profile_name", "default")
             valid.append(s)
         return valid
+
+    def _validate_generated_steps(
+        self, steps: List[Dict[str, Any]], srr_list_path: str,
+    ) -> List[str]:
+        """Scan LLM-generated steps for the failure modes that caused
+        the silent ChIP/ATAC cascades.
+
+        Returns a list of human-readable violations. Empty list = clean.
+        Catches:
+          - placeholder paths (``/path/to/X``, ``<your_X>``, ``REPLACE_ME``)
+          - all-caps placeholder tokens (``LINEAGE``, ``SAMPLE_NAME``,
+            ``LINEAGE_PATTERN``) used as bare identifiers in commands
+          - ``for x in $(cat FILE)`` with no preceding ``[ -s FILE ]`` /
+            ``[ -f FILE ]`` guard in the same command
+          - ``for x in glob/*.ext`` with no nullglob/``-e`` guard
+          - referencing an SRR list at any path other than the one the
+            download scaffold actually produces
+
+        Each violation tells the LLM what to fix in plain English so
+        the retry message is actionable.
+        """
+        if not steps:
+            return ["no steps generated"]
+
+        violations: List[str] = []
+
+        # Placeholders we should never see.
+        placeholder_re = re.compile(
+            r"(/path/to/|<your_|<YOUR_|<replace|<TODO|REPLACE_ME|"
+            r"\bTODO\b|\bFIXME\b|\bplaceholder\b)",
+            re.IGNORECASE,
+        )
+        # All-caps tokens that look like LLM stand-ins. We allow common
+        # legitimate caps (env vars, shell builtins, tool names) via a
+        # block-list. The pattern matches >=4-char ALL-CAPS tokens with
+        # underscores.
+        allowlist = {
+            "PATH", "HOME", "USER", "PWD", "SHELL", "TMPDIR", "LANG",
+            "PYTHONPATH", "JAVA_HOME", "LD_LIBRARY_PATH",
+            "BASH", "BAM", "FASTQ", "FASTA", "VCF", "BED", "GTF", "GFF",
+            "TSV", "CSV", "JSON", "GZ", "TXT", "HTML", "PDF",
+            "GEO", "SRA", "SRR", "ERR", "DRR", "ENA", "ENCODE",
+            "GRCH37", "GRCH38", "GRCM38", "GRCM39", "DNA", "RNA", "NA",
+            "ID", "IDS", "QC", "PCR", "ChIP", "ATAC", "RNA_SEQ",
+            "FAIL", "ERROR", "FATAL", "INFO", "DEBUG", "WARN",
+            "REMOVE_DUPLICATES", "TRUE", "FALSE", "NULL",
+            "INPUT", "OUTPUT", "REF",  # used in our own guards
+        }
+        caps_token_re = re.compile(r"\b([A-Z][A-Z0-9_]{3,})\b")
+
+        # Unguarded ``for VAR in $(cat FILE)`` — the FILE must appear in
+        # a ``[ -s FILE ]`` or ``[ -f FILE ]`` test earlier in the same
+        # command, OR be the canonical srr list path (which the download
+        # scaffold guards on the producing side).
+        cat_loop_re = re.compile(
+            r"for\s+\w+\s+in\s+\$\(\s*cat\s+([^\s\)]+)\s*\)",
+        )
+
+        # Unguarded ``for VAR in PATTERN/*.ext`` — must be preceded by
+        # nullglob OR by an explicit ``[ -e PATTERN/*.ext ]`` test, OR
+        # have ``[ -e "$VAR" ] || continue`` style INSIDE the loop body
+        # is NOT acceptable on its own (that's the silent-skip pattern).
+        glob_loop_re = re.compile(
+            r"for\s+\w+\s+in\s+([^\s;]*\*[^\s;]*)",
+        )
+
+        for step in steps:
+            name = step.get("name", "?")
+            cmd = step.get("command", "") or ""
+
+            # --- Placeholder paths ----------------------------------
+            for m in placeholder_re.finditer(cmd):
+                violations.append(
+                    f"step '{name}' contains placeholder text "
+                    f"'{m.group(0)}' — replace with the real path or "
+                    f"emit a step that creates it"
+                )
+
+            # --- All-caps stand-in tokens ---------------------------
+            # Only treat a caps token followed by ``.`` as legitimate
+            # if it embeds digits (accession-like: GSE74912, SRR1234).
+            # Bare alphabetic caps tokens like ``LINEAGE.merged.bam`` or
+            # ``SAMPLE.dedup.bam`` are placeholder fabrications.
+            accession_re = re.compile(r"\d")
+            for m in caps_token_re.finditer(cmd):
+                tok = m.group(1)
+                if tok in allowlist:
+                    continue
+                start, end = m.span()
+                if end < len(cmd) and cmd[end] == "." and accession_re.search(tok):
+                    continue
+                violations.append(
+                    f"step '{name}' uses bare all-caps token "
+                    f"'{tok}' which looks like a placeholder — replace "
+                    f"with a real value or shell variable"
+                )
+
+            # --- Unguarded ``cat`` loop -----------------------------
+            for m in cat_loop_re.finditer(cmd):
+                listfile = m.group(1)
+                # Allow the canonical srr list (the download step
+                # already guards it server-side).
+                if listfile == srr_list_path:
+                    continue
+                # Look for an in-command guard ``[ -s LIST ]`` /
+                # ``[ -f LIST ]`` BEFORE the loop.
+                pre = cmd[: m.start()]
+                if not re.search(
+                    rf"\[\s+-[sf]\s+{re.escape(listfile)}\s+\]", pre,
+                ):
+                    violations.append(
+                        f"step '{name}' loops over $(cat {listfile}) "
+                        f"with no ``[ -s {listfile} ] || exit 1`` "
+                        f"guard before the loop — empty file would "
+                        f"cause zero iterations + silent success"
+                    )
+
+            # --- Unguarded glob loop --------------------------------
+            for m in glob_loop_re.finditer(cmd):
+                pattern = m.group(1)
+                pre = cmd[: m.start()]
+                has_nullglob = "nullglob" in pre
+                has_existence = re.search(
+                    rf"\[\s+-e\s+{re.escape(pattern)}\s+\]", pre,
+                )
+                # An in-loop ``[ -e "$bam" ] || continue`` is the
+                # *silent-skip* anti-pattern and does NOT count.
+                if not (has_nullglob or has_existence):
+                    violations.append(
+                        f"step '{name}' loops over glob '{pattern}' "
+                        f"with no ``shopt -s nullglob`` and no "
+                        f"``[ -e {pattern} ]`` guard — empty match "
+                        f"would silently skip work"
+                    )
+
+            # --- SRR list path drift --------------------------------
+            # Anything that looks like an srr_ids list but doesn't
+            # match the canonical path is a fabrication.
+            for m in re.finditer(r"[\w\-./]*srr[_\-]?ids?[\w\-./]*\.txt", cmd, re.IGNORECASE):
+                wrong_path = m.group(0)
+                if wrong_path != srr_list_path:
+                    violations.append(
+                        f"step '{name}' references SRR list at "
+                        f"'{wrong_path}' but the download scaffold "
+                        f"writes it to '{srr_list_path}' — use the "
+                        f"canonical path"
+                    )
+
+        return violations
 
     async def analyze_run_prompt(self, prompt: str) -> Dict[str, Any]:
         """Analyze the prompt to extract options for running a workflow."""

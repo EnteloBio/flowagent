@@ -92,10 +92,11 @@ cases:
     accession: GSE152418
     organism: Homo sapiens (GRCh38; Ensembl gene IDs)
     prompt: |-
-      Download GSE152418 from GEO and run a human RNA-seq differential
-      expression analysis with DESeq2 between the COVID-19 patient
-      samples and the age- and sex-matched healthy controls, with
-      healthy as the reference level.
+      Download GSE152418 from GEO and run a human (GRCh38) RNA-seq
+      kallisto pipeline on the bulk samples, then run DESeq2 differential
+      expression between the COVID-19 patient samples and the age- and
+      sex-matched healthy controls, using healthy controls as the
+      reference condition.
     output_relpath: results/rna_seq/de_results.csv
     reference: references/gse152418_covid_blood_DE.tsv
     reference_source:

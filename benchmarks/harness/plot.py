@@ -2060,54 +2060,119 @@ def _per_model_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     return g
 
 
-def cost_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
-    """Two-panel cost view: (a) $ per 100 plans, (b) $ per successful plan.
+def _cost_bar_panel(table: pd.DataFrame, col: str, *, title: str,
+                    xlabel: str, ax: plt.Axes) -> None:
+    """Render one cost bar-chart panel onto a given axis.
 
-    Bars sorted by cost-per-pass (cheapest-per-successful-plan first) and
-    coloured by provider. Returns ``None`` if cost data is absent.
+    Used by both the legacy two-panel ``cost_summary_figure`` and the
+    single-panel public functions ``cost_per_100_plans_figure`` /
+    ``cost_per_pass_figure`` (which split the two views apart for
+    manuscript layouts that need a wider x-axis per panel).
     """
-    table = _per_model_cost_table(df)
-    if table is None or table.empty:
-        return None
+    t = table.sort_values(col).reset_index(drop=True)
+    y = np.arange(len(t))
+    cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+            for m in t["model"]]
+    ax.barh(y, t[col], color=cols, edgecolor="white",
+            linewidth=0.6, height=0.72)
+    ax.set_yticks(y)
+    ax.set_yticklabels([_short_name(m) for m in t["model"]])
+    for i, v in enumerate(t[col]):
+        if pd.isna(v):
+            ax.text(0.005, i, "n/a", va="center", ha="left",
+                    fontsize=7.5, color="#9ca3af",
+                    transform=ax.get_yaxis_transform())
+            continue
+        label = (f"${v:,.3f}" if v < 1 else
+                 f"${v:,.2f}" if v < 100 else f"${v:,.0f}")
+        ax.text(v, i, f" {label}", va="center", ha="left",
+                fontsize=7.5, color="#1f2937")
+    ax.set_xlabel(xlabel)
+    ax.set_title(title, loc="left", fontweight="bold")
+    vmax = t[col].dropna().max() if t[col].dropna().size else 1
+    ax.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
+    _style_value_axis(ax, x=True)
 
-    n_models = len(table)
-    panel_h  = max(3.2, 0.28 * n_models + 1.2)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, panel_h), sharey=True)
 
-    def _bar(ax, col: str, title: str, unit: str):
-        t = table.sort_values(col).reset_index(drop=True)
-        y = np.arange(len(t))
-        cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
-                for m in t["model"]]
-        ax.barh(y, t[col], color=cols, edgecolor="white",
-                linewidth=0.6, height=0.72)
-        ax.set_yticks(y)
-        ax.set_yticklabels([_short_name(m) for m in t["model"]])
-        for i, v in enumerate(t[col]):
-            if pd.isna(v):
-                ax.text(0.005, i, "n/a", va="center", ha="left",
-                        fontsize=7.5, color="#9ca3af", transform=ax.get_yaxis_transform())
-                continue
-            label = (f"${v:,.3f}" if v < 1 else
-                     f"${v:,.2f}" if v < 100 else f"${v:,.0f}")
-            ax.text(v, i, f" {label}", va="center", ha="left",
-                    fontsize=7.5, color="#1f2937")
-        ax.set_xlabel(f"{title}  ({unit})")
-        ax.set_title(title, loc="left")
-        # Leave headroom for annotations
-        vmax = t[col].dropna().max() if t[col].dropna().size else 1
-        ax.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
-        _style_value_axis(ax, x=True)
-
-    _bar(ax1, "cost_per_100_plans", "a  Cost per 100 plans", "USD")
-    _bar(ax2, "cost_per_pass",      "b  Cost per successful plan", "USD")
-
+def _cost_provider_legend(fig: plt.Figure, table: pd.DataFrame) -> None:
     providers = sorted(
         {_provider_from_model(m) for m in table["model"]},
         key=lambda p: list(_PROVIDER_COLOURS).index(p)
         if p in _PROVIDER_COLOURS else 99,
     )
     _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.015))
+
+
+def cost_per_100_plans_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: cost per 100 plans, sorted ascending.
+
+    Wider per-bar than the combined ``cost_summary_figure`` so the dollar
+    annotations don't crowd at the high-cost end. Useful when the
+    cost range spans multiple orders of magnitude (Opus 4 at ~$0.20
+    / call vs Gemini Flash at ~$0.001).
+    """
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _cost_bar_panel(
+        table, "cost_per_100_plans",
+        title="Cost per 100 plans",
+        xlabel="USD per 100 plans",
+        ax=ax,
+    )
+    _cost_provider_legend(fig, table)
+    return fig
+
+
+def cost_per_pass_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: cost per successful plan, sorted ascending.
+
+    Penalises cheap-but-flaky models — a model with 50% pass rate
+    pays double per successful plan. Manuscript-friendly width.
+    """
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _cost_bar_panel(
+        table, "cost_per_pass",
+        title="Cost per successful plan",
+        xlabel="USD per successful plan",
+        ax=ax,
+    )
+    _cost_provider_legend(fig, table)
+    return fig
+
+
+def cost_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Two-panel cost view (legacy): (a) $/100 plans, (b) $/successful plan.
+
+    Kept for backward-compatibility with reports that already cite this
+    figure. New manuscripts should prefer the split single-panel
+    ``cost_per_100_plans_figure`` and ``cost_per_pass_figure`` for
+    wider x-axes per panel.
+    """
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    n_models = len(table)
+    panel_h  = max(3.2, 0.28 * n_models + 1.2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, panel_h), sharey=True)
+    _cost_bar_panel(
+        table, "cost_per_100_plans",
+        title="a  Cost per 100 plans", xlabel="Cost per 100 plans  (USD)",
+        ax=ax1,
+    )
+    _cost_bar_panel(
+        table, "cost_per_pass",
+        title="b  Cost per successful plan",
+        xlabel="Cost per successful plan  (USD)",
+        ax=ax2,
+    )
+    _cost_provider_legend(fig, table)
     fig.suptitle("Per-model cost benchmark", fontsize=11,
                  fontweight="bold", y=1.06)
     return fig
@@ -2230,33 +2295,20 @@ def cost_vs_quality_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
 # ── Wall-clock latency ───────────────────────────────────────────
 
-def latency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
-    """Two-panel wall-clock latency comparison across models.
-
-    Panel a: sorted horizontal bar chart of median wall-time per model
-    with IQR error bars, provider-coloured.
-    Panel b: scatter of pass rate vs median wall-time (log-x) with
-    Pareto frontier annotated — the speed/quality trade-off.
-
-    Pairs with ``planning_cost_quality.pdf``: that figure answers
-    "what does it cost?", this one answers "is it fast enough?".
-    Returns ``None`` if ``wall_seconds`` is missing or all-zero.
-    """
+def _latency_aggregate(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Aggregate per-model latency stats. Returns None if no usable data."""
     if "wall_seconds" not in df.columns or df.empty:
         return None
-
     df = df.copy()
     df["wall_seconds"] = pd.to_numeric(df["wall_seconds"], errors="coerce")
     df = df[df["wall_seconds"].notna() & (df["wall_seconds"] > 0)]
     if df.empty:
         return None
-
     if "overall_pass" in df.columns:
         df["overall_pass"] = df["overall_pass"].map(
             lambda v: v if isinstance(v, (bool, int, float))
             else str(v).strip().lower() == "true"
         ).astype(int)
-
     g = (df.groupby("model")["wall_seconds"]
            .agg(median="median",
                 q1=lambda s: float(np.percentile(s, 25)),
@@ -2269,135 +2321,199 @@ def latency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         g = g.merge(rates, on="model", how="left")
     else:
         g["rate"] = np.nan
-    g = g.sort_values("median", ascending=True).reset_index(drop=True)
+    return g.sort_values("median", ascending=True).reset_index(drop=True)
 
-    fig_h = max(3.4, 0.26 * len(g) + 1.4)
-    fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(11.0, fig_h),
-        gridspec_kw={"width_ratios": [1.0, 1.05], "wspace": 0.32},
-    )
 
-    # Panel a — sorted bar chart with IQR error bars
+def _render_latency_bars(g: pd.DataFrame, ax: plt.Axes,
+                         *, title: str = "Latency per model") -> None:
+    """Sorted horizontal bar chart of median wall-time per model with IQR bars."""
     y    = np.arange(len(g))
     cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
             for m in g["model"]]
     err_lo = (g["median"] - g["q1"]).clip(lower=0).to_numpy()
     err_hi = (g["q3"] - g["median"]).clip(lower=0).to_numpy()
-    ax1.barh(y, g["median"], xerr=[err_lo, err_hi],
-             color=cols, edgecolor="white", linewidth=0.6, height=0.72,
-             capsize=2, error_kw={"elinewidth": 0.8, "capthick": 0.8,
-                                  "color": "#1f2937"})
+    ax.barh(y, g["median"], xerr=[err_lo, err_hi],
+            color=cols, edgecolor="white", linewidth=0.6, height=0.72,
+            capsize=2, error_kw={"elinewidth": 0.8, "capthick": 0.8,
+                                 "color": "#1f2937"})
     for i, (m, q3) in enumerate(zip(g["median"], g["q3"])):
-        ax1.text(q3 + 0.02 * g["q3"].max(), i, f"{m:.0f}s",
-                 va="center", ha="left", fontsize=7.5, color="#1f2937")
+        ax.text(q3 + 0.02 * g["q3"].max(), i, f"{m:.0f}s",
+                va="center", ha="left", fontsize=7.5, color="#1f2937")
+    ax.set_yticks(y)
+    ax.set_yticklabels([_short_name(m) for m in g["model"]])
+    ax.set_xlabel("Median wall time per plan (s)  ·  IQR")
+    ax.set_title(title, loc="left", fontweight="bold")
+    ax.set_xlim(0, g["q3"].max() * 1.18)
+    _style_value_axis(ax, x=True)
 
-    ax1.set_yticks(y)
-    ax1.set_yticklabels([_short_name(m) for m in g["model"]])
-    ax1.set_xlabel("Median wall time per plan (s)  ·  IQR")
-    ax1.set_title("a  Latency per model", loc="left", fontweight="bold")
-    ax1.set_xlim(0, g["q3"].max() * 1.18)
-    _style_value_axis(ax1, x=True)
 
-    # Panel b — pass rate vs latency scatter with Pareto frontier highlighted
-    if g["rate"].notna().any():
-        plot_df = g.dropna(subset=["rate"]).copy()
-        for _, row in plot_df.iterrows():
-            prov   = _provider_from_model(row["model"])
-            colour = _PROVIDER_COLOURS.get(prov, "#6b7280")
-            ax2.scatter(row["median"], row["rate"], s=60, color=colour,
-                        edgecolor="white", linewidth=0.8, zorder=3)
+def _render_speed_quality_scatter(g: pd.DataFrame, ax: plt.Axes,
+                                  *, title: str = "Speed vs quality trade-off"
+                                  ) -> bool:
+    """Pass rate vs latency scatter with Pareto frontier annotated.
 
-        # Frontier: lowest latency at each new-best pass-rate threshold
-        frontier = plot_df.sort_values("median").copy()
-        best_rate = -1.0
-        is_frontier = []
-        for _, r in frontier.iterrows():
-            on = r["rate"] > best_rate
-            if on:
-                best_rate = r["rate"]
-            is_frontier.append(on)
-        frontier["frontier"] = is_frontier
-        on_frontier = set(frontier.loc[frontier["frontier"], "model"])
+    Returns True if the panel was rendered, False if no pass-rate data
+    was available (caller may want to hide the panel).
+    """
+    if g["rate"].isna().all():
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No pass-rate data", ha="center", va="center",
+                fontsize=10, color="#6b7280", transform=ax.transAxes)
+        return False
 
-        # Linear x when range spans < 1 decade — log compression hurts here
-        x_lo, x_hi = plot_df["median"].min(), plot_df["median"].max()
-        use_log = (x_hi / max(x_lo, 1e-9)) >= 10.0
-        if use_log:
-            ax2.set_xscale("log")
-            ax2.set_xlabel("Median wall time per plan (s, log)")
-        else:
-            pad = 0.05 * max(x_hi - x_lo, 1.0)
-            ax2.set_xlim(x_lo - pad, x_hi + pad)
-            ax2.set_xlabel("Median wall time per plan (s)")
-        ax2.xaxis.set_major_formatter(mtick.FuncFormatter(
-            lambda v, _: f"{v:.0f}s"))
+    plot_df = g.dropna(subset=["rate"]).copy()
+    for _, row in plot_df.iterrows():
+        prov   = _provider_from_model(row["model"])
+        colour = _PROVIDER_COLOURS.get(prov, "#6b7280")
+        ax.scatter(row["median"], row["rate"], s=60, color=colour,
+                   edgecolor="white", linewidth=0.8, zorder=3)
 
-        ax2.set_ylabel("Pass rate")
-        ax2.set_title("b  Speed vs quality trade-off",
-                      loc="left", fontweight="bold")
+    # Pareto frontier
+    frontier = plot_df.sort_values("median").copy()
+    best_rate = -1.0
+    is_frontier: List[bool] = []
+    for _, r in frontier.iterrows():
+        on = r["rate"] > best_rate
+        if on:
+            best_rate = r["rate"]
+        is_frontier.append(on)
+    frontier["frontier"] = is_frontier
+    on_frontier = set(frontier.loc[frontier["frontier"], "model"])
 
-        # Highlight frontier points with a heavier ring
-        front_pts = plot_df[plot_df["model"].isin(on_frontier)]
-        ax2.scatter(front_pts["median"], front_pts["rate"], s=110,
-                    facecolors="none", edgecolor="#1f2937",
-                    linewidth=1.2, zorder=4)
-
-        y_lo = max(0.0, plot_df["rate"].min() - 0.04)
-        y_hi = min(1.02, plot_df["rate"].max() + 0.04)
-        ax2.set_ylim(y_lo, y_hi)
-        span = y_hi - y_lo
-        step = 0.02 if span < 0.15 else 0.05 if span < 0.3 else 0.1
-        ticks = np.arange(0, 1.01, step)
-        ax2.set_yticks([t for t in ticks if y_lo <= t <= y_hi])
-        ax2.set_yticklabels([f"{t:.0%}" for t in ticks if y_lo <= t <= y_hi])
-        ax2.grid(True, linestyle="-", linewidth=0.6, alpha=0.35)
-        ax2.set_axisbelow(True)
-
-        # Selective labelling — labelling all 32 models overcrowds the
-        # panel. We mark: every frontier point, the slowest model, the
-        # lowest-pass-rate model, and one representative per pass-rate
-        # tier per provider (whichever sits at the latency extreme).
-        to_label = set(on_frontier)
-        to_label.add(plot_df.loc[plot_df["median"].idxmax(), "model"])
-        to_label.add(plot_df.loc[plot_df["rate"].idxmin(), "model"])
-
-        # Per (provider, rate-tier) pick the fastest + slowest representative
-        rate_bin = (plot_df["rate"] * 200).round().astype(int)  # 0.5% bins
-        plot_df["_rb"] = rate_bin
-        for (_prov, _rb), sub in plot_df.groupby(
-                [plot_df["model"].map(_provider_from_model), "_rb"]):
-            to_label.add(sub.loc[sub["median"].idxmin(), "model"])
-            to_label.add(sub.loc[sub["median"].idxmax(), "model"])
-
-        x_range = max(x_hi - x_lo, 1.0)
-        bin_w   = 0.05 * x_range
-        labelled = plot_df[plot_df["model"].isin(to_label)].sort_values(
-            ["rate", "median"], ascending=[False, True])
-        buckets: Dict[int, int] = {}
-        for _, row in labelled.iterrows():
-            bk = int((row["median"] - x_lo) / max(bin_w, 1e-9))
-            slot = buckets.get(bk, 0)
-            buckets[bk] = slot + 1
-            # Alternate above / below; spread further on later slots
-            offsets = [(8, 8), (8, -12), (-8, 8), (-8, -12),
-                       (10, 18), (10, -20), (-10, 18), (-10, -20)]
-            dx, dy = offsets[slot % len(offsets)]
-            ha = "left" if dx > 0 else "right"
-            on_front = row["model"] in on_frontier
-            ax2.annotate(_short_name(row["model"]),
-                         (row["median"], row["rate"]),
-                         xytext=(dx, dy), textcoords="offset points",
-                         fontsize=7.0, ha=ha,
-                         color="#111827" if on_front else "#4b5563",
-                         fontweight="bold" if on_front else "normal",
-                         arrowprops=dict(arrowstyle="-", color="#9ca3af",
-                                         linewidth=0.5, shrinkA=0, shrinkB=2))
-        plot_df.drop(columns="_rb", inplace=True, errors="ignore")
+    # Linear x when range spans < 1 decade — log compression hurts there
+    x_lo, x_hi = plot_df["median"].min(), plot_df["median"].max()
+    use_log = (x_hi / max(x_lo, 1e-9)) >= 10.0
+    if use_log:
+        ax.set_xscale("log")
+        ax.set_xlabel("Median wall time per plan (s, log)")
     else:
-        ax2.axis("off")
-        ax2.text(0.5, 0.5, "No pass-rate data", ha="center", va="center",
-                 fontsize=10, color="#6b7280", transform=ax2.transAxes)
+        pad = 0.05 * max(x_hi - x_lo, 1.0)
+        ax.set_xlim(x_lo - pad, x_hi + pad)
+        ax.set_xlabel("Median wall time per plan (s)")
+    ax.xaxis.set_major_formatter(mtick.FuncFormatter(
+        lambda v, _: f"{v:.0f}s"))
+    ax.set_ylabel("Pass rate")
+    ax.set_title(title, loc="left", fontweight="bold")
 
+    # Frontier rings
+    front_pts = plot_df[plot_df["model"].isin(on_frontier)]
+    ax.scatter(front_pts["median"], front_pts["rate"], s=110,
+               facecolors="none", edgecolor="#1f2937",
+               linewidth=1.2, zorder=4)
+
+    y_lo = max(0.0, plot_df["rate"].min() - 0.04)
+    y_hi = min(1.02, plot_df["rate"].max() + 0.04)
+    ax.set_ylim(y_lo, y_hi)
+    span = y_hi - y_lo
+    step = 0.02 if span < 0.15 else 0.05 if span < 0.3 else 0.1
+    ticks = np.arange(0, 1.01, step)
+    ax.set_yticks([t for t in ticks if y_lo <= t <= y_hi])
+    ax.set_yticklabels([f"{t:.0%}" for t in ticks if y_lo <= t <= y_hi])
+    ax.grid(True, linestyle="-", linewidth=0.6, alpha=0.35)
+    ax.set_axisbelow(True)
+
+    # Selective labelling — frontier + extremes + per-(provider, rate-bin)
+    # representatives at the latency extremes.
+    to_label = set(on_frontier)
+    to_label.add(plot_df.loc[plot_df["median"].idxmax(), "model"])
+    to_label.add(plot_df.loc[plot_df["rate"].idxmin(), "model"])
+    rate_bin = (plot_df["rate"] * 200).round().astype(int)
+    plot_df["_rb"] = rate_bin
+    for (_prov, _rb), sub in plot_df.groupby(
+            [plot_df["model"].map(_provider_from_model), "_rb"]):
+        to_label.add(sub.loc[sub["median"].idxmin(), "model"])
+        to_label.add(sub.loc[sub["median"].idxmax(), "model"])
+
+    x_range = max(x_hi - x_lo, 1.0)
+    bin_w   = 0.05 * x_range
+    labelled = plot_df[plot_df["model"].isin(to_label)].sort_values(
+        ["rate", "median"], ascending=[False, True])
+    buckets: Dict[int, int] = {}
+    for _, row in labelled.iterrows():
+        bk = int((row["median"] - x_lo) / max(bin_w, 1e-9))
+        slot = buckets.get(bk, 0)
+        buckets[bk] = slot + 1
+        offsets = [(8, 8), (8, -12), (-8, 8), (-8, -12),
+                   (10, 18), (10, -20), (-10, 18), (-10, -20)]
+        dx, dy = offsets[slot % len(offsets)]
+        ha = "left" if dx > 0 else "right"
+        on_front = row["model"] in on_frontier
+        ax.annotate(_short_name(row["model"]),
+                    (row["median"], row["rate"]),
+                    xytext=(dx, dy), textcoords="offset points",
+                    fontsize=7.0, ha=ha,
+                    color="#111827" if on_front else "#4b5563",
+                    fontweight="bold" if on_front else "normal",
+                    arrowprops=dict(arrowstyle="-", color="#9ca3af",
+                                    linewidth=0.5, shrinkA=0, shrinkB=2))
+    return True
+
+
+def latency_per_model_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: sorted median wall time per model, IQR error bars.
+
+    Wider per-bar than the combined ``latency_figure`` so model names
+    and second-mark annotations have room. Manuscript-friendly width.
+    """
+    g = _latency_aggregate(df)
+    if g is None:
+        return None
+    fig_h = max(3.4, 0.28 * len(g) + 1.4)
+    fig, ax = plt.subplots(figsize=(8.0, fig_h))
+    _render_latency_bars(g, ax, title="Latency per model")
+    providers = sorted(
+        {_provider_from_model(m) for m in g["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.02))
+    return fig
+
+
+def speed_vs_quality_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: pass rate vs median wall time with Pareto frontier.
+
+    Wider x-axis than the combined ``latency_figure`` so frontier
+    labels don't crowd. Pairs naturally with
+    ``cost_vs_quality_figure`` — together they answer the
+    "fast enough?" and "cheap enough?" questions for the manuscript.
+    """
+    g = _latency_aggregate(df)
+    if g is None:
+        return None
+    fig_h = max(4.0, 0.18 * len(g) + 2.4)
+    fig, ax = plt.subplots(figsize=(8.5, fig_h))
+    if not _render_speed_quality_scatter(
+            g, ax, title="Speed vs quality trade-off"):
+        plt.close(fig)
+        return None
+    providers = sorted(
+        {_provider_from_model(m) for m in g["model"]},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.02))
+    return fig
+
+
+def latency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Two-panel wall-clock latency comparison (legacy combined view).
+
+    Kept for backward-compat. New manuscripts should prefer the split
+    single-panel ``latency_per_model_figure`` and
+    ``speed_vs_quality_figure`` for wider x-axes per panel.
+    """
+    g = _latency_aggregate(df)
+    if g is None:
+        return None
+    fig_h = max(3.4, 0.26 * len(g) + 1.4)
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(11.0, fig_h),
+        gridspec_kw={"width_ratios": [1.0, 1.05], "wspace": 0.32},
+    )
+    _render_latency_bars(g, ax1, title="a  Latency per model")
+    _render_speed_quality_scatter(
+        g, ax2, title="b  Speed vs quality trade-off")
     providers = sorted(
         {_provider_from_model(m) for m in g["model"]},
         key=lambda p: list(_PROVIDER_COLOURS).index(p)
@@ -3203,6 +3319,8 @@ def main() -> None:
                 print(f"[ok]   planning_cost_quality → "
                       f"{fig_dir/'planning_cost_quality'}.pdf")
 
+            # Latency: legacy combined two-panel + split single-panel
+            # versions (wider x-axis on each, manuscript-friendly).
             fig3b = latency_figure(df)
             if fig3b is not None:
                 _save(fig3b, fig_dir / "planning_latency", svg=args.svg)
@@ -3210,12 +3328,46 @@ def main() -> None:
                 print(f"[ok]   planning_latency → "
                       f"{fig_dir/'planning_latency'}.pdf")
 
+                fig3c = latency_per_model_figure(df)
+                if fig3c is not None:
+                    _save(fig3c, fig_dir / "planning_latency_per_model",
+                          svg=args.svg)
+                    plt.close(fig3c)
+                    print(f"[ok]   planning_latency_per_model → "
+                          f"{fig_dir/'planning_latency_per_model'}.pdf")
+
+                fig3d = speed_vs_quality_figure(df)
+                if fig3d is not None:
+                    _save(fig3d, fig_dir / "planning_speed_vs_quality",
+                          svg=args.svg)
+                    plt.close(fig3d)
+                    print(f"[ok]   planning_speed_vs_quality → "
+                          f"{fig_dir/'planning_speed_vs_quality'}.pdf")
+
+            # Cost summary: legacy combined two-panel figure plus the
+            # split single-panel versions (wider x-axis on each).
             fig4 = cost_summary_figure(df)
             if fig4 is not None:
                 _save(fig4, fig_dir / "planning_cost_summary", svg=args.svg)
                 plt.close(fig4)
                 print(f"[ok]   planning_cost_summary → "
                       f"{fig_dir/'planning_cost_summary'}.pdf")
+
+                fig4a = cost_per_100_plans_figure(df)
+                if fig4a is not None:
+                    _save(fig4a, fig_dir / "planning_cost_per_100_plans",
+                          svg=args.svg)
+                    plt.close(fig4a)
+                    print(f"[ok]   planning_cost_per_100_plans → "
+                          f"{fig_dir/'planning_cost_per_100_plans'}.pdf")
+
+                fig4b = cost_per_pass_figure(df)
+                if fig4b is not None:
+                    _save(fig4b, fig_dir / "planning_cost_per_pass",
+                          svg=args.svg)
+                    plt.close(fig4b)
+                    print(f"[ok]   planning_cost_per_pass → "
+                          f"{fig_dir/'planning_cost_per_pass'}.pdf")
 
                 table = _per_model_cost_table(df)
                 if table is not None:
