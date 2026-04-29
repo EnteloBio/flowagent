@@ -2006,7 +2006,7 @@ If you are being asked to generate a title, set "success" to false.
             f"{geo_accession}/soft/{geo_accession}_family.soft.gz"
         )
 
-    def _build_sample_sheet_step(self, geo_accession: str, prompt: str) -> Dict[str, Any]:
+    async def _build_sample_sheet_step(self, geo_accession: str, prompt: str) -> Dict[str, Any]:
         """Build the ``build_sample_sheet`` step shared by STAR and Kallisto.
 
         Downloads the GEO SOFT family file and runs
@@ -2015,7 +2015,7 @@ If you are being asked to generate a title, set "success" to false.
         from the prompt (``between A and B``), the output is a two-column
         DESeq2-ready TSV; otherwise a template is written for manual fill-in.
         """
-        labels = self._extract_condition_labels(prompt)
+        labels = await self._extract_condition_labels(prompt)
         labels_arg = f"--labels '{','.join(labels)}' " if labels else ""
         soft_url = self._geo_soft_url(geo_accession)
         return {
@@ -2039,28 +2039,109 @@ If you are being asked to generate a title, set "success" to false.
             "profile_name": "minimal",
         }
 
-    def _extract_condition_labels(self, prompt: str) -> List[str]:
-        """Pull a pair of condition labels out of a prompt.
+    async def _extract_condition_labels(self, prompt: str) -> List[str]:
+        """Extract the two contrast labels for a DE comparison from a prompt.
 
-        Recognises ``between X and Y``, ``X vs Y`` (and ``X vs. Y``), and
-        ``compar(e|ing) X {and|to|with} Y``. Returns ``[]`` when only
-        bracketed placeholders (``[condition A]``) are present or when the
-        two labels are identical (meaning we probably matched a generic
-        phrase like "compare condition and condition").
+        Two-tier strategy. First a fast regex pass for unambiguous
+        phrasings (``between X and Y`` / ``X vs Y`` / ``compare X and
+        Y``) — covers the bulk of prompts at zero cost. Multi-word
+        labels and unusual phrasings fall through to an LLM call:
+        the LLM reads the full prompt, identifies the contrast, and
+        returns short keywords suitable for fuzzy-matching against
+        GEO sample metadata (the ``build_sample_sheet`` helper does
+        substring matching). Returns ``[]`` if neither path can
+        identify a clean pair, in which case
+        ``build_sample_sheet`` writes a fill-in template.
+
+        Examples the regex handles directly:
+          "between Dexamethasone and untreated"   → ["Dexamethasone", "untreated"]
+          "between the basal and luminal …"       → ["basal", "luminal"]
+        Examples that fall through to the LLM:
+          "between the COVID-19 patient samples and the age- and
+           sex-matched healthy controls" → ["COVID", "Healthy"]
         """
+        # Tier 1 — regex. Tolerant of leading determiners
+        # (``between THE basal and luminal …``).
+        det = r"(?:the|a|an)\s+"
         patterns = (
-            r"between\s+([A-Za-z0-9_\-]+)\s+and\s+([A-Za-z0-9_\-]+)",
+            rf"between\s+(?:{det})?([A-Za-z0-9_\-]+)\s+and\s+(?:{det})?([A-Za-z0-9_\-]+)",
             r"\b([A-Za-z0-9_\-]+)\s+vs\.?\s+([A-Za-z0-9_\-]+)",
-            r"compar(?:e|ing)\s+([A-Za-z0-9_\-]+)\s+(?:and|to|with)\s+([A-Za-z0-9_\-]+)",
+            rf"compar(?:e|ing)\s+(?:{det})?([A-Za-z0-9_\-]+)\s+(?:and|to|with)\s+(?:{det})?([A-Za-z0-9_\-]+)",
         )
+        # Words that signal "I matched part of a generic phrase, not a
+        # real label" — usually because the prompt has multi-word labels
+        # the regex couldn't span. Fall through to the LLM in those cases.
+        regex_noise = {
+            "the", "a", "an", "samples", "sample", "data", "group", "groups",
+            "condition", "conditions", "controls", "control", "treatment",
+            "treatments", "experiment", "experiments", "datasets", "dataset",
+            "patient", "patients",
+        }
         for pat in patterns:
             m = re.search(pat, prompt, re.IGNORECASE)
-            if m:
-                a, b = m.group(1), m.group(2)
-                if a.lower() == b.lower():
-                    continue
-                return [a, b]
-        return []
+            if not m:
+                continue
+            a, b = m.group(1), m.group(2)
+            if a.lower() == b.lower():
+                continue
+            if a.lower() in regex_noise or b.lower() in regex_noise:
+                # Regex partially matched but landed on a generic word
+                # — likely the real labels are multi-word. Let the LLM
+                # have a go.
+                break
+            return [a, b]
+
+        # Tier 2 — LLM. Cheap (one short JSON call) and handles the
+        # multi-word / awkwardly-phrased prompts the regex can't span.
+        system = (
+            "You extract differential-expression condition labels from "
+            "a user's natural-language pipeline prompt. Return JSON "
+            "with one key, ``labels``, whose value is a list of "
+            "exactly two short strings, OR null if no contrast is "
+            "expressed. The labels you choose will be substring-matched "
+            "against GEO sample metadata (``title`` and "
+            "``characteristics`` fields), so prefer single-word or "
+            "compact keywords that uniquely identify each group "
+            "(e.g. ``Dexamethasone`` / ``untreated``, ``COVID`` / "
+            "``Healthy``, ``basal`` / ``luminal``). Avoid full noun "
+            "phrases like ``COVID-19 patient samples`` — they rarely "
+            "match GEO metadata literally. Return only the JSON, no "
+            "prose."
+        )
+        user = f"Prompt:\n{prompt}\n\nJSON:"
+        try:
+            reply = await self._call_openai([
+                {"role": "system", "content": system},
+                {"role": "user",   "content": user},
+            ])
+        except Exception as exc:
+            self.logger.warning(
+                "LLM condition-label extraction failed: %s — falling "
+                "back to template sample sheet", exc,
+            )
+            return []
+        cleaned = self._clean_llm_response(reply or "")
+        m = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if not m:
+            return []
+        try:
+            obj = json.loads(self._repair_truncated_json(m.group(0)))
+        except json.JSONDecodeError:
+            return []
+        labels = obj.get("labels")
+        if (
+            not isinstance(labels, list)
+            or len(labels) != 2
+            or not all(isinstance(x, str) and x.strip() for x in labels)
+        ):
+            return []
+        a, b = labels[0].strip(), labels[1].strip()
+        if a.lower() == b.lower():
+            return []
+        self.logger.info(
+            "LLM extracted condition labels: %r vs %r", a, b,
+        )
+        return [a, b]
 
     def _geo_download_page_url(self, geo_accession: str) -> str:
         """Construct the GEO bulk-download URL that returns a tar of all supplementary files."""
@@ -2301,7 +2382,7 @@ If you are being asked to generate a title, set "success" to false.
                 )
 
             workflow_plan["steps"].append(
-                self._build_sample_sheet_step(geo_accession, prompt)
+                await self._build_sample_sheet_step(geo_accession, prompt)
             )
 
             workflow_plan["steps"].extend([
@@ -2468,7 +2549,7 @@ If you are being asked to generate a title, set "success" to false.
                 gtf = file_info.get("annotation", "") or "annotation.gtf"
 
             workflow_plan["steps"].append(
-                self._build_sample_sheet_step(geo_accession, prompt)
+                await self._build_sample_sheet_step(geo_accession, prompt)
             )
 
             star_index_deps = ["fastqc"]
