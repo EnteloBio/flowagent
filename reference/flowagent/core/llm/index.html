@@ -5164,7 +5164,285 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">2713</span>
 <span class="normal">2714</span>
 <span class="normal">2715</span>
-<span class="normal">2716</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">2716</span>
+<span class="normal">2717</span>
+<span class="normal">2718</span>
+<span class="normal">2719</span>
+<span class="normal">2720</span>
+<span class="normal">2721</span>
+<span class="normal">2722</span>
+<span class="normal">2723</span>
+<span class="normal">2724</span>
+<span class="normal">2725</span>
+<span class="normal">2726</span>
+<span class="normal">2727</span>
+<span class="normal">2728</span>
+<span class="normal">2729</span>
+<span class="normal">2730</span>
+<span class="normal">2731</span>
+<span class="normal">2732</span>
+<span class="normal">2733</span>
+<span class="normal">2734</span>
+<span class="normal">2735</span>
+<span class="normal">2736</span>
+<span class="normal">2737</span>
+<span class="normal">2738</span>
+<span class="normal">2739</span>
+<span class="normal">2740</span>
+<span class="normal">2741</span>
+<span class="normal">2742</span>
+<span class="normal">2743</span>
+<span class="normal">2744</span>
+<span class="normal">2745</span>
+<span class="normal">2746</span>
+<span class="normal">2747</span>
+<span class="normal">2748</span>
+<span class="normal">2749</span>
+<span class="normal">2750</span>
+<span class="normal">2751</span>
+<span class="normal">2752</span>
+<span class="normal">2753</span>
+<span class="normal">2754</span>
+<span class="normal">2755</span>
+<span class="normal">2756</span>
+<span class="normal">2757</span>
+<span class="normal">2758</span>
+<span class="normal">2759</span>
+<span class="normal">2760</span>
+<span class="normal">2761</span>
+<span class="normal">2762</span>
+<span class="normal">2763</span>
+<span class="normal">2764</span>
+<span class="normal">2765</span>
+<span class="normal">2766</span>
+<span class="normal">2767</span>
+<span class="normal">2768</span>
+<span class="normal">2769</span>
+<span class="normal">2770</span>
+<span class="normal">2771</span>
+<span class="normal">2772</span>
+<span class="normal">2773</span>
+<span class="normal">2774</span>
+<span class="normal">2775</span>
+<span class="normal">2776</span>
+<span class="normal">2777</span>
+<span class="normal">2778</span>
+<span class="normal">2779</span>
+<span class="normal">2780</span>
+<span class="normal">2781</span>
+<span class="normal">2782</span>
+<span class="normal">2783</span>
+<span class="normal">2784</span>
+<span class="normal">2785</span>
+<span class="normal">2786</span>
+<span class="normal">2787</span>
+<span class="normal">2788</span>
+<span class="normal">2789</span>
+<span class="normal">2790</span>
+<span class="normal">2791</span>
+<span class="normal">2792</span>
+<span class="normal">2793</span>
+<span class="normal">2794</span>
+<span class="normal">2795</span>
+<span class="normal">2796</span>
+<span class="normal">2797</span>
+<span class="normal">2798</span>
+<span class="normal">2799</span>
+<span class="normal">2800</span>
+<span class="normal">2801</span>
+<span class="normal">2802</span>
+<span class="normal">2803</span>
+<span class="normal">2804</span>
+<span class="normal">2805</span>
+<span class="normal">2806</span>
+<span class="normal">2807</span>
+<span class="normal">2808</span>
+<span class="normal">2809</span>
+<span class="normal">2810</span>
+<span class="normal">2811</span>
+<span class="normal">2812</span>
+<span class="normal">2813</span>
+<span class="normal">2814</span>
+<span class="normal">2815</span>
+<span class="normal">2816</span>
+<span class="normal">2817</span>
+<span class="normal">2818</span>
+<span class="normal">2819</span>
+<span class="normal">2820</span>
+<span class="normal">2821</span>
+<span class="normal">2822</span>
+<span class="normal">2823</span>
+<span class="normal">2824</span>
+<span class="normal">2825</span>
+<span class="normal">2826</span>
+<span class="normal">2827</span>
+<span class="normal">2828</span>
+<span class="normal">2829</span>
+<span class="normal">2830</span>
+<span class="normal">2831</span>
+<span class="normal">2832</span>
+<span class="normal">2833</span>
+<span class="normal">2834</span>
+<span class="normal">2835</span>
+<span class="normal">2836</span>
+<span class="normal">2837</span>
+<span class="normal">2838</span>
+<span class="normal">2839</span>
+<span class="normal">2840</span>
+<span class="normal">2841</span>
+<span class="normal">2842</span>
+<span class="normal">2843</span>
+<span class="normal">2844</span>
+<span class="normal">2845</span>
+<span class="normal">2846</span>
+<span class="normal">2847</span>
+<span class="normal">2848</span>
+<span class="normal">2849</span>
+<span class="normal">2850</span>
+<span class="normal">2851</span>
+<span class="normal">2852</span>
+<span class="normal">2853</span>
+<span class="normal">2854</span>
+<span class="normal">2855</span>
+<span class="normal">2856</span>
+<span class="normal">2857</span>
+<span class="normal">2858</span>
+<span class="normal">2859</span>
+<span class="normal">2860</span>
+<span class="normal">2861</span>
+<span class="normal">2862</span>
+<span class="normal">2863</span>
+<span class="normal">2864</span>
+<span class="normal">2865</span>
+<span class="normal">2866</span>
+<span class="normal">2867</span>
+<span class="normal">2868</span>
+<span class="normal">2869</span>
+<span class="normal">2870</span>
+<span class="normal">2871</span>
+<span class="normal">2872</span>
+<span class="normal">2873</span>
+<span class="normal">2874</span>
+<span class="normal">2875</span>
+<span class="normal">2876</span>
+<span class="normal">2877</span>
+<span class="normal">2878</span>
+<span class="normal">2879</span>
+<span class="normal">2880</span>
+<span class="normal">2881</span>
+<span class="normal">2882</span>
+<span class="normal">2883</span>
+<span class="normal">2884</span>
+<span class="normal">2885</span>
+<span class="normal">2886</span>
+<span class="normal">2887</span>
+<span class="normal">2888</span>
+<span class="normal">2889</span>
+<span class="normal">2890</span>
+<span class="normal">2891</span>
+<span class="normal">2892</span>
+<span class="normal">2893</span>
+<span class="normal">2894</span>
+<span class="normal">2895</span>
+<span class="normal">2896</span>
+<span class="normal">2897</span>
+<span class="normal">2898</span>
+<span class="normal">2899</span>
+<span class="normal">2900</span>
+<span class="normal">2901</span>
+<span class="normal">2902</span>
+<span class="normal">2903</span>
+<span class="normal">2904</span>
+<span class="normal">2905</span>
+<span class="normal">2906</span>
+<span class="normal">2907</span>
+<span class="normal">2908</span>
+<span class="normal">2909</span>
+<span class="normal">2910</span>
+<span class="normal">2911</span>
+<span class="normal">2912</span>
+<span class="normal">2913</span>
+<span class="normal">2914</span>
+<span class="normal">2915</span>
+<span class="normal">2916</span>
+<span class="normal">2917</span>
+<span class="normal">2918</span>
+<span class="normal">2919</span>
+<span class="normal">2920</span>
+<span class="normal">2921</span>
+<span class="normal">2922</span>
+<span class="normal">2923</span>
+<span class="normal">2924</span>
+<span class="normal">2925</span>
+<span class="normal">2926</span>
+<span class="normal">2927</span>
+<span class="normal">2928</span>
+<span class="normal">2929</span>
+<span class="normal">2930</span>
+<span class="normal">2931</span>
+<span class="normal">2932</span>
+<span class="normal">2933</span>
+<span class="normal">2934</span>
+<span class="normal">2935</span>
+<span class="normal">2936</span>
+<span class="normal">2937</span>
+<span class="normal">2938</span>
+<span class="normal">2939</span>
+<span class="normal">2940</span>
+<span class="normal">2941</span>
+<span class="normal">2942</span>
+<span class="normal">2943</span>
+<span class="normal">2944</span>
+<span class="normal">2945</span>
+<span class="normal">2946</span>
+<span class="normal">2947</span>
+<span class="normal">2948</span>
+<span class="normal">2949</span>
+<span class="normal">2950</span>
+<span class="normal">2951</span>
+<span class="normal">2952</span>
+<span class="normal">2953</span>
+<span class="normal">2954</span>
+<span class="normal">2955</span>
+<span class="normal">2956</span>
+<span class="normal">2957</span>
+<span class="normal">2958</span>
+<span class="normal">2959</span>
+<span class="normal">2960</span>
+<span class="normal">2961</span>
+<span class="normal">2962</span>
+<span class="normal">2963</span>
+<span class="normal">2964</span>
+<span class="normal">2965</span>
+<span class="normal">2966</span>
+<span class="normal">2967</span>
+<span class="normal">2968</span>
+<span class="normal">2969</span>
+<span class="normal">2970</span>
+<span class="normal">2971</span>
+<span class="normal">2972</span>
+<span class="normal">2973</span>
+<span class="normal">2974</span>
+<span class="normal">2975</span>
+<span class="normal">2976</span>
+<span class="normal">2977</span>
+<span class="normal">2978</span>
+<span class="normal">2979</span>
+<span class="normal">2980</span>
+<span class="normal">2981</span>
+<span class="normal">2982</span>
+<span class="normal">2983</span>
+<span class="normal">2984</span>
+<span class="normal">2985</span>
+<span class="normal">2986</span>
+<span class="normal">2987</span>
+<span class="normal">2988</span>
+<span class="normal">2989</span>
+<span class="normal">2990</span>
+<span class="normal">2991</span>
+<span class="normal">2992</span>
+<span class="normal">2993</span>
+<span class="normal">2994</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -6793,8 +7071,13 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="c1"># Check for GEO accession first</span>
         <span class="n">geo_accession</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detect_geo_accession</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
 
-        <span class="c1"># Extract reference file if mentioned</span>
-        <span class="n">reference_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;reference\s+(\S+)&#39;</span>
+        <span class="c1"># Extract reference file if mentioned. The pattern requires a</span>
+        <span class="c1"># FASTA-like extension so phrases like &quot;with healthy as the</span>
+        <span class="c1"># reference level&quot; don&#39;t capture &quot;level&quot; as a filename</span>
+        <span class="c1"># (we hit that exact bug on the GSE152418 prompt — every</span>
+        <span class="c1"># downstream step then referenced ``level.fa`` / ``level.idx``,</span>
+        <span class="c1"># which trips the recovery loop into unsafe-repair attempts).</span>
+        <span class="n">reference_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;reference\s+([\w\-./]+\.f(?:a|asta|na))\b&#39;</span>
         <span class="n">reference_match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">reference_pattern</span><span class="p">,</span> <span class="n">prompt</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
         <span class="n">reference</span> <span class="o">=</span> <span class="n">reference_match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">reference_match</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
 
@@ -7289,7 +7572,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="c1"># Extract reference from file_info or prompt</span>
         <span class="n">reference</span> <span class="o">=</span> <span class="n">file_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;reference&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">reference</span><span class="p">:</span>
-            <span class="n">reference_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;reference\s+(\S+)&#39;</span>
+            <span class="n">reference_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;reference\s+([\w\-./]+\.f(?:a|asta|na))\b&#39;</span>
             <span class="n">reference_match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">reference_pattern</span><span class="p">,</span> <span class="n">prompt</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
             <span class="n">reference</span> <span class="o">=</span> <span class="n">reference_match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">reference_match</span> <span class="k">else</span> <span class="s2">&quot;reference.fa&quot;</span>
 
@@ -7347,10 +7630,36 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="n">index_path</span> <span class="o">=</span> <span class="s2">&quot;raw_data/reference/transcriptome.idx&quot;</span>
                 <span class="n">index_source</span> <span class="o">=</span> <span class="n">transcriptome</span>
                 <span class="n">index_deps</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;fastqc&quot;</span><span class="p">,</span> <span class="s2">&quot;download_reference&quot;</span><span class="p">]</span>
-            <span class="k">else</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">reference</span> <span class="ow">and</span> <span class="n">reference</span> <span class="o">!=</span> <span class="s2">&quot;reference.fa&quot;</span><span class="p">:</span>
+                <span class="c1"># The user supplied a concrete FASTA filename in the prompt</span>
+                <span class="c1"># (the regex above only captures real ``.fa``/``.fasta``/</span>
+                <span class="c1"># ``.fna`` filenames). We trust them to put the file at</span>
+                <span class="c1"># that path; index from it directly.</span>
                 <span class="n">index_source</span> <span class="o">=</span> <span class="n">reference</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)</span>
                 <span class="n">index_path</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">index_source</span><span class="si">}</span><span class="s2">.idx&quot;</span>
                 <span class="n">index_deps</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;fastqc&quot;</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Genome NOT detected and no concrete FASTA in the prompt.</span>
+                <span class="c1"># The previous behaviour was to emit</span>
+                <span class="c1"># ``kallisto index -i reference.fa.idx reference.fa`` with</span>
+                <span class="c1"># no upstream step producing ``reference.fa`` — guaranteed</span>
+                <span class="c1"># to fail at runtime, then trigger a recovery loop that</span>
+                <span class="c1"># fabricates increasingly nonsensical fixes (the</span>
+                <span class="c1"># ``level.idx``/``level`` cascade you&#39;ve seen). Fail loud</span>
+                <span class="c1"># at planning time instead so the user can rephrase the</span>
+                <span class="c1"># prompt with a recognisable assembly name (GRCh38, mm10,</span>
+                <span class="c1"># etc.) or an explicit transcriptome path.</span>
+                <span class="n">supported</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                    <span class="nb">sorted</span><span class="p">({</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_GENOME_REFERENCES</span><span class="o">.</span><span class="n">keys</span><span class="p">()})</span>
+                <span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Cannot plan an rna_seq_kallisto workflow: prompt &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;mentions no recognisable reference assembly and no &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;explicit transcriptome FASTA path. Add an assembly &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;name to the prompt (one of: </span><span class="si">{</span><span class="n">supported</span><span class="si">}</span><span class="s2">) or include &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;an explicit ``reference path/to/transcriptome.fa`` &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;clause.&quot;</span>
+                <span class="p">)</span>
 
             <span class="n">workflow_plan</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_build_sample_sheet_step</span><span class="p">(</span><span class="n">geo_accession</span><span class="p">,</span> <span class="n">prompt</span><span class="p">)</span>
@@ -7654,16 +7963,31 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="sd">        ``WORKFLOW_TYPES[workflow_type]`` as exemplars, and the</span>
 <span class="sd">        original natural-language prompt — and returns the analysis</span>
 <span class="sd">        steps in the standard step-dict format.</span>
+
+<span class="sd">        Generated steps are validated against three failure modes that</span>
+<span class="sd">        previously caused silent cascades: (1) placeholder paths the LLM</span>
+<span class="sd">        forgot to fill in (``/path/to/...``, all-caps tokens like</span>
+<span class="sd">        ``LINEAGE``); (2) for-loops over inputs that don&#39;t exist (which</span>
+<span class="sd">        exit 0 with zero iterations); (3) referencing files at paths the</span>
+<span class="sd">        download steps never produced (e.g. an SRR list at</span>
+<span class="sd">        ``results/custom/metadata/`` when the actual list lives at</span>
+<span class="sd">        ``raw_data/&lt;ACC&gt;_srr_ids.txt``). If validation fails on the first</span>
+<span class="sd">        attempt, we retry once with the specific errors fed back to the</span>
+<span class="sd">        LLM; persistent failures abort with a warning rather than ship</span>
+<span class="sd">        a broken plan.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">download_summary</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;- </span><span class="si">{</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;name&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;?&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;description&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;&#39;</span><span class="p">)[:</span><span class="mi">120</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">existing_steps</span>
         <span class="p">)</span>
         <span class="n">rules_block</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;- </span><span class="si">{</span><span class="n">r</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="p">(</span><span class="n">rules</span> <span class="ow">or</span> <span class="p">[]))</span> <span class="ow">or</span> <span class="s2">&quot;(no examples)&quot;</span>
-        <span class="c1"># FASTQ layout note — depends on whether download_fastq_files</span>
-        <span class="c1"># produced paired or single. We have no way to know in advance,</span>
-        <span class="c1"># so explicitly tell the LLM to emit a self-detecting</span>
-        <span class="c1"># paired-vs-single shell idiom (same trick we use for kallisto).</span>
+        <span class="c1"># Concrete upstream paths. The download scaffold writes the SRR</span>
+        <span class="c1"># list to ``raw_data/&lt;ACC&gt;_srr_ids.txt`` and the FASTQs into</span>
+        <span class="c1"># ``raw_data/`` directly. Telling the LLM these explicitly stops</span>
+        <span class="c1"># it from inventing new paths like</span>
+        <span class="c1"># ``results/custom/metadata/srr_ids.txt`` (which nothing creates).</span>
+        <span class="n">srr_list_path</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt&quot;</span>
+        <span class="n">runinfo_path</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_runinfo.csv&quot;</span>
         <span class="n">system</span> <span class="o">=</span> <span class="p">(</span>
             <span class="s2">&quot;You are a senior bioinformatics workflow engineer. Given a &quot;</span>
             <span class="s2">&quot;set of GEO-download steps that have already been added to a &quot;</span>
@@ -7671,34 +7995,118 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;to fulfill the user&#39;s request. Emit ONLY a JSON object with &quot;</span>
             <span class="s2">&quot;a single key &#39;steps&#39; whose value is a list of step dicts. &quot;</span>
             <span class="s2">&quot;Each step dict has keys: name, command, parameters, &quot;</span>
-            <span class="s2">&quot;dependencies, outputs, description, profile_name.&quot;</span>
+            <span class="s2">&quot;dependencies, outputs, description, profile_name.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;HARD RULES — violating any of these causes the plan to be &quot;</span>
+            <span class="s2">&quot;rejected:</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;1. NO PLACEHOLDER PATHS. Never emit ``/path/to/...``, &quot;</span>
+            <span class="s2">&quot;``&lt;your_X&gt;``, ``REPLACE_ME``, ``TODO``, or all-caps &quot;</span>
+            <span class="s2">&quot;stand-in tokens like ``LINEAGE``, ``SAMPLE_NAME``, &quot;</span>
+            <span class="s2">&quot;``LINEAGE_PATTERN``. Every path must be a real file the &quot;</span>
+            <span class="s2">&quot;plan creates or that exists at runtime.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;2. REFERENCE GENOMES &amp; INDEXES MUST BE EXPLICIT. If the &quot;</span>
+            <span class="s2">&quot;analysis needs a genome FASTA or aligner index (bowtie2, &quot;</span>
+            <span class="s2">&quot;bwa, STAR, kallisto, salmon, hisat2), emit a step that &quot;</span>
+            <span class="s2">&quot;downloads the FASTA from a real public URL (Ensembl, &quot;</span>
+            <span class="s2">&quot;UCSC, GENCODE, NCBI) and a step that builds the index &quot;</span>
+            <span class="s2">&quot;from it. Do NOT reference an index path that no upstream &quot;</span>
+            <span class="s2">&quot;step produced.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;3. EVERY FOR-LOOP MUST GUARD ITS INPUT. A loop over a &quot;</span>
+            <span class="s2">&quot;list file must check the file exists and is non-empty: &quot;</span>
+            <span class="s2">&quot;``[ -s LIST ] || { echo &#39;FAIL: missing LIST&#39;; exit 1; }`` &quot;</span>
+            <span class="s2">&quot;before the ``for`` keyword. A loop over a glob pattern &quot;</span>
+            <span class="s2">&quot;must check at least one file matched: ``shopt -s &quot;</span>
+            <span class="s2">&quot;nullglob 2&gt;/dev/null || true; files=(PATTERN); [ &quot;</span>
+            <span class="s2">&quot;${#files[@]} -gt 0 ] || { echo &#39;FAIL: no PATTERN&#39;; exit &quot;</span>
+            <span class="s2">&quot;1; }``. Skipping work silently when inputs are missing &quot;</span>
+            <span class="s2">&quot;is forbidden.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;4. USE THE EXACT UPSTREAM PATHS GIVEN BELOW. The SRR list &quot;</span>
+            <span class="s2">&quot;lives at the path stated in the user message — do not &quot;</span>
+            <span class="s2">&quot;invent alternative paths under ``results/.../metadata/`` &quot;</span>
+            <span class="s2">&quot;or similar.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;5. EVERY STEP MUST DECLARE ITS ``outputs``. Populate the &quot;</span>
+            <span class="s2">&quot;``outputs`` field with the actual file or directory paths &quot;</span>
+            <span class="s2">&quot;the step produces, so the executor can validate that the &quot;</span>
+            <span class="s2">&quot;step did real work.&quot;</span>
         <span class="p">)</span>
         <span class="n">user</span> <span class="o">=</span> <span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;Workflow type: </span><span class="si">{</span><span class="n">workflow_type</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;GEO accession: </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;Original prompt: </span><span class="si">{</span><span class="n">prompt</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;UPSTREAM PATHS (already produced by the download steps — &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;reference these EXACTLY):</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  SRR list:        </span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  SRA runinfo CSV: </span><span class="si">{</span><span class="n">runinfo_path</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  FASTQs:          raw_data/&lt;SRR&gt;_1.fastq.gz + &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;raw_data/&lt;SRR&gt;_2.fastq.gz   (paired)</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;                   raw_data/&lt;SRR&gt;.fastq.gz                &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;     (single-end)</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;Existing download steps (already in the plan):</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">download_summary</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;FASTQs land at:</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;  paired-end: raw_data/&lt;SRR&gt;_1.fastq.gz + raw_data/&lt;SRR&gt;_2.fastq.gz</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;  single-end: raw_data/&lt;SRR&gt;.fastq.gz</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Always emit shell idioms that detect both layouts at runtime</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;(``if [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz ]; then ... else ... fi``)</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;so the same plan works for either library type.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Always emit shell idioms that detect paired vs single-end &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;layouts at runtime, e.g.:</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  for srr in $(cat </span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2">); do</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;    if [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz ]; then ... &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;paired branch ...</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;    elif [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz ]; then ... &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;single branch ...</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;    else echo &#39;FAIL: no FASTQ for &#39;$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">; exit 1; fi</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  done</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;so the same plan works for either library type. Wrap the &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;loop input itself in a ``[ -s </span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2"> ] || </span><span class="se">{{</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;echo &#39;FAIL: missing srr list&#39;; exit 1; </span><span class="se">}}</span><span class="s2">`` guard.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;Tool / command exemplars for </span><span class="si">{</span><span class="n">workflow_type</span><span class="si">}</span><span class="s2">:</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">rules_block</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Each step&#39;s ``dependencies`` field must reference one of the &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;existing step names above OR a previously-emitted step in &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;this list. Place outputs under &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Each step&#39;s ``dependencies`` field must reference one of &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;the existing step names above OR a previously-emitted &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;step in this list. Place outputs under &quot;</span>
             <span class="sa">f</span><span class="s2">&quot;``results/</span><span class="si">{</span><span class="n">workflow_type</span><span class="si">}</span><span class="s2">/&lt;step-specific-subdir&gt;/``.</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Append a final ``multiqc`` step that aggregates all per-step &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;reports.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Append a final ``multiqc`` step that aggregates all &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;per-step reports.</span><span class="se">\n</span><span class="s2">&quot;</span>
         <span class="p">)</span>
         <span class="n">messages</span> <span class="o">=</span> <span class="p">[</span>
             <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;system&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">system</span><span class="p">},</span>
             <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span>   <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">user</span><span class="p">},</span>
         <span class="p">]</span>
+        <span class="c1"># First attempt</span>
+        <span class="n">steps</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_llm_steps_attempt</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_generated_steps</span><span class="p">(</span><span class="n">steps</span><span class="p">,</span> <span class="n">srr_list_path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">errors</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">steps</span>
+
+        <span class="c1"># Single retry, feeding the specific violations back to the LLM.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">&quot;LLM analysis-steps validation failed (attempt 1): </span><span class="si">%s</span><span class="s2"> — retrying&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">errors</span><span class="p">[:</span><span class="mi">5</span><span class="p">]),</span>
+        <span class="p">)</span>
+        <span class="n">retry_msg</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;Your previous response violated the hard rules. Specific &quot;</span>
+            <span class="s2">&quot;violations:</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;- </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">errors</span><span class="p">)</span> <span class="o">+</span>
+            <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">Regenerate the entire ``steps`` list, fixing every &quot;</span>
+            <span class="s2">&quot;violation. Same JSON schema as before.&quot;</span>
+        <span class="p">)</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;assistant&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="n">steps</span><span class="p">})})</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">retry_msg</span><span class="p">})</span>
+        <span class="n">steps</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_llm_steps_attempt</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_generated_steps</span><span class="p">(</span><span class="n">steps</span><span class="p">,</span> <span class="n">srr_list_path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;LLM analysis-steps validation failed after retry: </span><span class="si">%s</span><span class="s2"> — &quot;</span>
+                <span class="s2">&quot;aborting analysis-step generation rather than shipping a &quot;</span>
+                <span class="s2">&quot;broken plan&quot;</span><span class="p">,</span> <span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">errors</span><span class="p">[:</span><span class="mi">5</span><span class="p">]),</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="k">return</span> <span class="n">steps</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_llm_steps_attempt</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">messages</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;One round-trip to the LLM that returns parsed step dicts.</span>
+
+<span class="sd">        Returns ``[]`` on any parse / schema failure; the caller decides</span>
+<span class="sd">        whether to retry. Kept as a tiny helper so the validation +</span>
+<span class="sd">        retry logic in the caller stays readable.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">reply</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_openai</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
-        <span class="c1"># Robust JSON extraction — the LLM occasionally wraps in ```json</span>
         <span class="n">cleaned</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clean_llm_response</span><span class="p">(</span><span class="n">reply</span><span class="p">)</span>
         <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\{.*\}&quot;</span><span class="p">,</span> <span class="n">cleaned</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
@@ -7712,7 +8120,6 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="n">steps</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;steps&quot;</span><span class="p">,</span> <span class="p">[])</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">steps</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
             <span class="k">return</span> <span class="p">[]</span>
-        <span class="c1"># Light validation — drop entries missing required keys.</span>
         <span class="n">valid</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">steps</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -7726,6 +8133,155 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="n">s</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;profile_name&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
             <span class="n">valid</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">valid</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_generated_steps</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">steps</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">srr_list_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Scan LLM-generated steps for the failure modes that caused</span>
+<span class="sd">        the silent ChIP/ATAC cascades.</span>
+
+<span class="sd">        Returns a list of human-readable violations. Empty list = clean.</span>
+<span class="sd">        Catches:</span>
+<span class="sd">          - placeholder paths (``/path/to/X``, ``&lt;your_X&gt;``, ``REPLACE_ME``)</span>
+<span class="sd">          - all-caps placeholder tokens (``LINEAGE``, ``SAMPLE_NAME``,</span>
+<span class="sd">            ``LINEAGE_PATTERN``) used as bare identifiers in commands</span>
+<span class="sd">          - ``for x in $(cat FILE)`` with no preceding ``[ -s FILE ]`` /</span>
+<span class="sd">            ``[ -f FILE ]`` guard in the same command</span>
+<span class="sd">          - ``for x in glob/*.ext`` with no nullglob/``-e`` guard</span>
+<span class="sd">          - referencing an SRR list at any path other than the one the</span>
+<span class="sd">            download scaffold actually produces</span>
+
+<span class="sd">        Each violation tells the LLM what to fix in plain English so</span>
+<span class="sd">        the retry message is actionable.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">steps</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;no steps generated&quot;</span><span class="p">]</span>
+
+        <span class="n">violations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Placeholders we should never see.</span>
+        <span class="n">placeholder_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+            <span class="sa">r</span><span class="s2">&quot;(/path/to/|&lt;your_|&lt;YOUR_|&lt;replace|&lt;TODO|REPLACE_ME|&quot;</span>
+            <span class="sa">r</span><span class="s2">&quot;\bTODO\b|\bFIXME\b|\bplaceholder\b)&quot;</span><span class="p">,</span>
+            <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># All-caps tokens that look like LLM stand-ins. We allow common</span>
+        <span class="c1"># legitimate caps (env vars, shell builtins, tool names) via a</span>
+        <span class="c1"># block-list. The pattern matches &gt;=4-char ALL-CAPS tokens with</span>
+        <span class="c1"># underscores.</span>
+        <span class="n">allowlist</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="s2">&quot;HOME&quot;</span><span class="p">,</span> <span class="s2">&quot;USER&quot;</span><span class="p">,</span> <span class="s2">&quot;PWD&quot;</span><span class="p">,</span> <span class="s2">&quot;SHELL&quot;</span><span class="p">,</span> <span class="s2">&quot;TMPDIR&quot;</span><span class="p">,</span> <span class="s2">&quot;LANG&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;PYTHONPATH&quot;</span><span class="p">,</span> <span class="s2">&quot;JAVA_HOME&quot;</span><span class="p">,</span> <span class="s2">&quot;LD_LIBRARY_PATH&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;BASH&quot;</span><span class="p">,</span> <span class="s2">&quot;BAM&quot;</span><span class="p">,</span> <span class="s2">&quot;FASTQ&quot;</span><span class="p">,</span> <span class="s2">&quot;FASTA&quot;</span><span class="p">,</span> <span class="s2">&quot;VCF&quot;</span><span class="p">,</span> <span class="s2">&quot;BED&quot;</span><span class="p">,</span> <span class="s2">&quot;GTF&quot;</span><span class="p">,</span> <span class="s2">&quot;GFF&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;TSV&quot;</span><span class="p">,</span> <span class="s2">&quot;CSV&quot;</span><span class="p">,</span> <span class="s2">&quot;JSON&quot;</span><span class="p">,</span> <span class="s2">&quot;GZ&quot;</span><span class="p">,</span> <span class="s2">&quot;TXT&quot;</span><span class="p">,</span> <span class="s2">&quot;HTML&quot;</span><span class="p">,</span> <span class="s2">&quot;PDF&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;GEO&quot;</span><span class="p">,</span> <span class="s2">&quot;SRA&quot;</span><span class="p">,</span> <span class="s2">&quot;SRR&quot;</span><span class="p">,</span> <span class="s2">&quot;ERR&quot;</span><span class="p">,</span> <span class="s2">&quot;DRR&quot;</span><span class="p">,</span> <span class="s2">&quot;ENA&quot;</span><span class="p">,</span> <span class="s2">&quot;ENCODE&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;GRCH37&quot;</span><span class="p">,</span> <span class="s2">&quot;GRCH38&quot;</span><span class="p">,</span> <span class="s2">&quot;GRCM38&quot;</span><span class="p">,</span> <span class="s2">&quot;GRCM39&quot;</span><span class="p">,</span> <span class="s2">&quot;DNA&quot;</span><span class="p">,</span> <span class="s2">&quot;RNA&quot;</span><span class="p">,</span> <span class="s2">&quot;NA&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;ID&quot;</span><span class="p">,</span> <span class="s2">&quot;IDS&quot;</span><span class="p">,</span> <span class="s2">&quot;QC&quot;</span><span class="p">,</span> <span class="s2">&quot;PCR&quot;</span><span class="p">,</span> <span class="s2">&quot;ChIP&quot;</span><span class="p">,</span> <span class="s2">&quot;ATAC&quot;</span><span class="p">,</span> <span class="s2">&quot;RNA_SEQ&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;FAIL&quot;</span><span class="p">,</span> <span class="s2">&quot;ERROR&quot;</span><span class="p">,</span> <span class="s2">&quot;FATAL&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;DEBUG&quot;</span><span class="p">,</span> <span class="s2">&quot;WARN&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;REMOVE_DUPLICATES&quot;</span><span class="p">,</span> <span class="s2">&quot;TRUE&quot;</span><span class="p">,</span> <span class="s2">&quot;FALSE&quot;</span><span class="p">,</span> <span class="s2">&quot;NULL&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;INPUT&quot;</span><span class="p">,</span> <span class="s2">&quot;OUTPUT&quot;</span><span class="p">,</span> <span class="s2">&quot;REF&quot;</span><span class="p">,</span>  <span class="c1"># used in our own guards</span>
+        <span class="p">}</span>
+        <span class="n">caps_token_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b([A-Z][A-Z0-9_]{3,})\b&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Unguarded ``for VAR in $(cat FILE)`` — the FILE must appear in</span>
+        <span class="c1"># a ``[ -s FILE ]`` or ``[ -f FILE ]`` test earlier in the same</span>
+        <span class="c1"># command, OR be the canonical srr list path (which the download</span>
+        <span class="c1"># scaffold guards on the producing side).</span>
+        <span class="n">cat_loop_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+            <span class="sa">r</span><span class="s2">&quot;for\s+\w+\s+in\s+\$\(\s*cat\s+([^\s\)]+)\s*\)&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Unguarded ``for VAR in PATTERN/*.ext`` — must be preceded by</span>
+        <span class="c1"># nullglob OR by an explicit ``[ -e PATTERN/*.ext ]`` test, OR</span>
+        <span class="c1"># have ``[ -e &quot;$VAR&quot; ] || continue`` style INSIDE the loop body</span>
+        <span class="c1"># is NOT acceptable on its own (that&#39;s the silent-skip pattern).</span>
+        <span class="n">glob_loop_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+            <span class="sa">r</span><span class="s2">&quot;for\s+\w+\s+in\s+([^\s;]*\*[^\s;]*)&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="n">steps</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+
+            <span class="c1"># --- Placeholder paths ----------------------------------</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">placeholder_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; contains placeholder text &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39; — replace with the real path or &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;emit a step that creates it&quot;</span>
+                <span class="p">)</span>
+
+            <span class="c1"># --- All-caps stand-in tokens ---------------------------</span>
+            <span class="c1"># Only treat a caps token followed by ``.`` as legitimate</span>
+            <span class="c1"># if it embeds digits (accession-like: GSE74912, SRR1234).</span>
+            <span class="c1"># Bare alphabetic caps tokens like ``LINEAGE.merged.bam`` or</span>
+            <span class="c1"># ``SAMPLE.dedup.bam`` are placeholder fabrications.</span>
+            <span class="n">accession_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\d&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">caps_token_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="n">tok</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">allowlist</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">span</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">end</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span> <span class="ow">and</span> <span class="n">cmd</span><span class="p">[</span><span class="n">end</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;.&quot;</span> <span class="ow">and</span> <span class="n">accession_re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">tok</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; uses bare all-caps token &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">tok</span><span class="si">}</span><span class="s2">&#39; which looks like a placeholder — replace &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;with a real value or shell variable&quot;</span>
+                <span class="p">)</span>
+
+            <span class="c1"># --- Unguarded ``cat`` loop -----------------------------</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">cat_loop_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="n">listfile</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="c1"># Allow the canonical srr list (the download step</span>
+                <span class="c1"># already guards it server-side).</span>
+                <span class="k">if</span> <span class="n">listfile</span> <span class="o">==</span> <span class="n">srr_list_path</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="c1"># Look for an in-command guard ``[ -s LIST ]`` /</span>
+                <span class="c1"># ``[ -f LIST ]`` BEFORE the loop.</span>
+                <span class="n">pre</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[:</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+                    <span class="sa">rf</span><span class="s2">&quot;\[\s+-[sf]\s+</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">listfile</span><span class="p">)</span><span class="si">}</span><span class="s2">\s+\]&quot;</span><span class="p">,</span> <span class="n">pre</span><span class="p">,</span>
+                <span class="p">):</span>
+                    <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; loops over $(cat </span><span class="si">{</span><span class="n">listfile</span><span class="si">}</span><span class="s2">) &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;with no ``[ -s </span><span class="si">{</span><span class="n">listfile</span><span class="si">}</span><span class="s2"> ] || exit 1`` &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;guard before the loop — empty file would &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;cause zero iterations + silent success&quot;</span>
+                    <span class="p">)</span>
+
+            <span class="c1"># --- Unguarded glob loop --------------------------------</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">glob_loop_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="n">pattern</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">pre</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[:</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()]</span>
+                <span class="n">has_nullglob</span> <span class="o">=</span> <span class="s2">&quot;nullglob&quot;</span> <span class="ow">in</span> <span class="n">pre</span>
+                <span class="n">has_existence</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+                    <span class="sa">rf</span><span class="s2">&quot;\[\s+-e\s+</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span><span class="si">}</span><span class="s2">\s+\]&quot;</span><span class="p">,</span> <span class="n">pre</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="c1"># An in-loop ``[ -e &quot;$bam&quot; ] || continue`` is the</span>
+                <span class="c1"># *silent-skip* anti-pattern and does NOT count.</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">has_nullglob</span> <span class="ow">or</span> <span class="n">has_existence</span><span class="p">):</span>
+                    <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; loops over glob &#39;</span><span class="si">{</span><span class="n">pattern</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;with no ``shopt -s nullglob`` and no &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;``[ -e </span><span class="si">{</span><span class="n">pattern</span><span class="si">}</span><span class="s2"> ]`` guard — empty match &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;would silently skip work&quot;</span>
+                    <span class="p">)</span>
+
+            <span class="c1"># --- SRR list path drift --------------------------------</span>
+            <span class="c1"># Anything that looks like an srr_ids list but doesn&#39;t</span>
+            <span class="c1"># match the canonical path is a fabrication.</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[\w\-./]*srr[_\-]?ids?[\w\-./]*\.txt&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">):</span>
+                <span class="n">wrong_path</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">wrong_path</span> <span class="o">!=</span> <span class="n">srr_list_path</span><span class="p">:</span>
+                    <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; references SRR list at &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">wrong_path</span><span class="si">}</span><span class="s2">&#39; but the download scaffold &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;writes it to &#39;</span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2">&#39; — use the &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;canonical path&quot;</span>
+                    <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">violations</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
@@ -8007,49 +8563,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2643</span>
-<span class="normal">2644</span>
-<span class="normal">2645</span>
-<span class="normal">2646</span>
-<span class="normal">2647</span>
-<span class="normal">2648</span>
-<span class="normal">2649</span>
-<span class="normal">2650</span>
-<span class="normal">2651</span>
-<span class="normal">2652</span>
-<span class="normal">2653</span>
-<span class="normal">2654</span>
-<span class="normal">2655</span>
-<span class="normal">2656</span>
-<span class="normal">2657</span>
-<span class="normal">2658</span>
-<span class="normal">2659</span>
-<span class="normal">2660</span>
-<span class="normal">2661</span>
-<span class="normal">2662</span>
-<span class="normal">2663</span>
-<span class="normal">2664</span>
-<span class="normal">2665</span>
-<span class="normal">2666</span>
-<span class="normal">2667</span>
-<span class="normal">2668</span>
-<span class="normal">2669</span>
-<span class="normal">2670</span>
-<span class="normal">2671</span>
-<span class="normal">2672</span>
-<span class="normal">2673</span>
-<span class="normal">2674</span>
-<span class="normal">2675</span>
-<span class="normal">2676</span>
-<span class="normal">2677</span>
-<span class="normal">2678</span>
-<span class="normal">2679</span>
-<span class="normal">2680</span>
-<span class="normal">2681</span>
-<span class="normal">2682</span>
-<span class="normal">2683</span>
-<span class="normal">2684</span>
-<span class="normal">2685</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2921</span>
+<span class="normal">2922</span>
+<span class="normal">2923</span>
+<span class="normal">2924</span>
+<span class="normal">2925</span>
+<span class="normal">2926</span>
+<span class="normal">2927</span>
+<span class="normal">2928</span>
+<span class="normal">2929</span>
+<span class="normal">2930</span>
+<span class="normal">2931</span>
+<span class="normal">2932</span>
+<span class="normal">2933</span>
+<span class="normal">2934</span>
+<span class="normal">2935</span>
+<span class="normal">2936</span>
+<span class="normal">2937</span>
+<span class="normal">2938</span>
+<span class="normal">2939</span>
+<span class="normal">2940</span>
+<span class="normal">2941</span>
+<span class="normal">2942</span>
+<span class="normal">2943</span>
+<span class="normal">2944</span>
+<span class="normal">2945</span>
+<span class="normal">2946</span>
+<span class="normal">2947</span>
+<span class="normal">2948</span>
+<span class="normal">2949</span>
+<span class="normal">2950</span>
+<span class="normal">2951</span>
+<span class="normal">2952</span>
+<span class="normal">2953</span>
+<span class="normal">2954</span>
+<span class="normal">2955</span>
+<span class="normal">2956</span>
+<span class="normal">2957</span>
+<span class="normal">2958</span>
+<span class="normal">2959</span>
+<span class="normal">2960</span>
+<span class="normal">2961</span>
+<span class="normal">2962</span>
+<span class="normal">2963</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -8409,58 +8965,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2590</span>
-<span class="normal">2591</span>
-<span class="normal">2592</span>
-<span class="normal">2593</span>
-<span class="normal">2594</span>
-<span class="normal">2595</span>
-<span class="normal">2596</span>
-<span class="normal">2597</span>
-<span class="normal">2598</span>
-<span class="normal">2599</span>
-<span class="normal">2600</span>
-<span class="normal">2601</span>
-<span class="normal">2602</span>
-<span class="normal">2603</span>
-<span class="normal">2604</span>
-<span class="normal">2605</span>
-<span class="normal">2606</span>
-<span class="normal">2607</span>
-<span class="normal">2608</span>
-<span class="normal">2609</span>
-<span class="normal">2610</span>
-<span class="normal">2611</span>
-<span class="normal">2612</span>
-<span class="normal">2613</span>
-<span class="normal">2614</span>
-<span class="normal">2615</span>
-<span class="normal">2616</span>
-<span class="normal">2617</span>
-<span class="normal">2618</span>
-<span class="normal">2619</span>
-<span class="normal">2620</span>
-<span class="normal">2621</span>
-<span class="normal">2622</span>
-<span class="normal">2623</span>
-<span class="normal">2624</span>
-<span class="normal">2625</span>
-<span class="normal">2626</span>
-<span class="normal">2627</span>
-<span class="normal">2628</span>
-<span class="normal">2629</span>
-<span class="normal">2630</span>
-<span class="normal">2631</span>
-<span class="normal">2632</span>
-<span class="normal">2633</span>
-<span class="normal">2634</span>
-<span class="normal">2635</span>
-<span class="normal">2636</span>
-<span class="normal">2637</span>
-<span class="normal">2638</span>
-<span class="normal">2639</span>
-<span class="normal">2640</span>
-<span class="normal">2641</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2868</span>
+<span class="normal">2869</span>
+<span class="normal">2870</span>
+<span class="normal">2871</span>
+<span class="normal">2872</span>
+<span class="normal">2873</span>
+<span class="normal">2874</span>
+<span class="normal">2875</span>
+<span class="normal">2876</span>
+<span class="normal">2877</span>
+<span class="normal">2878</span>
+<span class="normal">2879</span>
+<span class="normal">2880</span>
+<span class="normal">2881</span>
+<span class="normal">2882</span>
+<span class="normal">2883</span>
+<span class="normal">2884</span>
+<span class="normal">2885</span>
+<span class="normal">2886</span>
+<span class="normal">2887</span>
+<span class="normal">2888</span>
+<span class="normal">2889</span>
+<span class="normal">2890</span>
+<span class="normal">2891</span>
+<span class="normal">2892</span>
+<span class="normal">2893</span>
+<span class="normal">2894</span>
+<span class="normal">2895</span>
+<span class="normal">2896</span>
+<span class="normal">2897</span>
+<span class="normal">2898</span>
+<span class="normal">2899</span>
+<span class="normal">2900</span>
+<span class="normal">2901</span>
+<span class="normal">2902</span>
+<span class="normal">2903</span>
+<span class="normal">2904</span>
+<span class="normal">2905</span>
+<span class="normal">2906</span>
+<span class="normal">2907</span>
+<span class="normal">2908</span>
+<span class="normal">2909</span>
+<span class="normal">2910</span>
+<span class="normal">2911</span>
+<span class="normal">2912</span>
+<span class="normal">2913</span>
+<span class="normal">2914</span>
+<span class="normal">2915</span>
+<span class="normal">2916</span>
+<span class="normal">2917</span>
+<span class="normal">2918</span>
+<span class="normal">2919</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
