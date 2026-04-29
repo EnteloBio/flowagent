@@ -5651,7 +5651,77 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3200</span>
 <span class="normal">3201</span>
 <span class="normal">3202</span>
-<span class="normal">3203</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3203</span>
+<span class="normal">3204</span>
+<span class="normal">3205</span>
+<span class="normal">3206</span>
+<span class="normal">3207</span>
+<span class="normal">3208</span>
+<span class="normal">3209</span>
+<span class="normal">3210</span>
+<span class="normal">3211</span>
+<span class="normal">3212</span>
+<span class="normal">3213</span>
+<span class="normal">3214</span>
+<span class="normal">3215</span>
+<span class="normal">3216</span>
+<span class="normal">3217</span>
+<span class="normal">3218</span>
+<span class="normal">3219</span>
+<span class="normal">3220</span>
+<span class="normal">3221</span>
+<span class="normal">3222</span>
+<span class="normal">3223</span>
+<span class="normal">3224</span>
+<span class="normal">3225</span>
+<span class="normal">3226</span>
+<span class="normal">3227</span>
+<span class="normal">3228</span>
+<span class="normal">3229</span>
+<span class="normal">3230</span>
+<span class="normal">3231</span>
+<span class="normal">3232</span>
+<span class="normal">3233</span>
+<span class="normal">3234</span>
+<span class="normal">3235</span>
+<span class="normal">3236</span>
+<span class="normal">3237</span>
+<span class="normal">3238</span>
+<span class="normal">3239</span>
+<span class="normal">3240</span>
+<span class="normal">3241</span>
+<span class="normal">3242</span>
+<span class="normal">3243</span>
+<span class="normal">3244</span>
+<span class="normal">3245</span>
+<span class="normal">3246</span>
+<span class="normal">3247</span>
+<span class="normal">3248</span>
+<span class="normal">3249</span>
+<span class="normal">3250</span>
+<span class="normal">3251</span>
+<span class="normal">3252</span>
+<span class="normal">3253</span>
+<span class="normal">3254</span>
+<span class="normal">3255</span>
+<span class="normal">3256</span>
+<span class="normal">3257</span>
+<span class="normal">3258</span>
+<span class="normal">3259</span>
+<span class="normal">3260</span>
+<span class="normal">3261</span>
+<span class="normal">3262</span>
+<span class="normal">3263</span>
+<span class="normal">3264</span>
+<span class="normal">3265</span>
+<span class="normal">3266</span>
+<span class="normal">3267</span>
+<span class="normal">3268</span>
+<span class="normal">3269</span>
+<span class="normal">3270</span>
+<span class="normal">3271</span>
+<span class="normal">3272</span>
+<span class="normal">3273</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -8224,18 +8294,42 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="p">},</span>
                 <span class="p">{</span>
                     <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;star_align&quot;</span><span class="p">,</span>
+                    <span class="c1"># Same xargs -P parallelism shape as kallisto_quant.</span>
+                    <span class="c1"># STAR is more memory-hungry per task (~30 GB index</span>
+                    <span class="c1"># resident) and uses more threads productively, so</span>
+                    <span class="c1"># the defaults are tilted differently:</span>
+                    <span class="c1">#   FLOWAGENT_PARALLEL_SAMPLES (default 4, shared</span>
+                    <span class="c1">#     with kallisto — drop to 2 when STAR&#39;s 30 GB</span>
+                    <span class="c1">#     index would push the box over)</span>
+                    <span class="c1">#   FLOWAGENT_STAR_THREADS    (default 4 — STAR</span>
+                    <span class="c1">#     scales to more threads than kallisto does)</span>
                     <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;for srr in $(cat raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt); do &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;[ -s raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt ] || &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">{{</span><span class="s2"> echo &#39;FAIL: missing SRR list&#39;; exit 1; </span><span class="se">}}</span><span class="s2"> &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;export FLOWAGENT_STAR_THREADS=</span><span class="se">\&quot;</span><span class="s2">$</span><span class="se">{{</span><span class="s2">FLOWAGENT_STAR_THREADS:-4</span><span class="se">}}\&quot;</span><span class="s2"> &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;PARALLEL=</span><span class="se">\&quot;</span><span class="s2">$</span><span class="se">{{</span><span class="s2">FLOWAGENT_PARALLEL_SAMPLES:-4</span><span class="se">}}\&quot;</span><span class="s2"> &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;xargs -P </span><span class="se">\&quot;</span><span class="s2">$PARALLEL</span><span class="se">\&quot;</span><span class="s2"> -I </span><span class="se">{{}}</span><span class="s2"> bash -c &#39;&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;set -e; srr=</span><span class="se">{{}}</span><span class="s2">; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;if [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz ] &amp;&amp; [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz ]; then &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;--readFilesIn raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;--outFileNamePrefix results/rna_seq_star/star_align/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_ &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;--runThreadN 8; done&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;--runThreadN </span><span class="se">\&quot;</span><span class="s2">$FLOWAGENT_STAR_THREADS</span><span class="se">\&quot;</span><span class="s2">; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;elif [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz ]; then &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;--readFilesIn raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;--outFileNamePrefix results/rna_seq_star/star_align/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_ &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;--runThreadN </span><span class="se">\&quot;</span><span class="s2">$FLOWAGENT_STAR_THREADS</span><span class="se">\&quot;</span><span class="s2">; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;else echo </span><span class="se">\&quot;</span><span class="s2">FAIL: no FASTQ for $srr</span><span class="se">\&quot;</span><span class="s2">; exit 1; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;fi&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;&#39; &lt; raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt&quot;</span>
                     <span class="p">),</span>
                     <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
                     <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;star_index&quot;</span><span class="p">],</span>
                     <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;results/rna_seq_star/star_align&quot;</span><span class="p">],</span>
-                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Align paired-end reads with STAR&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Align reads with STAR (xargs -P parallel, auto-detects paired vs single end)&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span>
                 <span class="p">},</span>
                 <span class="p">{</span>
@@ -8409,18 +8503,33 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="sa">f</span><span class="s2">&quot;     (single-end)</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;Existing download steps (already in the plan):</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">download_summary</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Always emit shell idioms that detect paired vs single-end &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;layouts at runtime, e.g.:</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;  for srr in $(cat </span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2">); do</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;    if [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz ]; then ... &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;paired branch ...</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;    elif [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz ]; then ... &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;single branch ...</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;    else echo &#39;FAIL: no FASTQ for &#39;$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">; exit 1; fi</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;  done</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;so the same plan works for either library type. Wrap the &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;loop input itself in a ``[ -s </span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2"> ] || </span><span class="se">{{</span><span class="s2"> &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;echo &#39;FAIL: missing srr list&#39;; exit 1; </span><span class="se">}}</span><span class="s2">`` guard.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;PARALLELISM IS MANDATORY for any per-sample work. Use &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;``xargs -P N`` not a sequential ``for`` loop, so the cell &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;can run multiple SRRs concurrently within the executor &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;job. The canonical idiom (also handles paired vs &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;single-end at runtime):</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  [ -s </span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="s2"> ] || </span><span class="se">{{</span><span class="s2"> echo &#39;FAIL: missing srr &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;list&#39;; exit 1; </span><span class="se">}}\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  export FLOWAGENT_&lt;TOOL&gt;_THREADS=</span><span class="se">\&quot;</span><span class="s2">$</span><span class="se">{{</span><span class="s2">FLOWAGENT_&lt;TOOL&gt;_THREADS:-2</span><span class="se">}}\&quot;\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  PARALLEL=</span><span class="se">\&quot;</span><span class="s2">$</span><span class="se">{{</span><span class="s2">FLOWAGENT_PARALLEL_SAMPLES:-4</span><span class="se">}}\&quot;\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  xargs -P </span><span class="se">\&quot;</span><span class="s2">$PARALLEL</span><span class="se">\&quot;</span><span class="s2"> -I </span><span class="se">{{}}</span><span class="s2"> bash -c &#39;</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;    set -e; srr=</span><span class="se">{{}}</span><span class="s2">;</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;    if [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz ] &amp;&amp; [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz ]; then</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;      &lt;tool&gt; ... -t </span><span class="se">\&quot;</span><span class="s2">$FLOWAGENT_&lt;TOOL&gt;_THREADS</span><span class="se">\&quot;</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz ...</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;    elif [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz ]; then</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;      &lt;tool&gt; ... -t </span><span class="se">\&quot;</span><span class="s2">$FLOWAGENT_&lt;TOOL&gt;_THREADS</span><span class="se">\&quot;</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz ...</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;    else echo </span><span class="se">\&quot;</span><span class="s2">FAIL: no FASTQ for $srr</span><span class="se">\&quot;</span><span class="s2">; exit 1; fi</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;  &#39; &lt; </span><span class="si">{</span><span class="n">srr_list_path</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Substitute ``&lt;TOOL&gt;`` for the assay&#39;s primary tool name &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;(e.g. BOWTIE2, MACS2, FASTQC) and ``&lt;tool&gt;`` for the &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;binary. Pick a sensible default thread count &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;(``$</span><span class="se">{{</span><span class="s2">FLOWAGENT_BOWTIE2_THREADS:-2</span><span class="se">}}</span><span class="s2">`` etc.) so the env &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;var has a working fallback. Sequential ``for srr in &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;$(cat …); do …; done`` is forbidden when there are &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;multiple samples — the cell would only run one task at &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;a time.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;Tool / command exemplars for </span><span class="si">{</span><span class="n">workflow_type</span><span class="si">}</span><span class="s2">:</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">rules_block</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;Each step&#39;s ``dependencies`` field must reference one of &quot;</span>
@@ -8601,14 +8710,29 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="c1"># Only treat a caps token followed by ``.`` as legitimate</span>
             <span class="c1"># if it embeds digits (accession-like: GSE74912, SRR1234).</span>
             <span class="c1"># Bare alphabetic caps tokens like ``LINEAGE.merged.bam`` or</span>
-            <span class="c1"># ``SAMPLE.dedup.bam`` are placeholder fabrications.</span>
+            <span class="c1"># ``SAMPLE.dedup.bam`` are placeholder fabrications. Also</span>
+            <span class="c1"># skip tokens that appear in shell-variable contexts:</span>
+            <span class="c1"># ``$VAR`` / ``${VAR}`` / ``&quot;$VAR&quot;`` (variable reference)</span>
+            <span class="c1"># ``export VAR`` / ``VAR=…`` (assignment).</span>
             <span class="n">accession_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\d&quot;</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">caps_token_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
                 <span class="n">tok</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">allowlist</span><span class="p">:</span>
                     <span class="k">continue</span>
                 <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">span</span><span class="p">()</span>
+                <span class="c1"># Accession-like (GSE74912.bam) — letters+digits+dot+ext</span>
                 <span class="k">if</span> <span class="n">end</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span> <span class="ow">and</span> <span class="n">cmd</span><span class="p">[</span><span class="n">end</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;.&quot;</span> <span class="ow">and</span> <span class="n">accession_re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">tok</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="c1"># Variable reference: char immediately before token is</span>
+                <span class="c1"># ``$`` or ``{`` (the latter inside ``${...}``).</span>
+                <span class="k">if</span> <span class="n">start</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">cmd</span><span class="p">[</span><span class="n">start</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="s2">&quot;${&quot;</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="c1"># Variable assignment: token followed by ``=``.</span>
+                <span class="k">if</span> <span class="n">end</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span> <span class="ow">and</span> <span class="n">cmd</span><span class="p">[</span><span class="n">end</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;=&quot;</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="c1"># ``export FOO`` / ``export FOO=…`` — preceding word.</span>
+                <span class="n">pre_window</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">start</span> <span class="o">-</span> <span class="mi">12</span><span class="p">):</span> <span class="n">start</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b(?:export|unset|local|readonly)\s+$&quot;</span><span class="p">,</span> <span class="n">pre_window</span><span class="p">):</span>
                     <span class="k">continue</span>
                 <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; uses bare all-caps token &quot;</span>
@@ -8616,25 +8740,41 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="sa">f</span><span class="s2">&quot;with a real value or shell variable&quot;</span>
                 <span class="p">)</span>
 
-            <span class="c1"># --- Unguarded ``cat`` loop -----------------------------</span>
+            <span class="c1"># --- ``cat`` loops --------------------------------------</span>
+            <span class="c1"># Two failure modes:</span>
+            <span class="c1">#   (a) unguarded loop input → silent zero-iteration success</span>
+            <span class="c1">#   (b) sequential ``for srr in $(cat …); do …; done`` over</span>
+            <span class="c1">#       the per-sample list → no parallelism, the cell only</span>
+            <span class="c1">#       runs one task at a time. Per-sample work must use</span>
+            <span class="c1">#       ``xargs -P`` so the cell uses all the cores it has.</span>
             <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">cat_loop_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
                 <span class="n">listfile</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-                <span class="c1"># Allow the canonical srr list (the download step</span>
-                <span class="c1"># already guards it server-side).</span>
-                <span class="k">if</span> <span class="n">listfile</span> <span class="o">==</span> <span class="n">srr_list_path</span><span class="p">:</span>
-                    <span class="k">continue</span>
-                <span class="c1"># Look for an in-command guard ``[ -s LIST ]`` /</span>
-                <span class="c1"># ``[ -f LIST ]`` BEFORE the loop.</span>
                 <span class="n">pre</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[:</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()]</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
-                    <span class="sa">rf</span><span class="s2">&quot;\[\s+-[sf]\s+</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">listfile</span><span class="p">)</span><span class="si">}</span><span class="s2">\s+\]&quot;</span><span class="p">,</span> <span class="n">pre</span><span class="p">,</span>
-                <span class="p">):</span>
+                <span class="n">guarded</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">listfile</span> <span class="o">==</span> <span class="n">srr_list_path</span>  <span class="c1"># canonical, guarded by extract_srr_ids</span>
+                    <span class="ow">or</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+                        <span class="sa">rf</span><span class="s2">&quot;\[\s+-[sf]\s+</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">listfile</span><span class="p">)</span><span class="si">}</span><span class="s2">\s+\]&quot;</span><span class="p">,</span> <span class="n">pre</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">guarded</span><span class="p">:</span>
                     <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                         <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; loops over $(cat </span><span class="si">{</span><span class="n">listfile</span><span class="si">}</span><span class="s2">) &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;with no ``[ -s </span><span class="si">{</span><span class="n">listfile</span><span class="si">}</span><span class="s2"> ] || exit 1`` &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;guard before the loop — empty file would &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;cause zero iterations + silent success&quot;</span>
                     <span class="p">)</span>
+                <span class="c1"># Reject sequential per-sample loops regardless of</span>
+                <span class="c1"># guarding. The xargs -P pattern is the canonical form</span>
+                <span class="c1"># and lets the cell use all its cores.</span>
+                <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; uses sequential ``for $(cat &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">listfile</span><span class="si">}</span><span class="s2">); do …; done`` for per-sample work. &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;Per-sample work must use ``xargs -P &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\&quot;</span><span class="s2">$FLOWAGENT_PARALLEL_SAMPLES</span><span class="se">\&quot;</span><span class="s2"> -I </span><span class="se">{{}}</span><span class="s2"> bash -c &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;&#39;…&#39; &lt; </span><span class="si">{</span><span class="n">listfile</span><span class="si">}</span><span class="s2">`` so multiple samples run &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;concurrently — sequential loops bottleneck the &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;whole cell on one task at a time&quot;</span>
+                <span class="p">)</span>
 
             <span class="c1"># --- Unguarded glob loop --------------------------------</span>
             <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">glob_loop_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
@@ -8981,49 +9121,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3130</span>
-<span class="normal">3131</span>
-<span class="normal">3132</span>
-<span class="normal">3133</span>
-<span class="normal">3134</span>
-<span class="normal">3135</span>
-<span class="normal">3136</span>
-<span class="normal">3137</span>
-<span class="normal">3138</span>
-<span class="normal">3139</span>
-<span class="normal">3140</span>
-<span class="normal">3141</span>
-<span class="normal">3142</span>
-<span class="normal">3143</span>
-<span class="normal">3144</span>
-<span class="normal">3145</span>
-<span class="normal">3146</span>
-<span class="normal">3147</span>
-<span class="normal">3148</span>
-<span class="normal">3149</span>
-<span class="normal">3150</span>
-<span class="normal">3151</span>
-<span class="normal">3152</span>
-<span class="normal">3153</span>
-<span class="normal">3154</span>
-<span class="normal">3155</span>
-<span class="normal">3156</span>
-<span class="normal">3157</span>
-<span class="normal">3158</span>
-<span class="normal">3159</span>
-<span class="normal">3160</span>
-<span class="normal">3161</span>
-<span class="normal">3162</span>
-<span class="normal">3163</span>
-<span class="normal">3164</span>
-<span class="normal">3165</span>
-<span class="normal">3166</span>
-<span class="normal">3167</span>
-<span class="normal">3168</span>
-<span class="normal">3169</span>
-<span class="normal">3170</span>
-<span class="normal">3171</span>
-<span class="normal">3172</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3200</span>
+<span class="normal">3201</span>
+<span class="normal">3202</span>
+<span class="normal">3203</span>
+<span class="normal">3204</span>
+<span class="normal">3205</span>
+<span class="normal">3206</span>
+<span class="normal">3207</span>
+<span class="normal">3208</span>
+<span class="normal">3209</span>
+<span class="normal">3210</span>
+<span class="normal">3211</span>
+<span class="normal">3212</span>
+<span class="normal">3213</span>
+<span class="normal">3214</span>
+<span class="normal">3215</span>
+<span class="normal">3216</span>
+<span class="normal">3217</span>
+<span class="normal">3218</span>
+<span class="normal">3219</span>
+<span class="normal">3220</span>
+<span class="normal">3221</span>
+<span class="normal">3222</span>
+<span class="normal">3223</span>
+<span class="normal">3224</span>
+<span class="normal">3225</span>
+<span class="normal">3226</span>
+<span class="normal">3227</span>
+<span class="normal">3228</span>
+<span class="normal">3229</span>
+<span class="normal">3230</span>
+<span class="normal">3231</span>
+<span class="normal">3232</span>
+<span class="normal">3233</span>
+<span class="normal">3234</span>
+<span class="normal">3235</span>
+<span class="normal">3236</span>
+<span class="normal">3237</span>
+<span class="normal">3238</span>
+<span class="normal">3239</span>
+<span class="normal">3240</span>
+<span class="normal">3241</span>
+<span class="normal">3242</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -9383,58 +9523,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3077</span>
-<span class="normal">3078</span>
-<span class="normal">3079</span>
-<span class="normal">3080</span>
-<span class="normal">3081</span>
-<span class="normal">3082</span>
-<span class="normal">3083</span>
-<span class="normal">3084</span>
-<span class="normal">3085</span>
-<span class="normal">3086</span>
-<span class="normal">3087</span>
-<span class="normal">3088</span>
-<span class="normal">3089</span>
-<span class="normal">3090</span>
-<span class="normal">3091</span>
-<span class="normal">3092</span>
-<span class="normal">3093</span>
-<span class="normal">3094</span>
-<span class="normal">3095</span>
-<span class="normal">3096</span>
-<span class="normal">3097</span>
-<span class="normal">3098</span>
-<span class="normal">3099</span>
-<span class="normal">3100</span>
-<span class="normal">3101</span>
-<span class="normal">3102</span>
-<span class="normal">3103</span>
-<span class="normal">3104</span>
-<span class="normal">3105</span>
-<span class="normal">3106</span>
-<span class="normal">3107</span>
-<span class="normal">3108</span>
-<span class="normal">3109</span>
-<span class="normal">3110</span>
-<span class="normal">3111</span>
-<span class="normal">3112</span>
-<span class="normal">3113</span>
-<span class="normal">3114</span>
-<span class="normal">3115</span>
-<span class="normal">3116</span>
-<span class="normal">3117</span>
-<span class="normal">3118</span>
-<span class="normal">3119</span>
-<span class="normal">3120</span>
-<span class="normal">3121</span>
-<span class="normal">3122</span>
-<span class="normal">3123</span>
-<span class="normal">3124</span>
-<span class="normal">3125</span>
-<span class="normal">3126</span>
-<span class="normal">3127</span>
-<span class="normal">3128</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3147</span>
+<span class="normal">3148</span>
+<span class="normal">3149</span>
+<span class="normal">3150</span>
+<span class="normal">3151</span>
+<span class="normal">3152</span>
+<span class="normal">3153</span>
+<span class="normal">3154</span>
+<span class="normal">3155</span>
+<span class="normal">3156</span>
+<span class="normal">3157</span>
+<span class="normal">3158</span>
+<span class="normal">3159</span>
+<span class="normal">3160</span>
+<span class="normal">3161</span>
+<span class="normal">3162</span>
+<span class="normal">3163</span>
+<span class="normal">3164</span>
+<span class="normal">3165</span>
+<span class="normal">3166</span>
+<span class="normal">3167</span>
+<span class="normal">3168</span>
+<span class="normal">3169</span>
+<span class="normal">3170</span>
+<span class="normal">3171</span>
+<span class="normal">3172</span>
+<span class="normal">3173</span>
+<span class="normal">3174</span>
+<span class="normal">3175</span>
+<span class="normal">3176</span>
+<span class="normal">3177</span>
+<span class="normal">3178</span>
+<span class="normal">3179</span>
+<span class="normal">3180</span>
+<span class="normal">3181</span>
+<span class="normal">3182</span>
+<span class="normal">3183</span>
+<span class="normal">3184</span>
+<span class="normal">3185</span>
+<span class="normal">3186</span>
+<span class="normal">3187</span>
+<span class="normal">3188</span>
+<span class="normal">3189</span>
+<span class="normal">3190</span>
+<span class="normal">3191</span>
+<span class="normal">3192</span>
+<span class="normal">3193</span>
+<span class="normal">3194</span>
+<span class="normal">3195</span>
+<span class="normal">3196</span>
+<span class="normal">3197</span>
+<span class="normal">3198</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
