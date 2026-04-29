@@ -2417,24 +2417,44 @@ If you are being asked to generate a title, set "success" to false.
                     # The fragment-length defaults (-l 200 -s 20) are
                     # the kallisto-recommended fall-backs when the
                     # library spec isn't known.
+                    #
+                    # Parallelism: ``xargs -P N`` runs N quant tasks
+                    # concurrently within the single executor job; each
+                    # kallisto uses ``-t T`` threads. Both are env-tunable
+                    # via FLOWAGENT_PARALLEL_SAMPLES (default 4) and
+                    # FLOWAGENT_KALLISTO_THREADS (default 2). Set them
+                    # higher on big nodes (8 × 4 fits comfortably on a
+                    # 192 GB / 32-core box) and to 1 × 1 on a laptop.
+                    # NB: ``LocalExecutor`` runs the whole step as one
+                    # subprocess, so this is the actual parallelism the
+                    # cell sees. ``CGATExecutor`` would submit it as one
+                    # SLURM job with the same internal fan-out — for
+                    # per-job SLURM parallelism you'd need plan-time
+                    # step expansion (separate piece of work).
                     "command": (
-                        f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do "
-                        f"mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr && "
+                        f"[ -s raw_data/{geo_accession}_srr_ids.txt ] || "
+                        f"{{ echo 'FAIL: missing SRR list'; exit 1; }} && "
+                        f"export FLOWAGENT_KALLISTO_THREADS=\"${{FLOWAGENT_KALLISTO_THREADS:-2}}\" && "
+                        f"PARALLEL=\"${{FLOWAGENT_PARALLEL_SAMPLES:-4}}\" && "
+                        f"xargs -P \"$PARALLEL\" -I {{}} bash -c '"
+                        f"set -e; srr={{}}; "
+                        f"mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr; "
                         f"if [ -f raw_data/${{srr}}_1.fastq.gz ] && [ -f raw_data/${{srr}}_2.fastq.gz ]; then "
-                        f"kallisto quant -i {index_path} "
+                        f"kallisto quant -t \"$FLOWAGENT_KALLISTO_THREADS\" -i {index_path} "
                         f"-o results/rna_seq_kallisto/kallisto_quant/$srr "
                         f"raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; "
                         f"elif [ -f raw_data/${{srr}}.fastq.gz ]; then "
-                        f"kallisto quant -i {index_path} "
+                        f"kallisto quant -t \"$FLOWAGENT_KALLISTO_THREADS\" -i {index_path} "
                         f"-o results/rna_seq_kallisto/kallisto_quant/$srr "
                         f"--single -l 200 -s 20 raw_data/${{srr}}.fastq.gz; "
-                        f"else echo \"FAIL: no FASTQ found for $srr\"; exit 1; "
-                        f"fi; done"
+                        f"else echo \"FAIL: no FASTQ for $srr\"; exit 1; "
+                        f"fi"
+                        f"' < raw_data/{geo_accession}_srr_ids.txt"
                     ),
                     "parameters": {},
                     "dependencies": ["kallisto_index"],
                     "outputs": ["results/rna_seq_kallisto/kallisto_quant"],
-                    "description": "Quantify transcripts using kallisto (auto-detects paired vs single end)",
+                    "description": "Quantify transcripts using kallisto (xargs -P parallel, auto-detects paired vs single end)",
                     "profile_name": "multi_thread"
                 },
                 {
