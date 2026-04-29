@@ -5631,7 +5631,27 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3180</span>
 <span class="normal">3181</span>
 <span class="normal">3182</span>
-<span class="normal">3183</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3183</span>
+<span class="normal">3184</span>
+<span class="normal">3185</span>
+<span class="normal">3186</span>
+<span class="normal">3187</span>
+<span class="normal">3188</span>
+<span class="normal">3189</span>
+<span class="normal">3190</span>
+<span class="normal">3191</span>
+<span class="normal">3192</span>
+<span class="normal">3193</span>
+<span class="normal">3194</span>
+<span class="normal">3195</span>
+<span class="normal">3196</span>
+<span class="normal">3197</span>
+<span class="normal">3198</span>
+<span class="normal">3199</span>
+<span class="normal">3200</span>
+<span class="normal">3201</span>
+<span class="normal">3202</span>
+<span class="normal">3203</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -8024,24 +8044,44 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="c1"># The fragment-length defaults (-l 200 -s 20) are</span>
                     <span class="c1"># the kallisto-recommended fall-backs when the</span>
                     <span class="c1"># library spec isn&#39;t known.</span>
+                    <span class="c1">#</span>
+                    <span class="c1"># Parallelism: ``xargs -P N`` runs N quant tasks</span>
+                    <span class="c1"># concurrently within the single executor job; each</span>
+                    <span class="c1"># kallisto uses ``-t T`` threads. Both are env-tunable</span>
+                    <span class="c1"># via FLOWAGENT_PARALLEL_SAMPLES (default 4) and</span>
+                    <span class="c1"># FLOWAGENT_KALLISTO_THREADS (default 2). Set them</span>
+                    <span class="c1"># higher on big nodes (8 × 4 fits comfortably on a</span>
+                    <span class="c1"># 192 GB / 32-core box) and to 1 × 1 on a laptop.</span>
+                    <span class="c1"># NB: ``LocalExecutor`` runs the whole step as one</span>
+                    <span class="c1"># subprocess, so this is the actual parallelism the</span>
+                    <span class="c1"># cell sees. ``CGATExecutor`` would submit it as one</span>
+                    <span class="c1"># SLURM job with the same internal fan-out — for</span>
+                    <span class="c1"># per-job SLURM parallelism you&#39;d need plan-time</span>
+                    <span class="c1"># step expansion (separate piece of work).</span>
                     <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;for srr in $(cat raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt); do &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;[ -s raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt ] || &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">{{</span><span class="s2"> echo &#39;FAIL: missing SRR list&#39;; exit 1; </span><span class="se">}}</span><span class="s2"> &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;export FLOWAGENT_KALLISTO_THREADS=</span><span class="se">\&quot;</span><span class="s2">$</span><span class="se">{{</span><span class="s2">FLOWAGENT_KALLISTO_THREADS:-2</span><span class="se">}}\&quot;</span><span class="s2"> &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;PARALLEL=</span><span class="se">\&quot;</span><span class="s2">$</span><span class="se">{{</span><span class="s2">FLOWAGENT_PARALLEL_SAMPLES:-4</span><span class="se">}}\&quot;</span><span class="s2"> &amp;&amp; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;xargs -P </span><span class="se">\&quot;</span><span class="s2">$PARALLEL</span><span class="se">\&quot;</span><span class="s2"> -I </span><span class="se">{{}}</span><span class="s2"> bash -c &#39;&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;set -e; srr=</span><span class="se">{{}}</span><span class="s2">; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr; &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;if [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz ] &amp;&amp; [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz ]; then &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;kallisto quant -i </span><span class="si">{</span><span class="n">index_path</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;kallisto quant -t </span><span class="se">\&quot;</span><span class="s2">$FLOWAGENT_KALLISTO_THREADS</span><span class="se">\&quot;</span><span class="s2"> -i </span><span class="si">{</span><span class="n">index_path</span><span class="si">}</span><span class="s2"> &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;-o results/rna_seq_kallisto/kallisto_quant/$srr &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_1.fastq.gz raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">_2.fastq.gz; &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;elif [ -f raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz ]; then &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;kallisto quant -i </span><span class="si">{</span><span class="n">index_path</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;kallisto quant -t </span><span class="se">\&quot;</span><span class="s2">$FLOWAGENT_KALLISTO_THREADS</span><span class="se">\&quot;</span><span class="s2"> -i </span><span class="si">{</span><span class="n">index_path</span><span class="si">}</span><span class="s2"> &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;-o results/rna_seq_kallisto/kallisto_quant/$srr &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;--single -l 200 -s 20 raw_data/$</span><span class="se">{{</span><span class="s2">srr</span><span class="se">}}</span><span class="s2">.fastq.gz; &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;else echo </span><span class="se">\&quot;</span><span class="s2">FAIL: no FASTQ found for $srr</span><span class="se">\&quot;</span><span class="s2">; exit 1; &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;fi; done&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;else echo </span><span class="se">\&quot;</span><span class="s2">FAIL: no FASTQ for $srr</span><span class="se">\&quot;</span><span class="s2">; exit 1; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;fi&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;&#39; &lt; raw_data/</span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2">_srr_ids.txt&quot;</span>
                     <span class="p">),</span>
                     <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{},</span>
                     <span class="s2">&quot;dependencies&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;kallisto_index&quot;</span><span class="p">],</span>
                     <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;results/rna_seq_kallisto/kallisto_quant&quot;</span><span class="p">],</span>
-                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Quantify transcripts using kallisto (auto-detects paired vs single end)&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Quantify transcripts using kallisto (xargs -P parallel, auto-detects paired vs single end)&quot;</span><span class="p">,</span>
                     <span class="s2">&quot;profile_name&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span>
                 <span class="p">},</span>
                 <span class="p">{</span>
@@ -8941,27 +8981,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3110</span>
-<span class="normal">3111</span>
-<span class="normal">3112</span>
-<span class="normal">3113</span>
-<span class="normal">3114</span>
-<span class="normal">3115</span>
-<span class="normal">3116</span>
-<span class="normal">3117</span>
-<span class="normal">3118</span>
-<span class="normal">3119</span>
-<span class="normal">3120</span>
-<span class="normal">3121</span>
-<span class="normal">3122</span>
-<span class="normal">3123</span>
-<span class="normal">3124</span>
-<span class="normal">3125</span>
-<span class="normal">3126</span>
-<span class="normal">3127</span>
-<span class="normal">3128</span>
-<span class="normal">3129</span>
-<span class="normal">3130</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3130</span>
 <span class="normal">3131</span>
 <span class="normal">3132</span>
 <span class="normal">3133</span>
@@ -8983,7 +9003,27 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3149</span>
 <span class="normal">3150</span>
 <span class="normal">3151</span>
-<span class="normal">3152</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3152</span>
+<span class="normal">3153</span>
+<span class="normal">3154</span>
+<span class="normal">3155</span>
+<span class="normal">3156</span>
+<span class="normal">3157</span>
+<span class="normal">3158</span>
+<span class="normal">3159</span>
+<span class="normal">3160</span>
+<span class="normal">3161</span>
+<span class="normal">3162</span>
+<span class="normal">3163</span>
+<span class="normal">3164</span>
+<span class="normal">3165</span>
+<span class="normal">3166</span>
+<span class="normal">3167</span>
+<span class="normal">3168</span>
+<span class="normal">3169</span>
+<span class="normal">3170</span>
+<span class="normal">3171</span>
+<span class="normal">3172</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -9343,27 +9383,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3057</span>
-<span class="normal">3058</span>
-<span class="normal">3059</span>
-<span class="normal">3060</span>
-<span class="normal">3061</span>
-<span class="normal">3062</span>
-<span class="normal">3063</span>
-<span class="normal">3064</span>
-<span class="normal">3065</span>
-<span class="normal">3066</span>
-<span class="normal">3067</span>
-<span class="normal">3068</span>
-<span class="normal">3069</span>
-<span class="normal">3070</span>
-<span class="normal">3071</span>
-<span class="normal">3072</span>
-<span class="normal">3073</span>
-<span class="normal">3074</span>
-<span class="normal">3075</span>
-<span class="normal">3076</span>
-<span class="normal">3077</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3077</span>
 <span class="normal">3078</span>
 <span class="normal">3079</span>
 <span class="normal">3080</span>
@@ -9394,7 +9414,27 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3105</span>
 <span class="normal">3106</span>
 <span class="normal">3107</span>
-<span class="normal">3108</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3108</span>
+<span class="normal">3109</span>
+<span class="normal">3110</span>
+<span class="normal">3111</span>
+<span class="normal">3112</span>
+<span class="normal">3113</span>
+<span class="normal">3114</span>
+<span class="normal">3115</span>
+<span class="normal">3116</span>
+<span class="normal">3117</span>
+<span class="normal">3118</span>
+<span class="normal">3119</span>
+<span class="normal">3120</span>
+<span class="normal">3121</span>
+<span class="normal">3122</span>
+<span class="normal">3123</span>
+<span class="normal">3124</span>
+<span class="normal">3125</span>
+<span class="normal">3126</span>
+<span class="normal">3127</span>
+<span class="normal">3128</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
