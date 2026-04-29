@@ -2597,18 +2597,42 @@ If you are being asked to generate a title, set "success" to false.
                 },
                 {
                     "name": "star_align",
+                    # Same xargs -P parallelism shape as kallisto_quant.
+                    # STAR is more memory-hungry per task (~30 GB index
+                    # resident) and uses more threads productively, so
+                    # the defaults are tilted differently:
+                    #   FLOWAGENT_PARALLEL_SAMPLES (default 4, shared
+                    #     with kallisto — drop to 2 when STAR's 30 GB
+                    #     index would push the box over)
+                    #   FLOWAGENT_STAR_THREADS    (default 4 — STAR
+                    #     scales to more threads than kallisto does)
                     "command": (
-                        f"for srr in $(cat raw_data/{geo_accession}_srr_ids.txt); do "
+                        f"[ -s raw_data/{geo_accession}_srr_ids.txt ] || "
+                        f"{{ echo 'FAIL: missing SRR list'; exit 1; }} && "
+                        f"export FLOWAGENT_STAR_THREADS=\"${{FLOWAGENT_STAR_THREADS:-4}}\" && "
+                        f"PARALLEL=\"${{FLOWAGENT_PARALLEL_SAMPLES:-4}}\" && "
+                        f"xargs -P \"$PARALLEL\" -I {{}} bash -c '"
+                        f"set -e; srr={{}}; "
+                        f"if [ -f raw_data/${{srr}}_1.fastq.gz ] && [ -f raw_data/${{srr}}_2.fastq.gz ]; then "
                         f"STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index "
                         f"--readFilesIn raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz "
                         f"--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate "
                         f"--outFileNamePrefix results/rna_seq_star/star_align/${{srr}}_ "
-                        f"--runThreadN 8; done"
+                        f"--runThreadN \"$FLOWAGENT_STAR_THREADS\"; "
+                        f"elif [ -f raw_data/${{srr}}.fastq.gz ]; then "
+                        f"STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index "
+                        f"--readFilesIn raw_data/${{srr}}.fastq.gz "
+                        f"--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate "
+                        f"--outFileNamePrefix results/rna_seq_star/star_align/${{srr}}_ "
+                        f"--runThreadN \"$FLOWAGENT_STAR_THREADS\"; "
+                        f"else echo \"FAIL: no FASTQ for $srr\"; exit 1; "
+                        f"fi"
+                        f"' < raw_data/{geo_accession}_srr_ids.txt"
                     ),
                     "parameters": {},
                     "dependencies": ["star_index"],
                     "outputs": ["results/rna_seq_star/star_align"],
-                    "description": "Align paired-end reads with STAR",
+                    "description": "Align reads with STAR (xargs -P parallel, auto-detects paired vs single end)",
                     "profile_name": "multi_thread",
                 },
                 {
@@ -2782,18 +2806,33 @@ If you are being asked to generate a title, set "success" to false.
             f"     (single-end)\n\n"
             f"Existing download steps (already in the plan):\n"
             f"{download_summary}\n\n"
-            f"Always emit shell idioms that detect paired vs single-end "
-            f"layouts at runtime, e.g.:\n"
-            f"  for srr in $(cat {srr_list_path}); do\n"
-            f"    if [ -f raw_data/${{srr}}_1.fastq.gz ]; then ... "
-            f"paired branch ...\n"
-            f"    elif [ -f raw_data/${{srr}}.fastq.gz ]; then ... "
-            f"single branch ...\n"
-            f"    else echo 'FAIL: no FASTQ for '${{srr}}; exit 1; fi\n"
-            f"  done\n"
-            f"so the same plan works for either library type. Wrap the "
-            f"loop input itself in a ``[ -s {srr_list_path} ] || {{ "
-            f"echo 'FAIL: missing srr list'; exit 1; }}`` guard.\n\n"
+            f"PARALLELISM IS MANDATORY for any per-sample work. Use "
+            f"``xargs -P N`` not a sequential ``for`` loop, so the cell "
+            f"can run multiple SRRs concurrently within the executor "
+            f"job. The canonical idiom (also handles paired vs "
+            f"single-end at runtime):\n"
+            f"  [ -s {srr_list_path} ] || {{ echo 'FAIL: missing srr "
+            f"list'; exit 1; }}\n"
+            f"  export FLOWAGENT_<TOOL>_THREADS=\"${{FLOWAGENT_<TOOL>_THREADS:-2}}\"\n"
+            f"  PARALLEL=\"${{FLOWAGENT_PARALLEL_SAMPLES:-4}}\"\n"
+            f"  xargs -P \"$PARALLEL\" -I {{}} bash -c '\n"
+            f"    set -e; srr={{}};\n"
+            f"    if [ -f raw_data/${{srr}}_1.fastq.gz ] && [ -f raw_data/${{srr}}_2.fastq.gz ]; then\n"
+            f"      <tool> ... -t \"$FLOWAGENT_<TOOL>_THREADS\" "
+            f"raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz ...\n"
+            f"    elif [ -f raw_data/${{srr}}.fastq.gz ]; then\n"
+            f"      <tool> ... -t \"$FLOWAGENT_<TOOL>_THREADS\" "
+            f"raw_data/${{srr}}.fastq.gz ...\n"
+            f"    else echo \"FAIL: no FASTQ for $srr\"; exit 1; fi\n"
+            f"  ' < {srr_list_path}\n"
+            f"Substitute ``<TOOL>`` for the assay's primary tool name "
+            f"(e.g. BOWTIE2, MACS2, FASTQC) and ``<tool>`` for the "
+            f"binary. Pick a sensible default thread count "
+            f"(``${{FLOWAGENT_BOWTIE2_THREADS:-2}}`` etc.) so the env "
+            f"var has a working fallback. Sequential ``for srr in "
+            f"$(cat …); do …; done`` is forbidden when there are "
+            f"multiple samples — the cell would only run one task at "
+            f"a time.\n\n"
             f"Tool / command exemplars for {workflow_type}:\n"
             f"{rules_block}\n\n"
             f"Each step's ``dependencies`` field must reference one of "
@@ -2974,14 +3013,29 @@ If you are being asked to generate a title, set "success" to false.
             # Only treat a caps token followed by ``.`` as legitimate
             # if it embeds digits (accession-like: GSE74912, SRR1234).
             # Bare alphabetic caps tokens like ``LINEAGE.merged.bam`` or
-            # ``SAMPLE.dedup.bam`` are placeholder fabrications.
+            # ``SAMPLE.dedup.bam`` are placeholder fabrications. Also
+            # skip tokens that appear in shell-variable contexts:
+            # ``$VAR`` / ``${VAR}`` / ``"$VAR"`` (variable reference)
+            # ``export VAR`` / ``VAR=…`` (assignment).
             accession_re = re.compile(r"\d")
             for m in caps_token_re.finditer(cmd):
                 tok = m.group(1)
                 if tok in allowlist:
                     continue
                 start, end = m.span()
+                # Accession-like (GSE74912.bam) — letters+digits+dot+ext
                 if end < len(cmd) and cmd[end] == "." and accession_re.search(tok):
+                    continue
+                # Variable reference: char immediately before token is
+                # ``$`` or ``{`` (the latter inside ``${...}``).
+                if start > 0 and cmd[start - 1] in "${":
+                    continue
+                # Variable assignment: token followed by ``=``.
+                if end < len(cmd) and cmd[end] == "=":
+                    continue
+                # ``export FOO`` / ``export FOO=…`` — preceding word.
+                pre_window = cmd[max(0, start - 12): start]
+                if re.search(r"\b(?:export|unset|local|readonly)\s+$", pre_window):
                     continue
                 violations.append(
                     f"step '{name}' uses bare all-caps token "
@@ -2989,25 +3043,41 @@ If you are being asked to generate a title, set "success" to false.
                     f"with a real value or shell variable"
                 )
 
-            # --- Unguarded ``cat`` loop -----------------------------
+            # --- ``cat`` loops --------------------------------------
+            # Two failure modes:
+            #   (a) unguarded loop input → silent zero-iteration success
+            #   (b) sequential ``for srr in $(cat …); do …; done`` over
+            #       the per-sample list → no parallelism, the cell only
+            #       runs one task at a time. Per-sample work must use
+            #       ``xargs -P`` so the cell uses all the cores it has.
             for m in cat_loop_re.finditer(cmd):
                 listfile = m.group(1)
-                # Allow the canonical srr list (the download step
-                # already guards it server-side).
-                if listfile == srr_list_path:
-                    continue
-                # Look for an in-command guard ``[ -s LIST ]`` /
-                # ``[ -f LIST ]`` BEFORE the loop.
                 pre = cmd[: m.start()]
-                if not re.search(
-                    rf"\[\s+-[sf]\s+{re.escape(listfile)}\s+\]", pre,
-                ):
+                guarded = (
+                    listfile == srr_list_path  # canonical, guarded by extract_srr_ids
+                    or re.search(
+                        rf"\[\s+-[sf]\s+{re.escape(listfile)}\s+\]", pre,
+                    )
+                )
+                if not guarded:
                     violations.append(
                         f"step '{name}' loops over $(cat {listfile}) "
                         f"with no ``[ -s {listfile} ] || exit 1`` "
                         f"guard before the loop — empty file would "
                         f"cause zero iterations + silent success"
                     )
+                # Reject sequential per-sample loops regardless of
+                # guarding. The xargs -P pattern is the canonical form
+                # and lets the cell use all its cores.
+                violations.append(
+                    f"step '{name}' uses sequential ``for $(cat "
+                    f"{listfile}); do …; done`` for per-sample work. "
+                    f"Per-sample work must use ``xargs -P "
+                    f"\"$FLOWAGENT_PARALLEL_SAMPLES\" -I {{}} bash -c "
+                    f"'…' < {listfile}`` so multiple samples run "
+                    f"concurrently — sequential loops bottleneck the "
+                    f"whole cell on one task at a time"
+                )
 
             # --- Unguarded glob loop --------------------------------
             for m in glob_loop_re.finditer(cmd):
