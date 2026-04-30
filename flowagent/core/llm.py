@@ -3270,6 +3270,14 @@ If you are being asked to generate a title, set "success" to false.
             produces double-nesting that downstream tools can't see
             (caught the recurring GRCh38_noalt_as bowtie2-index
             extraction cascade)
+          - role-name globs (``*chip*.fastq.gz``, ``*input*.bam``)
+            for public datasets where files are accession-named.
+            ENCODE, GEO, SRA and ENA all name files by accession
+            (``ENCFF…``, ``SRR…``), so the role distinction lives in
+            metadata, not the filename. The right pattern is a
+            metadata-derived list step writing ``chip_fastqs.txt`` /
+            ``input_fastqs.txt``, then downstream steps READ the
+            list (caught the ENCSR000EUQ alignment glob cascade)
 
         Each violation tells the LLM what to fix in plain English so
         the retry message is actionable.
@@ -3343,6 +3351,30 @@ If you are being asked to generate a title, set "success" to false.
         # is NOT acceptable on its own (that's the silent-skip pattern).
         glob_loop_re = re.compile(
             r"for\s+\w+\s+in\s+([^\s;]*\*[^\s;]*)",
+        )
+
+        # Role-name globs (``*chip*.fastq.gz``, ``*input*.bam``, …)
+        # almost never match real-world public datasets. ENCODE files
+        # are accession-named (``ENCFF000WVS.fastq.gz``); SRA files
+        # are SRR-named; ENA files are ENA-accession-named. The
+        # chip/input/control/treated distinction lives in metadata
+        # (ENCODE API ``controlled_by``, SRA ``LibraryStrategy``,
+        # GEO SOFT ``characteristics``), not the filename. When the
+        # LLM emits ``*chip*.fastq.gz``, the glob silently expands to
+        # nothing and the step fails with an empty error or — worse
+        # — produces no output and is reported as recovered. The
+        # correct pattern is to write a metadata-derived role->files
+        # mapping (``chip_fastqs.txt`` / ``input_fastqs.txt``) and
+        # have downstream steps READ the list, not re-glob.
+        ROLE_TOKENS = (
+            "chip", "input", "control", "treated", "untreated",
+            "mock", "igg", "sample", "replicate",
+        )
+        role_glob_re = re.compile(
+            r"(?<![A-Za-z0-9])\*(?:[A-Za-z0-9_-]*?)(?:" +
+            "|".join(ROLE_TOKENS) +
+            r")(?:[A-Za-z0-9_-]*?)\*\.(?:fastq|fq|bam|sam|fastq\.gz|fq\.gz)\b",
+            re.IGNORECASE,
         )
 
         for step in steps:
@@ -3500,6 +3532,29 @@ If you are being asked to generate a title, set "success" to false.
                     f"OR add an upstream step that produces "
                     f"``{script_path}`` (e.g. with a heredoc) and "
                     f"declares it in ``outputs``"
+                )
+
+            # --- Role-name FASTQ/BAM globs --------------------------
+            # ``*chip*.fastq.gz`` / ``*input*.bam`` etc. don't match
+            # real public datasets (accession-named files). Reject and
+            # tell the LLM to consume the metadata-derived list it
+            # almost certainly produced upstream.
+            for m in role_glob_re.finditer(cmd):
+                bad_glob = m.group(0)
+                violations.append(
+                    f"step '{name}' globs ``{bad_glob}`` for role-named "
+                    f"FASTQ/BAM files. Public datasets (ENCODE, GEO, "
+                    f"SRA, ENA) name files by accession "
+                    f"(``ENCFF000WVS.fastq.gz``, ``SRR12007821.fastq.gz``) "
+                    f"— role globs almost never match and the step "
+                    f"silently fails with empty input. Use the "
+                    f"metadata-derived role→file list produced by an "
+                    f"upstream split step (e.g. "
+                    f"``raw_data/chip_fastqs.txt`` from a Python step "
+                    f"that parses the ENCODE API ``controlled_by`` "
+                    f"field), and have this step READ that list with "
+                    f"``while read fq; do ...; done < "
+                    f"raw_data/chip_fastqs.txt``."
                 )
 
             # --- Archive extraction nesting antipattern --------------
