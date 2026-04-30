@@ -124,8 +124,8 @@ cases:
     prompt: |-
       Download the SUZ12 ChIP-seq experiment ENCSR000EUQ from ENCODE
       and run a standard bowtie2 + MACS2 narrow-peak-calling pipeline
-      on GRCh38 against the matched control input, with IDR-style
-      replicate-consistency filtering at q<0.05.
+      on GRCh38 against the matched control input, retaining peaks
+      with q-value < 0.05.
     output_relpath: results/macs2/peaks.narrowPeak
     reference: references/encsr000euq_suz12_idr_peaks.narrowPeak
     reference_source:
