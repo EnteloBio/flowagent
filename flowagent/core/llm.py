@@ -3307,8 +3307,15 @@ If you are being asked to generate a title, set "success" to false.
                 )
 
             # --- Unguarded glob loop --------------------------------
+            # Skip Python-syntax matches: ``for x in glob.glob('…'):``
+            # has a ``*`` in the pattern but is not bash. That's a
+            # different (uglier) bug — Python code in a shell command —
+            # and the all-caps / fictional-script checks above will
+            # surface it more usefully than this heuristic.
             for m in glob_loop_re.finditer(cmd):
                 pattern = m.group(1)
+                if pattern.endswith(":") or "glob.glob(" in pattern or "(" in pattern:
+                    continue
                 pre = cmd[: m.start()]
                 has_nullglob = "nullglob" in pre
                 has_existence = re.search(
@@ -3403,21 +3410,33 @@ If you are being asked to generate a title, set "success" to false.
                             src_stem = src_base[: -len(suf)]
                             break
                     if dst_name == src_stem:
-                        parent = os.path.dirname(dst.rstrip("/")) or "."
+                        # Suggest extracting into the directory that
+                        # CONTAINS the archive — that's the canonical
+                        # safe spot, because the archive's own wrapper
+                        # ``<src_stem>/`` lands at the right level.
+                        # ``os.path.dirname(dst)`` is wrong because the
+                        # LLM keeps producing deeper wrong dst paths
+                        # each retry, and the parent of a wrong path
+                        # is still wrong (``raw_data/X/X`` → ``raw_data/X``
+                        # is STILL the same-name antipattern).
+                        archive_dir = os.path.dirname(src.rstrip("/")) or "."
                         violations.append(
                             f"step '{name}' extracts ``{src}`` into "
                             f"``{dst}`` — a same-named target "
                             f"directory. Most public archives contain "
                             f"a wrapper directory matching their "
                             f"name, so this produces double-nesting "
-                            f"``{dst}/{dst_name}/files…`` and "
+                            f"``{dst}/{src_stem}/files…`` and "
                             f"downstream tools fail with cryptic "
-                            f"'not found' errors. Extract into the "
-                            f"PARENT instead (``-d {parent}`` / "
-                            f"``-C {parent}``) and follow with "
-                            f"``ls {dst}/<expected-glob> > /dev/null "
-                            f"|| {{ echo FAIL; exit 1; }}`` to "
-                            f"verify the post-extraction layout."
+                            f"'not found' errors. Fix: extract into "
+                            f"the directory that CONTAINS the archive "
+                            f"(``-d {archive_dir}`` / "
+                            f"``-C {archive_dir}``). The archive's own "
+                            f"wrapper ``{src_stem}/`` will then land "
+                            f"as ``{archive_dir}/{src_stem}/``, where "
+                            f"downstream tools expect it. Verify with "
+                            f"``ls {archive_dir}/{src_stem}/<expected-glob> "
+                            f"> /dev/null || {{ echo FAIL; exit 1; }}``."
                         )
                         break  # one violation per dst is enough
 
