@@ -6145,7 +6145,62 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3694</span>
 <span class="normal">3695</span>
 <span class="normal">3696</span>
-<span class="normal">3697</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3697</span>
+<span class="normal">3698</span>
+<span class="normal">3699</span>
+<span class="normal">3700</span>
+<span class="normal">3701</span>
+<span class="normal">3702</span>
+<span class="normal">3703</span>
+<span class="normal">3704</span>
+<span class="normal">3705</span>
+<span class="normal">3706</span>
+<span class="normal">3707</span>
+<span class="normal">3708</span>
+<span class="normal">3709</span>
+<span class="normal">3710</span>
+<span class="normal">3711</span>
+<span class="normal">3712</span>
+<span class="normal">3713</span>
+<span class="normal">3714</span>
+<span class="normal">3715</span>
+<span class="normal">3716</span>
+<span class="normal">3717</span>
+<span class="normal">3718</span>
+<span class="normal">3719</span>
+<span class="normal">3720</span>
+<span class="normal">3721</span>
+<span class="normal">3722</span>
+<span class="normal">3723</span>
+<span class="normal">3724</span>
+<span class="normal">3725</span>
+<span class="normal">3726</span>
+<span class="normal">3727</span>
+<span class="normal">3728</span>
+<span class="normal">3729</span>
+<span class="normal">3730</span>
+<span class="normal">3731</span>
+<span class="normal">3732</span>
+<span class="normal">3733</span>
+<span class="normal">3734</span>
+<span class="normal">3735</span>
+<span class="normal">3736</span>
+<span class="normal">3737</span>
+<span class="normal">3738</span>
+<span class="normal">3739</span>
+<span class="normal">3740</span>
+<span class="normal">3741</span>
+<span class="normal">3742</span>
+<span class="normal">3743</span>
+<span class="normal">3744</span>
+<span class="normal">3745</span>
+<span class="normal">3746</span>
+<span class="normal">3747</span>
+<span class="normal">3748</span>
+<span class="normal">3749</span>
+<span class="normal">3750</span>
+<span class="normal">3751</span>
+<span class="normal">3752</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -9391,6 +9446,14 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="sd">            produces double-nesting that downstream tools can&#39;t see</span>
 <span class="sd">            (caught the recurring GRCh38_noalt_as bowtie2-index</span>
 <span class="sd">            extraction cascade)</span>
+<span class="sd">          - role-name globs (``*chip*.fastq.gz``, ``*input*.bam``)</span>
+<span class="sd">            for public datasets where files are accession-named.</span>
+<span class="sd">            ENCODE, GEO, SRA and ENA all name files by accession</span>
+<span class="sd">            (``ENCFF…``, ``SRR…``), so the role distinction lives in</span>
+<span class="sd">            metadata, not the filename. The right pattern is a</span>
+<span class="sd">            metadata-derived list step writing ``chip_fastqs.txt`` /</span>
+<span class="sd">            ``input_fastqs.txt``, then downstream steps READ the</span>
+<span class="sd">            list (caught the ENCSR000EUQ alignment glob cascade)</span>
 
 <span class="sd">        Each violation tells the LLM what to fix in plain English so</span>
 <span class="sd">        the retry message is actionable.</span>
@@ -9464,6 +9527,30 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="c1"># is NOT acceptable on its own (that&#39;s the silent-skip pattern).</span>
         <span class="n">glob_loop_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
             <span class="sa">r</span><span class="s2">&quot;for\s+\w+\s+in\s+([^\s;]*\*[^\s;]*)&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Role-name globs (``*chip*.fastq.gz``, ``*input*.bam``, …)</span>
+        <span class="c1"># almost never match real-world public datasets. ENCODE files</span>
+        <span class="c1"># are accession-named (``ENCFF000WVS.fastq.gz``); SRA files</span>
+        <span class="c1"># are SRR-named; ENA files are ENA-accession-named. The</span>
+        <span class="c1"># chip/input/control/treated distinction lives in metadata</span>
+        <span class="c1"># (ENCODE API ``controlled_by``, SRA ``LibraryStrategy``,</span>
+        <span class="c1"># GEO SOFT ``characteristics``), not the filename. When the</span>
+        <span class="c1"># LLM emits ``*chip*.fastq.gz``, the glob silently expands to</span>
+        <span class="c1"># nothing and the step fails with an empty error or — worse</span>
+        <span class="c1"># — produces no output and is reported as recovered. The</span>
+        <span class="c1"># correct pattern is to write a metadata-derived role-&gt;files</span>
+        <span class="c1"># mapping (``chip_fastqs.txt`` / ``input_fastqs.txt``) and</span>
+        <span class="c1"># have downstream steps READ the list, not re-glob.</span>
+        <span class="n">ROLE_TOKENS</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;chip&quot;</span><span class="p">,</span> <span class="s2">&quot;input&quot;</span><span class="p">,</span> <span class="s2">&quot;control&quot;</span><span class="p">,</span> <span class="s2">&quot;treated&quot;</span><span class="p">,</span> <span class="s2">&quot;untreated&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;mock&quot;</span><span class="p">,</span> <span class="s2">&quot;igg&quot;</span><span class="p">,</span> <span class="s2">&quot;sample&quot;</span><span class="p">,</span> <span class="s2">&quot;replicate&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">role_glob_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+            <span class="sa">r</span><span class="s2">&quot;(?&lt;![A-Za-z0-9])\*(?:[A-Za-z0-9_-]*?)(?:&quot;</span> <span class="o">+</span>
+            <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ROLE_TOKENS</span><span class="p">)</span> <span class="o">+</span>
+            <span class="sa">r</span><span class="s2">&quot;)(?:[A-Za-z0-9_-]*?)\*\.(?:fastq|fq|bam|sam|fastq\.gz|fq\.gz)\b&quot;</span><span class="p">,</span>
+            <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="n">steps</span><span class="p">:</span>
@@ -9621,6 +9708,29 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="sa">f</span><span class="s2">&quot;OR add an upstream step that produces &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">script_path</span><span class="si">}</span><span class="s2">`` (e.g. with a heredoc) and &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;declares it in ``outputs``&quot;</span>
+                <span class="p">)</span>
+
+            <span class="c1"># --- Role-name FASTQ/BAM globs --------------------------</span>
+            <span class="c1"># ``*chip*.fastq.gz`` / ``*input*.bam`` etc. don&#39;t match</span>
+            <span class="c1"># real public datasets (accession-named files). Reject and</span>
+            <span class="c1"># tell the LLM to consume the metadata-derived list it</span>
+            <span class="c1"># almost certainly produced upstream.</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">role_glob_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="n">bad_glob</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; globs ``</span><span class="si">{</span><span class="n">bad_glob</span><span class="si">}</span><span class="s2">`` for role-named &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;FASTQ/BAM files. Public datasets (ENCODE, GEO, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;SRA, ENA) name files by accession &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;(``ENCFF000WVS.fastq.gz``, ``SRR12007821.fastq.gz``) &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;— role globs almost never match and the step &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;silently fails with empty input. Use the &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;metadata-derived role→file list produced by an &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;upstream split step (e.g. &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;``raw_data/chip_fastqs.txt`` from a Python step &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;that parses the ENCODE API ``controlled_by`` &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;field), and have this step READ that list with &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;``while read fq; do ...; done &lt; &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;raw_data/chip_fastqs.txt``.&quot;</span>
                 <span class="p">)</span>
 
             <span class="c1"># --- Archive extraction nesting antipattern --------------</span>
@@ -9969,49 +10079,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3624</span>
-<span class="normal">3625</span>
-<span class="normal">3626</span>
-<span class="normal">3627</span>
-<span class="normal">3628</span>
-<span class="normal">3629</span>
-<span class="normal">3630</span>
-<span class="normal">3631</span>
-<span class="normal">3632</span>
-<span class="normal">3633</span>
-<span class="normal">3634</span>
-<span class="normal">3635</span>
-<span class="normal">3636</span>
-<span class="normal">3637</span>
-<span class="normal">3638</span>
-<span class="normal">3639</span>
-<span class="normal">3640</span>
-<span class="normal">3641</span>
-<span class="normal">3642</span>
-<span class="normal">3643</span>
-<span class="normal">3644</span>
-<span class="normal">3645</span>
-<span class="normal">3646</span>
-<span class="normal">3647</span>
-<span class="normal">3648</span>
-<span class="normal">3649</span>
-<span class="normal">3650</span>
-<span class="normal">3651</span>
-<span class="normal">3652</span>
-<span class="normal">3653</span>
-<span class="normal">3654</span>
-<span class="normal">3655</span>
-<span class="normal">3656</span>
-<span class="normal">3657</span>
-<span class="normal">3658</span>
-<span class="normal">3659</span>
-<span class="normal">3660</span>
-<span class="normal">3661</span>
-<span class="normal">3662</span>
-<span class="normal">3663</span>
-<span class="normal">3664</span>
-<span class="normal">3665</span>
-<span class="normal">3666</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3679</span>
+<span class="normal">3680</span>
+<span class="normal">3681</span>
+<span class="normal">3682</span>
+<span class="normal">3683</span>
+<span class="normal">3684</span>
+<span class="normal">3685</span>
+<span class="normal">3686</span>
+<span class="normal">3687</span>
+<span class="normal">3688</span>
+<span class="normal">3689</span>
+<span class="normal">3690</span>
+<span class="normal">3691</span>
+<span class="normal">3692</span>
+<span class="normal">3693</span>
+<span class="normal">3694</span>
+<span class="normal">3695</span>
+<span class="normal">3696</span>
+<span class="normal">3697</span>
+<span class="normal">3698</span>
+<span class="normal">3699</span>
+<span class="normal">3700</span>
+<span class="normal">3701</span>
+<span class="normal">3702</span>
+<span class="normal">3703</span>
+<span class="normal">3704</span>
+<span class="normal">3705</span>
+<span class="normal">3706</span>
+<span class="normal">3707</span>
+<span class="normal">3708</span>
+<span class="normal">3709</span>
+<span class="normal">3710</span>
+<span class="normal">3711</span>
+<span class="normal">3712</span>
+<span class="normal">3713</span>
+<span class="normal">3714</span>
+<span class="normal">3715</span>
+<span class="normal">3716</span>
+<span class="normal">3717</span>
+<span class="normal">3718</span>
+<span class="normal">3719</span>
+<span class="normal">3720</span>
+<span class="normal">3721</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -10371,58 +10481,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3571</span>
-<span class="normal">3572</span>
-<span class="normal">3573</span>
-<span class="normal">3574</span>
-<span class="normal">3575</span>
-<span class="normal">3576</span>
-<span class="normal">3577</span>
-<span class="normal">3578</span>
-<span class="normal">3579</span>
-<span class="normal">3580</span>
-<span class="normal">3581</span>
-<span class="normal">3582</span>
-<span class="normal">3583</span>
-<span class="normal">3584</span>
-<span class="normal">3585</span>
-<span class="normal">3586</span>
-<span class="normal">3587</span>
-<span class="normal">3588</span>
-<span class="normal">3589</span>
-<span class="normal">3590</span>
-<span class="normal">3591</span>
-<span class="normal">3592</span>
-<span class="normal">3593</span>
-<span class="normal">3594</span>
-<span class="normal">3595</span>
-<span class="normal">3596</span>
-<span class="normal">3597</span>
-<span class="normal">3598</span>
-<span class="normal">3599</span>
-<span class="normal">3600</span>
-<span class="normal">3601</span>
-<span class="normal">3602</span>
-<span class="normal">3603</span>
-<span class="normal">3604</span>
-<span class="normal">3605</span>
-<span class="normal">3606</span>
-<span class="normal">3607</span>
-<span class="normal">3608</span>
-<span class="normal">3609</span>
-<span class="normal">3610</span>
-<span class="normal">3611</span>
-<span class="normal">3612</span>
-<span class="normal">3613</span>
-<span class="normal">3614</span>
-<span class="normal">3615</span>
-<span class="normal">3616</span>
-<span class="normal">3617</span>
-<span class="normal">3618</span>
-<span class="normal">3619</span>
-<span class="normal">3620</span>
-<span class="normal">3621</span>
-<span class="normal">3622</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3626</span>
+<span class="normal">3627</span>
+<span class="normal">3628</span>
+<span class="normal">3629</span>
+<span class="normal">3630</span>
+<span class="normal">3631</span>
+<span class="normal">3632</span>
+<span class="normal">3633</span>
+<span class="normal">3634</span>
+<span class="normal">3635</span>
+<span class="normal">3636</span>
+<span class="normal">3637</span>
+<span class="normal">3638</span>
+<span class="normal">3639</span>
+<span class="normal">3640</span>
+<span class="normal">3641</span>
+<span class="normal">3642</span>
+<span class="normal">3643</span>
+<span class="normal">3644</span>
+<span class="normal">3645</span>
+<span class="normal">3646</span>
+<span class="normal">3647</span>
+<span class="normal">3648</span>
+<span class="normal">3649</span>
+<span class="normal">3650</span>
+<span class="normal">3651</span>
+<span class="normal">3652</span>
+<span class="normal">3653</span>
+<span class="normal">3654</span>
+<span class="normal">3655</span>
+<span class="normal">3656</span>
+<span class="normal">3657</span>
+<span class="normal">3658</span>
+<span class="normal">3659</span>
+<span class="normal">3660</span>
+<span class="normal">3661</span>
+<span class="normal">3662</span>
+<span class="normal">3663</span>
+<span class="normal">3664</span>
+<span class="normal">3665</span>
+<span class="normal">3666</span>
+<span class="normal">3667</span>
+<span class="normal">3668</span>
+<span class="normal">3669</span>
+<span class="normal">3670</span>
+<span class="normal">3671</span>
+<span class="normal">3672</span>
+<span class="normal">3673</span>
+<span class="normal">3674</span>
+<span class="normal">3675</span>
+<span class="normal">3676</span>
+<span class="normal">3677</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
