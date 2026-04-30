@@ -113,29 +113,29 @@ cases:
       top_n:          200
 
   # ── 4. ChIP-seq peaks: ENCODE SUZ12 in H1-hESC ──────────────────
-  - id: encsr000euq_suz12_h1
-    description: >-
-      ENCODE SUZ12 ChIP-seq in H1-hESC (ENCSR000EUQ; PRC2 component
-      involved in H3K27me3 deposition during pluripotency exit).
-      Reference is the optimal IDR-thresholded peaks (ENCFF938PCI) —
-      ENCODE's default-pipeline output, narrowPeak format, GRCh38.
-    accession: ENCSR000EUQ
-    organism: Homo sapiens (GRCh38)
-    prompt: |-
-      Download the SUZ12 ChIP-seq experiment ENCSR000EUQ from ENCODE
-      and run a standard bowtie2 + MACS2 narrow-peak-calling pipeline
-      on GRCh38 against the matched control input, retaining peaks
-      with q-value < 0.05.
-    output_relpath: results/macs2/peaks.narrowPeak
-    reference: references/encsr000euq_suz12_idr_peaks.narrowPeak
-    reference_source:
-      kind: direct_url
-      url: https://www.encodeproject.org/files/ENCFF938PCI/@@download/ENCFF938PCI.bed.gz
-      gunzip_to: references/encsr000euq_suz12_idr_peaks.narrowPeak
-      sha256: null   # set after first download to pin
-    comparison: peak_bed
-    params:
-      min_overlap: 0.5
+  #- id: encsr000euq_suz12_h1
+  #  description: >-
+  #    ENCODE SUZ12 ChIP-seq in H1-hESC (ENCSR000EUQ; PRC2 component
+  #    involved in H3K27me3 deposition during pluripotency exit).
+  #    Reference is the optimal IDR-thresholded peaks (ENCFF938PCI) —
+  #    ENCODE's default-pipeline output, narrowPeak format, GRCh38.
+  #  accession: ENCSR000EUQ
+  #  organism: Homo sapiens (GRCh38)
+  #  prompt: |-
+  #    Download the SUZ12 ChIP-seq experiment ENCSR000EUQ from ENCODE
+  #    and run a standard bowtie2 + MACS2 narrow-peak-calling pipeline
+  #    on GRCh38 against the matched control input, retaining peaks
+  #    with q-value < 0.05.
+  #  output_relpath: results/macs2/peaks.narrowPeak
+  #  reference: references/encsr000euq_suz12_idr_peaks.narrowPeak
+  #  reference_source:
+  #    kind: direct_url
+  #    url: https://www.encodeproject.org/files/ENCFF938PCI/@@download/ENCFF938PCI.bed.gz
+  #    gunzip_to: references/encsr000euq_suz12_idr_peaks.narrowPeak
+  #    sha256: null   # set after first download to pin
+  #  comparison: peak_bed
+  #  params:
+  #    min_overlap: 0.5
 
   # ── 5. ChIP-seq peaks: ER-α in MCF7 (Ross-Innes 2012) ────────────
   - id: gse32222_er_chip
