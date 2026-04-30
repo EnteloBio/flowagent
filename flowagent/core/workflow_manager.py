@@ -157,6 +157,119 @@ class WorkflowManager:
             executables.append(os.path.basename(first))
         return list(dict.fromkeys(executables))  # dedupe, preserve order
 
+    @staticmethod
+    def _verify_recovery_outputs(
+        step: Dict[str, Any],
+    ) -> Optional[str]:
+        """Check whether a step's declared outputs actually exist after recovery.
+
+        Returns ``None`` if outputs are present (or the step declared no
+        outputs to verify). Returns a human-readable reason string when
+        recovery should be rejected because the step exit-coded 0 but
+        produced no real outputs — the silent-success failure mode that
+        eats the rest of this session's debugging time.
+
+        Examples this catches:
+          - recovery rewrote the command to ``rm -f X.tar && echo
+            'please download'`` (rc=0, no outputs produced)
+          - recovery's ``while read fq; do if [ -f "$fq" ]; then bowtie2
+            …; fi; done`` ran zero iterations because input files
+            weren't downloaded yet (rc=0, no BAMs produced)
+          - recovery added ``[ -e "$bam" ] || continue`` inside a loop
+            (rc=0, all iterations silently skipped)
+
+        Glob outputs (``*``/``?``/``[]``) are checked via ``glob.glob``;
+        plain paths are checked for existence + non-zero size (or
+        non-empty directory contents).
+        """
+        import glob as _glob
+        declared = step.get("outputs") or []
+        if not declared:
+            # No outputs declared — fall back to legacy rc=0 == success.
+            # Better than false-positiving on steps the planner didn't
+            # bother to annotate.
+            return None
+        problems: List[str] = []
+        for out in declared:
+            out_path = str(out)
+            if any(ch in out_path for ch in "*?[]"):
+                if not _glob.glob(out_path):
+                    problems.append(f"glob ``{out_path}`` matched no files")
+                continue
+            p = Path(out_path)
+            if not p.exists():
+                problems.append(f"``{out_path}`` does not exist")
+            elif p.is_file() and p.stat().st_size == 0:
+                problems.append(f"``{out_path}`` is zero bytes")
+            elif p.is_dir():
+                try:
+                    if not any(p.iterdir()):
+                        problems.append(
+                            f"``{out_path}`` is an empty directory"
+                        )
+                except OSError as exc:  # pragma: no cover - defensive
+                    problems.append(f"``{out_path}``: {exc}")
+        if problems:
+            return "; ".join(problems)
+        return None
+
+    @staticmethod
+    def _is_recovery_antipattern(fixed_command: str) -> Optional[str]:
+        """Detect obvious "give up and lie" recovery commands before
+        we run them.
+
+        Returns ``None`` for legitimate fixes, or a reason string to
+        reject. Catches the patterns the LLM falls into when it can't
+        actually fix the underlying problem — almost always involving
+        a fail-message disguised as success:
+
+          - ``rm -f X && echo 'please redownload'`` (PBMC tarball case)
+          - bare ``echo 'FAIL: ...'`` with no real work elsewhere
+          - ``cmd || true`` / ``|| continue`` swallowing the real
+            failure as the trailing operator on the whole pipeline
+
+        Conservative — only rejects shapes that are clearly
+        "messaging-only" or "unconditionally suppress failure". Real
+        fixes (``mkdir -p`` + work, ``[ -s X ] || exit 1`` upfront
+        guard + work) pass through.
+        """
+        cmd = (fixed_command or "").strip()
+        if not cmd:
+            return "recovery command is empty"
+
+        # Pure ``rm`` + ``echo`` (with optional `please <do something>`):
+        # this is "delete the broken file and ask the human to fix it"
+        # which is NOT recovery, it's resignation.
+        no_real_work = re.compile(
+            r"""^\s*
+                rm\s+(?:-[rf]+\s+)?\S+              # rm something
+                \s*(?:&&|;|\n)\s*
+                echo\s+['"][^'"]*(?:please|manually|provide|missing|fix\s+the|need\s+to)[^'"]*['"]
+                \s*(?:;\s*exit\s+\d+)?              # optional explicit exit
+                \s*$""",
+            re.VERBOSE | re.IGNORECASE,
+        )
+        if no_real_work.match(cmd):
+            return (
+                "recovery only deletes a file and asks the user to "
+                "fix it (not a real fix — this would mark the step "
+                "completed while producing no outputs)"
+            )
+
+        # Single ``echo …; exit N`` with no other work.
+        echo_then_exit = re.compile(
+            r"""^\s*
+                (?:echo|printf)\s+['"][^'"]*['"]   # echo a message
+                \s*(?:;\s*exit\s+\d+)?              # optional exit
+                \s*$""",
+            re.VERBOSE,
+        )
+        if echo_then_exit.match(cmd):
+            return (
+                "recovery is just an echo statement (not a real fix)"
+            )
+        return None
+
     async def _attempt_error_recovery(
         self,
         step: Dict[str, Any],
@@ -315,6 +428,40 @@ class WorkflowManager:
             )
             self.logger.info("Fixed command: %s", fixed_command)
 
+            # ── Pre-execute anti-pattern guard ─────────────────────
+            # Catch the obvious "give up and lie" commands BEFORE we
+            # run them — saves an executor round-trip and prevents
+            # a confusing "rc=0 but verification failed" log.
+            anti = self._is_recovery_antipattern(fixed_command)
+            if anti is not None:
+                self.logger.warning(
+                    "Recovery attempt %d for '%s' rejected as "
+                    "anti-pattern: %s — recursing for another attempt",
+                    attempt, step.get("name"), anti,
+                )
+                # Synthesise a failure result so the next attempt has
+                # a stderr trail to work with.
+                synth = {
+                    "status": "failed",
+                    "returncode": 1,
+                    "stdout": "",
+                    "stderr": (
+                        f"[flowagent] Rejected recovery anti-pattern: "
+                        f"{anti}. The original step failed and the "
+                        f"proposed fix would not have produced its "
+                        f"declared outputs."
+                    ),
+                    "step_name": step.get("name", "unknown"),
+                    "recovery_attempt": attempt,
+                    "recovery_diagnosis": diagnosis,
+                    "fixed_command": fixed_command,
+                    "original_command": step.get("command"),
+                }
+                return await self._attempt_error_recovery(
+                    {**step, "command": fixed_command}, synth, output_dir,
+                    attempt=attempt + 1, max_attempts=max_attempts,
+                )
+
             # Build a patched step and re-execute
             fixed_step = {**step, "command": fixed_command}
             new_result = await self._step_executor.execute_step(fixed_step)
@@ -331,8 +478,48 @@ class WorkflowManager:
                     attempt=attempt + 1, max_attempts=max_attempts,
                 )
 
+            # ── Post-execute output-verification gate ──────────────
+            # Even with rc=0, the step must have produced its declared
+            # outputs to count as recovered. Catches: (a) commands that
+            # exit-coded 0 but did no real work (silent ``rm`` recovery,
+            # ``[ -e $f ] || continue`` skips, ``while read fq; do if
+            # [ -f $fq ]; …; fi; done`` over not-yet-downloaded inputs);
+            # (b) commands that wrote to a different path than declared.
+            verify_problem = self._verify_recovery_outputs(fixed_step)
+            if verify_problem is not None:
+                self.logger.warning(
+                    "Recovery attempt %d for '%s' exit-coded 0 but "
+                    "produced no real outputs (%s) — treating as "
+                    "failure and recursing",
+                    attempt, step.get("name"), verify_problem,
+                )
+                # Build a synthetic failure result so the next attempt
+                # sees the verification problem in its stderr context.
+                synth = {
+                    "status": "failed",
+                    "returncode": 1,
+                    "stdout": new_result.get("stdout", ""),
+                    "stderr": (
+                        (new_result.get("stderr") or "") +
+                        f"\n[flowagent] Recovery exited 0 but declared "
+                        f"outputs were not produced: {verify_problem}. "
+                        f"This recovery would have silently 'succeeded' "
+                        f"with no real work — propose a different fix."
+                    ),
+                    "step_name": step.get("name", "unknown"),
+                    "recovery_attempt": attempt,
+                    "recovery_diagnosis": diagnosis,
+                    "fixed_command": fixed_command,
+                    "original_command": step.get("command"),
+                }
+                return await self._attempt_error_recovery(
+                    fixed_step, synth, output_dir,
+                    attempt=attempt + 1, max_attempts=max_attempts,
+                )
+
             self.logger.info(
-                "Step '%s' recovered successfully on attempt %d",
+                "Step '%s' recovered successfully on attempt %d "
+                "(outputs verified)",
                 step.get("name"), attempt,
             )
             return new_result
