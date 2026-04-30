@@ -2439,14 +2439,27 @@ If you are being asked to generate a title, set "success" to false.
                         f"xargs -P \"$PARALLEL\" -I {{}} bash -c '"
                         f"set -e; srr={{}}; "
                         f"mkdir -p results/rna_seq_kallisto/kallisto_quant/$srr; "
+                        # 1: classic PE — both mates present.
                         f"if [ -f raw_data/${{srr}}_1.fastq.gz ] && [ -f raw_data/${{srr}}_2.fastq.gz ]; then "
                         f"kallisto quant -t \"$FLOWAGENT_KALLISTO_THREADS\" -i {index_path} "
                         f"-o results/rna_seq_kallisto/kallisto_quant/$srr "
                         f"raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz; "
+                        # 2: classic SE — plain ``<srr>.fastq.gz``.
                         f"elif [ -f raw_data/${{srr}}.fastq.gz ]; then "
                         f"kallisto quant -t \"$FLOWAGENT_KALLISTO_THREADS\" -i {index_path} "
                         f"-o results/rna_seq_kallisto/kallisto_quant/$srr "
                         f"--single -l 200 -s 20 raw_data/${{srr}}.fastq.gz; "
+                        # 3: ``_1``-only SE. fasterq-dump --split-files
+                        # writes single-read SRAs as ``<srr>_1.fastq`` on
+                        # some versions, and some PE accessions land
+                        # with the second mate missing. Treat the
+                        # ``_1``-only case as single-end on that file
+                        # rather than aborting — running on the single
+                        # mate is still useful quantification.
+                        f"elif [ -f raw_data/${{srr}}_1.fastq.gz ]; then "
+                        f"kallisto quant -t \"$FLOWAGENT_KALLISTO_THREADS\" -i {index_path} "
+                        f"-o results/rna_seq_kallisto/kallisto_quant/$srr "
+                        f"--single -l 200 -s 20 raw_data/${{srr}}_1.fastq.gz; "
                         f"else echo \"FAIL: no FASTQ for $srr\"; exit 1; "
                         f"fi"
                         f"' < raw_data/{geo_accession}_srr_ids.txt"
@@ -2613,15 +2626,28 @@ If you are being asked to generate a title, set "success" to false.
                         f"PARALLEL=\"${{FLOWAGENT_PARALLEL_SAMPLES:-4}}\" && "
                         f"xargs -P \"$PARALLEL\" -I {{}} bash -c '"
                         f"set -e; srr={{}}; "
+                        # 1: classic PE — both mates present.
                         f"if [ -f raw_data/${{srr}}_1.fastq.gz ] && [ -f raw_data/${{srr}}_2.fastq.gz ]; then "
                         f"STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index "
                         f"--readFilesIn raw_data/${{srr}}_1.fastq.gz raw_data/${{srr}}_2.fastq.gz "
                         f"--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate "
                         f"--outFileNamePrefix results/rna_seq_star/star_align/${{srr}}_ "
                         f"--runThreadN \"$FLOWAGENT_STAR_THREADS\"; "
+                        # 2: classic SE — plain ``<srr>.fastq.gz``.
                         f"elif [ -f raw_data/${{srr}}.fastq.gz ]; then "
                         f"STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index "
                         f"--readFilesIn raw_data/${{srr}}.fastq.gz "
+                        f"--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate "
+                        f"--outFileNamePrefix results/rna_seq_star/star_align/${{srr}}_ "
+                        f"--runThreadN \"$FLOWAGENT_STAR_THREADS\"; "
+                        # 3: ``_1``-only SE. fasterq-dump --split-files
+                        # writes single-read SRAs as ``<srr>_1.fastq``
+                        # on some versions (verified on GSE152418, where
+                        # LibraryLayout=SINGLE in the SRA runinfo). Run
+                        # as SE on that file rather than aborting.
+                        f"elif [ -f raw_data/${{srr}}_1.fastq.gz ]; then "
+                        f"STAR --runMode alignReads --genomeDir results/rna_seq_star/star_index "
+                        f"--readFilesIn raw_data/${{srr}}_1.fastq.gz "
                         f"--readFilesCommand zcat --outSAMtype BAM SortedByCoordinate "
                         f"--outFileNamePrefix results/rna_seq_star/star_align/${{srr}}_ "
                         f"--runThreadN \"$FLOWAGENT_STAR_THREADS\"; "
@@ -2632,7 +2658,7 @@ If you are being asked to generate a title, set "success" to false.
                     "parameters": {},
                     "dependencies": ["star_index"],
                     "outputs": ["results/rna_seq_star/star_align"],
-                    "description": "Align reads with STAR (xargs -P parallel, auto-detects paired vs single end)",
+                    "description": "Align reads with STAR (xargs -P parallel, auto-detects paired vs single end + ``_1``-only SE)",
                     "profile_name": "multi_thread",
                 },
                 {
@@ -2823,6 +2849,12 @@ If you are being asked to generate a title, set "success" to false.
             f"    elif [ -f raw_data/${{srr}}.fastq.gz ]; then\n"
             f"      <tool> ... -t \"$FLOWAGENT_<TOOL>_THREADS\" "
             f"raw_data/${{srr}}.fastq.gz ...\n"
+            f"    elif [ -f raw_data/${{srr}}_1.fastq.gz ]; then\n"
+            f"      # ``_1``-only SE — fasterq-dump --split-files names\n"
+            f"      # single-read SRAs as ``_1.fastq.gz`` on some\n"
+            f"      # versions; treat that as SE on the ``_1`` file.\n"
+            f"      <tool> ... -t \"$FLOWAGENT_<TOOL>_THREADS\" "
+            f"raw_data/${{srr}}_1.fastq.gz ...\n"
             f"    else echo \"FAIL: no FASTQ for $srr\"; exit 1; fi\n"
             f"  ' < {srr_list_path}\n"
             f"Substitute ``<TOOL>`` for the assay's primary tool name "
