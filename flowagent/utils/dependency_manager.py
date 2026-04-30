@@ -189,6 +189,21 @@ Return a JSON object with this structure:
 
 Focus on identifying dependencies that are actually used in the commands or are essential for the workflow type.
 For Python packages that must be installed via pip, make sure to specify "channel": "pip".
+
+DO NOT include any of the following in the ``tools`` list — they are bash
+builtins or POSIX coreutils that are always present in the runtime
+environment and are NOT installable as individual conda packages
+(attempting ``mamba install <name>`` fails with "package does not exist"):
+  - bash builtins: shopt, set, export, unset, cd, echo, printf, read,
+    test, source, alias, type, command, exec, bash, sh
+  - coreutils: cat, cp, mv, rm, mkdir, rmdir, ln, touch, ls, find, wc,
+    head, tail, cut, sort, uniq, tr, grep, egrep, awk, sed, tar, gzip,
+    gunzip, zcat, xargs, tee, true, false, sleep, date, basename,
+    dirname, realpath, readlink, which, diff, split, paste, env
+  - download / network tools that ship with every base image: curl,
+    wget, ssh, scp, rsync
+Only include real bioinformatics packages (kallisto, bowtie2, samtools,
+macs2, fastqc, multiqc, …) and language packages (Python, R, etc.).
 """
             
             # Get LLM response
@@ -583,6 +598,36 @@ Example format:
         """Return the conda package name that provides *tool_name*."""
         return self._BINARY_TO_PACKAGE.get(tool_name, tool_name)
 
+    # Bash builtins and POSIX coreutils that ship with any Linux/macOS
+    # base image. These are not conda packages — trying to install them
+    # via mamba fails (``shopt`` doesn't exist on conda-forge; ``cut`` /
+    # ``sort`` / ``head`` etc. are part of coreutils which is also not
+    # individually installable). We treat them as "always present" and
+    # skip the install attempt.
+    _ALWAYS_PRESENT_TOOLS = frozenset({
+        # bash builtins
+        "shopt", "set", "export", "unset", "local", "readonly",
+        "cd", "pwd", "echo", "printf", "read", "test",
+        "source", "alias", "type", "command", "exec",
+        # bash itself (we always run from a shell)
+        "bash", "sh",
+        # POSIX coreutils — gnucoreutils on most distros, busybox on
+        # alpine, but always installed
+        "cat", "cp", "mv", "rm", "mkdir", "rmdir", "ln", "touch",
+        "ls", "find", "wc", "head", "tail", "cut", "sort", "uniq",
+        "tr", "grep", "egrep", "fgrep", "awk", "sed",
+        "tar", "gzip", "gunzip", "zcat", "bzip2", "bunzip2", "xz", "unxz",
+        "xargs", "tee", "yes", "true", "false", "sleep", "date",
+        "basename", "dirname", "realpath", "readlink", "which",
+        "diff", "cmp", "patch", "split", "paste", "join", "expand",
+        "fold", "fmt", "od", "hexdump",
+        # network / download — typically pre-installed on bioinfo images
+        "curl", "wget", "ssh", "scp", "rsync",
+        # process / job control
+        "kill", "ps", "jobs", "wait", "nohup", "timeout", "nice",
+        "env", "id", "whoami", "hostname",
+    })
+
     def install_tool(self, tool_info: Dict[str, str]) -> bool:
         """Install a command-line tool using conda."""
         tool_name = tool_info.get("name", "")
@@ -593,6 +638,18 @@ Example format:
         if not tool_name:
             self.logger.error("No tool name provided for installation")
             return False
+
+        # Bash builtins and POSIX coreutils — never try to install via
+        # conda. The LLM dependency extractor occasionally lists
+        # ``shopt`` / ``cut`` / ``head`` etc. as conda-installable,
+        # which fails because they aren't individual packages on
+        # conda-forge. They're always present in any sane runtime.
+        if tool_name in self._ALWAYS_PRESENT_TOOLS:
+            self.logger.info(
+                "Tool %s is a bash builtin / coreutil — always present, "
+                "skipping install attempt", tool_name,
+            )
+            return True
 
         # Caller logs "Installing tool: ..." before dispatching here; avoid
         # logging the same line twice.
