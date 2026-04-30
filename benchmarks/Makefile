@@ -80,6 +80,7 @@ fidelity-run:
 	    --replicates=$(REPLICATES) \
 	    --concurrency=$(if $(CONCURRENCY),$(CONCURRENCY),1) \
 	    --results-base=$(RESULTS_DIR) \
+	    $(if $(CASE),--case $(CASE),) \
 	    $(if $(FORCE),--force,) \
 	    $(if $(CLEANUP),--cleanup,)
 
