@@ -2736,8 +2736,8 @@ If you are being asked to generate a title, set "success" to false.
             # (generate_workflow_plan around line 1060), so a ChIP-seq
             # prompt with a GEO accession produces the same calibre of
             # plan as a ChIP-seq prompt with FASTQs already on disk.
+            rules = workflow_config.get("rules", []) if isinstance(workflow_config, dict) else []
             try:
-                rules = workflow_config.get("rules", []) if isinstance(workflow_config, dict) else []
                 new_steps = await self._generate_analysis_steps_via_llm(
                     prompt=prompt,
                     geo_accession=geo_accession,
@@ -2745,18 +2745,39 @@ If you are being asked to generate a title, set "success" to false.
                     rules=rules,
                     existing_steps=workflow_plan["steps"],
                 )
-                if new_steps:
-                    workflow_plan["steps"].extend(new_steps)
-                    self.logger.info(
-                        "Added %d LLM-generated analysis steps for "
-                        "workflow_type=%s", len(new_steps), workflow_type,
-                    )
             except Exception as exc:
-                self.logger.warning(
-                    "LLM-driven analysis-step generation failed for "
-                    "workflow_type=%s: %s — emitting download-only plan",
-                    workflow_type, exc,
+                # Network / parse / API blowup. Surface clearly rather
+                # than shipping a download-only plan that the user will
+                # mistake for "completed successfully".
+                raise ValueError(
+                    f"LLM-driven analysis-step generation crashed for "
+                    f"workflow_type={workflow_type!r}: {exc}"
+                ) from exc
+
+            if not new_steps:
+                # ``_generate_analysis_steps_via_llm`` returned [] — that
+                # means both the initial attempt AND the retry failed
+                # validation (placeholder paths, fictional scripts,
+                # unguarded loops, etc). Continuing here would ship a
+                # plan with ONLY the download scaffold and no analysis,
+                # which the harness then runs to "completion successfully"
+                # while producing zero analysis output. Fail loud
+                # instead so the user sees the actual problem.
+                raise ValueError(
+                    f"Could not produce a valid {workflow_type} analysis "
+                    f"plan for {geo_accession} after one retry — both "
+                    f"attempts failed structural validation (placeholders, "
+                    f"fictional scripts, or unguarded loops). Refusing to "
+                    f"ship a download-only plan that would silently appear "
+                    f"to succeed. Check the prior LLM-validation warnings "
+                    f"in this log for the specific violations."
                 )
+
+            workflow_plan["steps"].extend(new_steps)
+            self.logger.info(
+                "Added %d LLM-generated analysis steps for "
+                "workflow_type=%s", len(new_steps), workflow_type,
+            )
 
         return workflow_plan
 
@@ -3036,16 +3057,29 @@ If you are being asked to generate a title, set "success" to false.
         # block-list. The pattern matches >=4-char ALL-CAPS tokens with
         # underscores.
         allowlist = {
+            # Shell / OS
             "PATH", "HOME", "USER", "PWD", "SHELL", "TMPDIR", "LANG",
             "PYTHONPATH", "JAVA_HOME", "LD_LIBRARY_PATH",
-            "BASH", "BAM", "FASTQ", "FASTA", "VCF", "BED", "GTF", "GFF",
+            "BASH", "TRUE", "FALSE", "NULL",
+            # File extensions
+            "BAM", "FASTQ", "FASTA", "VCF", "BED", "GTF", "GFF",
             "TSV", "CSV", "JSON", "GZ", "TXT", "HTML", "PDF",
+            # Database / accession namespaces
             "GEO", "SRA", "SRR", "ERR", "DRR", "ENA", "ENCODE",
             "GRCH37", "GRCH38", "GRCM38", "GRCM39", "DNA", "RNA", "NA",
-            "ID", "IDS", "QC", "PCR", "ChIP", "ATAC", "RNA_SEQ",
+            # Bioinformatics assay / sample-type abbreviations
+            # (used as bare tokens in real pipelines for sample groups,
+            # control labels, intermediate filename stems — flagging
+            # them as placeholders rejects valid plans)
+            "CHIP", "ATAC", "WGBS", "RRBS", "MEDIPSEQ", "MEDIP",
+            "SCRNA", "SCATAC", "BULK", "INPUT", "CONTROL",
+            "TREATED", "UNTREATED", "MOCK", "IGG", "PEAKS",
+            "MERGED", "DEDUP", "SORTED", "FILTERED", "TRIMMED",
+            "ChIP", "ATAC", "RNA_SEQ",  # mixed-case forms
+            # Generic technical
+            "ID", "IDS", "QC", "PCR",
             "FAIL", "ERROR", "FATAL", "INFO", "DEBUG", "WARN",
-            "REMOVE_DUPLICATES", "TRUE", "FALSE", "NULL",
-            "INPUT", "OUTPUT", "REF",  # used in our own guards
+            "REMOVE_DUPLICATES", "OUTPUT", "REF",  # used in our own guards
         }
         caps_token_re = re.compile(r"\b([A-Z][A-Z0-9_]{3,})\b")
 
