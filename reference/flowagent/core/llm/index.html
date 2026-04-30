@@ -5862,7 +5862,106 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3411</span>
 <span class="normal">3412</span>
 <span class="normal">3413</span>
-<span class="normal">3414</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3414</span>
+<span class="normal">3415</span>
+<span class="normal">3416</span>
+<span class="normal">3417</span>
+<span class="normal">3418</span>
+<span class="normal">3419</span>
+<span class="normal">3420</span>
+<span class="normal">3421</span>
+<span class="normal">3422</span>
+<span class="normal">3423</span>
+<span class="normal">3424</span>
+<span class="normal">3425</span>
+<span class="normal">3426</span>
+<span class="normal">3427</span>
+<span class="normal">3428</span>
+<span class="normal">3429</span>
+<span class="normal">3430</span>
+<span class="normal">3431</span>
+<span class="normal">3432</span>
+<span class="normal">3433</span>
+<span class="normal">3434</span>
+<span class="normal">3435</span>
+<span class="normal">3436</span>
+<span class="normal">3437</span>
+<span class="normal">3438</span>
+<span class="normal">3439</span>
+<span class="normal">3440</span>
+<span class="normal">3441</span>
+<span class="normal">3442</span>
+<span class="normal">3443</span>
+<span class="normal">3444</span>
+<span class="normal">3445</span>
+<span class="normal">3446</span>
+<span class="normal">3447</span>
+<span class="normal">3448</span>
+<span class="normal">3449</span>
+<span class="normal">3450</span>
+<span class="normal">3451</span>
+<span class="normal">3452</span>
+<span class="normal">3453</span>
+<span class="normal">3454</span>
+<span class="normal">3455</span>
+<span class="normal">3456</span>
+<span class="normal">3457</span>
+<span class="normal">3458</span>
+<span class="normal">3459</span>
+<span class="normal">3460</span>
+<span class="normal">3461</span>
+<span class="normal">3462</span>
+<span class="normal">3463</span>
+<span class="normal">3464</span>
+<span class="normal">3465</span>
+<span class="normal">3466</span>
+<span class="normal">3467</span>
+<span class="normal">3468</span>
+<span class="normal">3469</span>
+<span class="normal">3470</span>
+<span class="normal">3471</span>
+<span class="normal">3472</span>
+<span class="normal">3473</span>
+<span class="normal">3474</span>
+<span class="normal">3475</span>
+<span class="normal">3476</span>
+<span class="normal">3477</span>
+<span class="normal">3478</span>
+<span class="normal">3479</span>
+<span class="normal">3480</span>
+<span class="normal">3481</span>
+<span class="normal">3482</span>
+<span class="normal">3483</span>
+<span class="normal">3484</span>
+<span class="normal">3485</span>
+<span class="normal">3486</span>
+<span class="normal">3487</span>
+<span class="normal">3488</span>
+<span class="normal">3489</span>
+<span class="normal">3490</span>
+<span class="normal">3491</span>
+<span class="normal">3492</span>
+<span class="normal">3493</span>
+<span class="normal">3494</span>
+<span class="normal">3495</span>
+<span class="normal">3496</span>
+<span class="normal">3497</span>
+<span class="normal">3498</span>
+<span class="normal">3499</span>
+<span class="normal">3500</span>
+<span class="normal">3501</span>
+<span class="normal">3502</span>
+<span class="normal">3503</span>
+<span class="normal">3504</span>
+<span class="normal">3505</span>
+<span class="normal">3506</span>
+<span class="normal">3507</span>
+<span class="normal">3508</span>
+<span class="normal">3509</span>
+<span class="normal">3510</span>
+<span class="normal">3511</span>
+<span class="normal">3512</span>
+<span class="normal">3513</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -7682,6 +7781,30 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;  For very large downloads (multi-GB) prefer &quot;</span>
             <span class="s2">&quot;``wget -c -O &lt;fixed-path&gt;`` so partial transfers can &quot;</span>
             <span class="s2">&quot;resume.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;- ARCHIVE EXTRACTION — extract into the PARENT &quot;</span>
+            <span class="s2">&quot;directory, NEVER into a directory of the same name as &quot;</span>
+            <span class="s2">&quot;the archive. Most public archives &quot;</span>
+            <span class="s2">&quot;(``GRCh38_noalt_as.zip``, ``hg38.tar.gz``, ENA &quot;</span>
+            <span class="s2">&quot;mirrors, …) contain a top-level directory inside; &quot;</span>
+            <span class="s2">&quot;extracting them into ``raw_data/X/`` when the archive &quot;</span>
+            <span class="s2">&quot;already wraps everything in ``X/`` produces &quot;</span>
+            <span class="s2">&quot;``raw_data/X/X/files…`` (double-nested) and downstream &quot;</span>
+            <span class="s2">&quot;tools can&#39;t find anything. Pattern:</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    wget -c -O raw_data/&lt;X&gt;.zip &lt;URL&gt;</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    unzip -o -d raw_data raw_data/&lt;X&gt;.zip   &quot;</span>
+            <span class="s2">&quot;# extract into PARENT, archive&#39;s wrapper dir lands &quot;</span>
+            <span class="s2">&quot;where expected</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    # Belt-and-braces: detect + flatten if the archive &quot;</span>
+            <span class="s2">&quot;had no wrapper or had a different wrapper name</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    if [ -d raw_data/&lt;X&gt;/&lt;X&gt; ]; then</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;      mv raw_data/&lt;X&gt;/&lt;X&gt;/* raw_data/&lt;X&gt;/</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;      rmdir raw_data/&lt;X&gt;/&lt;X&gt; 2&gt;/dev/null || true</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    fi</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    # Post-condition check — fail loud if expected &quot;</span>
+            <span class="s2">&quot;files aren&#39;t where the next step assumes</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    ls raw_data/&lt;X&gt;/&lt;expected-extension&gt; &gt; /dev/null &quot;</span>
+            <span class="s2">&quot;|| { echo &#39;FAIL: extracted files not at expected &quot;</span>
+            <span class="s2">&quot;path&#39;; exit 1; }</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- Subsequent analysis steps follow the same conventions as &quot;</span>
             <span class="s2">&quot;the GEO-download workflows: paths under raw_data/ for &quot;</span>
             <span class="s2">&quot;inputs, results/&lt;workflow&gt;/ for outputs.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -8745,7 +8868,24 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;&lt;fixed-path&gt;`` (force fixed name) and ``unzip -o`` / &quot;</span>
             <span class="s2">&quot;``tar --overwrite -xf`` (skip interactive overwrite &quot;</span>
             <span class="s2">&quot;prompt). For multi-GB downloads, ``wget -c -O &quot;</span>
-            <span class="s2">&quot;&lt;fixed-path&gt;`` allows resume on retry.&quot;</span>
+            <span class="s2">&quot;&lt;fixed-path&gt;`` allows resume on retry.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;9. ARCHIVE EXTRACTION must extract into the PARENT &quot;</span>
+            <span class="s2">&quot;directory, never into a same-named subdirectory. Most &quot;</span>
+            <span class="s2">&quot;public archives wrap their contents in a top-level &quot;</span>
+            <span class="s2">&quot;directory; extracting into ``X/`` when the archive &quot;</span>
+            <span class="s2">&quot;already contains ``X/`` produces ``X/X/files…`` &quot;</span>
+            <span class="s2">&quot;(double-nested) and downstream tools fail with cryptic &quot;</span>
+            <span class="s2">&quot;&#39;index not found&#39; errors. Pattern:</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    wget -c -O raw_data/&lt;X&gt;.zip &lt;URL&gt;</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    unzip -o -d raw_data raw_data/&lt;X&gt;.zip   &quot;</span>
+            <span class="s2">&quot;# parent dir, archive&#39;s wrapper lands at right level</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    if [ -d raw_data/&lt;X&gt;/&lt;X&gt; ]; then</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;      mv raw_data/&lt;X&gt;/&lt;X&gt;/* raw_data/&lt;X&gt;/ &amp;&amp; &quot;</span>
+            <span class="s2">&quot;rmdir raw_data/&lt;X&gt;/&lt;X&gt;</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    fi</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    ls raw_data/&lt;X&gt;/&lt;expected-glob&gt; &gt; /dev/null &quot;</span>
+            <span class="s2">&quot;|| { echo &#39;FAIL: extracted files not where expected&#39;; &quot;</span>
+            <span class="s2">&quot;exit 1; }&quot;</span>
         <span class="p">)</span>
         <span class="n">user</span> <span class="o">=</span> <span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;Workflow type: </span><span class="si">{</span><span class="n">workflow_type</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -8896,6 +9036,12 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="sd">          - ``python &lt;relative.py&gt;`` / ``Rscript &lt;relative.R&gt;`` etc.</span>
 <span class="sd">            where no step in the plan writes that script (caught the</span>
 <span class="sd">            10X PBMC ``python scripts/scanpy_qc_filtering.py`` cascade)</span>
+<span class="sd">          - ``unzip -d X X.zip`` / ``tar -C X X.tar.gz`` antipattern</span>
+<span class="sd">            where the target directory name matches the archive stem</span>
+<span class="sd">            and the archive contains a wrapper of the same name —</span>
+<span class="sd">            produces double-nesting that downstream tools can&#39;t see</span>
+<span class="sd">            (caught the recurring GRCh38_noalt_as bowtie2-index</span>
+<span class="sd">            extraction cascade)</span>
 
 <span class="sd">        Each violation tells the LLM what to fix in plain English so</span>
 <span class="sd">        the retry message is actionable.</span>
@@ -9120,6 +9266,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">script_path</span><span class="si">}</span><span class="s2">`` (e.g. with a heredoc) and &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;declares it in ``outputs``&quot;</span>
                 <span class="p">)</span>
+
+            <span class="c1"># --- Archive extraction nesting antipattern --------------</span>
+            <span class="c1"># ``unzip -d X X.zip`` (or ``tar -C X X.tar.gz``) where the</span>
+            <span class="c1"># target directory&#39;s basename matches the archive&#39;s stem</span>
+            <span class="c1"># produces double-nesting when the archive contains a</span>
+            <span class="c1"># wrapper directory of the same name (the common case for</span>
+            <span class="c1"># genome-idx, refgenie, ENA mirrors). Bowtie2/STAR/etc.</span>
+            <span class="c1"># then fail with &quot;index not found&quot;. Robust against either</span>
+            <span class="c1"># arg order: ``-d X X.zip`` and ``X.tar.gz -C X`` both</span>
+            <span class="c1"># match.</span>
+            <span class="c1">#</span>
+            <span class="c1"># Find each ``-d &lt;path&gt;`` / ``-C &lt;path&gt;`` and each</span>
+            <span class="c1"># archive-suffixed path in the command; whenever any</span>
+            <span class="c1"># destination basename matches any archive stem, flag it.</span>
+            <span class="n">dst_paths</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span>
+                    <span class="sa">r</span><span class="s2">&quot;(?:^|\s)(?:-d|-C)\s+([\w./\-]+)&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">]</span>
+            <span class="n">archive_paths</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span>
+                    <span class="sa">r</span><span class="s2">&quot;\b[\w./\-]+\.(?:tar\.gz|tgz|zip|tar)\b&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">]</span>
+            <span class="n">ARCHIVE_SUFFIXES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;.tar.gz&quot;</span><span class="p">,</span> <span class="s2">&quot;.tgz&quot;</span><span class="p">,</span> <span class="s2">&quot;.zip&quot;</span><span class="p">,</span> <span class="s2">&quot;.tar&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">dst</span> <span class="ow">in</span> <span class="n">dst_paths</span><span class="p">:</span>
+                <span class="n">dst_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">dst</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">src</span> <span class="ow">in</span> <span class="n">archive_paths</span><span class="p">:</span>
+                    <span class="n">src_base</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+                    <span class="n">src_stem</span> <span class="o">=</span> <span class="n">src_base</span>
+                    <span class="k">for</span> <span class="n">suf</span> <span class="ow">in</span> <span class="n">ARCHIVE_SUFFIXES</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">src_base</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">suf</span><span class="p">):</span>
+                            <span class="n">src_stem</span> <span class="o">=</span> <span class="n">src_base</span><span class="p">[:</span> <span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">suf</span><span class="p">)]</span>
+                            <span class="k">break</span>
+                    <span class="k">if</span> <span class="n">dst_name</span> <span class="o">==</span> <span class="n">src_stem</span><span class="p">:</span>
+                        <span class="n">parent</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">dst</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">))</span> <span class="ow">or</span> <span class="s2">&quot;.&quot;</span>
+                        <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; extracts ``</span><span class="si">{</span><span class="n">src</span><span class="si">}</span><span class="s2">`` into &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">dst</span><span class="si">}</span><span class="s2">`` — a same-named target &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;directory. Most public archives contain &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;a wrapper directory matching their &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;name, so this produces double-nesting &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">dst</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">dst_name</span><span class="si">}</span><span class="s2">/files…`` and &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;downstream tools fail with cryptic &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;&#39;not found&#39; errors. Extract into the &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;PARENT instead (``-d </span><span class="si">{</span><span class="n">parent</span><span class="si">}</span><span class="s2">`` / &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;``-C </span><span class="si">{</span><span class="n">parent</span><span class="si">}</span><span class="s2">``) and follow with &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;``ls </span><span class="si">{</span><span class="n">dst</span><span class="si">}</span><span class="s2">/&lt;expected-glob&gt; &gt; /dev/null &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;|| </span><span class="se">{{</span><span class="s2"> echo FAIL; exit 1; </span><span class="se">}}</span><span class="s2">`` to &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;verify the post-extraction layout.&quot;</span>
+                        <span class="p">)</span>
+                        <span class="k">break</span>  <span class="c1"># one violation per dst is enough</span>
 
         <span class="k">return</span> <span class="n">violations</span>
 
@@ -9403,49 +9601,49 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3341</span>
-<span class="normal">3342</span>
-<span class="normal">3343</span>
-<span class="normal">3344</span>
-<span class="normal">3345</span>
-<span class="normal">3346</span>
-<span class="normal">3347</span>
-<span class="normal">3348</span>
-<span class="normal">3349</span>
-<span class="normal">3350</span>
-<span class="normal">3351</span>
-<span class="normal">3352</span>
-<span class="normal">3353</span>
-<span class="normal">3354</span>
-<span class="normal">3355</span>
-<span class="normal">3356</span>
-<span class="normal">3357</span>
-<span class="normal">3358</span>
-<span class="normal">3359</span>
-<span class="normal">3360</span>
-<span class="normal">3361</span>
-<span class="normal">3362</span>
-<span class="normal">3363</span>
-<span class="normal">3364</span>
-<span class="normal">3365</span>
-<span class="normal">3366</span>
-<span class="normal">3367</span>
-<span class="normal">3368</span>
-<span class="normal">3369</span>
-<span class="normal">3370</span>
-<span class="normal">3371</span>
-<span class="normal">3372</span>
-<span class="normal">3373</span>
-<span class="normal">3374</span>
-<span class="normal">3375</span>
-<span class="normal">3376</span>
-<span class="normal">3377</span>
-<span class="normal">3378</span>
-<span class="normal">3379</span>
-<span class="normal">3380</span>
-<span class="normal">3381</span>
-<span class="normal">3382</span>
-<span class="normal">3383</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3440</span>
+<span class="normal">3441</span>
+<span class="normal">3442</span>
+<span class="normal">3443</span>
+<span class="normal">3444</span>
+<span class="normal">3445</span>
+<span class="normal">3446</span>
+<span class="normal">3447</span>
+<span class="normal">3448</span>
+<span class="normal">3449</span>
+<span class="normal">3450</span>
+<span class="normal">3451</span>
+<span class="normal">3452</span>
+<span class="normal">3453</span>
+<span class="normal">3454</span>
+<span class="normal">3455</span>
+<span class="normal">3456</span>
+<span class="normal">3457</span>
+<span class="normal">3458</span>
+<span class="normal">3459</span>
+<span class="normal">3460</span>
+<span class="normal">3461</span>
+<span class="normal">3462</span>
+<span class="normal">3463</span>
+<span class="normal">3464</span>
+<span class="normal">3465</span>
+<span class="normal">3466</span>
+<span class="normal">3467</span>
+<span class="normal">3468</span>
+<span class="normal">3469</span>
+<span class="normal">3470</span>
+<span class="normal">3471</span>
+<span class="normal">3472</span>
+<span class="normal">3473</span>
+<span class="normal">3474</span>
+<span class="normal">3475</span>
+<span class="normal">3476</span>
+<span class="normal">3477</span>
+<span class="normal">3478</span>
+<span class="normal">3479</span>
+<span class="normal">3480</span>
+<span class="normal">3481</span>
+<span class="normal">3482</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -9805,58 +10003,58 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3288</span>
-<span class="normal">3289</span>
-<span class="normal">3290</span>
-<span class="normal">3291</span>
-<span class="normal">3292</span>
-<span class="normal">3293</span>
-<span class="normal">3294</span>
-<span class="normal">3295</span>
-<span class="normal">3296</span>
-<span class="normal">3297</span>
-<span class="normal">3298</span>
-<span class="normal">3299</span>
-<span class="normal">3300</span>
-<span class="normal">3301</span>
-<span class="normal">3302</span>
-<span class="normal">3303</span>
-<span class="normal">3304</span>
-<span class="normal">3305</span>
-<span class="normal">3306</span>
-<span class="normal">3307</span>
-<span class="normal">3308</span>
-<span class="normal">3309</span>
-<span class="normal">3310</span>
-<span class="normal">3311</span>
-<span class="normal">3312</span>
-<span class="normal">3313</span>
-<span class="normal">3314</span>
-<span class="normal">3315</span>
-<span class="normal">3316</span>
-<span class="normal">3317</span>
-<span class="normal">3318</span>
-<span class="normal">3319</span>
-<span class="normal">3320</span>
-<span class="normal">3321</span>
-<span class="normal">3322</span>
-<span class="normal">3323</span>
-<span class="normal">3324</span>
-<span class="normal">3325</span>
-<span class="normal">3326</span>
-<span class="normal">3327</span>
-<span class="normal">3328</span>
-<span class="normal">3329</span>
-<span class="normal">3330</span>
-<span class="normal">3331</span>
-<span class="normal">3332</span>
-<span class="normal">3333</span>
-<span class="normal">3334</span>
-<span class="normal">3335</span>
-<span class="normal">3336</span>
-<span class="normal">3337</span>
-<span class="normal">3338</span>
-<span class="normal">3339</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3387</span>
+<span class="normal">3388</span>
+<span class="normal">3389</span>
+<span class="normal">3390</span>
+<span class="normal">3391</span>
+<span class="normal">3392</span>
+<span class="normal">3393</span>
+<span class="normal">3394</span>
+<span class="normal">3395</span>
+<span class="normal">3396</span>
+<span class="normal">3397</span>
+<span class="normal">3398</span>
+<span class="normal">3399</span>
+<span class="normal">3400</span>
+<span class="normal">3401</span>
+<span class="normal">3402</span>
+<span class="normal">3403</span>
+<span class="normal">3404</span>
+<span class="normal">3405</span>
+<span class="normal">3406</span>
+<span class="normal">3407</span>
+<span class="normal">3408</span>
+<span class="normal">3409</span>
+<span class="normal">3410</span>
+<span class="normal">3411</span>
+<span class="normal">3412</span>
+<span class="normal">3413</span>
+<span class="normal">3414</span>
+<span class="normal">3415</span>
+<span class="normal">3416</span>
+<span class="normal">3417</span>
+<span class="normal">3418</span>
+<span class="normal">3419</span>
+<span class="normal">3420</span>
+<span class="normal">3421</span>
+<span class="normal">3422</span>
+<span class="normal">3423</span>
+<span class="normal">3424</span>
+<span class="normal">3425</span>
+<span class="normal">3426</span>
+<span class="normal">3427</span>
+<span class="normal">3428</span>
+<span class="normal">3429</span>
+<span class="normal">3430</span>
+<span class="normal">3431</span>
+<span class="normal">3432</span>
+<span class="normal">3433</span>
+<span class="normal">3434</span>
+<span class="normal">3435</span>
+<span class="normal">3436</span>
+<span class="normal">3437</span>
+<span class="normal">3438</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
