@@ -2000,6 +2000,11 @@ If you are being asked to generate a title, set "success" to false.
         # Run the same validator the GEO-path uses — placeholder paths,
         # caps stand-ins, unguarded loops, fictional scripts. No SRR
         # list path on this branch (no SRA layer), so pass None.
+        # First, deterministically auto-fix the archive-nesting
+        # antipattern (LLM gets stuck looping on this even with
+        # explicit fix-suggestion in the validator message).
+        for note in self._autofix_generated_steps(valid_steps):
+            self.logger.info("Auto-fix: %s", note)
         errors = self._validate_generated_steps(valid_steps, srr_list_path=None)
         if errors:
             self.logger.warning(
@@ -2028,6 +2033,10 @@ If you are being asked to generate a title, set "success" to false.
             valid_steps = _normalise(steps2)
             if not valid_steps:
                 return None
+            # Auto-fix on retry too — the LLM might emit the same
+            # antipattern a second time.
+            for note in self._autofix_generated_steps(valid_steps):
+                self.logger.info("Auto-fix (retry): %s", note)
             errors2 = self._validate_generated_steps(
                 valid_steps, srr_list_path=None,
             )
@@ -3051,6 +3060,11 @@ If you are being asked to generate a title, set "success" to false.
         ]
         # First attempt
         steps = await self._llm_steps_attempt(messages)
+        # Auto-fix deterministic patterns (archive-nesting) before
+        # validation, so the LLM doesn't keep getting rejected on
+        # things we already know how to correct ourselves.
+        for note in self._autofix_generated_steps(steps):
+            self.logger.info("Auto-fix: %s", note)
         errors = self._validate_generated_steps(steps, srr_list_path)
         if not errors:
             return steps
@@ -3069,6 +3083,8 @@ If you are being asked to generate a title, set "success" to false.
         messages.append({"role": "assistant", "content": json.dumps({"steps": steps})})
         messages.append({"role": "user", "content": retry_msg})
         steps = await self._llm_steps_attempt(messages)
+        for note in self._autofix_generated_steps(steps):
+            self.logger.info("Auto-fix: %s", note)
         errors = self._validate_generated_steps(steps, srr_list_path)
         if errors:
             self.logger.warning(
@@ -3115,6 +3131,75 @@ If you are being asked to generate a title, set "success" to false.
             s.setdefault("profile_name", "default")
             valid.append(s)
         return valid
+
+    def _autofix_generated_steps(
+        self, steps: List[Dict[str, Any]],
+    ) -> List[str]:
+        """Auto-correct deterministically-fixable LLM mistakes in-place.
+
+        Returns a list of human-readable notes describing every
+        transform applied (logged at INFO; not surfaced to the LLM as
+        violations). Only transforms where we KNOW the right answer:
+
+          - Archive-nesting antipattern. ``unzip -d X/Y X.zip`` (or
+            ``tar -C X/Y X.tar.gz``) where ``Y == basename(X.zip)``
+            gets rewritten to ``unzip -d <archive_parent> X.zip``,
+            which is the canonical safe extraction target. The LLM
+            has demonstrated (across multiple sessions) that even
+            with a precise fix-suggestion in the validator it gets
+            stuck producing variants of the same wrong path. Rather
+            than rejecting the plan and retrying (which loops), we
+            just rewrite the command and continue.
+
+        Other antipatterns (sequential for-loops → xargs -P,
+        fictional scripts → heredoc-write step) are NOT auto-fixed:
+        the right transformation requires understanding intent that
+        we don't safely have. Those still go through the validator
+        + retry path.
+        """
+        notes: List[str] = []
+        ARCHIVE_SUFFIXES = (".tar.gz", ".tgz", ".zip", ".tar")
+        # Match any -d/-C path and any archive path; rewrite when
+        # the dst basename equals the archive stem.
+        d_flag_re = re.compile(r"((?:^|\s)(?:-d|-C)\s+)([\w./\-]+)")
+        archive_re = re.compile(r"\b[\w./\-]+\.(?:tar\.gz|tgz|zip|tar)\b")
+
+        for step in steps:
+            cmd = step.get("command", "") or ""
+            archive_paths = archive_re.findall(cmd)
+            if not archive_paths:
+                continue
+
+            def _rewrite(match):
+                prefix, dst = match.group(1), match.group(2)
+                dst_name = os.path.basename(dst.rstrip("/"))
+                for src in archive_paths:
+                    src_base = os.path.basename(src)
+                    src_stem = src_base
+                    for suf in ARCHIVE_SUFFIXES:
+                        if src_base.endswith(suf):
+                            src_stem = src_base[: -len(suf)]
+                            break
+                    if dst_name == src_stem:
+                        new_dst = (
+                            os.path.dirname(src.rstrip("/")) or "."
+                        )
+                        notes.append(
+                            f"step '{step.get('name', '?')}': "
+                            f"rewrote archive extraction target "
+                            f"``{prefix.strip()} {dst}`` → "
+                            f"``{prefix.strip()} {new_dst}`` "
+                            f"(was double-nesting "
+                            f"``{dst}/{src_stem}/…``)"
+                        )
+                        return f"{prefix}{new_dst}"
+                return match.group(0)
+
+            new_cmd = d_flag_re.sub(_rewrite, cmd)
+            if new_cmd != cmd:
+                step["command"] = new_cmd
+
+        return notes
 
     def _validate_generated_steps(
         self, steps: List[Dict[str, Any]],
