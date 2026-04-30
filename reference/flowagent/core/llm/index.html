@@ -6000,7 +6000,26 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3549</span>
 <span class="normal">3550</span>
 <span class="normal">3551</span>
-<span class="normal">3552</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3552</span>
+<span class="normal">3553</span>
+<span class="normal">3554</span>
+<span class="normal">3555</span>
+<span class="normal">3556</span>
+<span class="normal">3557</span>
+<span class="normal">3558</span>
+<span class="normal">3559</span>
+<span class="normal">3560</span>
+<span class="normal">3561</span>
+<span class="normal">3562</span>
+<span class="normal">3563</span>
+<span class="normal">3564</span>
+<span class="normal">3565</span>
+<span class="normal">3566</span>
+<span class="normal">3567</span>
+<span class="normal">3568</span>
+<span class="normal">3569</span>
+<span class="normal">3570</span>
+<span class="normal">3571</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -9283,8 +9302,15 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="p">)</span>
 
             <span class="c1"># --- Unguarded glob loop --------------------------------</span>
+            <span class="c1"># Skip Python-syntax matches: ``for x in glob.glob(&#39;…&#39;):``</span>
+            <span class="c1"># has a ``*`` in the pattern but is not bash. That&#39;s a</span>
+            <span class="c1"># different (uglier) bug — Python code in a shell command —</span>
+            <span class="c1"># and the all-caps / fictional-script checks above will</span>
+            <span class="c1"># surface it more usefully than this heuristic.</span>
             <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">glob_loop_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
                 <span class="n">pattern</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">pattern</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;glob.glob(&quot;</span> <span class="ow">in</span> <span class="n">pattern</span> <span class="ow">or</span> <span class="s2">&quot;(&quot;</span> <span class="ow">in</span> <span class="n">pattern</span><span class="p">:</span>
+                    <span class="k">continue</span>
                 <span class="n">pre</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[:</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()]</span>
                 <span class="n">has_nullglob</span> <span class="o">=</span> <span class="s2">&quot;nullglob&quot;</span> <span class="ow">in</span> <span class="n">pre</span>
                 <span class="n">has_existence</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
@@ -9379,21 +9405,33 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                             <span class="n">src_stem</span> <span class="o">=</span> <span class="n">src_base</span><span class="p">[:</span> <span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">suf</span><span class="p">)]</span>
                             <span class="k">break</span>
                     <span class="k">if</span> <span class="n">dst_name</span> <span class="o">==</span> <span class="n">src_stem</span><span class="p">:</span>
-                        <span class="n">parent</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">dst</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">))</span> <span class="ow">or</span> <span class="s2">&quot;.&quot;</span>
+                        <span class="c1"># Suggest extracting into the directory that</span>
+                        <span class="c1"># CONTAINS the archive — that&#39;s the canonical</span>
+                        <span class="c1"># safe spot, because the archive&#39;s own wrapper</span>
+                        <span class="c1"># ``&lt;src_stem&gt;/`` lands at the right level.</span>
+                        <span class="c1"># ``os.path.dirname(dst)`` is wrong because the</span>
+                        <span class="c1"># LLM keeps producing deeper wrong dst paths</span>
+                        <span class="c1"># each retry, and the parent of a wrong path</span>
+                        <span class="c1"># is still wrong (``raw_data/X/X`` → ``raw_data/X``</span>
+                        <span class="c1"># is STILL the same-name antipattern).</span>
+                        <span class="n">archive_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">src</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">))</span> <span class="ow">or</span> <span class="s2">&quot;.&quot;</span>
                         <span class="n">violations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                             <span class="sa">f</span><span class="s2">&quot;step &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; extracts ``</span><span class="si">{</span><span class="n">src</span><span class="si">}</span><span class="s2">`` into &quot;</span>
                             <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">dst</span><span class="si">}</span><span class="s2">`` — a same-named target &quot;</span>
                             <span class="sa">f</span><span class="s2">&quot;directory. Most public archives contain &quot;</span>
                             <span class="sa">f</span><span class="s2">&quot;a wrapper directory matching their &quot;</span>
                             <span class="sa">f</span><span class="s2">&quot;name, so this produces double-nesting &quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">dst</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">dst_name</span><span class="si">}</span><span class="s2">/files…`` and &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;``</span><span class="si">{</span><span class="n">dst</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">src_stem</span><span class="si">}</span><span class="s2">/files…`` and &quot;</span>
                             <span class="sa">f</span><span class="s2">&quot;downstream tools fail with cryptic &quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;&#39;not found&#39; errors. Extract into the &quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;PARENT instead (``-d </span><span class="si">{</span><span class="n">parent</span><span class="si">}</span><span class="s2">`` / &quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;``-C </span><span class="si">{</span><span class="n">parent</span><span class="si">}</span><span class="s2">``) and follow with &quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;``ls </span><span class="si">{</span><span class="n">dst</span><span class="si">}</span><span class="s2">/&lt;expected-glob&gt; &gt; /dev/null &quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;|| </span><span class="se">{{</span><span class="s2"> echo FAIL; exit 1; </span><span class="se">}}</span><span class="s2">`` to &quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;verify the post-extraction layout.&quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;&#39;not found&#39; errors. Fix: extract into &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;the directory that CONTAINS the archive &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;(``-d </span><span class="si">{</span><span class="n">archive_dir</span><span class="si">}</span><span class="s2">`` / &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;``-C </span><span class="si">{</span><span class="n">archive_dir</span><span class="si">}</span><span class="s2">``). The archive&#39;s own &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;wrapper ``</span><span class="si">{</span><span class="n">src_stem</span><span class="si">}</span><span class="s2">/`` will then land &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;as ``</span><span class="si">{</span><span class="n">archive_dir</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">src_stem</span><span class="si">}</span><span class="s2">/``, where &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;downstream tools expect it. Verify with &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;``ls </span><span class="si">{</span><span class="n">archive_dir</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">src_stem</span><span class="si">}</span><span class="s2">/&lt;expected-glob&gt; &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;&gt; /dev/null || </span><span class="se">{{</span><span class="s2"> echo FAIL; exit 1; </span><span class="se">}}</span><span class="s2">``.&quot;</span>
                         <span class="p">)</span>
                         <span class="k">break</span>  <span class="c1"># one violation per dst is enough</span>
 
@@ -9679,26 +9717,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3479</span>
-<span class="normal">3480</span>
-<span class="normal">3481</span>
-<span class="normal">3482</span>
-<span class="normal">3483</span>
-<span class="normal">3484</span>
-<span class="normal">3485</span>
-<span class="normal">3486</span>
-<span class="normal">3487</span>
-<span class="normal">3488</span>
-<span class="normal">3489</span>
-<span class="normal">3490</span>
-<span class="normal">3491</span>
-<span class="normal">3492</span>
-<span class="normal">3493</span>
-<span class="normal">3494</span>
-<span class="normal">3495</span>
-<span class="normal">3496</span>
-<span class="normal">3497</span>
-<span class="normal">3498</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3498</span>
 <span class="normal">3499</span>
 <span class="normal">3500</span>
 <span class="normal">3501</span>
@@ -9721,7 +9740,26 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3518</span>
 <span class="normal">3519</span>
 <span class="normal">3520</span>
-<span class="normal">3521</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3521</span>
+<span class="normal">3522</span>
+<span class="normal">3523</span>
+<span class="normal">3524</span>
+<span class="normal">3525</span>
+<span class="normal">3526</span>
+<span class="normal">3527</span>
+<span class="normal">3528</span>
+<span class="normal">3529</span>
+<span class="normal">3530</span>
+<span class="normal">3531</span>
+<span class="normal">3532</span>
+<span class="normal">3533</span>
+<span class="normal">3534</span>
+<span class="normal">3535</span>
+<span class="normal">3536</span>
+<span class="normal">3537</span>
+<span class="normal">3538</span>
+<span class="normal">3539</span>
+<span class="normal">3540</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -10081,26 +10119,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3426</span>
-<span class="normal">3427</span>
-<span class="normal">3428</span>
-<span class="normal">3429</span>
-<span class="normal">3430</span>
-<span class="normal">3431</span>
-<span class="normal">3432</span>
-<span class="normal">3433</span>
-<span class="normal">3434</span>
-<span class="normal">3435</span>
-<span class="normal">3436</span>
-<span class="normal">3437</span>
-<span class="normal">3438</span>
-<span class="normal">3439</span>
-<span class="normal">3440</span>
-<span class="normal">3441</span>
-<span class="normal">3442</span>
-<span class="normal">3443</span>
-<span class="normal">3444</span>
-<span class="normal">3445</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3445</span>
 <span class="normal">3446</span>
 <span class="normal">3447</span>
 <span class="normal">3448</span>
@@ -10132,7 +10151,26 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3474</span>
 <span class="normal">3475</span>
 <span class="normal">3476</span>
-<span class="normal">3477</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3477</span>
+<span class="normal">3478</span>
+<span class="normal">3479</span>
+<span class="normal">3480</span>
+<span class="normal">3481</span>
+<span class="normal">3482</span>
+<span class="normal">3483</span>
+<span class="normal">3484</span>
+<span class="normal">3485</span>
+<span class="normal">3486</span>
+<span class="normal">3487</span>
+<span class="normal">3488</span>
+<span class="normal">3489</span>
+<span class="normal">3490</span>
+<span class="normal">3491</span>
+<span class="normal">3492</span>
+<span class="normal">3493</span>
+<span class="normal">3494</span>
+<span class="normal">3495</span>
+<span class="normal">3496</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
