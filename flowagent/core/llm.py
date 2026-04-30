@@ -3151,6 +3151,19 @@ If you are being asked to generate a title, set "success" to false.
             than rejecting the plan and retrying (which loops), we
             just rewrite the command and continue.
 
+          - ``\\n``-literal-escape bug. Some LLMs emit multi-line
+            shell scripts with the literal two-character sequence
+            ``\\n`` instead of actual newlines (a JSON-escape
+            confusion: ``"abc\\\\n"`` in the JSON becomes ``"abc\\n"``
+            after parsing, which bash sees as a literal backslash-n
+            and chokes with ``syntax error: unexpected end of file``
+            on the now-collapsed control-flow blocks). When the
+            command has zero real newlines AND contains literal
+            ``\\n`` directly adjacent to bash control-flow keywords
+            (``while``, ``do``, ``done``, ``if``, ``then``, ``fi``,
+            ``for``, ``else``, ``elif``), replace each literal
+            ``\\n`` with a real newline.
+
         Other antipatterns (sequential for-loops → xargs -P,
         fictional scripts → heredoc-write step) are NOT auto-fixed:
         the right transformation requires understanding intent that
@@ -3164,8 +3177,36 @@ If you are being asked to generate a title, set "success" to false.
         d_flag_re = re.compile(r"((?:^|\s)(?:-d|-C)\s+)([\w./\-]+)")
         archive_re = re.compile(r"\b[\w./\-]+\.(?:tar\.gz|tgz|zip|tar)\b")
 
+        # ``\n``-literal-to-newline detection: when the command has
+        # no real newlines, contains the literal two-char sequence
+        # ``\n``, AND that literal sits next to bash control-flow
+        # keywords, it's the JSON-escape bug. Tight pattern to avoid
+        # rewriting legitimate ``printf 'foo\n'`` strings.
+        BASH_CTRL = (
+            r"(?:while|do|done|then|fi|else|elif|for|case|esac|"
+            r"if\s|read\s)"
+        )
+        nl_lit_ctrl_re = re.compile(
+            rf"\\n\s*{BASH_CTRL}|{BASH_CTRL}\s*\\n",
+        )
+
         for step in steps:
             cmd = step.get("command", "") or ""
+
+            # ── Pass 1: \n-literal escape bug ──────────────────────
+            if "\n" not in cmd and "\\n" in cmd and nl_lit_ctrl_re.search(cmd):
+                fixed = cmd.replace("\\n", "\n")
+                step["command"] = fixed
+                notes.append(
+                    f"step '{step.get('name', '?')}': replaced "
+                    f"{cmd.count(chr(92) + 'n')} literal ``\\n`` "
+                    f"with real newlines (JSON-escape bug — bash "
+                    f"would have failed with ``unexpected end of "
+                    f"file`` on the collapsed control-flow blocks)"
+                )
+                cmd = fixed  # use fixed cmd for subsequent passes
+
+            # ── Pass 2: archive-nesting antipattern ────────────────
             archive_paths = archive_re.findall(cmd)
             if not archive_paths:
                 continue
