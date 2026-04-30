@@ -5,15 +5,108 @@ This module adds the ability to detect which steps of a workflow have been compl
 and which need to be rerun based on the presence of output files.
 """
 
+import hashlib
 import os
 import logging
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Set, Any, Callable, Pattern, Tuple, Optional, Union
 
 logger = logging.getLogger(__name__)
+
+
+# ── Per-step command-hash sidecars ────────────────────────────────
+#
+# Output-existence is necessary but not sufficient for "step is up to
+# date": when the planner changes a step's command (e.g. ``build_sample_sheet``
+# gains a ``--labels`` arg, or ``kallisto_quant`` gets re-templated to use
+# ``xargs -P``), the OLD outputs still exist on disk. The existence-only
+# validators happily mark the step completed and downstream steps consume
+# stale artefacts.
+#
+# We work around this by writing a tiny per-step sidecar after each
+# successful execution that pins the SHA-256 of the executed command. On
+# resume, ``is_step_command_unchanged`` reads the sidecar and:
+#
+#   sidecar matches  → step is genuinely up to date, mark completed
+#   sidecar mismatch → command changed since last run, FORCE re-execute
+#   sidecar missing  → no info → fall back to output-existence checks
+#                      (preserves backwards compatibility for cells
+#                       completed before this mechanism landed; user can
+#                       opt in by re-running affected cells once)
+#
+# Sidecars live at ``.flowagent_state/<step_name>.json`` relative to the
+# step's cwd, so multiple cells in different workdirs don't collide.
+
+_STATE_DIR = ".flowagent_state"
+
+
+def _command_hash(command: str) -> str:
+    """Stable SHA-256 hex digest of a command string."""
+    return hashlib.sha256((command or "").encode("utf-8")).hexdigest()
+
+
+def _state_path(step_name: str) -> Path:
+    return Path(_STATE_DIR) / f"{step_name}.json"
+
+
+def write_step_state(
+    step_name: str, command: str, outputs: Optional[List[str]] = None,
+) -> None:
+    """Write a per-step state sidecar after successful execution.
+
+    Called by the executor when a step's status flips to ``completed``.
+    The sidecar lets future runs detect command-level changes that the
+    output-existence checks can't see.
+
+    Best-effort: any I/O failure is logged and swallowed. A missing
+    sidecar just means the step gets re-validated by the legacy
+    output-existence path on next resume — never worse than current
+    behaviour.
+    """
+    try:
+        state_dir = Path(_STATE_DIR)
+        state_dir.mkdir(exist_ok=True)
+        payload = {
+            "step": step_name,
+            "command_sha256": _command_hash(command),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "outputs": list(outputs or []),
+        }
+        _state_path(step_name).write_text(json.dumps(payload, indent=2))
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning(
+            "Failed to write smart-resume state sidecar for step %s: %s",
+            step_name, exc,
+        )
+
+
+def is_step_command_unchanged(step_name: str, command: str) -> Optional[bool]:
+    """Compare a step's current command to its sidecar.
+
+    Returns:
+        ``True``  — sidecar exists and hash matches → genuinely up-to-date
+        ``False`` — sidecar exists but hash differs → command changed,
+                   step must be re-executed regardless of outputs
+        ``None``  — sidecar missing or unreadable → no information,
+                   caller should fall back to other completeness checks
+    """
+    sp = _state_path(step_name)
+    if not sp.is_file():
+        return None
+    try:
+        payload = json.loads(sp.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning(
+            "Could not read smart-resume sidecar for %s: %s — ignoring", step_name, exc,
+        )
+        return None
+    saved = payload.get("command_sha256")
+    if not saved:
+        return None
+    return saved == _command_hash(command)
 
 # Type for tool validator functions
 ToolValidatorType = Callable[[str, Dict[str, Any]], bool]
@@ -404,11 +497,32 @@ def detect_completed_steps(workflow_steps: List[Dict[str, Any]]) -> Set[str]:
         step_name = step.get("name", "")
         logger.info(f"Checking step: {step_name}")
         command = step.get("command", "")
-        
+
         # Skip steps with no command
         if not command:
             continue
-            
+
+        # ── Command-hash check (overrides everything below) ─────────
+        # If the sidecar from a prior successful execution disagrees
+        # with the current command, mark the step as NOT completed
+        # regardless of what the output-existence validators say.
+        # Sidecar present + matching → confidently completed. Sidecar
+        # missing → no info, fall through to legacy validators.
+        sidecar_verdict = is_step_command_unchanged(step_name, command)
+        if sidecar_verdict is False:
+            logger.info(
+                "Step %s command changed since last successful run "
+                "(sidecar hash mismatch) — re-executing", step_name,
+            )
+            continue  # do not add to completed_steps
+        if sidecar_verdict is True:
+            logger.info(
+                "Step %s confirmed up-to-date by command-hash sidecar",
+                step_name,
+            )
+            completed_steps.add(step_name)
+            continue
+
         # Check if this is literally just a directory creation step and nothing else
         if command.strip().startswith("mkdir") and "&&" not in command and ";" not in command and "|" not in command:
             # Extract directories to be created from mkdir command

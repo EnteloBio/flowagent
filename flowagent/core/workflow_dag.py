@@ -244,6 +244,26 @@ class WorkflowDAG:
                     jobs[step_name] = result
                     self.graph.nodes[step_name]["step"]["status"] = result.get("status", "pending")
 
+                    # Persist a command-hash sidecar after success so
+                    # smart-resume can detect when a planner-side command
+                    # change requires re-execution on the next run.
+                    # See ``write_step_state`` in
+                    # ``flowagent/core/smart_resume.py``.
+                    if result.get("status") == "completed":
+                        try:
+                            from flowagent.core.smart_resume import write_step_state
+                            step_data = self.graph.nodes[step_name]["step"]
+                            write_step_state(
+                                step_name,
+                                step_data.get("command", ""),
+                                step_data.get("outputs", []),
+                            )
+                        except Exception as exc:  # pragma: no cover - defensive
+                            logger.warning(
+                                "Could not persist smart-resume state for "
+                                "step %s: %s", step_name, exc,
+                            )
+
                     if result.get("status") == "failed":
                         error_msg = result.get("stderr", "")
                         cmd = self.graph.nodes[step_name]["step"].get("command", "")
@@ -268,6 +288,23 @@ class WorkflowDAG:
                                     if recovery_result.get("fixed_command"):
                                         self.graph.nodes[step_name]["step"]["command"] = recovery_result["fixed_command"]
                                     recovered = True
+                                    # Persist sidecar with the FIXED command, not
+                                    # the broken original — otherwise a future
+                                    # resume would see the broken command in the
+                                    # plan and consider the step stale.
+                                    try:
+                                        from flowagent.core.smart_resume import write_step_state
+                                        step_data = self.graph.nodes[step_name]["step"]
+                                        write_step_state(
+                                            step_name,
+                                            step_data.get("command", ""),
+                                            step_data.get("outputs", []),
+                                        )
+                                    except Exception as exc:  # pragma: no cover - defensive
+                                        logger.warning(
+                                            "Could not persist smart-resume state "
+                                            "for recovered step %s: %s", step_name, exc,
+                                        )
                                 elif recovery_result and recovery_result.get("status") == "rejected":
                                     logger.error(
                                         "Step %s could not be recovered: %s",

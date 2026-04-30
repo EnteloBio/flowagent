@@ -84,14 +84,24 @@ class LocalExecutor(BaseExecutor):
     async def execute_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a workflow step locally.
 
-        If the step dict contains a ``timeout`` key (seconds), the subprocess
-        is killed after that many seconds and the step is marked FAILED.
+        Commands are run via ``bash -c`` rather than the system default
+        shell (which is dash on Debian/Ubuntu — including the Nebius
+        bioinfo image). The planner and the LLM analysis-step generator
+        both emit bash idioms — ``shopt -s nullglob``, arrays
+        ``a=(GLOB)``, ``[[ … ]]`` tests, ``set -o pipefail`` — that
+        dash chokes on with cryptic ``Syntax error: "(" unexpected``
+        messages. Routing through bash explicitly makes the runtime
+        match what the planner and LLM are trained to produce.
+
+        If the step dict contains a ``timeout`` key (seconds), the
+        subprocess is killed after that many seconds and the step is
+        marked FAILED.
         """
         try:
-            process = await asyncio.create_subprocess_shell(
-                step["command"],
+            process = await asyncio.create_subprocess_exec(
+                "bash", "-c", step["command"],
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             timeout = step.get("timeout")
             try:
