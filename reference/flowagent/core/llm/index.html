@@ -5794,7 +5794,41 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3343</span>
 <span class="normal">3344</span>
 <span class="normal">3345</span>
-<span class="normal">3346</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3346</span>
+<span class="normal">3347</span>
+<span class="normal">3348</span>
+<span class="normal">3349</span>
+<span class="normal">3350</span>
+<span class="normal">3351</span>
+<span class="normal">3352</span>
+<span class="normal">3353</span>
+<span class="normal">3354</span>
+<span class="normal">3355</span>
+<span class="normal">3356</span>
+<span class="normal">3357</span>
+<span class="normal">3358</span>
+<span class="normal">3359</span>
+<span class="normal">3360</span>
+<span class="normal">3361</span>
+<span class="normal">3362</span>
+<span class="normal">3363</span>
+<span class="normal">3364</span>
+<span class="normal">3365</span>
+<span class="normal">3366</span>
+<span class="normal">3367</span>
+<span class="normal">3368</span>
+<span class="normal">3369</span>
+<span class="normal">3370</span>
+<span class="normal">3371</span>
+<span class="normal">3372</span>
+<span class="normal">3373</span>
+<span class="normal">3374</span>
+<span class="normal">3375</span>
+<span class="normal">3376</span>
+<span class="normal">3377</span>
+<span class="normal">3378</span>
+<span class="normal">3379</span>
+<span class="normal">3380</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -8506,8 +8540,8 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="c1"># (generate_workflow_plan around line 1060), so a ChIP-seq</span>
             <span class="c1"># prompt with a GEO accession produces the same calibre of</span>
             <span class="c1"># plan as a ChIP-seq prompt with FASTQs already on disk.</span>
+            <span class="n">rules</span> <span class="o">=</span> <span class="n">workflow_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rules&quot;</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">workflow_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">[]</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">rules</span> <span class="o">=</span> <span class="n">workflow_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rules&quot;</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">workflow_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">[]</span>
                 <span class="n">new_steps</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_analysis_steps_via_llm</span><span class="p">(</span>
                     <span class="n">prompt</span><span class="o">=</span><span class="n">prompt</span><span class="p">,</span>
                     <span class="n">geo_accession</span><span class="o">=</span><span class="n">geo_accession</span><span class="p">,</span>
@@ -8515,18 +8549,39 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                     <span class="n">rules</span><span class="o">=</span><span class="n">rules</span><span class="p">,</span>
                     <span class="n">existing_steps</span><span class="o">=</span><span class="n">workflow_plan</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">],</span>
                 <span class="p">)</span>
-                <span class="k">if</span> <span class="n">new_steps</span><span class="p">:</span>
-                    <span class="n">workflow_plan</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">new_steps</span><span class="p">)</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                        <span class="s2">&quot;Added </span><span class="si">%d</span><span class="s2"> LLM-generated analysis steps for &quot;</span>
-                        <span class="s2">&quot;workflow_type=</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">new_steps</span><span class="p">),</span> <span class="n">workflow_type</span><span class="p">,</span>
-                    <span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;LLM-driven analysis-step generation failed for &quot;</span>
-                    <span class="s2">&quot;workflow_type=</span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2"> — emitting download-only plan&quot;</span><span class="p">,</span>
-                    <span class="n">workflow_type</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                <span class="c1"># Network / parse / API blowup. Surface clearly rather</span>
+                <span class="c1"># than shipping a download-only plan that the user will</span>
+                <span class="c1"># mistake for &quot;completed successfully&quot;.</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;LLM-driven analysis-step generation crashed for &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;workflow_type=</span><span class="si">{</span><span class="n">workflow_type</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">new_steps</span><span class="p">:</span>
+                <span class="c1"># ``_generate_analysis_steps_via_llm`` returned [] — that</span>
+                <span class="c1"># means both the initial attempt AND the retry failed</span>
+                <span class="c1"># validation (placeholder paths, fictional scripts,</span>
+                <span class="c1"># unguarded loops, etc). Continuing here would ship a</span>
+                <span class="c1"># plan with ONLY the download scaffold and no analysis,</span>
+                <span class="c1"># which the harness then runs to &quot;completion successfully&quot;</span>
+                <span class="c1"># while producing zero analysis output. Fail loud</span>
+                <span class="c1"># instead so the user sees the actual problem.</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Could not produce a valid </span><span class="si">{</span><span class="n">workflow_type</span><span class="si">}</span><span class="s2"> analysis &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;plan for </span><span class="si">{</span><span class="n">geo_accession</span><span class="si">}</span><span class="s2"> after one retry — both &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;attempts failed structural validation (placeholders, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;fictional scripts, or unguarded loops). Refusing to &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;ship a download-only plan that would silently appear &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;to succeed. Check the prior LLM-validation warnings &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;in this log for the specific violations.&quot;</span>
                 <span class="p">)</span>
+
+            <span class="n">workflow_plan</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">new_steps</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Added </span><span class="si">%d</span><span class="s2"> LLM-generated analysis steps for &quot;</span>
+                <span class="s2">&quot;workflow_type=</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">new_steps</span><span class="p">),</span> <span class="n">workflow_type</span><span class="p">,</span>
+            <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">workflow_plan</span>
 
@@ -8806,16 +8861,29 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="c1"># block-list. The pattern matches &gt;=4-char ALL-CAPS tokens with</span>
         <span class="c1"># underscores.</span>
         <span class="n">allowlist</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="c1"># Shell / OS</span>
             <span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="s2">&quot;HOME&quot;</span><span class="p">,</span> <span class="s2">&quot;USER&quot;</span><span class="p">,</span> <span class="s2">&quot;PWD&quot;</span><span class="p">,</span> <span class="s2">&quot;SHELL&quot;</span><span class="p">,</span> <span class="s2">&quot;TMPDIR&quot;</span><span class="p">,</span> <span class="s2">&quot;LANG&quot;</span><span class="p">,</span>
             <span class="s2">&quot;PYTHONPATH&quot;</span><span class="p">,</span> <span class="s2">&quot;JAVA_HOME&quot;</span><span class="p">,</span> <span class="s2">&quot;LD_LIBRARY_PATH&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;BASH&quot;</span><span class="p">,</span> <span class="s2">&quot;BAM&quot;</span><span class="p">,</span> <span class="s2">&quot;FASTQ&quot;</span><span class="p">,</span> <span class="s2">&quot;FASTA&quot;</span><span class="p">,</span> <span class="s2">&quot;VCF&quot;</span><span class="p">,</span> <span class="s2">&quot;BED&quot;</span><span class="p">,</span> <span class="s2">&quot;GTF&quot;</span><span class="p">,</span> <span class="s2">&quot;GFF&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;BASH&quot;</span><span class="p">,</span> <span class="s2">&quot;TRUE&quot;</span><span class="p">,</span> <span class="s2">&quot;FALSE&quot;</span><span class="p">,</span> <span class="s2">&quot;NULL&quot;</span><span class="p">,</span>
+            <span class="c1"># File extensions</span>
+            <span class="s2">&quot;BAM&quot;</span><span class="p">,</span> <span class="s2">&quot;FASTQ&quot;</span><span class="p">,</span> <span class="s2">&quot;FASTA&quot;</span><span class="p">,</span> <span class="s2">&quot;VCF&quot;</span><span class="p">,</span> <span class="s2">&quot;BED&quot;</span><span class="p">,</span> <span class="s2">&quot;GTF&quot;</span><span class="p">,</span> <span class="s2">&quot;GFF&quot;</span><span class="p">,</span>
             <span class="s2">&quot;TSV&quot;</span><span class="p">,</span> <span class="s2">&quot;CSV&quot;</span><span class="p">,</span> <span class="s2">&quot;JSON&quot;</span><span class="p">,</span> <span class="s2">&quot;GZ&quot;</span><span class="p">,</span> <span class="s2">&quot;TXT&quot;</span><span class="p">,</span> <span class="s2">&quot;HTML&quot;</span><span class="p">,</span> <span class="s2">&quot;PDF&quot;</span><span class="p">,</span>
+            <span class="c1"># Database / accession namespaces</span>
             <span class="s2">&quot;GEO&quot;</span><span class="p">,</span> <span class="s2">&quot;SRA&quot;</span><span class="p">,</span> <span class="s2">&quot;SRR&quot;</span><span class="p">,</span> <span class="s2">&quot;ERR&quot;</span><span class="p">,</span> <span class="s2">&quot;DRR&quot;</span><span class="p">,</span> <span class="s2">&quot;ENA&quot;</span><span class="p">,</span> <span class="s2">&quot;ENCODE&quot;</span><span class="p">,</span>
             <span class="s2">&quot;GRCH37&quot;</span><span class="p">,</span> <span class="s2">&quot;GRCH38&quot;</span><span class="p">,</span> <span class="s2">&quot;GRCM38&quot;</span><span class="p">,</span> <span class="s2">&quot;GRCM39&quot;</span><span class="p">,</span> <span class="s2">&quot;DNA&quot;</span><span class="p">,</span> <span class="s2">&quot;RNA&quot;</span><span class="p">,</span> <span class="s2">&quot;NA&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;ID&quot;</span><span class="p">,</span> <span class="s2">&quot;IDS&quot;</span><span class="p">,</span> <span class="s2">&quot;QC&quot;</span><span class="p">,</span> <span class="s2">&quot;PCR&quot;</span><span class="p">,</span> <span class="s2">&quot;ChIP&quot;</span><span class="p">,</span> <span class="s2">&quot;ATAC&quot;</span><span class="p">,</span> <span class="s2">&quot;RNA_SEQ&quot;</span><span class="p">,</span>
+            <span class="c1"># Bioinformatics assay / sample-type abbreviations</span>
+            <span class="c1"># (used as bare tokens in real pipelines for sample groups,</span>
+            <span class="c1"># control labels, intermediate filename stems — flagging</span>
+            <span class="c1"># them as placeholders rejects valid plans)</span>
+            <span class="s2">&quot;CHIP&quot;</span><span class="p">,</span> <span class="s2">&quot;ATAC&quot;</span><span class="p">,</span> <span class="s2">&quot;WGBS&quot;</span><span class="p">,</span> <span class="s2">&quot;RRBS&quot;</span><span class="p">,</span> <span class="s2">&quot;MEDIPSEQ&quot;</span><span class="p">,</span> <span class="s2">&quot;MEDIP&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;SCRNA&quot;</span><span class="p">,</span> <span class="s2">&quot;SCATAC&quot;</span><span class="p">,</span> <span class="s2">&quot;BULK&quot;</span><span class="p">,</span> <span class="s2">&quot;INPUT&quot;</span><span class="p">,</span> <span class="s2">&quot;CONTROL&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;TREATED&quot;</span><span class="p">,</span> <span class="s2">&quot;UNTREATED&quot;</span><span class="p">,</span> <span class="s2">&quot;MOCK&quot;</span><span class="p">,</span> <span class="s2">&quot;IGG&quot;</span><span class="p">,</span> <span class="s2">&quot;PEAKS&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;MERGED&quot;</span><span class="p">,</span> <span class="s2">&quot;DEDUP&quot;</span><span class="p">,</span> <span class="s2">&quot;SORTED&quot;</span><span class="p">,</span> <span class="s2">&quot;FILTERED&quot;</span><span class="p">,</span> <span class="s2">&quot;TRIMMED&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;ChIP&quot;</span><span class="p">,</span> <span class="s2">&quot;ATAC&quot;</span><span class="p">,</span> <span class="s2">&quot;RNA_SEQ&quot;</span><span class="p">,</span>  <span class="c1"># mixed-case forms</span>
+            <span class="c1"># Generic technical</span>
+            <span class="s2">&quot;ID&quot;</span><span class="p">,</span> <span class="s2">&quot;IDS&quot;</span><span class="p">,</span> <span class="s2">&quot;QC&quot;</span><span class="p">,</span> <span class="s2">&quot;PCR&quot;</span><span class="p">,</span>
             <span class="s2">&quot;FAIL&quot;</span><span class="p">,</span> <span class="s2">&quot;ERROR&quot;</span><span class="p">,</span> <span class="s2">&quot;FATAL&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;DEBUG&quot;</span><span class="p">,</span> <span class="s2">&quot;WARN&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;REMOVE_DUPLICATES&quot;</span><span class="p">,</span> <span class="s2">&quot;TRUE&quot;</span><span class="p">,</span> <span class="s2">&quot;FALSE&quot;</span><span class="p">,</span> <span class="s2">&quot;NULL&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;INPUT&quot;</span><span class="p">,</span> <span class="s2">&quot;OUTPUT&quot;</span><span class="p">,</span> <span class="s2">&quot;REF&quot;</span><span class="p">,</span>  <span class="c1"># used in our own guards</span>
+            <span class="s2">&quot;REMOVE_DUPLICATES&quot;</span><span class="p">,</span> <span class="s2">&quot;OUTPUT&quot;</span><span class="p">,</span> <span class="s2">&quot;REF&quot;</span><span class="p">,</span>  <span class="c1"># used in our own guards</span>
         <span class="p">}</span>
         <span class="n">caps_token_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b([A-Z][A-Z0-9_]{3,})\b&quot;</span><span class="p">)</span>
 
@@ -9267,41 +9335,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3273</span>
-<span class="normal">3274</span>
-<span class="normal">3275</span>
-<span class="normal">3276</span>
-<span class="normal">3277</span>
-<span class="normal">3278</span>
-<span class="normal">3279</span>
-<span class="normal">3280</span>
-<span class="normal">3281</span>
-<span class="normal">3282</span>
-<span class="normal">3283</span>
-<span class="normal">3284</span>
-<span class="normal">3285</span>
-<span class="normal">3286</span>
-<span class="normal">3287</span>
-<span class="normal">3288</span>
-<span class="normal">3289</span>
-<span class="normal">3290</span>
-<span class="normal">3291</span>
-<span class="normal">3292</span>
-<span class="normal">3293</span>
-<span class="normal">3294</span>
-<span class="normal">3295</span>
-<span class="normal">3296</span>
-<span class="normal">3297</span>
-<span class="normal">3298</span>
-<span class="normal">3299</span>
-<span class="normal">3300</span>
-<span class="normal">3301</span>
-<span class="normal">3302</span>
-<span class="normal">3303</span>
-<span class="normal">3304</span>
-<span class="normal">3305</span>
-<span class="normal">3306</span>
-<span class="normal">3307</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3307</span>
 <span class="normal">3308</span>
 <span class="normal">3309</span>
 <span class="normal">3310</span>
@@ -9309,7 +9343,41 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3312</span>
 <span class="normal">3313</span>
 <span class="normal">3314</span>
-<span class="normal">3315</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3315</span>
+<span class="normal">3316</span>
+<span class="normal">3317</span>
+<span class="normal">3318</span>
+<span class="normal">3319</span>
+<span class="normal">3320</span>
+<span class="normal">3321</span>
+<span class="normal">3322</span>
+<span class="normal">3323</span>
+<span class="normal">3324</span>
+<span class="normal">3325</span>
+<span class="normal">3326</span>
+<span class="normal">3327</span>
+<span class="normal">3328</span>
+<span class="normal">3329</span>
+<span class="normal">3330</span>
+<span class="normal">3331</span>
+<span class="normal">3332</span>
+<span class="normal">3333</span>
+<span class="normal">3334</span>
+<span class="normal">3335</span>
+<span class="normal">3336</span>
+<span class="normal">3337</span>
+<span class="normal">3338</span>
+<span class="normal">3339</span>
+<span class="normal">3340</span>
+<span class="normal">3341</span>
+<span class="normal">3342</span>
+<span class="normal">3343</span>
+<span class="normal">3344</span>
+<span class="normal">3345</span>
+<span class="normal">3346</span>
+<span class="normal">3347</span>
+<span class="normal">3348</span>
+<span class="normal">3349</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -9669,41 +9737,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3220</span>
-<span class="normal">3221</span>
-<span class="normal">3222</span>
-<span class="normal">3223</span>
-<span class="normal">3224</span>
-<span class="normal">3225</span>
-<span class="normal">3226</span>
-<span class="normal">3227</span>
-<span class="normal">3228</span>
-<span class="normal">3229</span>
-<span class="normal">3230</span>
-<span class="normal">3231</span>
-<span class="normal">3232</span>
-<span class="normal">3233</span>
-<span class="normal">3234</span>
-<span class="normal">3235</span>
-<span class="normal">3236</span>
-<span class="normal">3237</span>
-<span class="normal">3238</span>
-<span class="normal">3239</span>
-<span class="normal">3240</span>
-<span class="normal">3241</span>
-<span class="normal">3242</span>
-<span class="normal">3243</span>
-<span class="normal">3244</span>
-<span class="normal">3245</span>
-<span class="normal">3246</span>
-<span class="normal">3247</span>
-<span class="normal">3248</span>
-<span class="normal">3249</span>
-<span class="normal">3250</span>
-<span class="normal">3251</span>
-<span class="normal">3252</span>
-<span class="normal">3253</span>
-<span class="normal">3254</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3254</span>
 <span class="normal">3255</span>
 <span class="normal">3256</span>
 <span class="normal">3257</span>
@@ -9720,7 +9754,41 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3268</span>
 <span class="normal">3269</span>
 <span class="normal">3270</span>
-<span class="normal">3271</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3271</span>
+<span class="normal">3272</span>
+<span class="normal">3273</span>
+<span class="normal">3274</span>
+<span class="normal">3275</span>
+<span class="normal">3276</span>
+<span class="normal">3277</span>
+<span class="normal">3278</span>
+<span class="normal">3279</span>
+<span class="normal">3280</span>
+<span class="normal">3281</span>
+<span class="normal">3282</span>
+<span class="normal">3283</span>
+<span class="normal">3284</span>
+<span class="normal">3285</span>
+<span class="normal">3286</span>
+<span class="normal">3287</span>
+<span class="normal">3288</span>
+<span class="normal">3289</span>
+<span class="normal">3290</span>
+<span class="normal">3291</span>
+<span class="normal">3292</span>
+<span class="normal">3293</span>
+<span class="normal">3294</span>
+<span class="normal">3295</span>
+<span class="normal">3296</span>
+<span class="normal">3297</span>
+<span class="normal">3298</span>
+<span class="normal">3299</span>
+<span class="normal">3300</span>
+<span class="normal">3301</span>
+<span class="normal">3302</span>
+<span class="normal">3303</span>
+<span class="normal">3304</span>
+<span class="normal">3305</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
