@@ -1844,6 +1844,30 @@ If you are being asked to generate a title, set "success" to false.
             "  For very large downloads (multi-GB) prefer "
             "``wget -c -O <fixed-path>`` so partial transfers can "
             "resume.\n"
+            "- ARCHIVE EXTRACTION — extract into the PARENT "
+            "directory, NEVER into a directory of the same name as "
+            "the archive. Most public archives "
+            "(``GRCh38_noalt_as.zip``, ``hg38.tar.gz``, ENA "
+            "mirrors, …) contain a top-level directory inside; "
+            "extracting them into ``raw_data/X/`` when the archive "
+            "already wraps everything in ``X/`` produces "
+            "``raw_data/X/X/files…`` (double-nested) and downstream "
+            "tools can't find anything. Pattern:\n"
+            "    wget -c -O raw_data/<X>.zip <URL>\n"
+            "    unzip -o -d raw_data raw_data/<X>.zip   "
+            "# extract into PARENT, archive's wrapper dir lands "
+            "where expected\n"
+            "    # Belt-and-braces: detect + flatten if the archive "
+            "had no wrapper or had a different wrapper name\n"
+            "    if [ -d raw_data/<X>/<X> ]; then\n"
+            "      mv raw_data/<X>/<X>/* raw_data/<X>/\n"
+            "      rmdir raw_data/<X>/<X> 2>/dev/null || true\n"
+            "    fi\n"
+            "    # Post-condition check — fail loud if expected "
+            "files aren't where the next step assumes\n"
+            "    ls raw_data/<X>/<expected-extension> > /dev/null "
+            "|| { echo 'FAIL: extracted files not at expected "
+            "path'; exit 1; }\n"
             "- Subsequent analysis steps follow the same conventions as "
             "the GEO-download workflows: paths under raw_data/ for "
             "inputs, results/<workflow>/ for outputs.\n"
@@ -2907,7 +2931,24 @@ If you are being asked to generate a title, set "success" to false.
             "<fixed-path>`` (force fixed name) and ``unzip -o`` / "
             "``tar --overwrite -xf`` (skip interactive overwrite "
             "prompt). For multi-GB downloads, ``wget -c -O "
-            "<fixed-path>`` allows resume on retry."
+            "<fixed-path>`` allows resume on retry.\n"
+            "9. ARCHIVE EXTRACTION must extract into the PARENT "
+            "directory, never into a same-named subdirectory. Most "
+            "public archives wrap their contents in a top-level "
+            "directory; extracting into ``X/`` when the archive "
+            "already contains ``X/`` produces ``X/X/files…`` "
+            "(double-nested) and downstream tools fail with cryptic "
+            "'index not found' errors. Pattern:\n"
+            "    wget -c -O raw_data/<X>.zip <URL>\n"
+            "    unzip -o -d raw_data raw_data/<X>.zip   "
+            "# parent dir, archive's wrapper lands at right level\n"
+            "    if [ -d raw_data/<X>/<X> ]; then\n"
+            "      mv raw_data/<X>/<X>/* raw_data/<X>/ && "
+            "rmdir raw_data/<X>/<X>\n"
+            "    fi\n"
+            "    ls raw_data/<X>/<expected-glob> > /dev/null "
+            "|| { echo 'FAIL: extracted files not where expected'; "
+            "exit 1; }"
         )
         user = (
             f"Workflow type: {workflow_type}\n"
@@ -3058,6 +3099,12 @@ If you are being asked to generate a title, set "success" to false.
           - ``python <relative.py>`` / ``Rscript <relative.R>`` etc.
             where no step in the plan writes that script (caught the
             10X PBMC ``python scripts/scanpy_qc_filtering.py`` cascade)
+          - ``unzip -d X X.zip`` / ``tar -C X X.tar.gz`` antipattern
+            where the target directory name matches the archive stem
+            and the archive contains a wrapper of the same name —
+            produces double-nesting that downstream tools can't see
+            (caught the recurring GRCh38_noalt_as bowtie2-index
+            extraction cascade)
 
         Each violation tells the LLM what to fix in plain English so
         the retry message is actionable.
@@ -3282,6 +3329,58 @@ If you are being asked to generate a title, set "success" to false.
                     f"``{script_path}`` (e.g. with a heredoc) and "
                     f"declares it in ``outputs``"
                 )
+
+            # --- Archive extraction nesting antipattern --------------
+            # ``unzip -d X X.zip`` (or ``tar -C X X.tar.gz``) where the
+            # target directory's basename matches the archive's stem
+            # produces double-nesting when the archive contains a
+            # wrapper directory of the same name (the common case for
+            # genome-idx, refgenie, ENA mirrors). Bowtie2/STAR/etc.
+            # then fail with "index not found". Robust against either
+            # arg order: ``-d X X.zip`` and ``X.tar.gz -C X`` both
+            # match.
+            #
+            # Find each ``-d <path>`` / ``-C <path>`` and each
+            # archive-suffixed path in the command; whenever any
+            # destination basename matches any archive stem, flag it.
+            dst_paths = [
+                m.group(1) for m in re.finditer(
+                    r"(?:^|\s)(?:-d|-C)\s+([\w./\-]+)", cmd,
+                )
+            ]
+            archive_paths = [
+                m.group(0) for m in re.finditer(
+                    r"\b[\w./\-]+\.(?:tar\.gz|tgz|zip|tar)\b", cmd,
+                )
+            ]
+            ARCHIVE_SUFFIXES = (".tar.gz", ".tgz", ".zip", ".tar")
+            for dst in dst_paths:
+                dst_name = os.path.basename(dst.rstrip("/"))
+                for src in archive_paths:
+                    src_base = os.path.basename(src)
+                    src_stem = src_base
+                    for suf in ARCHIVE_SUFFIXES:
+                        if src_base.endswith(suf):
+                            src_stem = src_base[: -len(suf)]
+                            break
+                    if dst_name == src_stem:
+                        parent = os.path.dirname(dst.rstrip("/")) or "."
+                        violations.append(
+                            f"step '{name}' extracts ``{src}`` into "
+                            f"``{dst}`` — a same-named target "
+                            f"directory. Most public archives contain "
+                            f"a wrapper directory matching their "
+                            f"name, so this produces double-nesting "
+                            f"``{dst}/{dst_name}/files…`` and "
+                            f"downstream tools fail with cryptic "
+                            f"'not found' errors. Extract into the "
+                            f"PARENT instead (``-d {parent}`` / "
+                            f"``-C {parent}``) and follow with "
+                            f"``ls {dst}/<expected-glob> > /dev/null "
+                            f"|| {{ echo FAIL; exit 1; }}`` to "
+                            f"verify the post-extraction layout."
+                        )
+                        break  # one violation per dst is enough
 
         return violations
 
