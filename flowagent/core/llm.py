@@ -3042,11 +3042,16 @@ If you are being asked to generate a title, set "success" to false.
                 )
 
             # --- All-caps stand-in tokens ---------------------------
-            # Only treat a caps token followed by ``.`` as legitimate
-            # if it embeds digits (accession-like: GSE74912, SRR1234).
-            # Bare alphabetic caps tokens like ``LINEAGE.merged.bam`` or
-            # ``SAMPLE.dedup.bam`` are placeholder fabrications. Also
-            # skip tokens that appear in shell-variable contexts:
+            # Caps tokens with digits embedded are real accessions
+            # (GSE74912, SRR1552447, ENCFF001TDO, ENCSR000EUQ, …) — not
+            # placeholders. The LLM emits these in URL paths
+            # (``/files/ENCFF001TDO/@@download/…``) and filenames
+            # (``GSE74912.bam``) — they need to pass regardless of the
+            # surrounding character. Bare alphabetic caps tokens like
+            # ``LINEAGE`` / ``SAMPLE_NAME`` / ``LINEAGE_PATTERN`` have
+            # no digits and remain caught.
+            #
+            # Also skip tokens that appear in shell-variable contexts:
             # ``$VAR`` / ``${VAR}`` / ``"$VAR"`` (variable reference)
             # ``export VAR`` / ``VAR=…`` (assignment).
             accession_re = re.compile(r"\d")
@@ -3055,8 +3060,8 @@ If you are being asked to generate a title, set "success" to false.
                 if tok in allowlist:
                     continue
                 start, end = m.span()
-                # Accession-like (GSE74912.bam) — letters+digits+dot+ext
-                if end < len(cmd) and cmd[end] == "." and accession_re.search(tok):
+                # Real accession — caps + digits embedded.
+                if accession_re.search(tok):
                     continue
                 # Variable reference: char immediately before token is
                 # ``$`` or ``{`` (the latter inside ``${...}``).
