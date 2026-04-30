@@ -5828,7 +5828,41 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3377</span>
 <span class="normal">3378</span>
 <span class="normal">3379</span>
-<span class="normal">3380</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3380</span>
+<span class="normal">3381</span>
+<span class="normal">3382</span>
+<span class="normal">3383</span>
+<span class="normal">3384</span>
+<span class="normal">3385</span>
+<span class="normal">3386</span>
+<span class="normal">3387</span>
+<span class="normal">3388</span>
+<span class="normal">3389</span>
+<span class="normal">3390</span>
+<span class="normal">3391</span>
+<span class="normal">3392</span>
+<span class="normal">3393</span>
+<span class="normal">3394</span>
+<span class="normal">3395</span>
+<span class="normal">3396</span>
+<span class="normal">3397</span>
+<span class="normal">3398</span>
+<span class="normal">3399</span>
+<span class="normal">3400</span>
+<span class="normal">3401</span>
+<span class="normal">3402</span>
+<span class="normal">3403</span>
+<span class="normal">3404</span>
+<span class="normal">3405</span>
+<span class="normal">3406</span>
+<span class="normal">3407</span>
+<span class="normal">3408</span>
+<span class="normal">3409</span>
+<span class="normal">3410</span>
+<span class="normal">3411</span>
+<span class="normal">3412</span>
+<span class="normal">3413</span>
+<span class="normal">3414</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -7590,8 +7624,20 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;recognise:</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- 10X Genomics public datasets — https://cf.10xgenomics.com/&quot;</span>
             <span class="s2">&quot;samples/cell-exp/&lt;version&gt;/&lt;dataset&gt;/&lt;dataset&gt;_fastqs.tar</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;- ENCODE — https://www.encodeproject.org/files/&lt;ENCFF…&gt;/&quot;</span>
-            <span class="s2">&quot;@@download/&lt;ENCFF…&gt;.&lt;ext&gt;.gz</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;- ENCODE — DO NOT hardcode ENCFF file accessions from &quot;</span>
+            <span class="s2">&quot;memory; they 404 reliably because each download has &quot;</span>
+            <span class="s2">&quot;different IDs that vary by replicate. ALWAYS resolve &quot;</span>
+            <span class="s2">&quot;them via the ENCODE JSON API. Pattern:</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    curl -s &#39;https://www.encodeproject.org/experiments/&quot;</span>
+            <span class="s2">&quot;&lt;ENCSR_ID&gt;/?format=json&#39; </span><span class="se">\\\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;      | python3 -c &#39;import json,sys; d=json.load(sys.stdin); &quot;</span>
+            <span class="s2">&quot;print(</span><span class="se">\&quot;\\</span><span class="s2">n</span><span class="se">\&quot;</span><span class="s2">.join(</span><span class="se">\&quot;</span><span class="s2">https://www.encodeproject.org</span><span class="se">\&quot;</span><span class="s2"> + f[</span><span class="se">\&quot;</span><span class="s2">href</span><span class="se">\&quot;</span><span class="s2">] &quot;</span>
+            <span class="s2">&quot;for f in d[</span><span class="se">\&quot;</span><span class="s2">files</span><span class="se">\&quot;</span><span class="s2">] if f.get(</span><span class="se">\&quot;</span><span class="s2">file_format</span><span class="se">\&quot;</span><span class="s2">)==</span><span class="se">\&quot;</span><span class="s2">fastq</span><span class="se">\&quot;</span><span class="s2"> and &quot;</span>
+            <span class="s2">&quot;f.get(</span><span class="se">\&quot;</span><span class="s2">output_category</span><span class="se">\&quot;</span><span class="s2">) in (</span><span class="se">\&quot;</span><span class="s2">raw data</span><span class="se">\&quot;</span><span class="s2">,)))&#39; </span><span class="se">\\\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;      &gt; raw_data/encode_fastq_urls.txt</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    wget -nc -P raw_data -i raw_data/encode_fastq_urls.txt</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;  This works for any ENCSR* / ENCFF* / ENCBS* accession &quot;</span>
+            <span class="s2">&quot;without needing to recall specific file IDs.</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- GIAB / NIST — https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- 1000 Genomes — https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- TCGA / GDC — https://api.gdc.cancer.gov/data/&lt;file_uuid&gt;</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -7622,6 +7668,20 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;with mkdir -p creating raw_data and results subdirs.</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- Download steps must use real, well-formed HTTPS URLs &quot;</span>
             <span class="s2">&quot;from your training data, not invented paths.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;- Download steps MUST be idempotent so re-running the &quot;</span>
+            <span class="s2">&quot;cell after a partial failure doesn&#39;t duplicate or &quot;</span>
+            <span class="s2">&quot;corrupt data:</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    wget -O &lt;fixed-path&gt;     (NOT bare wget — that &quot;</span>
+            <span class="s2">&quot;appends ``.1`` / ``.2`` suffixes when the file exists, &quot;</span>
+            <span class="s2">&quot;and the next ``unzip``/``tar`` step references the &quot;</span>
+            <span class="s2">&quot;original path which is now stale or corrupt)</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    unzip -o -d &lt;dir&gt; &lt;zip&gt;  (force overwrite — non-&quot;</span>
+            <span class="s2">&quot;interactive shells hang on the ``replace? [y]es,[n]o`` &quot;</span>
+            <span class="s2">&quot;prompt without ``-o``)</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;    tar --overwrite -xf …    (same reason)</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;  For very large downloads (multi-GB) prefer &quot;</span>
+            <span class="s2">&quot;``wget -c -O &lt;fixed-path&gt;`` so partial transfers can &quot;</span>
+            <span class="s2">&quot;resume.</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- Subsequent analysis steps follow the same conventions as &quot;</span>
             <span class="s2">&quot;the GEO-download workflows: paths under raw_data/ for &quot;</span>
             <span class="s2">&quot;inputs, results/&lt;workflow&gt;/ for outputs.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -8677,7 +8737,15 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;fails. Recovery attempts then hallucinate fixes &quot;</span>
             <span class="s2">&quot;blindly. If you genuinely need a per-step log, use &quot;</span>
             <span class="s2">&quot;``2&gt; &gt;(tee -a X.log &gt;&amp;2)`` so stderr ALSO reaches the &quot;</span>
-            <span class="s2">&quot;executor.&quot;</span>
+            <span class="s2">&quot;executor.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;8. DOWNLOAD STEPS MUST BE IDEMPOTENT. Bare ``wget URL`` &quot;</span>
+            <span class="s2">&quot;appends ``.1``/``.2`` suffixes when the target exists, &quot;</span>
+            <span class="s2">&quot;and the next ``unzip``/``tar`` step then references the &quot;</span>
+            <span class="s2">&quot;stale (possibly corrupt) original. Use ``wget -O &quot;</span>
+            <span class="s2">&quot;&lt;fixed-path&gt;`` (force fixed name) and ``unzip -o`` / &quot;</span>
+            <span class="s2">&quot;``tar --overwrite -xf`` (skip interactive overwrite &quot;</span>
+            <span class="s2">&quot;prompt). For multi-GB downloads, ``wget -c -O &quot;</span>
+            <span class="s2">&quot;&lt;fixed-path&gt;`` allows resume on retry.&quot;</span>
         <span class="p">)</span>
         <span class="n">user</span> <span class="o">=</span> <span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;Workflow type: </span><span class="si">{</span><span class="n">workflow_type</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -9335,41 +9403,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3307</span>
-<span class="normal">3308</span>
-<span class="normal">3309</span>
-<span class="normal">3310</span>
-<span class="normal">3311</span>
-<span class="normal">3312</span>
-<span class="normal">3313</span>
-<span class="normal">3314</span>
-<span class="normal">3315</span>
-<span class="normal">3316</span>
-<span class="normal">3317</span>
-<span class="normal">3318</span>
-<span class="normal">3319</span>
-<span class="normal">3320</span>
-<span class="normal">3321</span>
-<span class="normal">3322</span>
-<span class="normal">3323</span>
-<span class="normal">3324</span>
-<span class="normal">3325</span>
-<span class="normal">3326</span>
-<span class="normal">3327</span>
-<span class="normal">3328</span>
-<span class="normal">3329</span>
-<span class="normal">3330</span>
-<span class="normal">3331</span>
-<span class="normal">3332</span>
-<span class="normal">3333</span>
-<span class="normal">3334</span>
-<span class="normal">3335</span>
-<span class="normal">3336</span>
-<span class="normal">3337</span>
-<span class="normal">3338</span>
-<span class="normal">3339</span>
-<span class="normal">3340</span>
-<span class="normal">3341</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3341</span>
 <span class="normal">3342</span>
 <span class="normal">3343</span>
 <span class="normal">3344</span>
@@ -9377,7 +9411,41 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3346</span>
 <span class="normal">3347</span>
 <span class="normal">3348</span>
-<span class="normal">3349</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3349</span>
+<span class="normal">3350</span>
+<span class="normal">3351</span>
+<span class="normal">3352</span>
+<span class="normal">3353</span>
+<span class="normal">3354</span>
+<span class="normal">3355</span>
+<span class="normal">3356</span>
+<span class="normal">3357</span>
+<span class="normal">3358</span>
+<span class="normal">3359</span>
+<span class="normal">3360</span>
+<span class="normal">3361</span>
+<span class="normal">3362</span>
+<span class="normal">3363</span>
+<span class="normal">3364</span>
+<span class="normal">3365</span>
+<span class="normal">3366</span>
+<span class="normal">3367</span>
+<span class="normal">3368</span>
+<span class="normal">3369</span>
+<span class="normal">3370</span>
+<span class="normal">3371</span>
+<span class="normal">3372</span>
+<span class="normal">3373</span>
+<span class="normal">3374</span>
+<span class="normal">3375</span>
+<span class="normal">3376</span>
+<span class="normal">3377</span>
+<span class="normal">3378</span>
+<span class="normal">3379</span>
+<span class="normal">3380</span>
+<span class="normal">3381</span>
+<span class="normal">3382</span>
+<span class="normal">3383</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -9737,41 +9805,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3254</span>
-<span class="normal">3255</span>
-<span class="normal">3256</span>
-<span class="normal">3257</span>
-<span class="normal">3258</span>
-<span class="normal">3259</span>
-<span class="normal">3260</span>
-<span class="normal">3261</span>
-<span class="normal">3262</span>
-<span class="normal">3263</span>
-<span class="normal">3264</span>
-<span class="normal">3265</span>
-<span class="normal">3266</span>
-<span class="normal">3267</span>
-<span class="normal">3268</span>
-<span class="normal">3269</span>
-<span class="normal">3270</span>
-<span class="normal">3271</span>
-<span class="normal">3272</span>
-<span class="normal">3273</span>
-<span class="normal">3274</span>
-<span class="normal">3275</span>
-<span class="normal">3276</span>
-<span class="normal">3277</span>
-<span class="normal">3278</span>
-<span class="normal">3279</span>
-<span class="normal">3280</span>
-<span class="normal">3281</span>
-<span class="normal">3282</span>
-<span class="normal">3283</span>
-<span class="normal">3284</span>
-<span class="normal">3285</span>
-<span class="normal">3286</span>
-<span class="normal">3287</span>
-<span class="normal">3288</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3288</span>
 <span class="normal">3289</span>
 <span class="normal">3290</span>
 <span class="normal">3291</span>
@@ -9788,7 +9822,41 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3302</span>
 <span class="normal">3303</span>
 <span class="normal">3304</span>
-<span class="normal">3305</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3305</span>
+<span class="normal">3306</span>
+<span class="normal">3307</span>
+<span class="normal">3308</span>
+<span class="normal">3309</span>
+<span class="normal">3310</span>
+<span class="normal">3311</span>
+<span class="normal">3312</span>
+<span class="normal">3313</span>
+<span class="normal">3314</span>
+<span class="normal">3315</span>
+<span class="normal">3316</span>
+<span class="normal">3317</span>
+<span class="normal">3318</span>
+<span class="normal">3319</span>
+<span class="normal">3320</span>
+<span class="normal">3321</span>
+<span class="normal">3322</span>
+<span class="normal">3323</span>
+<span class="normal">3324</span>
+<span class="normal">3325</span>
+<span class="normal">3326</span>
+<span class="normal">3327</span>
+<span class="normal">3328</span>
+<span class="normal">3329</span>
+<span class="normal">3330</span>
+<span class="normal">3331</span>
+<span class="normal">3332</span>
+<span class="normal">3333</span>
+<span class="normal">3334</span>
+<span class="normal">3335</span>
+<span class="normal">3336</span>
+<span class="normal">3337</span>
+<span class="normal">3338</span>
+<span class="normal">3339</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
