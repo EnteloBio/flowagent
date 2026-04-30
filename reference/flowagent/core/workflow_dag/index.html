@@ -2780,7 +2780,44 @@
 <span class="normal">320</span>
 <span class="normal">321</span>
 <span class="normal">322</span>
-<span class="normal">323</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">WorkflowDAG</span><span class="p">:</span>
+<span class="normal">323</span>
+<span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span>
+<span class="normal">337</span>
+<span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">WorkflowDAG</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Manages workflow as a Directed Acyclic Graph.&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">executor_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;local&quot;</span><span class="p">):</span>
@@ -3011,6 +3048,26 @@
                     <span class="n">jobs</span><span class="p">[</span><span class="n">step_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">][</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;pending&quot;</span><span class="p">)</span>
 
+                    <span class="c1"># Persist a command-hash sidecar after success so</span>
+                    <span class="c1"># smart-resume can detect when a planner-side command</span>
+                    <span class="c1"># change requires re-execution on the next run.</span>
+                    <span class="c1"># See ``write_step_state`` in</span>
+                    <span class="c1"># ``flowagent/core/smart_resume.py``.</span>
+                    <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;completed&quot;</span><span class="p">:</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="kn">from</span><span class="w"> </span><span class="nn">flowagent.core.smart_resume</span><span class="w"> </span><span class="kn">import</span> <span class="n">write_step_state</span>
+                            <span class="n">step_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">]</span>
+                            <span class="n">write_step_state</span><span class="p">(</span>
+                                <span class="n">step_name</span><span class="p">,</span>
+                                <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                                <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outputs&quot;</span><span class="p">,</span> <span class="p">[]),</span>
+                            <span class="p">)</span>
+                        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># pragma: no cover - defensive</span>
+                            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                                <span class="s2">&quot;Could not persist smart-resume state for &quot;</span>
+                                <span class="s2">&quot;step </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">step_name</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                            <span class="p">)</span>
+
                     <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;failed&quot;</span><span class="p">:</span>
                         <span class="n">error_msg</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
                         <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
@@ -3035,6 +3092,23 @@
                                     <span class="k">if</span> <span class="n">recovery_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fixed_command&quot;</span><span class="p">):</span>
                                         <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">][</span><span class="s2">&quot;command&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">recovery_result</span><span class="p">[</span><span class="s2">&quot;fixed_command&quot;</span><span class="p">]</span>
                                     <span class="n">recovered</span> <span class="o">=</span> <span class="kc">True</span>
+                                    <span class="c1"># Persist sidecar with the FIXED command, not</span>
+                                    <span class="c1"># the broken original — otherwise a future</span>
+                                    <span class="c1"># resume would see the broken command in the</span>
+                                    <span class="c1"># plan and consider the step stale.</span>
+                                    <span class="k">try</span><span class="p">:</span>
+                                        <span class="kn">from</span><span class="w"> </span><span class="nn">flowagent.core.smart_resume</span><span class="w"> </span><span class="kn">import</span> <span class="n">write_step_state</span>
+                                        <span class="n">step_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">]</span>
+                                        <span class="n">write_step_state</span><span class="p">(</span>
+                                            <span class="n">step_name</span><span class="p">,</span>
+                                            <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                                            <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outputs&quot;</span><span class="p">,</span> <span class="p">[]),</span>
+                                        <span class="p">)</span>
+                                    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># pragma: no cover - defensive</span>
+                                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                                            <span class="s2">&quot;Could not persist smart-resume state &quot;</span>
+                                            <span class="s2">&quot;for recovered step </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">step_name</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                                        <span class="p">)</span>
                                 <span class="k">elif</span> <span class="n">recovery_result</span> <span class="ow">and</span> <span class="n">recovery_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;rejected&quot;</span><span class="p">:</span>
                                     <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
                                         <span class="s2">&quot;Step </span><span class="si">%s</span><span class="s2"> could not be recovered: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
@@ -3431,7 +3505,44 @@ asyncio.gather; levels are processed sequentially.</p>
 <span class="normal">320</span>
 <span class="normal">321</span>
 <span class="normal">322</span>
-<span class="normal">323</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_parallel</span><span class="p">(</span>
+<span class="normal">323</span>
+<span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span>
+<span class="normal">337</span>
+<span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_parallel</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">execute_fn</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">recovery_fn</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -3478,6 +3589,26 @@ asyncio.gather; levels are processed sequentially.</p>
                 <span class="n">jobs</span><span class="p">[</span><span class="n">step_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">][</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;pending&quot;</span><span class="p">)</span>
 
+                <span class="c1"># Persist a command-hash sidecar after success so</span>
+                <span class="c1"># smart-resume can detect when a planner-side command</span>
+                <span class="c1"># change requires re-execution on the next run.</span>
+                <span class="c1"># See ``write_step_state`` in</span>
+                <span class="c1"># ``flowagent/core/smart_resume.py``.</span>
+                <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;completed&quot;</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="kn">from</span><span class="w"> </span><span class="nn">flowagent.core.smart_resume</span><span class="w"> </span><span class="kn">import</span> <span class="n">write_step_state</span>
+                        <span class="n">step_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">]</span>
+                        <span class="n">write_step_state</span><span class="p">(</span>
+                            <span class="n">step_name</span><span class="p">,</span>
+                            <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                            <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outputs&quot;</span><span class="p">,</span> <span class="p">[]),</span>
+                        <span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># pragma: no cover - defensive</span>
+                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                            <span class="s2">&quot;Could not persist smart-resume state for &quot;</span>
+                            <span class="s2">&quot;step </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">step_name</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                        <span class="p">)</span>
+
                 <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;failed&quot;</span><span class="p">:</span>
                     <span class="n">error_msg</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
                     <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
@@ -3502,6 +3633,23 @@ asyncio.gather; levels are processed sequentially.</p>
                                 <span class="k">if</span> <span class="n">recovery_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fixed_command&quot;</span><span class="p">):</span>
                                     <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">][</span><span class="s2">&quot;command&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">recovery_result</span><span class="p">[</span><span class="s2">&quot;fixed_command&quot;</span><span class="p">]</span>
                                 <span class="n">recovered</span> <span class="o">=</span> <span class="kc">True</span>
+                                <span class="c1"># Persist sidecar with the FIXED command, not</span>
+                                <span class="c1"># the broken original — otherwise a future</span>
+                                <span class="c1"># resume would see the broken command in the</span>
+                                <span class="c1"># plan and consider the step stale.</span>
+                                <span class="k">try</span><span class="p">:</span>
+                                    <span class="kn">from</span><span class="w"> </span><span class="nn">flowagent.core.smart_resume</span><span class="w"> </span><span class="kn">import</span> <span class="n">write_step_state</span>
+                                    <span class="n">step_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">step_name</span><span class="p">][</span><span class="s2">&quot;step&quot;</span><span class="p">]</span>
+                                    <span class="n">write_step_state</span><span class="p">(</span>
+                                        <span class="n">step_name</span><span class="p">,</span>
+                                        <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                                        <span class="n">step_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outputs&quot;</span><span class="p">,</span> <span class="p">[]),</span>
+                                    <span class="p">)</span>
+                                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># pragma: no cover - defensive</span>
+                                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                                        <span class="s2">&quot;Could not persist smart-resume state &quot;</span>
+                                        <span class="s2">&quot;for recovered step </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">step_name</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span>
+                                    <span class="p">)</span>
                             <span class="k">elif</span> <span class="n">recovery_result</span> <span class="ow">and</span> <span class="n">recovery_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;rejected&quot;</span><span class="p">:</span>
                                 <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
                                     <span class="s2">&quot;Step </span><span class="si">%s</span><span class="s2"> could not be recovered: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>

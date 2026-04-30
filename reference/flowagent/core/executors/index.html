@@ -2618,17 +2618,7 @@
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">134</span>
-<span class="normal">135</span>
-<span class="normal">136</span>
-<span class="normal">137</span>
-<span class="normal">138</span>
-<span class="normal">139</span>
-<span class="normal">140</span>
-<span class="normal">141</span>
-<span class="normal">142</span>
-<span class="normal">143</span>
-<span class="normal">144</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">144</span>
 <span class="normal">145</span>
 <span class="normal">146</span>
 <span class="normal">147</span>
@@ -2729,7 +2719,17 @@
 <span class="normal">242</span>
 <span class="normal">243</span>
 <span class="normal">244</span>
-<span class="normal">245</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">CGATExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">CGATExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute workflow steps using CGATCore pipeline.&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -2876,24 +2876,24 @@ without a cluster scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">137</span>
-<span class="normal">138</span>
-<span class="normal">139</span>
-<span class="normal">140</span>
-<span class="normal">141</span>
-<span class="normal">142</span>
-<span class="normal">143</span>
-<span class="normal">144</span>
-<span class="normal">145</span>
-<span class="normal">146</span>
-<span class="normal">147</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">147</span>
 <span class="normal">148</span>
 <span class="normal">149</span>
 <span class="normal">150</span>
 <span class="normal">151</span>
 <span class="normal">152</span>
 <span class="normal">153</span>
-<span class="normal">154</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize CGATCore pipeline.</span>
 
 <span class="sd">    The DRMAA session is started lazily on first job submission so</span>
@@ -2937,17 +2937,7 @@ without a cluster scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">199</span>
 <span class="normal">200</span>
 <span class="normal">201</span>
 <span class="normal">202</span>
@@ -2964,7 +2954,17 @@ without a cluster scheduler.</p>
 <span class="normal">213</span>
 <span class="normal">214</span>
 <span class="normal">215</span>
-<span class="normal">216</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute a workflow step using CGATCore.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="c1"># Prepare job options</span>
@@ -3018,17 +3018,7 @@ without a cluster scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
-<span class="normal">222</span>
-<span class="normal">223</span>
-<span class="normal">224</span>
-<span class="normal">225</span>
-<span class="normal">226</span>
-<span class="normal">227</span>
-<span class="normal">228</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">228</span>
 <span class="normal">229</span>
 <span class="normal">230</span>
 <span class="normal">231</span>
@@ -3045,7 +3035,17 @@ without a cluster scheduler.</p>
 <span class="normal">242</span>
 <span class="normal">243</span>
 <span class="normal">244</span>
-<span class="normal">245</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wait for all CGATCore jobs to complete.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="c1"># Wait for all jobs to complete</span>
@@ -3115,17 +3115,7 @@ without a cluster scheduler.</p>
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">247</span>
-<span class="normal">248</span>
-<span class="normal">249</span>
-<span class="normal">250</span>
-<span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
-<span class="normal">254</span>
-<span class="normal">255</span>
-<span class="normal">256</span>
-<span class="normal">257</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">257</span>
 <span class="normal">258</span>
 <span class="normal">259</span>
 <span class="normal">260</span>
@@ -3273,7 +3263,17 @@ without a cluster scheduler.</p>
 <span class="normal">402</span>
 <span class="normal">403</span>
 <span class="normal">404</span>
-<span class="normal">405</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">HPCExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">HPCExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute workflow steps using various HPC systems (SLURM, SGE, TORQUE).&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -3467,17 +3467,7 @@ introspected on systems without a live scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">250</span>
-<span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
-<span class="normal">254</span>
-<span class="normal">255</span>
-<span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">260</span>
 <span class="normal">261</span>
 <span class="normal">262</span>
 <span class="normal">263</span>
@@ -3495,7 +3485,17 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">275</span>
 <span class="normal">276</span>
 <span class="normal">277</span>
-<span class="normal">278</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize HPC executor.</span>
 
 <span class="sd">    Constructs the backend object but defers DRMAA/session startup</span>
@@ -3550,17 +3550,7 @@ introspected on systems without a live scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">324</span>
-<span class="normal">325</span>
-<span class="normal">326</span>
-<span class="normal">327</span>
-<span class="normal">328</span>
-<span class="normal">329</span>
-<span class="normal">330</span>
-<span class="normal">331</span>
-<span class="normal">332</span>
-<span class="normal">333</span>
-<span class="normal">334</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">334</span>
 <span class="normal">335</span>
 <span class="normal">336</span>
 <span class="normal">337</span>
@@ -3592,7 +3582,17 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">363</span>
 <span class="normal">364</span>
 <span class="normal">365</span>
-<span class="normal">366</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute a workflow step on the HPC system.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">job_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_job_options</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
@@ -3661,17 +3661,7 @@ introspected on systems without a live scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">368</span>
-<span class="normal">369</span>
-<span class="normal">370</span>
-<span class="normal">371</span>
-<span class="normal">372</span>
-<span class="normal">373</span>
-<span class="normal">374</span>
-<span class="normal">375</span>
-<span class="normal">376</span>
-<span class="normal">377</span>
-<span class="normal">378</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">378</span>
 <span class="normal">379</span>
 <span class="normal">380</span>
 <span class="normal">381</span>
@@ -3698,7 +3688,17 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">402</span>
 <span class="normal">403</span>
 <span class="normal">404</span>
-<span class="normal">405</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wait for all HPC jobs to complete.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">results</span> <span class="o">=</span> <span class="p">{}</span>
@@ -3778,17 +3778,7 @@ introspected on systems without a live scheduler.</p>
 
               <details class="mkdocstrings-source">
                 <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">407</span>
-<span class="normal">408</span>
-<span class="normal">409</span>
-<span class="normal">410</span>
-<span class="normal">411</span>
-<span class="normal">412</span>
-<span class="normal">413</span>
-<span class="normal">414</span>
-<span class="normal">415</span>
-<span class="normal">416</span>
-<span class="normal">417</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">417</span>
 <span class="normal">418</span>
 <span class="normal">419</span>
 <span class="normal">420</span>
@@ -3946,7 +3936,17 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">572</span>
 <span class="normal">573</span>
 <span class="normal">574</span>
-<span class="normal">575</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">KubernetesExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
+<span class="normal">575</span>
+<span class="normal">576</span>
+<span class="normal">577</span>
+<span class="normal">578</span>
+<span class="normal">579</span>
+<span class="normal">580</span>
+<span class="normal">581</span>
+<span class="normal">582</span>
+<span class="normal">583</span>
+<span class="normal">584</span>
+<span class="normal">585</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">KubernetesExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute workflow steps using Kubernetes Jobs.&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -4147,17 +4147,7 @@ introspected on systems without a live scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">410</span>
-<span class="normal">411</span>
-<span class="normal">412</span>
-<span class="normal">413</span>
-<span class="normal">414</span>
-<span class="normal">415</span>
-<span class="normal">416</span>
-<span class="normal">417</span>
-<span class="normal">418</span>
-<span class="normal">419</span>
-<span class="normal">420</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">420</span>
 <span class="normal">421</span>
 <span class="normal">422</span>
 <span class="normal">423</span>
@@ -4173,7 +4163,17 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">433</span>
 <span class="normal">434</span>
 <span class="normal">435</span>
-<span class="normal">436</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize Kubernetes executor.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">k8s_client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s2">&quot;kubernetes is required for KubernetesExecutor: pip install &#39;flowagent[kubernetes]&#39;&quot;</span><span class="p">)</span>
@@ -4226,17 +4226,7 @@ introspected on systems without a live scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">495</span>
-<span class="normal">496</span>
-<span class="normal">497</span>
-<span class="normal">498</span>
-<span class="normal">499</span>
-<span class="normal">500</span>
-<span class="normal">501</span>
-<span class="normal">502</span>
-<span class="normal">503</span>
-<span class="normal">504</span>
-<span class="normal">505</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">505</span>
 <span class="normal">506</span>
 <span class="normal">507</span>
 <span class="normal">508</span>
@@ -4249,7 +4239,17 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">515</span>
 <span class="normal">516</span>
 <span class="normal">517</span>
-<span class="normal">518</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">518</span>
+<span class="normal">519</span>
+<span class="normal">520</span>
+<span class="normal">521</span>
+<span class="normal">522</span>
+<span class="normal">523</span>
+<span class="normal">524</span>
+<span class="normal">525</span>
+<span class="normal">526</span>
+<span class="normal">527</span>
+<span class="normal">528</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute a workflow step using Kubernetes.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="c1"># Prepare job specification</span>
@@ -4299,17 +4299,7 @@ introspected on systems without a live scheduler.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">520</span>
-<span class="normal">521</span>
-<span class="normal">522</span>
-<span class="normal">523</span>
-<span class="normal">524</span>
-<span class="normal">525</span>
-<span class="normal">526</span>
-<span class="normal">527</span>
-<span class="normal">528</span>
-<span class="normal">529</span>
-<span class="normal">530</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">530</span>
 <span class="normal">531</span>
 <span class="normal">532</span>
 <span class="normal">533</span>
@@ -4354,7 +4344,17 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">572</span>
 <span class="normal">573</span>
 <span class="normal">574</span>
-<span class="normal">575</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">575</span>
+<span class="normal">576</span>
+<span class="normal">577</span>
+<span class="normal">578</span>
+<span class="normal">579</span>
+<span class="normal">580</span>
+<span class="normal">581</span>
+<span class="normal">582</span>
+<span class="normal">583</span>
+<span class="normal">584</span>
+<span class="normal">585</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wait for all Kubernetes jobs to complete.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">results</span> <span class="o">=</span> <span class="p">{}</span>
@@ -4503,20 +4503,40 @@ introspected on systems without a live scheduler.</p>
 <span class="normal">129</span>
 <span class="normal">130</span>
 <span class="normal">131</span>
-<span class="normal">132</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LocalExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LocalExecutor</span><span class="p">(</span><span class="n">BaseExecutor</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute workflow steps locally using subprocess.&quot;&quot;&quot;</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Execute a workflow step locally.</span>
 
-<span class="sd">        If the step dict contains a ``timeout`` key (seconds), the subprocess</span>
-<span class="sd">        is killed after that many seconds and the step is marked FAILED.</span>
+<span class="sd">        Commands are run via ``bash -c`` rather than the system default</span>
+<span class="sd">        shell (which is dash on Debian/Ubuntu — including the Nebius</span>
+<span class="sd">        bioinfo image). The planner and the LLM analysis-step generator</span>
+<span class="sd">        both emit bash idioms — ``shopt -s nullglob``, arrays</span>
+<span class="sd">        ``a=(GLOB)``, ``[[ … ]]`` tests, ``set -o pipefail`` — that</span>
+<span class="sd">        dash chokes on with cryptic ``Syntax error: &quot;(&quot; unexpected``</span>
+<span class="sd">        messages. Routing through bash explicitly makes the runtime</span>
+<span class="sd">        match what the planner and LLM are trained to produce.</span>
+
+<span class="sd">        If the step dict contains a ``timeout`` key (seconds), the</span>
+<span class="sd">        subprocess is killed after that many seconds and the step is</span>
+<span class="sd">        marked FAILED.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">process</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_subprocess_shell</span><span class="p">(</span>
-                <span class="n">step</span><span class="p">[</span><span class="s2">&quot;command&quot;</span><span class="p">],</span>
+            <span class="n">process</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_subprocess_exec</span><span class="p">(</span>
+                <span class="s2">&quot;bash&quot;</span><span class="p">,</span> <span class="s2">&quot;-c&quot;</span><span class="p">,</span> <span class="n">step</span><span class="p">[</span><span class="s2">&quot;command&quot;</span><span class="p">],</span>
                 <span class="n">stdout</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
-                <span class="n">stderr</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span>
+                <span class="n">stderr</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">timeout</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timeout&quot;</span><span class="p">)</span>
             <span class="k">try</span><span class="p">:</span>
@@ -4587,8 +4607,17 @@ introspected on systems without a live scheduler.</p>
     <div class="doc doc-contents ">
 
         <p>Execute a workflow step locally.</p>
-<p>If the step dict contains a <code>timeout</code> key (seconds), the subprocess
-is killed after that many seconds and the step is marked FAILED.</p>
+<p>Commands are run via <code>bash -c</code> rather than the system default
+shell (which is dash on Debian/Ubuntu — including the Nebius
+bioinfo image). The planner and the LLM analysis-step generator
+both emit bash idioms — <code>shopt -s nullglob</code>, arrays
+<code>a=(GLOB)</code>, <code>[[ … ]]</code> tests, <code>set -o pipefail</code> — that
+dash chokes on with cryptic <code>Syntax error: "(" unexpected</code>
+messages. Routing through bash explicitly makes the runtime
+match what the planner and LLM are trained to produce.</p>
+<p>If the step dict contains a <code>timeout</code> key (seconds), the
+subprocess is killed after that many seconds and the step is
+marked FAILED.</p>
 
 
             <details class="mkdocstrings-source">
@@ -4637,17 +4666,37 @@ is killed after that many seconds and the step is marked FAILED.</p>
 <span class="normal">125</span>
 <span class="normal">126</span>
 <span class="normal">127</span>
-<span class="normal">128</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">execute_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute a workflow step locally.</span>
 
-<span class="sd">    If the step dict contains a ``timeout`` key (seconds), the subprocess</span>
-<span class="sd">    is killed after that many seconds and the step is marked FAILED.</span>
+<span class="sd">    Commands are run via ``bash -c`` rather than the system default</span>
+<span class="sd">    shell (which is dash on Debian/Ubuntu — including the Nebius</span>
+<span class="sd">    bioinfo image). The planner and the LLM analysis-step generator</span>
+<span class="sd">    both emit bash idioms — ``shopt -s nullglob``, arrays</span>
+<span class="sd">    ``a=(GLOB)``, ``[[ … ]]`` tests, ``set -o pipefail`` — that</span>
+<span class="sd">    dash chokes on with cryptic ``Syntax error: &quot;(&quot; unexpected``</span>
+<span class="sd">    messages. Routing through bash explicitly makes the runtime</span>
+<span class="sd">    match what the planner and LLM are trained to produce.</span>
+
+<span class="sd">    If the step dict contains a ``timeout`` key (seconds), the</span>
+<span class="sd">    subprocess is killed after that many seconds and the step is</span>
+<span class="sd">    marked FAILED.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">process</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_subprocess_shell</span><span class="p">(</span>
-            <span class="n">step</span><span class="p">[</span><span class="s2">&quot;command&quot;</span><span class="p">],</span>
+        <span class="n">process</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_subprocess_exec</span><span class="p">(</span>
+            <span class="s2">&quot;bash&quot;</span><span class="p">,</span> <span class="s2">&quot;-c&quot;</span><span class="p">,</span> <span class="n">step</span><span class="p">[</span><span class="s2">&quot;command&quot;</span><span class="p">],</span>
             <span class="n">stdout</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
-            <span class="n">stderr</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span>
+            <span class="n">stderr</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">timeout</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timeout&quot;</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
@@ -4708,9 +4757,9 @@ is killed after that many seconds and the step is marked FAILED.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/executors.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">130</span>
-<span class="normal">131</span>
-<span class="normal">132</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Local execution is synchronous, so just return results.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">jobs</span>
 </code></pre></div></td></tr></table></div>
