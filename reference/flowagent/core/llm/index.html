@@ -6200,7 +6200,30 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3749</span>
 <span class="normal">3750</span>
 <span class="normal">3751</span>
-<span class="normal">3752</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
+<span class="normal">3752</span>
+<span class="normal">3753</span>
+<span class="normal">3754</span>
+<span class="normal">3755</span>
+<span class="normal">3756</span>
+<span class="normal">3757</span>
+<span class="normal">3758</span>
+<span class="normal">3759</span>
+<span class="normal">3760</span>
+<span class="normal">3761</span>
+<span class="normal">3762</span>
+<span class="normal">3763</span>
+<span class="normal">3764</span>
+<span class="normal">3765</span>
+<span class="normal">3766</span>
+<span class="normal">3767</span>
+<span class="normal">3768</span>
+<span class="normal">3769</span>
+<span class="normal">3770</span>
+<span class="normal">3771</span>
+<span class="normal">3772</span>
+<span class="normal">3773</span>
+<span class="normal">3774</span>
+<span class="normal">3775</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LLMInterface</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Interface for LLM-based workflow generation.</span>
 
 <span class="sd">    Now delegates API calls to the provider abstraction layer so that</span>
@@ -6341,7 +6364,12 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="p">},</span>
         <span class="s2">&quot;chip_seq&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;keywords&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;chip-seq&quot;</span><span class="p">,</span> <span class="s2">&quot;chipseq&quot;</span><span class="p">,</span> <span class="s2">&quot;chip&quot;</span><span class="p">,</span> <span class="s2">&quot;peaks&quot;</span><span class="p">,</span> <span class="s2">&quot;binding sites&quot;</span><span class="p">],</span>
-            <span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;fastqc&quot;</span><span class="p">,</span> <span class="s2">&quot;bowtie2&quot;</span><span class="p">,</span> <span class="s2">&quot;samtools&quot;</span><span class="p">,</span> <span class="s2">&quot;macs2&quot;</span><span class="p">,</span> <span class="s2">&quot;multiqc&quot;</span><span class="p">],</span>
+            <span class="c1"># MACS3 is the maintained successor of macs2 (same CLI, same</span>
+            <span class="c1"># narrowPeak output). The bioconda macs2 wheel was compiled</span>
+            <span class="c1"># against an older glibc and crashes on glibc≥2.31 with</span>
+            <span class="c1"># ``undefined symbol: __log_finite``. macs3 has no such</span>
+            <span class="c1"># issue. Prefer macs3 throughout.</span>
+            <span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;fastqc&quot;</span><span class="p">,</span> <span class="s2">&quot;bowtie2&quot;</span><span class="p">,</span> <span class="s2">&quot;samtools&quot;</span><span class="p">,</span> <span class="s2">&quot;macs3&quot;</span><span class="p">,</span> <span class="s2">&quot;multiqc&quot;</span><span class="p">],</span>
             <span class="s2">&quot;dir_structure&quot;</span><span class="p">:</span> <span class="p">[</span>
                 <span class="s2">&quot;results/chip_seq/fastqc&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;results/chip_seq/bowtie2_index&quot;</span><span class="p">,</span>
@@ -6356,7 +6384,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
                 <span class="s2">&quot;SAM to BAM: samtools view -bS results/chip_seq/bowtie2_align/sample.sam &gt; results/chip_seq/bowtie2_align/sample.bam&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;Sort BAM: samtools sort results/chip_seq/bowtie2_align/sample.bam -o results/chip_seq/bowtie2_align/sample.sorted.bam&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;Index BAM: samtools index results/chip_seq/bowtie2_align/sample.sorted.bam&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;MACS2 peaks: macs2 callpeak -t results/chip_seq/bowtie2_align/sample.sorted.bam -c results/chip_seq/bowtie2_align/control.sorted.bam -f BAM -g hs -n sample -o results/chip_seq/peaks&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;MACS3 peaks: macs3 callpeak -t results/chip_seq/bowtie2_align/sample.sorted.bam -c results/chip_seq/bowtie2_align/control.sorted.bam -f BAM -g hs -n sample --outdir results/chip_seq/peaks&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;MultiQC: multiqc results/chip_seq/fastqc results/chip_seq/bowtie2_align -o results/chip_seq/qc&quot;</span><span class="p">,</span>
             <span class="p">],</span>
         <span class="p">},</span>
@@ -6592,9 +6620,13 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;bowtie2_align&quot;</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span>
             <span class="p">},</span>
-            <span class="s2">&quot;macs2_callpeak&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;macs3_callpeak&quot;</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Peak calling can be memory intensive&quot;</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;macs2_callpeak&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Peak calling can be memory intensive (prefer macs3 — bioconda macs2 has glibc symbol issues)&quot;</span><span class="p">,</span>
             <span class="p">},</span>
             <span class="c1"># BAM Processing</span>
             <span class="s2">&quot;samtools_sort&quot;</span><span class="p">:</span> <span class="p">{</span>
@@ -6690,7 +6722,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
         <span class="c1"># Aligners / quantifiers / callers — the tools that define a workflow</span>
         <span class="s2">&quot;kallisto&quot;</span><span class="p">,</span> <span class="s2">&quot;salmon&quot;</span><span class="p">,</span> <span class="s2">&quot;star&quot;</span><span class="p">,</span> <span class="s2">&quot;starsolo&quot;</span><span class="p">,</span> <span class="s2">&quot;hisat2&quot;</span><span class="p">,</span> <span class="s2">&quot;bowtie2&quot;</span><span class="p">,</span>
         <span class="s2">&quot;bwa&quot;</span><span class="p">,</span> <span class="s2">&quot;minimap2&quot;</span><span class="p">,</span> <span class="s2">&quot;bismark&quot;</span><span class="p">,</span> <span class="s2">&quot;cellranger&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;macs2&quot;</span><span class="p">,</span> <span class="s2">&quot;gatk&quot;</span><span class="p">,</span> <span class="s2">&quot;haplotypecaller&quot;</span><span class="p">,</span> <span class="s2">&quot;bcftools&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;macs3&quot;</span><span class="p">,</span> <span class="s2">&quot;macs2&quot;</span><span class="p">,</span> <span class="s2">&quot;gatk&quot;</span><span class="p">,</span> <span class="s2">&quot;haplotypecaller&quot;</span><span class="p">,</span> <span class="s2">&quot;bcftools&quot;</span><span class="p">,</span>
         <span class="s2">&quot;featurecounts&quot;</span><span class="p">,</span> <span class="s2">&quot;htseq-count&quot;</span><span class="p">,</span> <span class="s2">&quot;htseq&quot;</span><span class="p">,</span> <span class="s2">&quot;stringtie&quot;</span><span class="p">,</span> <span class="s2">&quot;cufflinks&quot;</span><span class="p">,</span>
         <span class="s2">&quot;kraken2&quot;</span><span class="p">,</span> <span class="s2">&quot;bracken&quot;</span><span class="p">,</span> <span class="s2">&quot;metaphlan&quot;</span><span class="p">,</span>
         <span class="s2">&quot;manta&quot;</span><span class="p">,</span> <span class="s2">&quot;delly&quot;</span><span class="p">,</span> <span class="s2">&quot;medaka&quot;</span><span class="p">,</span> <span class="s2">&quot;clair3&quot;</span><span class="p">,</span>
@@ -7000,7 +7032,8 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;picard&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Java-based, needs heap&quot;</span><span class="p">},</span>
             <span class="s2">&quot;gatk&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory_parallel&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Variant calling is resource-intensive&quot;</span><span class="p">},</span>
             <span class="s2">&quot;bcftools&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;VCF processing&quot;</span><span class="p">},</span>
-            <span class="s2">&quot;macs2&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Peak calling&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;macs3&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Peak calling&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;macs2&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;high_memory&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Peak calling (legacy — prefer macs3)&quot;</span><span class="p">},</span>
             <span class="s2">&quot;trimmomatic&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;multi_thread&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Read trimming&quot;</span><span class="p">},</span>
             <span class="s2">&quot;trim_galore&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Lightweight trimming wrapper&quot;</span><span class="p">},</span>
             <span class="s2">&quot;cutadapt&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;Adapter trimming&quot;</span><span class="p">},</span>
@@ -8083,14 +8116,21 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;``shopt -s nullglob 2&gt;/dev/null || true; files=(GLOB); &quot;</span>
             <span class="s2">&quot;[ ${#files[@]} -gt 0 ] || { echo FAIL; exit 1; }`` for &quot;</span>
             <span class="s2">&quot;globs.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;- For ChIP-seq / ATAC-seq workflows: USE MACS3, NOT &quot;</span>
+            <span class="s2">&quot;MACS2. The bioconda ``macs2`` wheel was compiled against &quot;</span>
+            <span class="s2">&quot;an older glibc and fails on glibc≥2.31 with &quot;</span>
+            <span class="s2">&quot;``ImportError: undefined symbol: __log_finite``. ``macs3`` &quot;</span>
+            <span class="s2">&quot;is the maintained successor with the same CLI and same &quot;</span>
+            <span class="s2">&quot;narrowPeak output format — drop in as ``macs3 callpeak &quot;</span>
+            <span class="s2">&quot;-t … -c … -f BAM -g hs -n &lt;name&gt; --outdir &lt;dir&gt;``.</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- For ChIP-seq / ATAC-seq workflows: DO NOT include the &quot;</span>
             <span class="s2">&quot;``idr`` tool. The conda ``idr`` package only supports &quot;</span>
             <span class="s2">&quot;Python 3.7-3.10 and fails to install in Python 3.11+ &quot;</span>
-            <span class="s2">&quot;envs (which is the FlowAgent default). Stop at MACS2 &quot;</span>
+            <span class="s2">&quot;envs (which is the FlowAgent default). Stop at MACS3 &quot;</span>
             <span class="s2">&quot;peak calling — single-sample peak calls without IDR &quot;</span>
             <span class="s2">&quot;replicate-consistency filtering are sufficient for &quot;</span>
             <span class="s2">&quot;downstream comparison. If the user prompt explicitly &quot;</span>
-            <span class="s2">&quot;asks for IDR-style filtering, threshold MACS2 q-values &quot;</span>
+            <span class="s2">&quot;asks for IDR-style filtering, threshold MACS3 q-values &quot;</span>
             <span class="s2">&quot;instead (e.g. ``awk &#39;$9 &gt; 5&#39; peaks.narrowPeak`` for &quot;</span>
             <span class="s2">&quot;-log10(q) &gt; 5).</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;- DO NOT redirect stderr to a per-step log file with &quot;</span>
@@ -9114,12 +9154,18 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
             <span class="s2">&quot;``outputs`` field with the actual file or directory paths &quot;</span>
             <span class="s2">&quot;the step produces, so the executor can validate that the &quot;</span>
             <span class="s2">&quot;step did real work.</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;6. NO IDR for ChIP-seq / ATAC-seq plans. The conda &quot;</span>
-            <span class="s2">&quot;``idr`` package only supports Python 3.7-3.10 and fails &quot;</span>
-            <span class="s2">&quot;to install in Python 3.11+ envs (the FlowAgent default). &quot;</span>
-            <span class="s2">&quot;Stop at MACS2 peak calling — single-replicate peak calls &quot;</span>
-            <span class="s2">&quot;are sufficient for downstream comparison. If the prompt &quot;</span>
-            <span class="s2">&quot;asks for IDR-style filtering, threshold MACS2 q-values &quot;</span>
+            <span class="s2">&quot;6. USE MACS3, NOT MACS2 for ChIP/ATAC peak calling. &quot;</span>
+            <span class="s2">&quot;The bioconda ``macs2`` wheel fails on glibc≥2.31 with &quot;</span>
+            <span class="s2">&quot;``ImportError: undefined symbol: __log_finite``. &quot;</span>
+            <span class="s2">&quot;``macs3`` is the maintained successor with the same CLI &quot;</span>
+            <span class="s2">&quot;and same narrowPeak output (``macs3 callpeak -t … -c … &quot;</span>
+            <span class="s2">&quot;-f BAM -g hs -n &lt;name&gt; --outdir &lt;dir&gt;``). And NO IDR for &quot;</span>
+            <span class="s2">&quot;ChIP-seq / ATAC-seq plans. The conda ``idr`` package &quot;</span>
+            <span class="s2">&quot;only supports Python 3.7-3.10 and fails to install in &quot;</span>
+            <span class="s2">&quot;Python 3.11+ envs (the FlowAgent default). Stop at &quot;</span>
+            <span class="s2">&quot;MACS3 peak calling — single-replicate peak calls are &quot;</span>
+            <span class="s2">&quot;sufficient for downstream comparison. If the prompt &quot;</span>
+            <span class="s2">&quot;asks for IDR-style filtering, threshold MACS3 q-values &quot;</span>
             <span class="s2">&quot;instead (``awk &#39;$9 &gt; 5&#39; peaks.narrowPeak`` for &quot;</span>
             <span class="s2">&quot;-log10(q) &gt; 5).</span><span class="se">\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;7. NEVER redirect stderr to a per-step log file with &quot;</span>
@@ -10079,30 +10125,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3679</span>
-<span class="normal">3680</span>
-<span class="normal">3681</span>
-<span class="normal">3682</span>
-<span class="normal">3683</span>
-<span class="normal">3684</span>
-<span class="normal">3685</span>
-<span class="normal">3686</span>
-<span class="normal">3687</span>
-<span class="normal">3688</span>
-<span class="normal">3689</span>
-<span class="normal">3690</span>
-<span class="normal">3691</span>
-<span class="normal">3692</span>
-<span class="normal">3693</span>
-<span class="normal">3694</span>
-<span class="normal">3695</span>
-<span class="normal">3696</span>
-<span class="normal">3697</span>
-<span class="normal">3698</span>
-<span class="normal">3699</span>
-<span class="normal">3700</span>
-<span class="normal">3701</span>
-<span class="normal">3702</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3702</span>
 <span class="normal">3703</span>
 <span class="normal">3704</span>
 <span class="normal">3705</span>
@@ -10121,7 +10144,30 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3718</span>
 <span class="normal">3719</span>
 <span class="normal">3720</span>
-<span class="normal">3721</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3721</span>
+<span class="normal">3722</span>
+<span class="normal">3723</span>
+<span class="normal">3724</span>
+<span class="normal">3725</span>
+<span class="normal">3726</span>
+<span class="normal">3727</span>
+<span class="normal">3728</span>
+<span class="normal">3729</span>
+<span class="normal">3730</span>
+<span class="normal">3731</span>
+<span class="normal">3732</span>
+<span class="normal">3733</span>
+<span class="normal">3734</span>
+<span class="normal">3735</span>
+<span class="normal">3736</span>
+<span class="normal">3737</span>
+<span class="normal">3738</span>
+<span class="normal">3739</span>
+<span class="normal">3740</span>
+<span class="normal">3741</span>
+<span class="normal">3742</span>
+<span class="normal">3743</span>
+<span class="normal">3744</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for analyzing a workflow.&quot;&quot;&quot;</span>
     <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">    Analyze the following prompt to extract options for analyzing a workflow.</span>
@@ -10190,17 +10236,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1473</span>
-<span class="normal">1474</span>
-<span class="normal">1475</span>
-<span class="normal">1476</span>
-<span class="normal">1477</span>
-<span class="normal">1478</span>
-<span class="normal">1479</span>
-<span class="normal">1480</span>
-<span class="normal">1481</span>
-<span class="normal">1482</span>
-<span class="normal">1483</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1483</span>
 <span class="normal">1484</span>
 <span class="normal">1485</span>
 <span class="normal">1486</span>
@@ -10322,7 +10358,17 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1602</span>
 <span class="normal">1603</span>
 <span class="normal">1604</span>
-<span class="normal">1605</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">1605</span>
+<span class="normal">1606</span>
+<span class="normal">1607</span>
+<span class="normal">1608</span>
+<span class="normal">1609</span>
+<span class="normal">1610</span>
+<span class="normal">1611</span>
+<span class="normal">1612</span>
+<span class="normal">1613</span>
+<span class="normal">1614</span>
+<span class="normal">1615</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to determine the action and extract options.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Extract file patterns and relationships using LLM</span>
@@ -10481,30 +10527,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3626</span>
-<span class="normal">3627</span>
-<span class="normal">3628</span>
-<span class="normal">3629</span>
-<span class="normal">3630</span>
-<span class="normal">3631</span>
-<span class="normal">3632</span>
-<span class="normal">3633</span>
-<span class="normal">3634</span>
-<span class="normal">3635</span>
-<span class="normal">3636</span>
-<span class="normal">3637</span>
-<span class="normal">3638</span>
-<span class="normal">3639</span>
-<span class="normal">3640</span>
-<span class="normal">3641</span>
-<span class="normal">3642</span>
-<span class="normal">3643</span>
-<span class="normal">3644</span>
-<span class="normal">3645</span>
-<span class="normal">3646</span>
-<span class="normal">3647</span>
-<span class="normal">3648</span>
-<span class="normal">3649</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">3649</span>
 <span class="normal">3650</span>
 <span class="normal">3651</span>
 <span class="normal">3652</span>
@@ -10532,7 +10555,30 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">3674</span>
 <span class="normal">3675</span>
 <span class="normal">3676</span>
-<span class="normal">3677</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">3677</span>
+<span class="normal">3678</span>
+<span class="normal">3679</span>
+<span class="normal">3680</span>
+<span class="normal">3681</span>
+<span class="normal">3682</span>
+<span class="normal">3683</span>
+<span class="normal">3684</span>
+<span class="normal">3685</span>
+<span class="normal">3686</span>
+<span class="normal">3687</span>
+<span class="normal">3688</span>
+<span class="normal">3689</span>
+<span class="normal">3690</span>
+<span class="normal">3691</span>
+<span class="normal">3692</span>
+<span class="normal">3693</span>
+<span class="normal">3694</span>
+<span class="normal">3695</span>
+<span class="normal">3696</span>
+<span class="normal">3697</span>
+<span class="normal">3698</span>
+<span class="normal">3699</span>
+<span class="normal">3700</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">analyze_run_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Analyze the prompt to extract options for running a workflow.&quot;&quot;&quot;</span>
         <span class="n">analysis_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">        Analyze the following prompt to extract options for running a workflow.</span>
@@ -10610,17 +10656,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1324</span>
-<span class="normal">1325</span>
-<span class="normal">1326</span>
-<span class="normal">1327</span>
-<span class="normal">1328</span>
-<span class="normal">1329</span>
-<span class="normal">1330</span>
-<span class="normal">1331</span>
-<span class="normal">1332</span>
-<span class="normal">1333</span>
-<span class="normal">1334</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1334</span>
 <span class="normal">1335</span>
 <span class="normal">1336</span>
 <span class="normal">1337</span>
@@ -10641,7 +10677,17 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1352</span>
 <span class="normal">1353</span>
 <span class="normal">1354</span>
-<span class="normal">1355</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_analysis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal">1355</span>
+<span class="normal">1356</span>
+<span class="normal">1357</span>
+<span class="normal">1358</span>
+<span class="normal">1359</span>
+<span class="normal">1360</span>
+<span class="normal">1361</span>
+<span class="normal">1362</span>
+<span class="normal">1363</span>
+<span class="normal">1364</span>
+<span class="normal">1365</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_analysis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate analysis of workflow outputs.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Prepare the prompt for analysis</span>
@@ -10699,17 +10745,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1299</span>
-<span class="normal">1300</span>
-<span class="normal">1301</span>
-<span class="normal">1302</span>
-<span class="normal">1303</span>
-<span class="normal">1304</span>
-<span class="normal">1305</span>
-<span class="normal">1306</span>
-<span class="normal">1307</span>
-<span class="normal">1308</span>
-<span class="normal">1309</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1309</span>
 <span class="normal">1310</span>
 <span class="normal">1311</span>
 <span class="normal">1312</span>
@@ -10722,7 +10758,17 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1319</span>
 <span class="normal">1320</span>
 <span class="normal">1321</span>
-<span class="normal">1322</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal">1322</span>
+<span class="normal">1323</span>
+<span class="normal">1324</span>
+<span class="normal">1325</span>
+<span class="normal">1326</span>
+<span class="normal">1327</span>
+<span class="normal">1328</span>
+<span class="normal">1329</span>
+<span class="normal">1330</span>
+<span class="normal">1331</span>
+<span class="normal">1332</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a command for a workflow step.&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="c1"># If command is already provided, use it</span>
@@ -10777,17 +10823,7 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/core/llm.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 971</span>
-<span class="normal"> 972</span>
-<span class="normal"> 973</span>
-<span class="normal"> 974</span>
-<span class="normal"> 975</span>
-<span class="normal"> 976</span>
-<span class="normal"> 977</span>
-<span class="normal"> 978</span>
-<span class="normal"> 979</span>
-<span class="normal"> 980</span>
-<span class="normal"> 981</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 981</span>
 <span class="normal"> 982</span>
 <span class="normal"> 983</span>
 <span class="normal"> 984</span>
@@ -11103,7 +11139,17 @@ OpenAI, Anthropic, Google Gemini, and Ollama all work identically.</p>
 <span class="normal">1294</span>
 <span class="normal">1295</span>
 <span class="normal">1296</span>
-<span class="normal">1297</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_workflow_plan</span><span class="p">(</span>
+<span class="normal">1297</span>
+<span class="normal">1298</span>
+<span class="normal">1299</span>
+<span class="normal">1300</span>
+<span class="normal">1301</span>
+<span class="normal">1302</span>
+<span class="normal">1303</span>
+<span class="normal">1304</span>
+<span class="normal">1305</span>
+<span class="normal">1306</span>
+<span class="normal">1307</span></pre></div></td><td class="code"><div><pre><span></span><code>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_workflow_plan</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PipelineContext</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a workflow plan from a prompt.</span>
