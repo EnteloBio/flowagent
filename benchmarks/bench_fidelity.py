@@ -85,8 +85,12 @@ def _score_one(case: Dict[str, Any], candidate_root: Path,
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
+# Match ``<case>__<model>__rep<N>``. Case IDs in fidelity_cases.yaml
+# include underscores (``gse52778_dex_de``, ``gse60450_mammary_de``)
+# so the case charset must include ``_``. The ``__`` literal separator
+# distinguishes case from model on the regex backtrack.
 _SLUG_RE = re.compile(
-    r"^(?P<case>[A-Za-z0-9-]+)__(?P<model>[A-Za-z0-9.\-_]+)__rep(?P<rep>\d+)$"
+    r"^(?P<case>[A-Za-z0-9_-]+?)__(?P<model>[A-Za-z0-9.\-_]+)__rep(?P<rep>\d+)$"
 )
 
 
