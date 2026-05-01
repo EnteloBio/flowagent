@@ -25,9 +25,26 @@ import logging
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+# Pull an explicit reference-condition phrase out of the user prompt
+# (e.g. "with untreated as the reference", "using healthy controls as
+# the reference condition"). Two patterns: "with X as the reference"
+# and "using X as the reference [condition]". The captured phrase is
+# passed to the LLM verbatim — the LLM resolves it to a factor level
+# in the sample sheet (e.g. "healthy controls" -> "Healthy").
+_REF_LEVEL_RE = re.compile(
+    r"\b(?:with|using)\s+([A-Za-z][\w\- ]{0,40}?)\s+as\s+(?:the\s+)?reference",
+    re.I,
+)
+
+
+def _extract_reference_level(user_intent: str) -> Optional[str]:
+    m = _REF_LEVEL_RE.search(user_intent or "")
+    return m.group(1).strip() if m else None
 
 
 def _read_abundance_tx_ids(quant_dir: Path, limit: int = 10) -> List[str]:
@@ -142,9 +159,27 @@ def _build_llm_prompt(
     newline = "\n"
     intent = user_intent or "Run DESeq2 differential expression on the available kallisto quantification"
     sample_rows_block = newline.join("  " + tab.join(r) for r in sample_rows)
+
+    # If the user explicitly named a reference condition, lift it to a
+    # top-level mandatory constraint. Without this the LLM sometimes
+    # picks the contrast direction at random across reps, flipping
+    # log2FC signs (gse152418 rep2 vs rep0/1 in the fidelity benchmark).
+    ref_phrase = _extract_reference_level(user_intent)
+    ref_block = ""
+    if ref_phrase:
+        ref_block = (
+            f"\nREFERENCE-LEVEL CONSTRAINT (mandatory — do not deviate):\n"
+            f"  The user explicitly named '{ref_phrase}' as the reference condition.\n"
+            f"  Identify the matching factor level in coldata$condition (consult\n"
+            f"  the sample-sheet rows below — e.g. 'healthy controls' -> 'Healthy')\n"
+            f"  and emit BEFORE building the DESeqDataSet:\n"
+            f"      coldata$condition <- relevel(factor(coldata$condition), ref='<level>')\n"
+            f"  All log2FoldChange values must reflect <other> / '{ref_phrase}'.\n"
+        )
+
     user = f"""
 Task: write an R script at an agreed path. It will be executed via `Rscript`.
-
+{ref_block}
 User intent:
   {intent}
 
