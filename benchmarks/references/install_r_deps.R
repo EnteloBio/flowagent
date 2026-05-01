@@ -7,6 +7,7 @@
 required_cran  <- c()  # currently no CRAN-only deps
 required_bioc  <- c("airway", "DESeq2",
                     "edgeR", "limma", "Glimma",
+                    "org.Mm.eg.db",
                     "SummarizedExperiment")
 # Note: recount3 is intentionally NOT required — case 3 was migrated
 # to a direct GEO download (GSE152418) so heavy Bioc-data dependencies

@@ -52,8 +52,23 @@ fit <- lmFit(v, design)
 fit <- eBayes(fit)
 tt <- topTable(fit, coef = "cellbasal", number = Inf, sort.by = "none")
 
+# Candidate side (kallisto + tximport) emits ENSMUSG IDs; the GEO counts
+# matrix uses NCBI Entrez. Map Entrez -> Ensembl so the merge in the
+# fidelity comparator finds a gene intersection.
+suppressPackageStartupMessages(library(org.Mm.eg.db))
+ens <- mapIds(org.Mm.eg.db,
+              keys      = as.character(tt$gene_id),
+              column    = "ENSEMBL",
+              keytype   = "ENTREZID",
+              multiVals = "first")
+tt$ensembl_id <- unname(ens)
+tt <- tt[!is.na(tt$ensembl_id), ]
+# Some Entrez collapse onto the same Ensembl — keep the smallest-padj row.
+tt <- tt[order(tt$adj.P.Val, na.last = TRUE), ]
+tt <- tt[!duplicated(tt$ensembl_id), ]
+
 de <- data.frame(
-  gene_id        = tt$gene_id,
+  gene_id        = tt$ensembl_id,
   log2FoldChange = tt$logFC,
   padj           = tt$adj.P.Val,
   stringsAsFactors = FALSE

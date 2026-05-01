@@ -71,7 +71,7 @@ cases:
     reference_source:
       kind: r_script
       script: references/make_reference_gse60450.R
-      bioc_packages: [edgeR, limma, Glimma]
+      bioc_packages: [edgeR, limma, Glimma, org.Mm.eg.db]
     comparison: de_table
     params:
       gene_id_column: gene_id
