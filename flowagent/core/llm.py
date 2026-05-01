@@ -165,7 +165,12 @@ class LLMInterface:
         },
         "chip_seq": {
             "keywords": ["chip-seq", "chipseq", "chip", "peaks", "binding sites"],
-            "tools": ["fastqc", "bowtie2", "samtools", "macs2", "multiqc"],
+            # MACS3 is the maintained successor of macs2 (same CLI, same
+            # narrowPeak output). The bioconda macs2 wheel was compiled
+            # against an older glibc and crashes on glibc≥2.31 with
+            # ``undefined symbol: __log_finite``. macs3 has no such
+            # issue. Prefer macs3 throughout.
+            "tools": ["fastqc", "bowtie2", "samtools", "macs3", "multiqc"],
             "dir_structure": [
                 "results/chip_seq/fastqc",
                 "results/chip_seq/bowtie2_index",
@@ -180,7 +185,7 @@ class LLMInterface:
                 "SAM to BAM: samtools view -bS results/chip_seq/bowtie2_align/sample.sam > results/chip_seq/bowtie2_align/sample.bam",
                 "Sort BAM: samtools sort results/chip_seq/bowtie2_align/sample.bam -o results/chip_seq/bowtie2_align/sample.sorted.bam",
                 "Index BAM: samtools index results/chip_seq/bowtie2_align/sample.sorted.bam",
-                "MACS2 peaks: macs2 callpeak -t results/chip_seq/bowtie2_align/sample.sorted.bam -c results/chip_seq/bowtie2_align/control.sorted.bam -f BAM -g hs -n sample -o results/chip_seq/peaks",
+                "MACS3 peaks: macs3 callpeak -t results/chip_seq/bowtie2_align/sample.sorted.bam -c results/chip_seq/bowtie2_align/control.sorted.bam -f BAM -g hs -n sample --outdir results/chip_seq/peaks",
                 "MultiQC: multiqc results/chip_seq/fastqc results/chip_seq/bowtie2_align -o results/chip_seq/qc",
             ],
         },
@@ -416,9 +421,13 @@ Use the exact sample name '{sample_name}' for output directories.""",
             "bowtie2_align": {
                 "profile": "multi_thread",
             },
-            "macs2_callpeak": {
+            "macs3_callpeak": {
                 "profile": "high_memory",
                 "reason": "Peak calling can be memory intensive",
+            },
+            "macs2_callpeak": {
+                "profile": "high_memory",
+                "reason": "Peak calling can be memory intensive (prefer macs3 — bioconda macs2 has glibc symbol issues)",
             },
             # BAM Processing
             "samtools_sort": {
@@ -514,7 +523,7 @@ Use the exact sample name '{sample_name}' for output directories.""",
         # Aligners / quantifiers / callers — the tools that define a workflow
         "kallisto", "salmon", "star", "starsolo", "hisat2", "bowtie2",
         "bwa", "minimap2", "bismark", "cellranger",
-        "macs2", "gatk", "haplotypecaller", "bcftools",
+        "macs3", "macs2", "gatk", "haplotypecaller", "bcftools",
         "featurecounts", "htseq-count", "htseq", "stringtie", "cufflinks",
         "kraken2", "bracken", "metaphlan",
         "manta", "delly", "medaka", "clair3",
@@ -824,7 +833,8 @@ Use the exact sample name '{sample_name}' for output directories.""",
             "picard": {"profile": "high_memory", "reason": "Java-based, needs heap"},
             "gatk": {"profile": "high_memory_parallel", "reason": "Variant calling is resource-intensive"},
             "bcftools": {"profile": "default", "reason": "VCF processing"},
-            "macs2": {"profile": "high_memory", "reason": "Peak calling"},
+            "macs3": {"profile": "high_memory", "reason": "Peak calling"},
+            "macs2": {"profile": "high_memory", "reason": "Peak calling (legacy — prefer macs3)"},
             "trimmomatic": {"profile": "multi_thread", "reason": "Read trimming"},
             "trim_galore": {"profile": "default", "reason": "Lightweight trimming wrapper"},
             "cutadapt": {"profile": "default", "reason": "Adapter trimming"},
@@ -1907,14 +1917,21 @@ If you are being asked to generate a title, set "success" to false.
             "``shopt -s nullglob 2>/dev/null || true; files=(GLOB); "
             "[ ${#files[@]} -gt 0 ] || { echo FAIL; exit 1; }`` for "
             "globs.\n"
+            "- For ChIP-seq / ATAC-seq workflows: USE MACS3, NOT "
+            "MACS2. The bioconda ``macs2`` wheel was compiled against "
+            "an older glibc and fails on glibc≥2.31 with "
+            "``ImportError: undefined symbol: __log_finite``. ``macs3`` "
+            "is the maintained successor with the same CLI and same "
+            "narrowPeak output format — drop in as ``macs3 callpeak "
+            "-t … -c … -f BAM -g hs -n <name> --outdir <dir>``.\n"
             "- For ChIP-seq / ATAC-seq workflows: DO NOT include the "
             "``idr`` tool. The conda ``idr`` package only supports "
             "Python 3.7-3.10 and fails to install in Python 3.11+ "
-            "envs (which is the FlowAgent default). Stop at MACS2 "
+            "envs (which is the FlowAgent default). Stop at MACS3 "
             "peak calling — single-sample peak calls without IDR "
             "replicate-consistency filtering are sufficient for "
             "downstream comparison. If the user prompt explicitly "
-            "asks for IDR-style filtering, threshold MACS2 q-values "
+            "asks for IDR-style filtering, threshold MACS3 q-values "
             "instead (e.g. ``awk '$9 > 5' peaks.narrowPeak`` for "
             "-log10(q) > 5).\n"
             "- DO NOT redirect stderr to a per-step log file with "
@@ -2938,12 +2955,18 @@ If you are being asked to generate a title, set "success" to false.
             "``outputs`` field with the actual file or directory paths "
             "the step produces, so the executor can validate that the "
             "step did real work.\n"
-            "6. NO IDR for ChIP-seq / ATAC-seq plans. The conda "
-            "``idr`` package only supports Python 3.7-3.10 and fails "
-            "to install in Python 3.11+ envs (the FlowAgent default). "
-            "Stop at MACS2 peak calling — single-replicate peak calls "
-            "are sufficient for downstream comparison. If the prompt "
-            "asks for IDR-style filtering, threshold MACS2 q-values "
+            "6. USE MACS3, NOT MACS2 for ChIP/ATAC peak calling. "
+            "The bioconda ``macs2`` wheel fails on glibc≥2.31 with "
+            "``ImportError: undefined symbol: __log_finite``. "
+            "``macs3`` is the maintained successor with the same CLI "
+            "and same narrowPeak output (``macs3 callpeak -t … -c … "
+            "-f BAM -g hs -n <name> --outdir <dir>``). And NO IDR for "
+            "ChIP-seq / ATAC-seq plans. The conda ``idr`` package "
+            "only supports Python 3.7-3.10 and fails to install in "
+            "Python 3.11+ envs (the FlowAgent default). Stop at "
+            "MACS3 peak calling — single-replicate peak calls are "
+            "sufficient for downstream comparison. If the prompt "
+            "asks for IDR-style filtering, threshold MACS3 q-values "
             "instead (``awk '$9 > 5' peaks.narrowPeak`` for "
             "-log10(q) > 5).\n"
             "7. NEVER redirect stderr to a per-step log file with "
