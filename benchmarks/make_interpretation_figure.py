@@ -81,13 +81,15 @@ def _summarise(df: pd.DataFrame) -> pd.DataFrame:
         oe  = g[g["question_type"] == "open_ended"]
         mcq_n = len(mcq); mcq_k = int(mcq["correct"].sum())
         oe_n  = len(oe);  oe_k  = int(oe["correct"].sum())
-        ci_l, ci_u = _wilson_ci(mcq_k, mcq_n)
+        mcq_lo, mcq_hi = _wilson_ci(mcq_k, mcq_n)
+        oe_lo,  oe_hi  = _wilson_ci(oe_k,  oe_n)
         oe_mean = float(oe["judge_score"].mean()) if oe_n else float("nan")
         rows.append({
             "model":   model,
             "mcq_acc": mcq_k / mcq_n if mcq_n else float("nan"),
-            "mcq_lo":  ci_l, "mcq_hi": ci_u, "mcq_n": mcq_n,
+            "mcq_lo":  mcq_lo, "mcq_hi": mcq_hi, "mcq_n": mcq_n,
             "oe_pass": oe_k / oe_n if oe_n else float("nan"),
+            "oe_pass_lo": oe_lo, "oe_pass_hi": oe_hi,
             "oe_mean": oe_mean, "oe_n": oe_n,
         })
     return (pd.DataFrame(rows)
@@ -101,23 +103,32 @@ def _panel_a(ax: plt.Axes, summary: pd.DataFrame, chance: float) -> None:
     n = len(summary)
     x = np.arange(n)
     w = 0.4
-    mcq_low_err  = summary["mcq_acc"] - summary["mcq_lo"]
-    mcq_high_err = summary["mcq_hi"] - summary["mcq_acc"]
+    mcq_low_err = summary["mcq_acc"] - summary["mcq_lo"]
+    mcq_hi_err  = summary["mcq_hi"]  - summary["mcq_acc"]
+    oe_low_err  = summary["oe_pass"] - summary["oe_pass_lo"]
+    oe_hi_err   = summary["oe_pass_hi"] - summary["oe_pass"]
+
     ax.bar(x - w / 2, summary["mcq_acc"], w,
            color="#4a86c4", edgecolor="#1f3a5e", lw=0.6,
-           label=f"MCQ (chance ≈ {chance:.0%})")
+           label=f"MCQ (n=23/model, chance ≈ {chance:.0%})")
     ax.errorbar(x - w / 2, summary["mcq_acc"],
-                yerr=[mcq_low_err, mcq_high_err],
+                yerr=[mcq_low_err, mcq_hi_err],
                 fmt="none", color="#222", lw=0.7, capsize=2)
     ax.bar(x + w / 2, summary["oe_pass"], w,
            color="#c46a4a", edgecolor="#702c00", lw=0.6,
-           label="Open-ended pass (judge ≥ 60)")
+           label="Open-ended pass (n=9/model, judge ≥ 60)")
+    ax.errorbar(x + w / 2, summary["oe_pass"],
+                yerr=[oe_low_err, oe_hi_err],
+                fmt="none", color="#222", lw=0.7, capsize=2)
     ax.axhline(chance, color="#888", lw=0.9, linestyle="--", alpha=0.85)
+
+    rot, fs = (60, 7) if n > 18 else (40, 8)
     ax.set_xticks(x)
-    ax.set_xticklabels(summary["model"], rotation=40, ha="right", fontsize=8)
+    ax.set_xticklabels(summary["model"], rotation=rot, ha="right", fontsize=fs)
     ax.set_ylabel("Accuracy / pass rate")
     ax.set_ylim(0, 1)
-    ax.set_title("A. Per-model interpretation accuracy",
+    ax.set_title("A. Per-model interpretation accuracy "
+                 "(error bars = Wilson 95 % CI)",
                  fontsize=11, fontweight="bold", loc="left")
     ax.legend(loc="upper right", fontsize=8, frameon=False)
     ax.grid(axis="y", alpha=0.18, linewidth=0.5)
@@ -144,11 +155,14 @@ def _panel_b(ax: plt.Axes, df: pd.DataFrame, model_order: List[str]) -> None:
                    edgecolors="white", linewidths=0.4, zorder=3)
     ax.axhline(OPEN_ENDED_PASS, color="#222", lw=1.0, linestyle="--",
                label="60-pt pass threshold")
-    ax.set_xticks(range(len(model_order)))
-    ax.set_xticklabels(model_order, rotation=40, ha="right", fontsize=8)
+    n = len(model_order)
+    rot, fs = (60, 7) if n > 18 else (40, 8)
+    ax.set_xticks(range(n))
+    ax.set_xticklabels(model_order, rotation=rot, ha="right", fontsize=fs)
     ax.set_ylabel("Judge score (0–100)")
     ax.set_ylim(0, 100)
-    ax.set_title("B. Open-ended judge-score distribution",
+    ax.set_title("B. Open-ended judge-score distribution "
+                 "(strip dots = individual questions)",
                  fontsize=11, fontweight="bold", loc="left")
     ax.legend(loc="upper right", fontsize=8, frameon=False)
     ax.grid(axis="y", alpha=0.18, linewidth=0.5)
@@ -171,12 +185,16 @@ def _panel_c(fig: plt.Figure, gs_cell: gridspec.SubplotSpec,
     oe  = oe.reindex(model_order)
     cols = [_short_dataset(c) for c in mcq.columns]
 
+    n_models   = len(model_order)
+    cell_fs    = 5.2 if n_models > 20 else 6.6
+    ylabel_fs  = 7.2 if n_models > 20 else 8.0
+
     im1 = ax1.imshow(mcq.values, aspect="auto", cmap="Blues", vmin=0, vmax=1)
     ax1.set_xticks(range(len(cols)))
     ax1.set_xticklabels(cols, rotation=45, ha="right", fontsize=7.4)
-    ax1.set_yticks(range(len(model_order)))
-    ax1.set_yticklabels(model_order, fontsize=8)
-    ax1.set_title("C. Per-dataset breakdown — MCQ accuracy",
+    ax1.set_yticks(range(n_models))
+    ax1.set_yticklabels(model_order, fontsize=ylabel_fs)
+    ax1.set_title("C. MCQ accuracy by dataset",
                   fontsize=11, fontweight="bold", loc="left")
     fig.colorbar(im1, ax=ax1, fraction=0.045, pad=0.02)
     for i in range(mcq.shape[0]):
@@ -184,15 +202,15 @@ def _panel_c(fig: plt.Figure, gs_cell: gridspec.SubplotSpec,
             v = mcq.values[i, j]
             if not np.isnan(v):
                 ax1.text(j, i, f"{v:.2f}", ha="center", va="center",
-                         fontsize=6.6,
+                         fontsize=cell_fs,
                          color="#1a1a1a" if v < 0.55 else "white")
 
     im2 = ax2.imshow(oe.values, aspect="auto", cmap="Reds", vmin=0, vmax=100)
     ax2.set_xticks(range(len(cols)))
     ax2.set_xticklabels(cols, rotation=45, ha="right", fontsize=7.4)
-    ax2.set_yticks(range(len(model_order)))
+    ax2.set_yticks(range(n_models))
     ax2.set_yticklabels([])
-    ax2.set_title("Open-ended mean judge score",
+    ax2.set_title("Open-ended mean by dataset",
                   fontsize=11, fontweight="bold", loc="left")
     fig.colorbar(im2, ax=ax2, fraction=0.045, pad=0.02)
     for i in range(oe.shape[0]):
@@ -200,7 +218,7 @@ def _panel_c(fig: plt.Figure, gs_cell: gridspec.SubplotSpec,
             v = oe.values[i, j]
             if not np.isnan(v):
                 ax2.text(j, i, f"{v:.0f}", ha="center", va="center",
-                         fontsize=6.6,
+                         fontsize=cell_fs,
                          color="#1a1a1a" if v < 55 else "white")
 
 
@@ -209,18 +227,36 @@ def _panel_d(ax: plt.Axes, summary: pd.DataFrame) -> None:
     y = summary["oe_mean"].to_numpy()
     keep = ~np.isnan(x) & ~np.isnan(y)
     rho, p = stats.spearmanr(x[keep], y[keep])
-    ax.scatter(x, y, s=58, c="#444", edgecolors="white", linewidths=0.7,
-               zorder=3)
-    for _, r in summary.iterrows():
+
+    ax.scatter(x, y, s=44, c="#444", edgecolors="white", linewidths=0.6,
+               zorder=3, alpha=0.88)
+
+    # OLS regression line for visual context — Spearman is rank-based
+    # but the OLS line is a useful eyeball reference for direction.
+    if keep.sum() >= 3:
+        slope, intercept, *_ = stats.linregress(x[keep], y[keep])
+        xx = np.linspace(x[keep].min(), x[keep].max(), 50)
+        ax.plot(xx, slope * xx + intercept, color="#999", lw=1.0,
+                linestyle="-", alpha=0.6, zorder=2,
+                label="OLS fit")
+
+    # Selective labelling: top-3 by each axis + bottom-2 by each axis,
+    # de-duplicated. Avoids the black-smear problem with 30 points.
+    n_label = 3
+    to_label = pd.concat([
+        summary.nlargest(n_label, "mcq_acc"),
+        summary.nlargest(n_label, "oe_mean"),
+        summary.nsmallest(2, "mcq_acc"),
+        summary.nsmallest(2, "oe_mean"),
+    ]).drop_duplicates("model")
+    for _, r in to_label.iterrows():
         ax.annotate(r["model"], (r["mcq_acc"], r["oe_mean"]),
-                    fontsize=7.2, alpha=0.85, xytext=(4, 4),
-                    textcoords="offset points")
+                    fontsize=8, alpha=0.95, xytext=(5, 5),
+                    textcoords="offset points",
+                    fontweight="semibold")
+
     ax.axhline(OPEN_ENDED_PASS, color="#888", lw=0.9, linestyle="--",
-               alpha=0.7, zorder=1)
-    ax.text(ax.get_xlim()[1] if ax.get_xlim()[1] > 0 else 1,
-            OPEN_ENDED_PASS + 1.0,
-            "judge pass threshold",
-            fontsize=7.5, ha="right", va="bottom", color="#666", alpha=0.85)
+               alpha=0.7, zorder=1, label="judge pass threshold")
     txt = f"Spearman ρ = {rho:.2f}\np = {p:.3f}\nn = {int(keep.sum())} models"
     ax.text(0.04, 0.96, txt, transform=ax.transAxes,
             ha="left", va="top", fontsize=10,
@@ -229,8 +265,10 @@ def _panel_d(ax: plt.Axes, summary: pd.DataFrame) -> None:
             zorder=4)
     ax.set_xlabel("MCQ accuracy")
     ax.set_ylabel("Open-ended mean judge score (0–100)")
-    ax.set_title("D. MCQ vs open-ended performance per model",
+    ax.set_title("D. MCQ vs open-ended per model "
+                 "(labels: top-3 / bottom-2 on each axis)",
                  fontsize=11, fontweight="bold", loc="left")
+    ax.legend(loc="lower right", fontsize=8, frameon=False)
     ax.grid(alpha=0.18, linewidth=0.5)
     ax.set_ylim(0, 100)
 
@@ -268,11 +306,14 @@ def main() -> None:
     n_mcq      = (df["question_type"] == "mcq").sum() // max(1, len(model_order))
     n_oe       = (df["question_type"] == "open_ended").sum() // max(1, len(model_order))
 
-    fig = plt.figure(figsize=(15.5, 11.5))
+    n_models = len(model_order)
+    fig_w = 17.5 if n_models > 18 else 15.5
+    fig_h = 13.0 if n_models > 18 else 11.5
+    fig = plt.figure(figsize=(fig_w, fig_h))
     gs = gridspec.GridSpec(
         2, 2, figure=fig,
-        hspace=0.55, wspace=0.30,
-        left=0.07, right=0.965, top=0.91, bottom=0.10,
+        hspace=0.60, wspace=0.30,
+        left=0.06, right=0.97, top=0.91, bottom=0.12,
     )
     _panel_a(fig.add_subplot(gs[0, 0]), summary, args.chance)
     _panel_b(fig.add_subplot(gs[0, 1]), df, model_order)
