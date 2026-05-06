@@ -53,7 +53,7 @@ benchmarks/
 └── results/                            # Gitignored outputs (CSV, JSON, PDF)
 ```
 
-## The seven benchmarks
+## The eight benchmarks
 
 | ID | Claim | Needs API key | Needs infra |
 |---|---|---|---|
@@ -61,9 +61,10 @@ benchmarks/
 | **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no |
 | **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` |
 | **D** | All six execution backends function | no | best-effort — mock mode if infra absent |
-| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni clones on disk |
+| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni + Claude Code + Edison clones / CLIs / API keys |
 | **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download |
 | **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F |
+| **H** | Telling the LLM about the dependency DAG improves bioinformatics plan quality | yes | no |
 
 ### Prompt corpus
 
@@ -382,8 +383,20 @@ make competitors MODEL=gpt-4.1 REPLICATES=3
 ```
 
 Runs every registered competitor (currently `flowagent`, `biomaster`,
-`autoba`, and `biomni`) on the same prompt corpus, scored with the same `score_plan`
-metrics so the comparison is apples-to-apples. Results land in
+`autoba`, `biomni`, `claude_code`, `edison`, plus optional zero-shot
+`raw_<model_id>` baselines) on the same prompt corpus, scored with the
+same `score_plan` metrics so the comparison is apples-to-apples.
+
+The four-way ablation comparison (FlowAgent vs Claude Code vs Biomni vs
+Edison Analysis) requested by the manuscript can be launched as:
+
+```bash
+make competitors-all MODEL=claude-haiku-4-5 REPLICATES=3 EDISON_BUDGET=50
+```
+
+`EDISON_BUDGET` is forwarded as `--edison-budget-credits`; once the
+shared budget file (default `$TMPDIR/edison_budget.json`) crosses the
+cap, further Edison cells short-circuit with a clear error envelope. Results land in
 `results/competitors/<ts>/` with per-row `competitor`, `plan`,
 `prompt_tokens`, `completion_tokens`, `cost_usd`, `wall_seconds`, and the
 standard scoring columns. At the end of each run, the driver prints a
@@ -639,6 +652,72 @@ python benchmarks/harness/biomni_shim.py \
 
   With conda: ``conda remove zarr --yes`` then ``conda install -c conda-forge "zarr>=2.18,<3"``.
 
+#### Claude Code setup (one-off, ~2 min)
+
+Claude Code is Anthropic's general-purpose CLI coding agent. The
+adapter ([`harness/competitors.py:ClaudeCodeCompetitor`](harness/competitors.py))
+drives it via [`harness/claude_code_shim.py`](harness/claude_code_shim.py)
+with `--print --output-format json --permission-mode plan` so the
+agent emits its full reply as a single JSON object on stdout and never
+edits files.
+
+```bash
+# 1. Install the Claude Code CLI per Anthropic's docs:
+#    https://docs.claude.com/en/docs/claude-code/overview
+# 2. Authenticate
+claude /login
+
+# 3. (optional) pin the binary if it isn't on PATH
+echo 'CLAUDE_CODE_BIN=/path/to/claude' >> /path/to/flowagent/.env
+# 4. (optional) pin a model; default is whatever Claude Code chose
+echo 'CLAUDE_CODE_MODEL=claude-sonnet-4-5' >> /path/to/flowagent/.env
+```
+
+Smoke-test the shim directly before wiring it into the sweep:
+
+```bash
+python benchmarks/harness/claude_code_shim.py \
+  --prompt "Run a kallisto RNA-seq quantification on paired-end FASTQs"
+```
+
+Expect a JSON envelope on stdout with `plan`, `prompt_tokens`,
+`completion_tokens`, `cost_usd`, `wall_seconds`. Cost is read from
+Claude Code's own `total_cost_usd` field.
+
+#### Edison Analysis setup (one-off, ~3 min)
+
+Edison Scientific's Edison Analysis (FutureHouse spinout) is a hosted,
+execution-oriented bioinformatics agent. The adapter
+([`harness/competitors.py:EdisonCompetitor`](harness/competitors.py))
+drives it via [`harness/edison_shim.py`](harness/edison_shim.py),
+overriding the system prompt so Edison emits a JSON workflow plan
+without actually running any code.
+
+```bash
+# 1. Install the SDK
+pip install edison-client
+
+# 2. Sign up at https://platform.edisonscientific.com  (academic .edu
+#    accounts get a free monthly credit allocation), generate an API key.
+echo 'EDISON_API_KEY=...'              >> /path/to/flowagent/.env
+
+# 3. (recommended) cap cumulative spend across this process
+echo 'EDISON_BUDGET_CREDITS=100'        >> /path/to/flowagent/.env
+```
+
+Edison Analysis runs are slow (3–10 min/task) and cost credits per
+task. Always pilot first:
+
+```bash
+make competitors-all MODEL=claude-haiku-4-5 REPLICATES=1 \
+    EDISON_BUDGET=20  # hard cap
+```
+
+The shim writes a shared budget file at `$EDISON_BUDGET_FILE` (default
+`$TMPDIR/edison_budget.json`) so parallel cells share the running
+total; once consumed exceeds `EDISON_BUDGET_CREDITS`, subsequent
+cells short-circuit with a clear error envelope.
+
 ### Benchmark F — output fidelity
 
 Two pieces: a **driver** (`bench_fidelity_run.py`) that invokes FlowAgent
@@ -808,6 +887,65 @@ The `interpretation_figure` in `harness/plot.py` renders three panels:
 - **Per-model overall MCQ accuracy** with Wilson 95% CIs.
 - **Model × dataset MCQ-accuracy heatmap** (grey cells = no data).
 - **Per-model open-ended judge mean** ± 1 SD.
+
+### Benchmark H — DAG-awareness ablation
+
+```bash
+# 5-prompt smoke (validates the whole pipeline; ~$0.05 on Claude Haiku)
+make ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep
+make ablation MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_ablation.pdf + stats_ablation.tsv (uses the most recent run)
+make ablation-figure
+```
+
+Tests whether telling the LLM about the dependency DAG -- the standard
+"Dependencies must form a valid DAG (no cycles)" rule plus the
+`dependencies` field in the structured-output schema -- changes
+bioinformatics plan quality. Same model, same prompt, two planner
+configurations:
+
+| Arm | `LLM_DAG_AWARE` | Schema | Prompt rule |
+|---|---|---|---|
+| `dag_aware` | `true` (default) | [`WorkflowPlanSchema`](../flowagent/core/schemas.py) (with `dependencies`) | "Dependencies must form a valid DAG (no cycles)" |
+| `dag_blind` | `false` | [`WorkflowPlanSchemaNoDAG`](../flowagent/core/schemas.py) (no `dependencies`) | Flat ordered list, dependencies never mentioned |
+
+Empty dependency lists are injected post-parse on the DAG-blind side
+so the resulting plan is a trivially valid DAG with zero edges -- this
+keeps the existing `dag_valid` gate green for both arms and makes the
+delta show up only in metrics that actually reflect plan quality:
+
+| Metric | Where | What it measures |
+|---|---|---|
+| `dag_edge_density` | [`harness/metrics.dag_shape`](harness/metrics.py) | edges / max(steps - 1, 1). Sanity: should be 0 for `dag_blind`. |
+| `parallel_width` | same | max width of a topological layer. Sanity: 1 for `dag_blind`. |
+| `tools_present_fraction` | [`score_plan`](harness/metrics.py) | did DAG awareness change tool selection? |
+| `hallucination_rate` | same | did it suppress unknown / made-up tool names? |
+| `preset_command_f1` | same | did it improve adherence to the gold preset commands? |
+| `overall_pass` | same | did it move the gating outcome? (paired McNemar) |
+
+Output:
+
+* `results/ablation/<ts>/dag_aware/results.jsonl` + `metrics.csv`
+* `results/ablation/<ts>/dag_blind/results.jsonl` + `metrics.csv`
+* `results/ablation/<ts>/paired_metrics.csv` -- single CSV with an `arm`
+  column, joined by `(model, input_id, replicate)` so paired tests
+  ([`make_ablation_figure.py`](make_ablation_figure.py)) line up the
+  same prompt across the two planner configurations.
+* `figure_ablation.pdf` / `.png` -- per-metric arm means with bootstrap
+  95% CIs.
+* `figure_ablation__stats.tsv` -- paired Wilcoxon (continuous) and
+  McNemar (`overall_pass`) per metric.
+
+**Pilot results (3 prompts, Claude Haiku 4.5, single replicate)
+already in the repo** confirm the ablation is working end-to-end:
+`dag_edge_density` 1.33 vs 0.0 and `parallel_width` 3.7 vs 1.0 between
+the two arms; an early `hallucination_rate` signal (0.0 vs 0.21) hints
+that DAG awareness keeps the LLM more disciplined, but a full 66-prompt
+sweep is needed to call statistical significance. See
+[`figures/figure_ablation_pilot.pdf`](../figures/figure_ablation_pilot.pdf).
 
 ### Everything at once
 

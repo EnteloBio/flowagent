@@ -17,7 +17,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -27,7 +27,11 @@ help:
 	@echo "  make recovery     - Benchmark B: error recovery (needs API key)"
 	@echo "  make gen          - Benchmark C: generator fidelity (no API key)"
 	@echo "  make exec         - Benchmark D: executor coverage (no API key)"
-	@echo "  make competitors  - Benchmark E: head-to-head vs BioMaster / AutoBA / Biomni / …"
+	@echo "  make competitors  - Benchmark E: head-to-head vs BioMaster / AutoBA / Biomni / Claude Code / Edison / raw-LLM"
+	@echo "  make competitors-all - Benchmark E: full 4-way comparison (FlowAgent / Claude Code / Biomni / Edison)"
+	@echo "  make ablation     - Benchmark H: DAG-aware vs DAG-blind planner ablation (66 prompts × replicates × 2 arms)"
+	@echo "  make ablation-pilot - Benchmark H smoke: 5 prompts × 1 replicate × 2 arms (validates the ablation pipeline)"
+	@echo "  make ablation-figure ABLATION_DIR=results/ablation/<ts> - render figure_ablation.pdf + stats_ablation.tsv"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
 	@echo "  make test         - run the benchmark test suite (pytest)"
@@ -65,6 +69,49 @@ exec:
 
 competitors:
 	$(PY) bench_competitors.py --model=$(MODEL) --replicates=$(REPLICATES) --out=$(RESULTS_DIR)
+
+# Four-way comparison covering FlowAgent + the three competitor frameworks
+# requested in the ablation study (Claude Code, Biomni, Edison Analysis).
+# Soft-skips any system whose env vars / CLIs are not set up.
+# Override CC_BUDGET / EDISON_BUDGET to cap external-API spend.
+EDISON_BUDGET ?= 50
+competitors-all:
+	$(PY) bench_competitors.py --model=$(MODEL) --replicates=$(REPLICATES) \
+	    --competitors=flowagent,claude_code,biomni,edison \
+	    --raw-models="" \
+	    --edison-budget-credits=$(EDISON_BUDGET) \
+	    --out=$(RESULTS_DIR)
+
+# Benchmark H -- DAG-awareness ablation.
+# Full sweep: 66 prompts × MODEL × REPLICATES × 2 arms; ~1 hour and a few
+# dollars on Claude Haiku, more on flagship models. Override MODEL or
+# pass MODELS=a,b,c to sweep multiple models.
+ablation:
+	$(PY) bench_ablation.py \
+	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --replicates=$(REPLICATES) \
+	    --out=$(RESULTS_DIR)
+
+# Quick smoke for the ablation: 5 prompts × 1 replicate × 2 arms.
+ablation-pilot:
+	$(PY) bench_ablation.py \
+	    --models=$(MODEL) \
+	    --replicates=1 \
+	    --limit=5 \
+	    --out=$(RESULTS_DIR)
+
+# Render figure_ablation.pdf + stats_ablation.tsv from a finished run.
+# Pass ABLATION_DIR=results/ablation/<timestamp>/ to point at a specific run.
+ABLATION_DIR ?= $(shell ls -td $(RESULTS_DIR)/ablation/*/ 2>/dev/null | head -1)
+ablation-figure:
+	@if [ -z "$(ABLATION_DIR)" ]; then \
+	    echo "No ablation runs found under $(RESULTS_DIR)/ablation. "; \
+	    echo "Run \`make ablation\` first or pass ABLATION_DIR=...."; \
+	    exit 1; \
+	fi
+	$(PY) make_ablation_figure.py \
+	    --paired=$(ABLATION_DIR)/paired_metrics.csv \
+	    --out=figure_ablation
 
 # Benchmark F — output fidelity (pure scoring; no LLM calls).
 # Use this when the candidate dirs already exist on disk.

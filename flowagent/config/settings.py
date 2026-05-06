@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     LLM_MODEL: str = Field("gpt-5.4-mini", description="Primary model")
     LLM_FALLBACK_MODEL: str = Field("gpt-4.1-mini", description="Fallback model if primary unavailable")
     LLM_BASE_URL: Optional[str] = Field(None, description="Custom endpoint URL (for Ollama/vLLM)")
+    LLM_DAG_AWARE: bool = Field(
+        True,
+        description=(
+            "When True (default), the planner prompt instructs the LLM that "
+            "step dependencies must form a valid DAG and emits a 'dependencies' "
+            "field in the structured-output schema. Set to False for the "
+            "DAG-blind ablation: the planner asks for a flat ordered list of "
+            "steps and does not mention dependencies. Used by benchmarks/bench_ablation.py."
+        ),
+    )
 
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API Key")
     ANTHROPIC_API_KEY: Optional[str] = Field(None, description="Anthropic API Key")

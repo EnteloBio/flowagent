@@ -362,6 +362,86 @@ def dag_valid(plan: Dict[str, Any]) -> bool:
     return True
 
 
+def dag_shape(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Structural shape metrics that distinguish DAG-aware from DAG-blind plans.
+
+    ``dag_edge_density`` = number of dependency edges divided by ``max(num_steps - 1, 1)``.
+    A plan with no edges (DAG-blind output, or a strictly linear plan that
+    omits dependencies) gets ``0.0``; a fully-wired linear chain gets
+    exactly ``1.0``; richly parallel plans can exceed ``1.0``.
+
+    ``parallel_width`` = the maximum number of steps in any single
+    topological layer. ``1`` means strictly sequential (no exposed
+    parallelism); higher values mean the planner found parallel branches.
+
+    These two metrics are the primary "ablation worked" sanity check for
+    the DAG-blind arm: a DAG-blind planner that never emits dependencies
+    will report ``dag_edge_density == 0`` and ``parallel_width == 1`` (a
+    single layer containing all steps -- but we treat that case as 1 to
+    match the no-parallelism intuition; see implementation below).
+
+    Both metrics are zero / one when the plan is empty or invalid; this
+    makes them safe to merge into the per-row results CSV.
+    """
+    steps = plan.get("steps", []) or []
+    n = len(steps)
+    if n == 0:
+        return {"dag_edge_density": 0.0, "parallel_width": 0,
+                "num_dag_edges": 0, "num_dag_layers": 0}
+
+    # Edge density. Uses the same dependency interpretation as ``build_dag``
+    # so the metric is consistent with ``dag_valid``.
+    num_edges = 0
+    for step in steps:
+        deps = step.get("dependencies") or []
+        if isinstance(deps, list):
+            num_edges += sum(1 for d in deps if isinstance(d, str) and d)
+    edge_density = num_edges / max(n - 1, 1)
+
+    # Topological-layer width.
+    width = 1
+    layers = 0
+    if nx is not None:
+        try:
+            g = build_dag(plan)
+            if nx.is_directed_acyclic_graph(g):
+                # Each "generation" is one layer of the topological sort.
+                gens = list(nx.topological_generations(g))
+                layers = len(gens)
+                width = max((len(layer) for layer in gens), default=1)
+            else:
+                # Not a DAG -- fall back to "no exposed parallelism" so the
+                # metric stays comparable with the rest of the cohort.
+                width = 1
+                layers = 0
+        except Exception:
+            width = 1
+            layers = 0
+    else:
+        # No networkx: best-effort, treat as one layer of n steps when
+        # there are zero edges, otherwise unknown -> 1.
+        width = n if num_edges == 0 else 1
+        layers = 1 if num_edges == 0 else 0
+
+    # Special case: zero edges across n steps means "everything could
+    # run in parallel", but for the ablation the meaningful reading is
+    # "the planner exposed no structure". Report the literal topological
+    # width (n) in ``parallel_width_raw`` for reference but normalise
+    # ``parallel_width`` to 1 when there are no edges, so the metric
+    # cleanly answers "did the planner identify parallel branches".
+    raw_width = width
+    if num_edges == 0:
+        width = 1
+
+    return {
+        "dag_edge_density": edge_density,
+        "parallel_width": width,
+        "parallel_width_raw": raw_width,
+        "num_dag_edges": num_edges,
+        "num_dag_layers": layers,
+    }
+
+
 # ── Schema validation ─────────────────────────────────────────────
 
 # Required keys on a workflow step. Extra keys (resources, parameters,
@@ -486,6 +566,9 @@ def score_plan(plan: Dict[str, Any], expected: Dict[str, Any],
     metrics["plan_valid"] = plan_schema_valid(plan)
     metrics["dag_valid"] = dag_valid(plan)
 
+    # DAG-shape metrics (ablation sanity check; non-gating)
+    metrics.update(dag_shape(plan))
+
     # Type — accept a single expected string OR a list of synonyms.
     # Also tolerant of trailing-digit differences (rna_seq_hisat vs hisat2).
     actual_type = plan.get("workflow_type", "")
@@ -607,6 +690,9 @@ def score_plan_inference(
 
     metrics["plan_valid"] = plan_schema_valid(plan)
     metrics["dag_valid"] = dag_valid(plan)
+
+    # DAG-shape metrics (ablation sanity check; non-gating)
+    metrics.update(dag_shape(plan))
 
     # Workflow-type is not a gate in the inference tier (the prompt does
     # not constrain it); still recorded for analysis.

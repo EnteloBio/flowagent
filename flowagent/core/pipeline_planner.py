@@ -313,7 +313,19 @@ def context_to_prompt_supplement(ctx: PipelineContext) -> str:
 
     Tells the LLM exactly which reference files are available (either local
     or will be downloaded) so it generates correct commands.
+
+    The "Steps that need the reference should list 'download_reference' in
+    their dependencies" lines are dropped when ``Settings.LLM_DAG_AWARE`` is
+    False so the DAG-blind ablation truly never sees the word
+    "dependencies" in the planning prompt. The deterministic
+    download-step wiring in ``LLMInterface.generate_workflow_plan`` still
+    runs in both modes, so the executable plans remain comparable.
     """
+    # Avoid an import cycle by importing settings lazily.
+    from ..config.settings import Settings
+
+    dag_aware = Settings().LLM_DAG_AWARE
+
     lines: List[str] = []
 
     if ctx.reference_fasta:
@@ -324,14 +336,22 @@ def context_to_prompt_supplement(ctx: PipelineContext) -> str:
         else:
             lines.append("Reference genome is at: reference/genome.fa")
         lines.append("DO NOT create a download step -- it is handled externally.")
-        lines.append("Steps that need the reference should list 'download_reference' in their dependencies.")
+        if dag_aware:
+            lines.append(
+                "Steps that need the reference should list 'download_reference' "
+                "in their dependencies."
+            )
 
     if ctx.annotation_gtf:
         lines.append(f"Annotation GTF (local): {ctx.annotation_gtf}")
     elif ctx.annotation_url:
         lines.append("Annotation GTF is at: reference/genes.gtf")
         lines.append("DO NOT create a download step -- it is handled externally.")
-        lines.append("Steps that need the annotation should list 'download_annotation' in their dependencies.")
+        if dag_aware:
+            lines.append(
+                "Steps that need the annotation should list 'download_annotation' "
+                "in their dependencies."
+            )
 
     if not ctx.reference_fasta and not ctx.reference_url:
         lines.append("WARNING: No reference file found and no download URL resolved. "

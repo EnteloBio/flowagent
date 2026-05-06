@@ -67,6 +67,37 @@ class WorkflowPlanSchema(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+# ── DAG-blind variant (ablation) ───────────────────────────────
+
+class WorkflowStepSchemaNoDAG(BaseModel):
+    """A single step in a DAG-blind workflow plan.
+
+    Same shape as ``WorkflowStepSchema`` but without a ``dependencies``
+    field, so the LLM is given no structural cue that a dependency graph
+    exists. Steps are interpreted as a flat ordered list (top-to-bottom).
+    """
+    name: str = Field(..., description="Short unique name for the step")
+    command: str = Field(..., description="Shell command to execute")
+    outputs: List[str] = Field(default_factory=list, description="Expected output file patterns")
+    description: str = Field("", description="Brief description of the step")
+
+    model_config = {"extra": "forbid"}
+
+
+class WorkflowPlanSchemaNoDAG(BaseModel):
+    """DAG-blind ablation variant of ``WorkflowPlanSchema``.
+
+    Used when ``Settings.LLM_DAG_AWARE`` is False. The LLM emits a flat
+    ordered list of steps with no ``dependencies`` field. Downstream
+    code injects empty dependency lists so the resulting plan is still a
+    (trivially valid) DAG with no edges.
+    """
+    workflow_type: str = Field(..., description="Type of workflow e.g. rna_seq_kallisto")
+    steps: List[WorkflowStepSchemaNoDAG]
+
+    model_config = {"extra": "forbid"}
+
+
 # ── File pattern extraction ────────────────────────────────────
 
 class PatternGroup(BaseModel):

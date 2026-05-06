@@ -30,6 +30,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -334,6 +335,14 @@ def main() -> None:
                     help="Per-cell timeout in seconds")
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--out", default="results")
+    ap.add_argument(
+        "--edison-budget-credits", type=float, default=None,
+        help="Hard cap on cumulative Edison Analysis credits across this "
+             "process (writes a shared budget file the shim reads). Once "
+             "exceeded, further Edison cells short-circuit with an error "
+             "envelope instead of submitting tasks. Has no effect if the "
+             "Edison adapter is not registered or unavailable.",
+    )
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -354,8 +363,27 @@ def main() -> None:
     if not args.mock:
         set_provider(model_cfg)
 
+    if args.edison_budget_credits is not None:
+        # The Edison shim reads ``EDISON_BUDGET_CREDITS`` (and tracks
+        # cumulative usage in ``EDISON_BUDGET_FILE``). Setting it here
+        # lets a long sweep enforce the cap even though each task runs
+        # in a fresh subprocess.
+        os.environ["EDISON_BUDGET_CREDITS"] = str(args.edison_budget_credits)
+        # Reset the budget tally for this run so a stale file from an
+        # earlier sweep doesn't make every cell short-circuit.
+        from tempfile import gettempdir
+        budget_file = (
+            os.environ.get("EDISON_BUDGET_FILE")
+            or str(Path(gettempdir()) / "edison_budget.json")
+        )
+        try:
+            Path(budget_file).write_text('{"credits_used": 0.0}')
+        except Exception:
+            pass
+
     # Competitors — includes zero-shot raw-LLM baselines alongside the
-    # scaffolded agentic systems (FlowAgent / BioMaster / AutoBA).
+    # scaffolded agentic systems (FlowAgent / BioMaster / AutoBA /
+    # Biomni / ClaudeCode / Edison).
     raw_models = [m.strip() for m in (args.raw_models or "").split(",") if m.strip()]
     registry = build_registry(
         model_cfg=model_cfg,
@@ -389,5 +417,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    import os
     main()

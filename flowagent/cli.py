@@ -92,6 +92,13 @@ Examples:
         help="LLM model to use (e.g. claude-sonnet-4-5-20250929, gpt-4.1). "
              "Overrides LLM_MODEL; provider is auto-detected from the model prefix.",
     )
+    prompt_parser.add_argument(
+        "--no-dag", dest="no_dag", action="store_true",
+        help="DAG-blind planner ablation: instruct the LLM to emit a flat "
+             "ordered list of steps without any 'dependencies' field. "
+             "Used by benchmarks/bench_ablation.py to test whether DAG "
+             "awareness in the prompt improves bioinformatics plan quality.",
+    )
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start the web interface")
@@ -230,6 +237,12 @@ async def main(
             if "LLM_PROVIDER" not in os.environ:
                 from .core.providers.registry import _infer_provider
                 os.environ["LLM_PROVIDER"] = _infer_provider(args.model)
+
+        if getattr(args, "no_dag", False):
+            os.environ["LLM_DAG_AWARE"] = "false"
+            logger.info(
+                "DAG-blind planner mode enabled (LLM_DAG_AWARE=false)"
+            )
 
         # --preset shortcut
         if args.preset:

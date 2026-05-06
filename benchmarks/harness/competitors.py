@@ -556,6 +556,236 @@ class BiomniCompetitor(Competitor):
         )
 
 
+# ── Claude Code adapter ──────────────────────────────────────────
+
+# Claude Code: Anthropic's general-purpose CLI coding agent. Driven via
+# ``claude_code_shim.py`` -- the shim subprocesses ``claude --print
+# --output-format json --permission-mode plan`` so the agent only emits
+# its planning output (no actual file edits) and the harness gets a
+# clean JSON envelope identical in shape to the BioMaster / AutoBA /
+# Biomni shims.
+
+_CLAUDE_CODE_SHIM = Path(__file__).parent / "claude_code_shim.py"
+
+_CLAUDE_CODE_IMPORT_HINT = (
+    "Claude Code is not configured. One-step setup:\n"
+    "  1. Install the Claude Code CLI per Anthropic's docs and run\n"
+    "     ``claude /login`` to authenticate.\n"
+    "  2. (optional) export CLAUDE_CODE_BIN=/path/to/claude if it is not\n"
+    "     on PATH.\n"
+    "The harness then drives Claude Code via harness/claude_code_shim.py\n"
+    "with ``--permission-mode plan`` so no files are modified.\n"
+    "Docs: https://docs.claude.com/en/docs/claude-code/overview"
+)
+
+
+class ClaudeCodeCompetitor(Competitor):
+    """Adapter for Anthropic's Claude Code CLI -- planning-only mode.
+
+    The shim runs Claude Code with ``--print --output-format json
+    --permission-mode plan``, so the CLI returns its full reply as a
+    single JSON object on stdout and never writes to disk. Token /
+    cost figures come from Claude Code's own ``usage`` and
+    ``total_cost_usd`` fields.
+
+    The driver model defaults to whichever Claude version Claude Code
+    selects; pass ``CLAUDE_CODE_MODEL`` (env) or ``--model`` (kwarg) to
+    pin a specific Anthropic model.
+    """
+
+    id   = "claude_code"
+    name = "Claude Code"
+    url  = "https://docs.claude.com/en/docs/claude-code/overview"
+
+    def __init__(self, model: Optional[str] = None):
+        # ``None`` means "let Claude Code choose its default model" so the
+        # adapter works out of the box. Benchmark runners that want to
+        # pin a model pass it here.
+        self.model = model
+
+    def _binary(self) -> Optional[str]:
+        explicit = os.environ.get("CLAUDE_CODE_BIN")
+        if explicit and Path(explicit).exists() and os.access(explicit, os.X_OK):
+            return explicit
+        from shutil import which
+        return which("claude")
+
+    def available(self) -> Tuple[bool, str]:
+        if not _CLAUDE_CODE_SHIM.exists():
+            return False, f"missing shim: {_CLAUDE_CODE_SHIM}"
+        if self._binary():
+            return True, ""
+        return False, _CLAUDE_CODE_IMPORT_HINT
+
+    async def plan(self, prompt: str, *, context=None) -> CompetitorResult:
+        ok, why = self.available()
+        if not ok:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=0.0,
+                error=f"not-available: {why.splitlines()[0]}",
+            )
+
+        t0 = time.perf_counter()
+        try:
+            envelope = await self._invoke_shim(prompt, context)
+        except Exception as e:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=time.perf_counter() - t0,
+                error=f"cli-adapter: {type(e).__name__}: {e}",
+            )
+
+        plan = _normalise_plan(envelope.get("plan") or {})
+        return CompetitorResult(
+            plan=plan,
+            wall_seconds=float(envelope.get("wall_seconds")
+                                or (time.perf_counter() - t0)),
+            prompt_tokens=int(envelope.get("prompt_tokens") or 0),
+            completion_tokens=int(envelope.get("completion_tokens") or 0),
+            llm_calls=int(envelope.get("llm_calls") or 0),
+            cost_usd=float(envelope.get("cost_usd") or 0.0),
+            raw_output=json.dumps(envelope)[:20_000],
+            error=envelope.get("error"),
+        )
+
+    async def _invoke_shim(self, prompt: str, context) -> Dict[str, Any]:
+        argv = [sys.executable, str(_CLAUDE_CODE_SHIM)]
+        files: List[str] = []
+        if context and context.get("input_files"):
+            files = [f"{p}: input file" for p in context["input_files"]]
+        argv = [*argv, "--prompt", prompt,
+                "--files", json.dumps(files)]
+        if self.model:
+            argv += ["--model", self.model]
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "ClaudeCode",
+        )
+
+
+# ── Edison Analysis adapter ──────────────────────────────────────
+
+# Edison Scientific's Edison Analysis -- a hosted, execution-oriented
+# bioinformatics agent (FutureHouse spinout). Driven via
+# ``edison_shim.py``, which uses the official ``edison-client`` Python
+# SDK to submit a planning-only task (system_prompt_additional_guidelines
+# forbids tool use) and parses the JSON workflow plan out of the
+# trajectory's final answer.
+#
+# Edison costs credits per task; the shim writes a shared budget file
+# (``EDISON_BUDGET_FILE``) so a long sweep cannot drain a researcher's
+# account, and ``EDISON_BUDGET_CREDITS`` lets the harness set a hard cap.
+
+_EDISON_SHIM = Path(__file__).parent / "edison_shim.py"
+
+_EDISON_IMPORT_HINT = (
+    "Edison Analysis is not configured. Two-step setup:\n"
+    "  1. pip install edison-client\n"
+    "  2. Sign up at https://platform.edisonscientific.com (academic .edu\n"
+    "     accounts get a free monthly credit allocation), generate an API\n"
+    "     key, and ``export EDISON_API_KEY=...``.\n"
+    "Optional knobs:\n"
+    "  EDISON_BUDGET_CREDITS = hard cap on credits consumed across the\n"
+    "                          shared budget file (default: unlimited).\n"
+    "  EDISON_MAX_STEPS      = per-task max_steps cap (default 5).\n"
+    "  EDISON_TIMEOUT        = overall wall-clock cap, seconds (default 1800).\n"
+    "Docs: https://docs.edisonscientific.com/edison-client/"
+)
+
+
+class EdisonCompetitor(Competitor):
+    """Adapter for Edison Scientific's Edison Analysis agent.
+
+    Drives Edison via ``edison_shim.py``. The shim runs the task with
+    a system-prompt override that forbids tool execution and forces a
+    JSON-only workflow-plan reply, so token / cost figures are
+    comparable to Claude Code and Biomni.
+
+    Reports unavailable when ``EDISON_API_KEY`` is unset or the
+    ``edison-client`` package is missing -- soft-skipped per cell so
+    a competitor sweep without an Edison account still runs.
+    """
+
+    id   = "edison"
+    name = "Edison Analysis"
+    url  = "https://docs.edisonscientific.com/agents.md#analysis"
+
+    def __init__(self):
+        # Edison's model selection happens server-side; nothing to do here.
+        # The shim honours EDISON_LANGUAGE / EDISON_MAX_STEPS / EDISON_TIMEOUT.
+        pass
+
+    def _has_sdk(self) -> bool:
+        try:
+            import edison_client  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def available(self) -> Tuple[bool, str]:
+        if not _EDISON_SHIM.exists():
+            return False, f"missing shim: {_EDISON_SHIM}"
+        if not os.environ.get("EDISON_API_KEY"):
+            return False, _EDISON_IMPORT_HINT
+        if not self._has_sdk():
+            return False, _EDISON_IMPORT_HINT
+        return True, ""
+
+    async def plan(self, prompt: str, *, context=None) -> CompetitorResult:
+        ok, why = self.available()
+        if not ok:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=0.0,
+                error=f"not-available: {why.splitlines()[0]}",
+            )
+
+        t0 = time.perf_counter()
+        try:
+            envelope = await self._invoke_shim(prompt, context)
+        except Exception as e:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=time.perf_counter() - t0,
+                error=f"cli-adapter: {type(e).__name__}: {e}",
+            )
+
+        plan = _normalise_plan(envelope.get("plan") or {})
+        return CompetitorResult(
+            plan=plan,
+            wall_seconds=float(envelope.get("wall_seconds")
+                                or (time.perf_counter() - t0)),
+            prompt_tokens=int(envelope.get("prompt_tokens") or 0),
+            completion_tokens=int(envelope.get("completion_tokens") or 0),
+            llm_calls=int(envelope.get("llm_calls") or 0),
+            cost_usd=float(envelope.get("cost_usd") or 0.0),
+            raw_output=json.dumps(envelope)[:20_000],
+            error=envelope.get("error"),
+        )
+
+    async def _invoke_shim(self, prompt: str, context) -> Dict[str, Any]:
+        argv = [sys.executable, str(_EDISON_SHIM)]
+        files: List[str] = []
+        if context and context.get("input_files"):
+            files = [f"{p}: input file" for p in context["input_files"]]
+        argv = [*argv, "--prompt", prompt, "--files", json.dumps(files)]
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "Edison",
+        )
+
+
 # ── Raw-LLM baseline ─────────────────────────────────────────────
 
 # Zero-shot "LLM only" baseline — proves whether FlowAgent's planning
@@ -754,11 +984,17 @@ def build_registry(
     # Ordering: third-party competitors first, FlowAgent last. Means any
     # adapter / shim issues surface before the (known-good) FlowAgent
     # baseline is spent on, so a broken sweep fails fast.
+    #
+    # ``claude_code`` and ``edison`` are anthropic / edison-scientific
+    # systems driven via their own shims; they are soft-skipped when
+    # ``CLAUDE_CODE_BIN`` / ``EDISON_API_KEY`` are not configured.
     reg: Dict[str, Competitor] = {
-        "autoba":     AutoBACompetitor(model=model_id),
-        "biomaster":  BioMasterCompetitor(model=model_id),
-        "biomni":     BiomniCompetitor(model=model_id),
-        "flowagent":  FlowAgentCompetitor(model_cfg=model_cfg),
+        "autoba":      AutoBACompetitor(model=model_id),
+        "biomaster":   BioMasterCompetitor(model=model_id),
+        "biomni":      BiomniCompetitor(model=model_id),
+        "claude_code": ClaudeCodeCompetitor(),
+        "edison":      EdisonCompetitor(),
+        "flowagent":   FlowAgentCompetitor(model_cfg=model_cfg),
     }
     for raw_id in (raw_models or []):
         key = f"raw_{raw_id}"

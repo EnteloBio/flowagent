@@ -1613,6 +1613,10 @@ _COMPETITOR_COLOURS = {
     "autoba":      "#f97316",   # orange
     "biomni":      "#be123c",   # rose
     "cellagent":   "#2563eb",   # blue
+    # Added alongside the DAG-awareness ablation (Benchmark H). Keep the
+    # same colour for the same agent across every paper figure.
+    "claude_code": "#1e40af",   # indigo (Anthropic)
+    "edison":      "#15803d",   # green (Edison Scientific)
     "other":       "#6b7280",
 }
 

@@ -16,7 +16,12 @@ from openai import AsyncOpenAI
 from ..config.settings import Settings
 from ..utils.logging import get_logger
 from .providers import create_provider, LLMProvider
-from .schemas import PipelineContext, WorkflowPlanSchema, to_json_schema
+from .schemas import (
+    PipelineContext,
+    WorkflowPlanSchema,
+    WorkflowPlanSchemaNoDAG,
+    to_json_schema,
+)
 
 # Initialize settings
 settings = Settings()
@@ -1125,8 +1130,22 @@ Important:
 3. Maintain consistent sample names across all analysis steps
 4. Ensure output directories match the input sample names"""
 
-            # Add specific instructions for dependency specification
-            enhanced_prompt = f"""
+            # Add specific instructions for dependency specification.
+            #
+            # ABLATION: when ``LLM_DAG_AWARE`` is False the planner
+            # never tells the LLM about the dependency graph -- it only
+            # asks for a flat ordered list of steps. See
+            # benchmarks/bench_ablation.py for the planning-only A/B that
+            # uses this branch.
+            #
+            # Read settings freshly here so per-cell env-var mutations made
+            # by the benchmark harness (``runner.set_provider`` style) are
+            # picked up instead of the module-scoped snapshot taken at
+            # first import.
+            _live_settings = Settings()
+            _dag_aware = _live_settings.LLM_DAG_AWARE
+            if _dag_aware:
+                enhanced_prompt = f"""
 You are a bioinformatics workflow expert. Generate a workflow plan as a JSON object with the following structure:
 {{
     "workflow_type": "{workflow_type}",
@@ -1152,6 +1171,36 @@ Rules:
 
 3. Dependencies must form a valid DAG (no cycles)
 4. Each step needs a unique name
+5. Process each file individually, no wildcards
+6. The bioinformatics tool (fastqc, kallisto, multiqc, etc.) MUST be the first token of the command. Do not prepend 'mkdir -p' or other shell prefixes; rely on the directory-creation step instead.
+7. For multiqc, always pass '-f' (force overwrite) and '-n multiqc_report' (fixed filename) so re-runs produce the same output path.
+8. Return ONLY the JSON object, no markdown formatting or other text
+"""
+            else:
+                enhanced_prompt = f"""
+You are a bioinformatics workflow expert. Generate a workflow plan as a JSON object with the following structure:
+{{
+    "workflow_type": "{workflow_type}",
+    "steps": [
+        {{
+            "name": "step_name",
+            "command": "command_to_execute",
+            "outputs": ["expected_output1"]
+        }}
+    ]
+}}
+
+Available input files: {matched_files}
+Task: {prompt}
+
+Rules:
+1. First step MUST be directory creation with this EXACT command:
+   "{mkdir_command}"
+
+2. {tool_instructions}
+
+3. Each step needs a unique name
+4. List steps in the order they must run (top-to-bottom). Each step is executed sequentially.
 5. Process each file individually, no wildcards
 6. The bioinformatics tool (fastqc, kallisto, multiqc, etc.) MUST be the first token of the command. Do not prepend 'mkdir -p' or other shell prefixes; rely on the directory-creation step instead.
 7. For multiqc, always pass '-f' (force overwrite) and '-n multiqc_report' (fixed filename) so re-runs produce the same output path.
@@ -1221,9 +1270,13 @@ Resource Management Rules:
             workflow_plan = None
             last_err = None
 
-            # Attempt 1: structured output (guaranteed JSON schema)
+            # Attempt 1: structured output (guaranteed JSON schema).
+            # Pick the DAG-aware or DAG-blind schema based on settings.
             try:
-                schema = to_json_schema(WorkflowPlanSchema)
+                schema_cls = (
+                    WorkflowPlanSchema if _dag_aware else WorkflowPlanSchemaNoDAG
+                )
+                schema = to_json_schema(schema_cls)
                 resp = await self.provider.chat_structured(messages, schema)
                 workflow_plan = json.loads(resp.content) if isinstance(resp.content, str) else resp.content
             except Exception as structured_err:
@@ -1243,13 +1296,17 @@ Resource Management Rules:
             # Attempt 3: retry with a shorter prompt asking for fewer details
             if workflow_plan is None:
                 try:
+                    if _dag_aware:
+                        _retry_keys = "name, command, dependencies"
+                    else:
+                        _retry_keys = "name, command"
                     retry_messages = [
                         messages[0],
                         {"role": "user", "content": (
                             f"Generate a workflow plan as a JSON object for: {prompt}\n"
                             f"Input files: {matched_files}\n"
                             "Return JSON with keys: workflow_type (string), "
-                            "steps (array of objects with name, command, dependencies). "
+                            f"steps (array of objects with {_retry_keys}). "
                             "Return ONLY valid JSON, no markdown."
                         )},
                     ]
@@ -1259,6 +1316,17 @@ Resource Management Rules:
                 except Exception as retry_err:
                     self.logger.error("All JSON parse attempts failed")
                     raise last_err or retry_err
+
+            # DAG-blind ablation: the LLM was told nothing about
+            # dependencies, but downstream code (DAG construction,
+            # benchmark scoring's ``dag_valid``) expects each step to
+            # carry a ``dependencies`` list. Inject empty lists so the
+            # plan is a trivially valid DAG with zero edges; the
+            # ``dag_edge_density`` metric in the benchmark harness will
+            # confirm the ablation took effect.
+            if not _dag_aware:
+                for step in workflow_plan.get("steps", []):
+                    step["dependencies"] = []
 
             # Prepend reference download steps if the context indicates
             # that references need to be fetched.

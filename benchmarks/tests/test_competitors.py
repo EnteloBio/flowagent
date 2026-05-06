@@ -206,7 +206,13 @@ class TestRegistry:
 
     def test_default_registry_has_known_competitors(self):
         reg = build_registry()
-        assert set(reg) == {"flowagent", "biomaster", "autoba", "biomni"}
+        # ``claude_code`` and ``edison`` were added alongside the DAG-blind
+        # ablation work (Benchmark H); keep this test aligned with
+        # ``build_registry`` so a missing or renamed slug is loudly caught.
+        assert set(reg) == {
+            "flowagent", "biomaster", "autoba", "biomni",
+            "claude_code", "edison",
+        }
         assert all(isinstance(v, Competitor) for v in reg.values())
 
     def test_unique_slugs_and_colours(self):
