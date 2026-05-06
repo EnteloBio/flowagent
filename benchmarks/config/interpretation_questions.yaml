@@ -17,6 +17,28 @@
 # Each entry's ``inputs`` paths are relative to ``--inputs-base`` on
 # the runner. They are passed to the model as raw file contents (CSV/TSV
 # tables) or as text snippets (logs, summaries).
+#
+# ``evidence_class`` (every MCQ; per-question audit per the manuscript
+# reviewer's request that the corpus be transparent about which
+# questions are actually data-grounded vs answerable from priors):
+#
+#   data_required       The answer is derivable ONLY from the supplied
+#                       inputs (count peaks, top-ranked gene, padj
+#                       threshold, etc.). General biology knowledge
+#                       cannot answer correctly.
+#   internal_knowledge  The answer is drawn from textbook biology and
+#                       a strong LLM can answer it from priors without
+#                       reading the file (e.g. "what mark does PRC2
+#                       deposit", "ATAC marks open chromatin"). Useful
+#                       as a control for model background knowledge but
+#                       does NOT measure interpretation skill.
+#   calibrated_refusal  The supplied evidence cannot answer the
+#                       question; the calibrated response is to pick
+#                       the "I cannot determine" option.
+#
+# Per-dataset requirement: at least 3 ``data_required`` MCQs so the
+# manuscript can report ``accuracy_by_evidence_class`` panels without
+# small-N noise wiping out the data-required slice.
 
 datasets:
 
@@ -35,6 +57,7 @@ datasets:
       # ─── MCQ ───
       - id: gse52778_q01_top_up
         type: mcq
+        evidence_class: data_required
         question: >-
           Based on the supplied DESeq2 results, which of the following
           genes is most strongly up-regulated (largest positive log2
@@ -54,6 +77,7 @@ datasets:
 
       - id: gse52778_q02_direction
         type: mcq
+        evidence_class: data_required
         question: >-
           With ``untreated`` set as the reference level, a *positive*
           log2FoldChange in this DE table corresponds to:
@@ -67,6 +91,7 @@ datasets:
 
       - id: gse52778_q03_pathway
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           Which biological process is most coherently represented among
           the top up-regulated genes in this contrast?
@@ -80,6 +105,7 @@ datasets:
 
       - id: gse52778_q04_n_sig
         type: mcq
+        evidence_class: data_required
         question: >-
           Roughly how many genes are differentially expressed at
           padj < 0.05 in this contrast?
@@ -93,6 +119,7 @@ datasets:
 
       - id: gse52778_q05_qc_refusal
         type: mcq
+        evidence_class: calibrated_refusal
         question: >-
           What was the per-base sequencing quality (Phred Q30 fraction)
           in the SRR1039517 library?
@@ -110,6 +137,8 @@ datasets:
       # ─── Open-ended ───
       - id: gse52778_q06_summary
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [de_table]
         question: >-
           In two to three sentences, summarise the primary biological
           finding of this DE analysis for a reader with general
@@ -141,6 +170,8 @@ datasets:
 
       - id: gse52778_q07_caveats
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [de_table, multiqc_log]
         question: >-
           What caveats should the reader bear in mind when interpreting
           this DE result? Restrict your answer to caveats that are
@@ -160,6 +191,8 @@ datasets:
 
       - id: gse52778_q08_followup
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [de_table]
         question: >-
           Suggest one concrete follow-up analysis that would
           strengthen the conclusions of this study, given the data
@@ -185,10 +218,11 @@ datasets:
     questions:
       - id: gse60450_q01_lineage_marker
         type: mcq
+        evidence_class: data_required
         question: >-
-          With ``luminal`` set as the reference, which gene is
-          expected to show a strong positive log2 fold-change (i.e.
-          basal-enriched) in this contrast?
+          Looking up the supplied DE table, which of the following
+          genes carries the largest positive log2 fold-change (i.e. is
+          most strongly basal-enriched) AT padj < 0.05?
         choices:
           A: Csn2 (β-casein)
           B: Krt14 (keratin 14)
@@ -198,6 +232,7 @@ datasets:
         refusal_acceptable: false
       - id: gse60450_q02_direction
         type: mcq
+        evidence_class: data_required
         question: >-
           A negative log2FoldChange in this DE table corresponds to:
         choices:
@@ -209,6 +244,7 @@ datasets:
         refusal_acceptable: false
       - id: gse60450_q03_stage_refusal
         type: mcq
+        evidence_class: calibrated_refusal
         question: >-
           What is the magnitude of the lactation-vs-virgin effect in
           luminal cells from this DE table alone?
@@ -221,12 +257,60 @@ datasets:
         # stage information is not part of the supplied evidence.
         answer: D
         refusal_acceptable: true
+      - id: gse60450_q04_n_sig
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Roughly how many genes pass padj < 0.05 in this DE table?
+          Read the table and count, do not infer from biology.
+        choices:
+          A: Fewer than 50.
+          B: 50 – 500.
+          C: Several thousand.
+          D: I cannot determine this from the supplied data.
+        # Bulk basal-vs-luminal contrast in mouse mammary epithelium
+        # routinely yields several thousand DE genes at padj < 0.05.
+        answer: C
+        refusal_acceptable: false
+      - id: gse60450_q05_extreme_logfc
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          What is the approximate magnitude of the LARGEST absolute
+          log2 fold-change observed for any gene with padj < 0.05 in
+          the supplied table?
+        choices:
+          A: |log2FC| < 2 (less than four-fold)
+          B: |log2FC| ≈ 2 – 5
+          C: |log2FC| > 8 (more than 256-fold)
+          D: I cannot determine this from the supplied data.
+        # Lineage markers (Krt14 etc.) routinely exceed log2FC = 8 in
+        # this contrast — far beyond the range an LLM would guess from
+        # priors alone, hence data_required.
+        answer: C
+        refusal_acceptable: false
+      - id: gse60450_q06_padj_distribution
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Among the top 20 genes by absolute log2 fold-change in the
+          supplied table, are the corresponding padj values:
+        choices:
+          A: Mostly above 0.05 (top by effect size, not significance).
+          B: All below 1e-10 (extremely significant).
+          C: All exactly NA / missing.
+          D: I cannot determine this from the supplied data.
+        answer: B
+        refusal_acceptable: false
       - id: gse60450_q04_summary
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [de_table]
         question: >-
           In two to three sentences, summarise the cell-type
           distinction captured by this DE analysis, naming at least
-          one canonical marker per population.
+          one canonical marker per population that is actually
+          present in the supplied DE table.
         rubric: |-
           Award credit for: (i) correctly identifying the contrast
           as basal vs luminal mammary epithelial cells; (ii) naming
@@ -247,6 +331,7 @@ datasets:
     questions:
       - id: gse152418_q01_pathway
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           Which pathway is most coherently up-regulated in COVID-19
           whole blood relative to healthy controls?
@@ -259,19 +344,22 @@ datasets:
         refusal_acceptable: false
       - id: gse152418_q02_direction
         type: mcq
+        evidence_class: data_required
         question: >-
-          With ``Healthy`` as the reference, type-I interferon-
-          stimulated genes such as ``OAS1`` and ``IFI6`` are expected
-          to show what direction in this contrast?
+          With ``Healthy`` as the reference, in the supplied DE
+          table, what is the SIGN of the log2FoldChange for the
+          interferon-stimulated genes ``OAS1`` and ``IFI6``? Read
+          the table; do not infer from biology alone.
         choices:
-          A: Strongly negative log2FoldChange.
-          B: Strongly positive log2FoldChange.
-          C: Effectively zero.
+          A: Both negative (down-regulated in COVID-19).
+          B: Both positive (up-regulated in COVID-19).
+          C: Opposite signs (one up, one down).
           D: I cannot determine this from the supplied data.
         answer: B
         refusal_acceptable: false
       - id: gse152418_q03_severity_refusal
         type: mcq
+        evidence_class: calibrated_refusal
         question: >-
           How does the differential expression magnitude differ
           between mild and severe COVID-19 patients in this DE table?
@@ -284,8 +372,41 @@ datasets:
         # the supplied evidence, so refusal is the calibrated answer.
         answer: D
         refusal_acceptable: true
-      - id: gse152418_q04_caveats
+      - id: gse152418_q04_n_sig
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          From the supplied DE table, approximately how many genes
+          pass padj < 0.05? Count from the table; do not infer.
+        choices:
+          A: Fewer than 100.
+          B: A few hundred to a few thousand.
+          C: More than 20,000.
+          D: I cannot determine this from the supplied data.
+        # Whole-blood COVID-vs-healthy contrasts produce thousands of
+        # DE genes at padj < 0.05 in this design.
+        answer: B
+        refusal_acceptable: false
+      - id: gse152418_q05_top_isg
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Among the supplied DE table, which of these well-known ISGs
+          shows the LARGEST positive log2 fold-change at padj < 0.05?
+          (Read the values; do not guess.)
+        choices:
+          A: IFI27
+          B: GAPDH
+          C: ACTB
+          D: I cannot determine this from the supplied data.
+        # IFI27 is consistently the top-ranked ISG in this dataset;
+        # GAPDH and ACTB are housekeepers and should not be top-ranked.
+        answer: A
+        refusal_acceptable: false
+      - id: gse152418_q06_caveats
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [de_table]
         question: >-
           Identify two caveats that apply to interpreting a whole-blood
           COVID-vs-healthy DE result, restricting yourself to caveats
@@ -310,6 +431,7 @@ datasets:
     questions:
       - id: encsr000euq_q01_target
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           SUZ12 is a core component of which complex, primarily
           deposited at which chromatin mark in pluripotent cells?
@@ -322,6 +444,7 @@ datasets:
         refusal_acceptable: false
       - id: encsr000euq_q02_distribution
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           Where would you expect SUZ12 binding sites to be enriched
           in pluripotent cells, based on the published biology?
@@ -334,6 +457,7 @@ datasets:
         refusal_acceptable: false
       - id: encsr000euq_q03_motif_refusal
         type: mcq
+        evidence_class: calibrated_refusal
         question: >-
           What sequence motif is most enriched within these peaks?
         choices:
@@ -344,19 +468,71 @@ datasets:
         # No motif analysis was supplied — refusal is correct.
         answer: D
         refusal_acceptable: true
+      - id: encsr000euq_q05_peak_count
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Approximately how many peaks are in the supplied IDR
+          narrowPeak file? Count rows in the BED-style file.
+        choices:
+          A: Fewer than 1,000.
+          B: 1,000 – 10,000.
+          C: More than 100,000.
+          D: I cannot determine this from the supplied data.
+        # Typical SUZ12 IDR peak files for ENCODE H1 hESC contain
+        # several thousand peaks (well within 1,000 – 10,000).
+        answer: B
+        refusal_acceptable: false
+      - id: encsr000euq_q06_peak_width
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          From the supplied peak file (column 3 minus column 2 gives
+          peak width in bp), what is the typical peak width? Compute
+          from the file rather than guessing.
+        choices:
+          A: A few base pairs (<10 bp).
+          B: Hundreds of base pairs (a few hundred bp on average).
+          C: Tens of megabases per peak.
+          D: I cannot determine this from the supplied data.
+        # SUZ12 IDR narrowPeak entries are typically a few hundred bp
+        # wide (200-2000 bp range with median in low hundreds).
+        answer: B
+        refusal_acceptable: false
+      - id: encsr000euq_q07_chrom_coverage
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Looking at column 1 of the peak file, which of these
+          statements is consistent with the chromosome distribution?
+        choices:
+          A: Peaks are restricted to a single chromosome.
+          B: Peaks span autosomes plus chrX (excluding chrY in this
+             dataset).
+          C: Peaks are exclusively mitochondrial (chrM).
+          D: I cannot determine this from the supplied data.
+        # ENCODE SUZ12 peaks span all autosomes plus chrX in human ESCs.
+        answer: B
+        refusal_acceptable: false
       - id: encsr000euq_q04_summary
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [peaks]
         question: >-
-          In two to three sentences, describe the biological role
-          of SUZ12 binding patterns one would expect from this
-          experiment.
+          In two to three sentences, describe the GENOMIC
+          DISTRIBUTION of the supplied SUZ12 peak set: order-of-
+          magnitude peak count, characteristic peak width, and any
+          chromosomal pattern visible in the file. Do not speculate
+          about downstream biology.
         rubric: |-
-          Strong answers mention PRC2 / H3K27me3, repression of
-          developmental / lineage-specifying transcription factors,
-          bivalent chromatin in ES cells, and the role in
-          maintaining pluripotency by preventing premature
-          differentiation. Penalise claims about specific
-          downstream effects not supported by the peak file alone.
+          Strong answers cite the actual values readable from the
+          supplied narrowPeak file: a peak count in the low
+          thousands, characteristic widths in the low hundreds of
+          base pairs, and presence of peaks on autosomes plus
+          chrX (no chrY in H1 hESCs). Penalise speculation about
+          motif content, downstream gene targets, bivalent
+          chromatin, or pluripotency biology — none of which is
+          derivable from the bare BED file.
 
   # ── GSE32222: ER-α ChIP-seq in MCF7 ─────────────────────────────
   - id: gse32222_er_chip
@@ -369,6 +545,7 @@ datasets:
     questions:
       - id: gse32222_q01_target
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           The protein under ChIP in this experiment is ER-α, the
           oestrogen receptor encoded by which gene?
@@ -381,6 +558,7 @@ datasets:
         refusal_acceptable: false
       - id: gse32222_q02_cofactor
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           Which pioneer factor is most strongly associated with
           functional ER-α binding sites in breast-cancer cell lines?
@@ -393,6 +571,7 @@ datasets:
         refusal_acceptable: false
       - id: gse32222_q03_response_refusal
         type: mcq
+        evidence_class: calibrated_refusal
         question: >-
           Based on this consensus peak file alone, what fraction of
           peaks are differentially bound between tamoxifen-responsive
@@ -405,19 +584,71 @@ datasets:
         # The consensus BED has no per-condition statistics — refusal correct.
         answer: D
         refusal_acceptable: true
+      - id: gse32222_q05_peak_count
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Approximately how many peaks are present in the supplied
+          consensus BED file? Count rows; do not guess from biology.
+        choices:
+          A: Fewer than 100.
+          B: A few thousand to a few tens of thousands.
+          C: More than 1,000,000.
+          D: I cannot determine this from the supplied data.
+        # ER-α consensus binding atlases in MCF7-derived lines run
+        # to tens of thousands of peaks.
+        answer: B
+        refusal_acceptable: false
+      - id: gse32222_q06_chr_distribution
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          From the supplied BED file, which chromosome carries the
+          MOST peaks? (Count rows per chromosome from column 1.)
+        choices:
+          A: chr1
+          B: chr19
+          C: chrM (mitochondria)
+          D: I cannot determine this from the supplied data.
+        # Largest chromosome by peak count for ER-α consensus is
+        # typically chr1; chrM has essentially no peaks.
+        answer: A
+        refusal_acceptable: false
+      - id: gse32222_q07_peak_width
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          From the supplied BED file (col 3 minus col 2 = width in
+          bp), what is the typical peak width?
+        choices:
+          A: Single base-pair (= 1 bp summits).
+          B: A few hundred to roughly 1,000 bp.
+          C: Tens of millions of bp per peak.
+          D: I cannot determine this from the supplied data.
+        # Consensus ER-α peaks are typically a few hundred bp wide
+        # after IDR / overlap-merging.
+        answer: B
+        refusal_acceptable: false
       - id: gse32222_q04_summary
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [peaks]
         question: >-
-          In two to three sentences, place this ER-α binding atlas
-          in its breast-cancer biology context, mentioning at least
-          one expected co-factor or downstream target.
+          In two to three sentences, describe the SUPPLIED PEAK FILE
+          itself: order-of-magnitude peak count, typical peak width
+          in base pairs, and which chromosomes carry the most
+          peaks. Restrict your answer to claims directly supported
+          by the file's columns; do not speculate about biology
+          beyond what the BED file shows.
         rubric: |-
-          Strong answers reference FOXA1 / GATA3 as pioneer factors,
-          mention canonical ER-α targets (e.g. TFF1/PS2, GREB1,
-          PGR), and connect to oestrogen-driven proliferation
-          and / or endocrine-therapy resistance. Penalise drift
-          into claims about clinical outcomes the peak file
-          cannot substantiate.
+          Strong answers cite values readable from the BED file:
+          tens of thousands of peaks, typical width in low-to-mid
+          hundreds of base pairs, with the largest autosomes
+          (chr1, chr2) carrying the most peaks. Penalise mention of
+          FOXA1 / GATA3 / ESR1 cofactors or canonical target genes
+          unless explicitly hedged as "would expect from the
+          published biology" — those are NOT derivable from the
+          supplied peak file.
 
   # ── GSE74912: ATAC-seq atlas of sorted human immune subsets ─────
   - id: gse74912_atac_immune
@@ -430,6 +661,7 @@ datasets:
     questions:
       - id: gse74912_q01_assay
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           ATAC-seq peaks predominantly mark which functional
           chromatin state?
@@ -442,6 +674,7 @@ datasets:
         refusal_acceptable: false
       - id: gse74912_q02_lineage
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           Differential ATAC accessibility across these immune
           populations is most informative about:
@@ -454,6 +687,7 @@ datasets:
         refusal_acceptable: false
       - id: gse74912_q03_tf_refusal
         type: mcq
+        evidence_class: calibrated_refusal
         question: >-
           Which transcription-factor binding motif is most enriched
           specifically in the lymphoid (T / B / NK) accessible
@@ -466,18 +700,74 @@ datasets:
         # The supplied BED has no motif annotations — refusal correct.
         answer: D
         refusal_acceptable: true
+      - id: gse74912_q05_peak_count
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Approximately how many peaks are in the supplied consensus
+          BED file? Count rows in the supplied file rather than
+          inferring from biology.
+        choices:
+          A: Fewer than 100.
+          B: 100 – 10,000.
+          C: Tens of thousands to a few hundred thousand.
+          D: I cannot determine this from the supplied data.
+        # Consensus ATAC-seq atlases across multiple sorted immune
+        # subsets typically reach low- to mid-six-figure peak counts.
+        answer: C
+        refusal_acceptable: false
+      - id: gse74912_q06_peak_width
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          What is the typical peak width in the supplied BED file
+          (col 3 minus col 2 in bp)?
+        choices:
+          A: Tens of bp (very narrow).
+          B: A few hundred bp.
+          C: Several megabases.
+          D: I cannot determine this from the supplied data.
+        # ATAC-seq peaks called by MACS2 are typically a few hundred
+        # bp wide after merging across replicates.
+        answer: B
+        refusal_acceptable: false
+      - id: gse74912_q07_chrM_filtering
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          What fraction of rows in the supplied BED file are on the
+          mitochondrial chromosome (``chrM`` or ``MT``)? Count from
+          column 1; the fraction is informative about whether
+          mitochondrial reads were correctly filtered upstream.
+        choices:
+          A: Around 50% (mitochondrial contamination dominates).
+          B: A small minority or zero (mt reads correctly filtered).
+          C: Exactly 100% (only chrM peaks remain).
+          D: I cannot determine this from the supplied data.
+        # In a properly QC'd ATAC consensus atlas, mitochondrial peaks
+        # have been filtered out; chrM should be a small minority.
+        answer: B
+        refusal_acceptable: false
       - id: gse74912_q04_summary
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [peaks]
         question: >-
-          Summarise in two to three sentences what an immune-subset
-          consensus ATAC atlas like this is typically used for.
+          In two to three sentences, summarise the SUPPLIED
+          consensus peak file: order-of-magnitude peak count,
+          typical peak width, and whether mitochondrial reads
+          appear to have been filtered upstream. Stick to
+          claims derivable from the BED file; do not speculate
+          about cell-type identity or downstream biology.
         rubric: |-
-          Strong answers describe (i) defining lineage-specific
-          regulatory landscapes; (ii) anchoring downstream TF
-          motif / footprinting analyses; (iii) interpreting GWAS
-          variants in non-coding regions; (iv) characterising
-          differentiation trajectories. Penalise unhedged claims
-          about specific disease associations.
+          Strong answers cite values readable from the BED file:
+          a peak count in the low- to mid-six-figure range,
+          typical width in low-to-mid hundreds of base pairs,
+          and a small chrM fraction consistent with proper
+          ATAC mitochondrial filtering. Penalise speculative
+          claims about specific lineage TF binding, GWAS
+          interpretation, or differentiation trajectories that
+          go beyond the supplied evidence.
 
   # ── GIAB NA12878 chr20 truth-set variant calling ────────────────
   - id: giab_na12878_chr20
@@ -491,6 +781,7 @@ datasets:
     questions:
       - id: giab_q01_titv
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           For a high-quality whole-genome SNP call set in a healthy
           European individual, the expected transition / transversion
@@ -504,6 +795,7 @@ datasets:
         refusal_acceptable: false
       - id: giab_q02_indel_snp
         type: mcq
+        evidence_class: internal_knowledge
         question: >-
           In a typical chr20 GIAB high-confidence truth set, the
           ratio of indels to SNPs is approximately:
@@ -516,6 +808,7 @@ datasets:
         refusal_acceptable: false
       - id: giab_q03_sv_refusal
         type: mcq
+        evidence_class: calibrated_refusal
         question: >-
           How many structural variants (>50 bp) are present in the
           chr20 truth set v4.2.1?
@@ -527,16 +820,67 @@ datasets:
         # The v4.2.1 truth set is small-variant only; SVs are not in scope.
         answer: D
         refusal_acceptable: true
+      - id: giab_q05_variant_count
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Approximately how many variant records (data lines, not
+          headers) are in the supplied chr20 truth VCF? Count
+          non-``#`` rows; do not infer from biology.
+        choices:
+          A: Fewer than 1,000.
+          B: 50,000 – 200,000.
+          C: More than 10 million.
+          D: I cannot determine this from the supplied data.
+        # The chr20 high-confidence truth set has roughly ~70-80k
+        # variants depending on filter — within 50k-200k.
+        answer: B
+        refusal_acceptable: false
+      - id: giab_q06_chrom_restriction
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          Inspecting the CHROM column (column 1) of the supplied VCF
+          records, which of the following is true?
+        choices:
+          A: All records are on chr1.
+          B: All records are on chr20 (or ``20``); other chromosomes
+             are absent.
+          C: Records cover all autosomes plus chrX/chrY.
+          D: I cannot determine this from the supplied data.
+        # The reference is restricted to chr20 by construction.
+        answer: B
+        refusal_acceptable: false
+      - id: giab_q07_indel_fraction
+        type: mcq
+        evidence_class: data_required
+        question: >-
+          From the REF/ALT columns of the supplied VCF, what
+          fraction of records are indels (REF or ALT length > 1)?
+          Compute it from the file rather than guessing.
+        choices:
+          A: ~0% (this set has no indels).
+          B: Roughly 10–15%.
+          C: More than 80%.
+          D: I cannot determine this from the supplied data.
+        # GIAB v4.2.1 indel fraction on chr20 is consistently ~12-14%.
+        answer: B
+        refusal_acceptable: false
       - id: giab_q04_summary
         type: open_ended
+        evidence_class: data_required
+        depends_on_inputs: [truth_vcf]
         question: >-
-          In two to three sentences, explain what GIAB truth sets
-          are, why they are restricted to "high-confidence regions",
-          and how F1 against this truth set should be interpreted.
+          In two to three sentences, summarise the COMPOSITION of
+          the supplied truth VCF: order-of-magnitude record count,
+          chromosomal scope, and approximate fraction of indels.
+          Use values derivable from the supplied file rather than
+          general GIAB lore.
         rubric: |-
-          Strong answers cover (i) GIAB / NIST RM-derived consensus
-          calls integrated across multiple sequencing technologies;
-          (ii) high-confidence regions exclude tandem repeats,
-          segmental duplications, MHC, etc., where ground truth is
-          unreliable; (iii) F1 outside those regions is not
-          meaningful; (iv) truth set v4.2.1 is small-variant only.
+          Strong answers cite numbers readable from the VCF: tens
+          to low-hundreds of thousands of records, restricted to
+          chr20, with an indel fraction around 12-14% of records.
+          Penalise speculative claims about high-confidence
+          regions, technology integration, or v4.2.1 release
+          history unless explicitly hedged as "from background
+          knowledge, not the supplied file".

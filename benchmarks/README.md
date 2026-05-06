@@ -34,6 +34,7 @@ benchmarks/
 │   ├── competitors.py                  # Competitor interface + adapters
 │   ├── biomaster_shim.py               # Subprocess shim driving upstream BioMaster
 │   ├── autoba_shim.py                  # Subprocess shim driving upstream AutoBA
+│   ├── biomni_shim.py                  # Subprocess shim driving upstream Biomni
 │   ├── fidelity_metrics.py             # de_table / peak_bed / vcf comparators (Benchmark F)
 │   └── plot.py                         # Publication-ready figures (colour-blind safe)
 ├── bench_planning.py                   # A — planning correctness + cost
@@ -60,23 +61,39 @@ benchmarks/
 | **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no |
 | **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` |
 | **D** | All six execution backends function | no | best-effort — mock mode if infra absent |
-| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA clones on disk |
+| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni clones on disk |
 | **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download |
 | **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F |
 
 ### Prompt corpus
 
-`corpus/prompts.yaml` contains **41 prompts** across two difficulty tiers:
+`corpus/prompts.yaml` contains **66 prompts** across two scoring tiers:
 
-- **23 standard prompts** — covering common RNA-seq, ChIP-seq, ATAC-seq,
-  variant calling, scRNA-seq, and QC workflows. Designed to probe whether the
-  LLM produces a sensible, tool-correct, stepwise plan.
-- **18 hard prompts** (IDs prefixed `hard_`) — designed to stress one or more
-  LLM failure modes: niche domains (bisulfite sequencing, metagenomics,
-  miRNA, Hi-C), long end-to-end chains (8+ steps), modern tool selection
-  (hifiasm vs spades, Mutect2 vs HaplotypeCaller), forbidden shortcuts
-  (kallisto when STAR is required), and R-package wrappers (DADA2, DiffBind,
-  QDNAseq, tximport).
+- **41 transcription prompts** (`tier: transcription`, the default) —
+  the historical corpus. Each prompt names the canonical tools to use,
+  so the score measures whether the LLM faithfully turns a tool list
+  into a structured plan with valid commands, dependencies, and forbidden-tool
+  exclusions. 23 are "standard" everyday workflows; the remaining 18
+  (`hard_*`) stress niche domains (bisulfite, metagenomics, Hi-C),
+  long chains, modern tool selection, and R-package wrappers.
+- **25 inference prompts** (`tier: inference`, IDs prefixed `inf_`) —
+  the new tier, scored by [`score_plan_inference`](harness/metrics.py).
+  Each prompt describes the *goal* and *input data only*, never tool
+  names ("Quantify transcript abundance from paired-end RNA-seq for
+  downstream DESeq2"). Each prompt declares an
+  `acceptable_tool_sets` list (e.g. `[[salmon, multiqc],
+  [kallisto, multiqc], [star, featurecounts, multiqc]]`); the plan
+  passes only if **at least one** of those sets is fully covered using
+  *strict* tool matching (the prose fallback is disabled). Hallucinated
+  tools, malformed commands (per
+  [`harness/command_validator.py`](harness/command_validator.py)) and
+  forbidden tools all gate `overall_pass`.
+
+**What this benchmark does NOT test.** Whether the LLM picks the
+*best* toolchain among the acceptable set, runtime/memory profile of
+the resulting pipeline, scientific correctness of downstream
+parameters (e.g. DESeq2 `lfcShrink` flavour). Those are evaluated end-
+to-end by Benchmark F, not by plan inspection.
 
 ### Fault catalogue (Benchmark B)
 
@@ -103,6 +120,37 @@ Each fault produces a real failure signature (genuine exit code + stderr
 via shell stubs or real tools), so recovery is judged on the LLM's ability
 to read and fix an authentic error.
 
+**Recovery contract.** A recovery proposal can either patch a single
+command (`patch_command`), restructure the DAG via a structured
+`plan_patch` operation (`insert_before`, `insert_after`,
+`replace_step`, `remove_step`), or refuse (`refuse`). The LLM is
+prompted in two phases (diagnose → respond) so it commits to a fault
+class before being shown the patching guidance. DAG patches preserve
+acyclicity and are rolled back on failure (see
+[`flowagent/core/workflow_dag.py`](../flowagent/core/workflow_dag.py)
+`apply_plan_patch`).
+
+**Antipatterns rejected up front.** Bare no-ops (`true` / `:` /
+`exit 0` / `test 0`), trailing failure-suppression operators
+(`|| true`, `|| continue`, `|| :`, `|| exit 0`), leading `set +e`,
+and "fixes" that drop the original tool family and leave only shell
+builtins are detected by
+[`_is_recovery_antipattern`](../flowagent/core/workflow_manager.py)
+before execution. Every fault in
+[`harness/fault_inject.py`](harness/fault_inject.py) declares
+non-empty `outputs`, so the verifier engages on every cell — a
+"successful" recovery that produces no artifacts is failed
+explicitly. Recovery outcomes that pass exit-code-wise but match a
+no-op shape are bucketed as `cheat_repair` by
+[`recovery_taxonomy.py`](recovery_taxonomy.py), separately from
+`unsafe_repair` (silent corruption of valid data).
+
+**What this benchmark does NOT test.** Recovery from genuine data
+corruption (Tier 3, where the right answer is `refuse`), recovery
+across multiple sequential failures in one run (each fault is
+isolated), or the wall-clock cost of recovery (we report attempts and
+prompt size, not minutes-to-fix).
+
 ### Fidelity cases (Benchmark F)
 
 `config/fidelity_cases.yaml` declares **7 cases** spanning three assay
@@ -127,17 +175,58 @@ materialised references with `bench_fidelity.py`.
 
 ### Interpretation questions (Benchmark G)
 
-`config/interpretation_questions.yaml` contains **32 questions across the
-same 7 datasets** as Benchmark F (24 MCQ + 8 open-ended), with a
-calibrated refusal-correct question per dataset to test whether models
-abstain when the supplied evidence is insufficient. Open-ended responses
-are graded by an LLM judge (default `gpt-5.4`) against a per-question
-rubric and reference answer.
+`config/interpretation_questions.yaml` contains MCQ + open-ended
+questions across the same 7 datasets as Benchmark F. Every question
+is tagged with an `evidence_class`:
+
+- `data_required` — answer is derivable only from the supplied input
+  files. Each dataset contributes **≥3** of these.
+- `internal_knowledge` — answer comes from textbook biology /
+  experimental design (e.g. "what does an SUZ12 ChIP-seq target?");
+  retained as a control to separate "the model knows the
+  field" from "the model can read the supplied data".
+- `calibrated_refusal` — exactly one option says "the supplied data
+  cannot answer this"; correctness rewards the refusal. Tests
+  abstention.
+
+Open-ended questions declare `depends_on_inputs: [...]` listing which
+input fields they require, and the rubric only credits claims
+derivable from those files (out-of-evidence speculation is penalised
+explicitly). Responses are graded by an LLM judge (default `gpt-5.4`)
+against five anchored score bands (0-20, 21-40, 41-59, 60-79, 80-100)
+with the **pass mark stated explicitly (≥60)**. The judge returns
+structured JSON with `score`, `hits[]`, `misses[]`, `fabrications[]`,
+`grounding_quote`, and `justification` so each judgment is auditable
+in the metrics CSV.
+
+MCQ responses are extracted by a tag-aware parser (the prompt asks
+for `<answer>X</answer><explain>...</explain>`) with a tiered regex
+fallback for models that emit prose, and a final pass that prefers
+the *last* in-set capital letter (so "I believe the answer is B"
+returns `B`, not `I`).
+
+Inter-judge calibration is a separate harness:
+
+```bash
+python benchmarks/judge_calibration.py \
+    --metrics results/interpretation/<run>/metrics.csv \
+    --judge-a gpt-5.4 --judge-b claude-opus-4-7 --n 30
+```
+
+emitting Pearson r, Cohen's κ on pass/fail, and mean score delta —
+report in the manuscript supplement.
 
 The benchmark feeds each dataset's reference file (DE table, peak BED,
 truth VCF) directly to the model under test — FlowAgent itself is not in
 the loop. This makes Benchmark G a model-vs-model comparison on
 deterministic inputs, in the spirit of BixBench.
+
+**What this benchmark does NOT test.** Multi-turn dialogue,
+follow-up clarification, or the ability to *generate* analysis code
+(only to interpret existing outputs). Open-ended grading is by LLM
+judge, calibrated against a second judge but not against
+field-expert annotation — see the calibration harness output for the
+inter-judge κ and treat scores accordingly.
 
 ### Reference data
 
@@ -168,6 +257,15 @@ Add or remove a model by editing `config/models.yaml` — the harness,
 scoring, and plot code pick up new IDs automatically (so long as the
 short name is registered in [`harness/plot.py`](harness/plot.py) for
 axis labels).
+
+**Reasoning capability (`reasoning: bool`, `reasoning_default: low|
+medium|high|none`)** is declared per model in `models.yaml`, sourced
+from each provider's documented model card (Anthropic extended-
+thinking, Google Gemini thinking-budget, OpenAI reasoning-effort).
+[`harness/plot.py`](harness/plot.py) reads this YAML at figure-
+generation time, so the recovery reasoning-vs-non-reasoning split
+panel is always grounded in the latest provider documentation rather
+than a hand-curated list.
 
 ## API keys
 
@@ -283,31 +381,41 @@ make exec     # Benchmark D: executor coverage
 make competitors MODEL=gpt-4.1 REPLICATES=3
 ```
 
-Runs every registered competitor (currently `flowagent`, `biomaster`, and
-`autoba`) on the same prompt corpus, scored with the same `score_plan`
+Runs every registered competitor (currently `flowagent`, `biomaster`,
+`autoba`, and `biomni`) on the same prompt corpus, scored with the same `score_plan`
 metrics so the comparison is apples-to-apples. Results land in
 `results/competitors/<ts>/` with per-row `competitor`, `plan`,
 `prompt_tokens`, `completion_tokens`, `cost_usd`, `wall_seconds`, and the
 standard scoring columns. At the end of each run, the driver prints a
-per-competitor **pass / fail / crash** rollup and writes it to
-`summary.tsv`:
+per-competitor rollup with **two co-primary outcomes** plus cost, and
+writes it to `summary.tsv`:
 
 ```
-Head-to-head rollup (pass / fail / crash per competitor):
-  Competitor        Pass   Fail  Crash   Pass%    $/cell    Wall
-  --------------------------------------------------------------
-  FlowAgent         8/10      2      0   80.0%   $0.0123   15.4s
-  BioMaster         4/10      4      2   40.0%   $0.0087   18.2s
-  AutoBA            5/10      5      0   50.0%   $0.0195   22.1s
+Head-to-head rollup (two co-primary metrics + cost):
+  Pass% = strict overall_pass rate.  Tools% = mean expected-tool fraction (partial credit, crashes excluded).
+  Competitor        Pass   Fail  Crash   Pass%  Tools%    $/cell    Wall
+  -----------------------------------------------------------------------
+  FlowAgent         8/10      2      0   80.0%   95.0%   $0.0123   15.4s
+  BioMaster         4/10      4      2   40.0%   62.5%   $0.0087   18.2s
+  AutoBA            5/10      5      0   50.0%   71.0%   $0.0195   22.1s
+  Biomni            6/10      3      1   60.0%   83.3%   $0.0210   25.0s
 ```
 
 Where:
-- **Pass** = plan produced and scored True on every `score_plan` gate.
+- **Pass** (strict) = plan produced and scored True on every `score_plan`
+  gate. The headline single-number ranking.
+- **Tools** (partial credit) = mean `tools_present_fraction` over scored
+  cells (crashes excluded). Pre-registered as a co-primary outcome so a
+  5-of-6 plan no longer scores identically to a 0-of-6 plan, and so
+  narrative-style competitors aren't erased by a single missed gate.
 - **Fail** = plan produced but missed at least one scoring gate
   (workflow type, expected tools, forbidden tools, min step count).
 - **Crash** = the competitor raised before producing any scorable plan.
   Broken out separately so robustness shows up as its own column rather
   than silently dragging down the pass rate.
+
+Both headline metrics also appear as side-by-side panels in
+`results/figures/competitors.pdf`.
 
 **Subsetting:**
 
@@ -320,6 +428,15 @@ python bench_competitors.py \
 
 `--mock` runs offline with canned plans derived from each prompt's
 `gold_preset` / `expected_tools`, useful for smoke-testing the harness.
+
+**If you see `cli-adapter: RuntimeError: … no JSON envelope on stdout`:**
+the subprocess shim did not print a parseable JSON line on stdout (often
+upstream crashed before the shim’s final `print`, or the wrong `python`
+/env was used). Progress lines only show a short status — open the run’s
+`results/competitors/<ts>/results.json` or `metrics.csv` for the full error,
+or run the shim by hand, e.g.
+`python harness/autoba_shim.py --prompt "…" --model gpt-4.1 --autoba-dir "$AUTOBA_DIR"`
+and read stderr.
 
 #### BioMaster setup (one-off, ~5 min)
 
@@ -433,6 +550,94 @@ python benchmarks/harness/autoba_shim.py \
   tool-signature mapping.
 - AutoBA's `app.py` has a top-level `import torch.cuda`, so `torch` must
   be installed even if you never invoke its GPU paths.
+- **macOS:** if the shim dies with OpenMP / `libomp.dylib already initialized`
+  and exit code **-6**, the harness sets `KMP_DUPLICATE_LIB_OK=TRUE` for the
+  AutoBA subprocess (and `autoba_shim.py` does the same when run manually).
+  You can also export it in your shell for other tools.
+- **Exit -11 (`SIGSEGV`) with empty stdout/stderr:** the child crashed in native
+  code (typically PyTorch / Accelerate / BLAS) before Python could print or
+  flush. The harness now runs the shim with `python -u`, `PYTHONFAULTHANDLER=1`,
+  single-threaded BLAS/OMP defaults (`OMP_NUM_THREADS=1`, etc.), and the shared
+  helpers in [`harness/autoba_child_env.py`](harness/autoba_child_env.py). If it
+  still segfaults: reinstall `torch`/`numpy` from the **same** conda channel,
+  try `conda install pytorch cpuonly -c pytorch`, or run Benchmark E on Linux.
+
+#### Biomni setup (one-off, ~15+ min for full upstream env)
+
+Biomni (biorxiv [10.1101/2025.05.30.656746](https://www.biorxiv.org/content/10.1101/2025.05.30.656746v1))
+is a LangGraph ReAct biomedical agent. The harness drives it through
+[`harness/biomni_shim.py`](harness/biomni_shim.py), which sets
+`react.configure(plan=True, …)` and a **bounded** LangGraph
+`recursion_limit` (default 15, overridable via `BIOMNI_RECURSION_LIMIT`) so
+runs stay closer in cost to the other competitors than Biomni’s interactive
+default. Tool calls in the trace become `steps[]`; if the model only emits
+a narrative plan, the shim falls back to text-derived steps. `workflow_type`
+uses the same `biomaster_shim._classify_workflow_type` post-hoc mapper as
+AutoBA / BioMaster.
+
+```bash
+# 1. Clone
+git clone https://github.com/snap-stanford/Biomni.git /path/to/Biomni
+cd /path/to/Biomni
+
+# 2. Install the package (full scientific stack: see biomni_env/README.md)
+pip install -e .
+
+# 3. API keys & provider — follow upstream .env.example (ANTHROPIC_API_KEY,
+#    OPENAI_API_KEY, LLM_SOURCE, …). Align the model with your sweep:
+#    export BIOMNI_LLM=gpt-4.1   # or match OPENAI_MODEL / --model
+
+# 4. Point the harness at the repo root (directory that contains biomni/)
+echo 'BIOMNI_DIR=/path/to/Biomni' >> /path/to/flowagent/.env
+```
+
+Smoke-test:
+
+```bash
+python benchmarks/harness/biomni_shim.py \
+  --prompt "Run a kallisto RNA-seq quantification on paired-end FASTQs" \
+  --model gpt-4.1
+```
+
+**Notes:**
+
+- By default the shim sets `BIOMNI_USE_TOOL_RETRIEVER=true` and, after
+  `configure()`, rebuilds the LangGraph app with **prompt-based retrieval**
+  (mirroring Biomni’s own `go()`), because **OpenAI caps the `tools` array at
+  128** while the full Biomni registry is much larger. Set
+  `BIOMNI_USE_TOOL_RETRIEVER=false` only for providers without that limit
+  (and use `BIOMNI_MAX_TOOLS_PER_REQUEST` if a different cap applies).
+- Token / cost: OpenAI models use `get_openai_callback`; other providers
+  use LangChain’s `UsageMetadataCallbackHandler` when available — otherwise
+  counts may be zero while the plan is still scored.
+- If Biomni crashes with ``AttributeError: module 'biomni.tool.…' has no attribute '…'``,
+  the tool registry is out of sync with the Python modules (upstream drift).
+  ``biomni_shim.py`` patches ``api_schema_to_langchain_tool`` to register a
+  small placeholder for missing APIs so the agent can still run in Benchmark E.
+- **ImportError: zarr-python major version > 2 is not supported** (often while
+  importing ``scanpy`` / ``anndata``): your env has **Zarr 3.x**, but the
+  installed **anndata** build only supports **Zarr 2.x**. In the same conda env
+  as Biomni, pin Zarr v2, then retry:
+
+  ```bash
+  pip install "zarr>=2.18,<3"
+  # or: conda install "zarr<3"
+  ```
+
+  If conflicts persist, use Biomni’s documented ``biomni_env`` setup or a
+  dedicated conda env for Benchmark E competitors.
+- **ImportError: cannot import name ``ZarrRuntimeWarning`` from ``zarr.errors``**
+  (or other broken imports under ``site-packages/zarr/``): the install is
+  **mixed or half-upgraded** (v2 and v3 files together). Remove Zarr completely,
+  then install a single v2 line:
+
+  ```bash
+  pip uninstall zarr zarr-python -y   # both names can exist
+  pip install "zarr>=2.18,<3"
+  python -c "import zarr; print(zarr.__version__)"
+  ```
+
+  With conda: ``conda remove zarr --yes`` then ``conda install -c conda-forge "zarr>=2.18,<3"``.
 
 ### Benchmark F — output fidelity
 
@@ -726,7 +931,7 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 | `executors.pdf` | Benchmark D executor-coverage matrix |
 | `competitors.pdf` | Benchmark E pass / fail / crash per competitor |
 | `competitors_perprompt.pdf` | Competitor × prompt outcome heatmap |
-| `competitors_agentic.pdf` | FlowAgent vs BioMaster vs AutoBA focused comparison |
+| `competitors_agentic.pdf` | FlowAgent vs BioMaster vs AutoBA vs Biomni focused comparison |
 | `interpretation.pdf` | Benchmark G three-panel: MCQ accuracy + heatmap + open-ended judge mean |
 | `planning_cost_summary.tsv` | Per-model cost / pass-rate / token table for the manuscript |
 | `supp_table2_models.tsv` | Supplementary Table 2: model registry × empirical token / cost / latency stats |

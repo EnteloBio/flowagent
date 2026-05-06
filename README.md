@@ -459,7 +459,7 @@ reference.
 | **B** | FlowAgent self-heals realistic pipeline faults (28 faults × 3 tiers) | required | none |
 | **C** | Generated Nextflow/Snakemake code is valid and preserves plan intent | no | `nextflow`/`snakemake` improve validation |
 | **D** | All six execution backends (local, cgat, hpc, kubernetes, nextflow, snakemake) function | no | best-effort; uses mocks when infra absent |
-| **E** | FlowAgent is competitive with other agentic bio systems (BioMaster, AutoBA) on the same prompt corpus | required | clones of BioMaster + AutoBA on disk |
+| **E** | FlowAgent is competitive with other agentic bio systems (BioMaster, AutoBA, Biomni) on the same prompt corpus | required | clones of BioMaster + AutoBA (+ Biomni) on disk |
 | **F** | FlowAgent's *outputs* match published references (DE tables, peaks, VCFs) — Spearman ρ / Jaccard / F1 | no (pure scorer) | end-to-end FlowAgent run + reference files |
 | **G** | The reporting agent answers biological-interpretation MCQs and open-ended questions correctly, and abstains when evidence is insufficient | required | analysis outputs from a prior FlowAgent run |
 
@@ -515,7 +515,7 @@ make gen
 make exec
 
 # ── Benchmark E — head-to-head vs competitors ─────────────
-# Requires BIOMASTER_DIR and/or AUTOBA_DIR in .env; see benchmarks/README.md
+# Requires BIOMASTER_DIR / AUTOBA_DIR / BIOMNI_DIR in .env as needed; see benchmarks/README.md
 make competitors MODEL=gpt-4.1 REPLICATES=3
 
 # ── Benchmark F — output fidelity (no LLM calls; pure scorer) ─────

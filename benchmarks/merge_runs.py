@@ -127,7 +127,14 @@ def _merge_benchmark(
         if csv is None:
             print(f"  [skip] no metrics.csv: {run}")
             continue
-        df = pd.read_csv(csv)
+        try:
+            df = pd.read_csv(csv)
+        except pd.errors.EmptyDataError:
+            # Aborted run wrote a zero-byte CSV before any rows were
+            # flushed. Skip rather than crash the whole merge.
+            print(f"  [skip] {run.name}: empty metrics.csv "
+                  f"(aborted run — safe to delete)")
+            continue
 
         # Drop rows from runs that errored out before the schema-stable
         # row layout was in place. For the interpretation benchmark a

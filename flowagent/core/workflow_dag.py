@@ -46,6 +46,162 @@ class WorkflowDAG:
                 
         if not nx.is_directed_acyclic_graph(self.graph):
             raise ValueError("Dependencies would create a cycle in the graph")
+
+    # ── Plan-patch surgery (LLM-driven pipeline-level recovery) ──────
+    #
+    # The reviewer of FlowAgent's recovery benchmark observed that the
+    # original DAG was effectively immutable post-build: when a node failed,
+    # only ``command`` on that node could be patched. That makes
+    # *pipeline-level* fixes — "insert a ``samtools sort`` before this
+    # ``samtools index`` step", or "swap two adjacent steps that are out of
+    # order" — impossible by construction. ``apply_plan_patch`` lifts that
+    # restriction so the LLM can return a structured pipeline edit when a
+    # single-command rewrite cannot fix the failure.
+    #
+    # The supported actions are deliberately small and structural so the
+    # operation can be audited:
+    #
+    #   * ``insert_before {target, new_step, deps?}``
+    #   * ``insert_after  {target, new_step, deps?}``
+    #   * ``replace_step  {target, new_step, deps?}``
+    #   * ``remove_step   {target}``
+    #
+    # All actions preserve acyclicity and dependency-resolution; an
+    # operation that would break either is rejected and rolled back.
+
+    _ALLOWED_PATCH_ACTIONS = (
+        "insert_before", "insert_after", "replace_step", "remove_step",
+    )
+
+    def apply_plan_patch(self, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a structured plan-patch to ``self.graph`` in-place.
+
+        Returns ``{"status": "applied", "summary": "..."}`` on success, or
+        ``{"status": "rejected", "reason": "..."}`` when the patch is
+        malformed or would break the DAG. On rejection the graph is
+        guaranteed to be untouched.
+        """
+        if not isinstance(patch, dict):
+            return {"status": "rejected", "reason": "patch is not a dict"}
+        action = patch.get("action")
+        if action not in self._ALLOWED_PATCH_ACTIONS:
+            return {
+                "status": "rejected",
+                "reason": f"unknown action: {action!r}",
+            }
+        target = patch.get("target")
+        if not isinstance(target, str) or target not in self.graph:
+            return {
+                "status": "rejected",
+                "reason": f"target step {target!r} not in DAG",
+            }
+
+        # Snapshot for rollback.
+        snap_nodes = list(self.graph.nodes(data=True))
+        snap_edges = list(self.graph.edges())
+
+        try:
+            if action == "remove_step":
+                # Cannot remove a node that has dependents — they would
+                # be orphaned. The LLM must propose a replace_step or a
+                # restructure instead.
+                successors = list(self.graph.successors(target))
+                if successors:
+                    return {
+                        "status": "rejected",
+                        "reason": (
+                            f"cannot remove {target!r}; "
+                            f"{len(successors)} downstream step(s) depend on it"
+                        ),
+                    }
+                self.graph.remove_node(target)
+                summary = f"removed step {target!r}"
+
+            elif action == "replace_step":
+                new_step = patch.get("new_step")
+                if not isinstance(new_step, dict) or not new_step.get("name"):
+                    return {
+                        "status": "rejected",
+                        "reason": "replace_step needs new_step with a name",
+                    }
+                if new_step["name"] != target and new_step["name"] in self.graph:
+                    return {
+                        "status": "rejected",
+                        "reason": (
+                            f"new_step name {new_step['name']!r} already in DAG"
+                        ),
+                    }
+                preds = list(self.graph.predecessors(target))
+                succs = list(self.graph.successors(target))
+                self.graph.remove_node(target)
+                self.graph.add_node(new_step["name"], step=new_step)
+                for p in preds:
+                    self.graph.add_edge(p, new_step["name"])
+                for s in succs:
+                    self.graph.add_edge(new_step["name"], s)
+                summary = (
+                    f"replaced step {target!r} with {new_step['name']!r}"
+                )
+
+            elif action in ("insert_before", "insert_after"):
+                new_step = patch.get("new_step")
+                if not isinstance(new_step, dict) or not new_step.get("name"):
+                    return {
+                        "status": "rejected",
+                        "reason": f"{action} needs new_step with a name",
+                    }
+                if new_step["name"] in self.graph:
+                    return {
+                        "status": "rejected",
+                        "reason": (
+                            f"new_step name {new_step['name']!r} already in DAG"
+                        ),
+                    }
+                extra_deps = patch.get("deps") or []
+                if not isinstance(extra_deps, list):
+                    return {
+                        "status": "rejected",
+                        "reason": "deps must be a list of step names",
+                    }
+                for d in extra_deps:
+                    if d not in self.graph:
+                        return {
+                            "status": "rejected",
+                            "reason": f"dependency {d!r} not in DAG",
+                        }
+                self.graph.add_node(new_step["name"], step=new_step)
+                if action == "insert_before":
+                    # Re-route every edge ``pred → target`` through the new
+                    # step: ``pred → new → target``.
+                    for pred in list(self.graph.predecessors(target)):
+                        self.graph.remove_edge(pred, target)
+                        self.graph.add_edge(pred, new_step["name"])
+                    self.graph.add_edge(new_step["name"], target)
+                else:  # insert_after
+                    # Re-route every edge ``target → succ`` through new:
+                    # ``target → new → succ``.
+                    for succ in list(self.graph.successors(target)):
+                        self.graph.remove_edge(target, succ)
+                        self.graph.add_edge(new_step["name"], succ)
+                    self.graph.add_edge(target, new_step["name"])
+                for d in extra_deps:
+                    self.graph.add_edge(d, new_step["name"])
+                summary = (
+                    f"{action} {new_step['name']!r} around {target!r}"
+                )
+
+            # Validate the resulting graph.
+            if not nx.is_directed_acyclic_graph(self.graph):
+                raise ValueError("plan-patch would introduce a cycle")
+        except Exception as exc:
+            # Roll back to the snapshot on any failure so a partially
+            # applied patch never leaks into the running plan.
+            self.graph.clear()
+            self.graph.add_nodes_from(snap_nodes)
+            self.graph.add_edges_from(snap_edges)
+            return {"status": "rejected", "reason": str(exc)}
+
+        return {"status": "applied", "summary": summary}
             
     def visualize(self, output_file: Path) -> Path:
         """Generate a visualization of the workflow DAG.
@@ -304,6 +460,78 @@ class WorkflowDAG:
                                         logger.warning(
                                             "Could not persist smart-resume state "
                                             "for recovered step %s: %s", step_name, exc,
+                                        )
+                                elif recovery_result and recovery_result.get("plan_patch"):
+                                    # Pipeline-level fix: the LLM determined
+                                    # the failure cannot be repaired by editing
+                                    # the failing node's command alone (e.g. an
+                                    # ``insert_before samtools sort`` is needed
+                                    # ahead of ``samtools index``). Apply the
+                                    # patch to the DAG and run the new/updated
+                                    # node(s) before treating the original
+                                    # failure as recovered.
+                                    patch = recovery_result["plan_patch"]
+                                    apply_res = self.apply_plan_patch(patch)
+                                    if apply_res.get("status") == "applied":
+                                        # Execute any newly-introduced node
+                                        # (insert_before/after/replace) that
+                                        # the patch targets so the failed
+                                        # original step has its prerequisites
+                                        # in place. We only run the patch's
+                                        # ``new_step`` here; the original
+                                        # failed step is re-run on the next
+                                        # iteration of the outer batch loop
+                                        # (which will pick up its updated
+                                        # graph state).
+                                        new_step = patch.get("new_step")
+                                        ran_new = False
+                                        if isinstance(new_step, dict) and new_step.get("name") in self.graph:
+                                            try:
+                                                logger.info(
+                                                    "Executing patch-introduced step %s",
+                                                    new_step["name"],
+                                                )
+                                                new_result = await execute(
+                                                    self.graph.nodes[new_step["name"]]["step"]
+                                                )
+                                                jobs[new_step["name"]] = new_result
+                                                self.graph.nodes[new_step["name"]]["step"]["status"] = (
+                                                    new_result.get("status", "pending")
+                                                )
+                                                ran_new = new_result.get("status") == "completed"
+                                            except Exception as patch_exec_err:
+                                                logger.warning(
+                                                    "Failed to execute patch-introduced step "
+                                                    "%s: %s", new_step.get("name"), patch_exec_err,
+                                                )
+                                        # Re-run the original step now that the
+                                        # patch has presumably set up what was
+                                        # missing.
+                                        if ran_new or patch.get("action") == "remove_step":
+                                            try:
+                                                rerun_step = self.graph.nodes[step_name]["step"] \
+                                                    if step_name in self.graph else None
+                                                if rerun_step is not None:
+                                                    rerun_result = await execute(rerun_step)
+                                                    jobs[step_name] = rerun_result
+                                                    self.graph.nodes[step_name]["step"]["status"] = (
+                                                        rerun_result.get("status", "pending")
+                                                    )
+                                                    if rerun_result.get("status") == "completed":
+                                                        recovered = True
+                                                        logger.info(
+                                                            "Step %s recovered via DAG patch (%s)",
+                                                            step_name, apply_res.get("summary"),
+                                                        )
+                                            except Exception as rerun_err:
+                                                logger.warning(
+                                                    "Re-run after DAG patch failed for %s: %s",
+                                                    step_name, rerun_err,
+                                                )
+                                    else:
+                                        logger.warning(
+                                            "Plan-patch rejected for step %s: %s",
+                                            step_name, apply_res.get("reason"),
                                         )
                                 elif recovery_result and recovery_result.get("status") == "rejected":
                                     logger.error(

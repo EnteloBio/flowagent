@@ -47,6 +47,51 @@ class TestScorePlan:
         assert m["tools_present_fraction"] == 1.0
         assert m["dag_valid"] is True
 
+    def test_narrative_commands_credit_tools_by_prose(self):
+        """CLI tokens mid-sentence (no shell lead token) still cover rubric tools."""
+        plan = {
+            "workflow_type": "rna_seq_kallisto",
+            "steps": [
+                {
+                    "name": "qc",
+                    "command": "Run FastQC on raw reads for quality control.",
+                    "dependencies": [],
+                    "outputs": [],
+                    "description": "",
+                },
+                {
+                    "name": "quant",
+                    "command": "Use Kallisto for transcript abundance estimation.",
+                    "dependencies": ["qc"],
+                    "outputs": [],
+                    "description": "",
+                },
+                {
+                    "name": "report",
+                    "command": "Aggregate QC with MultiQC.",
+                    "dependencies": ["quant"],
+                    "outputs": [],
+                    "description": "",
+                },
+                {
+                    "name": "extra",
+                    "command": "samtools flagstat out/abundance.tsv",
+                    "dependencies": ["report"],
+                    "outputs": [],
+                    "description": "",
+                },
+            ],
+        }
+        expected = {
+            "expected_workflow_type": "rna_seq_kallisto",
+            "expected_tools": ["fastqc", "kallisto", "multiqc"],
+            "expected_min_steps": 4,
+            "forbidden_tools": [],
+        }
+        m = score_plan(plan, expected)
+        assert m["tools_present_fraction"] == 1.0
+        assert m["overall_pass"] is True
+
     def test_forbidden_tool_fails_even_if_elsewhere_correct(self):
         plan = {
             "workflow_type": "rna_seq_kallisto",

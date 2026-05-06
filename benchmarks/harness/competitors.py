@@ -1,7 +1,7 @@
 """Head-to-head competitor harness for Benchmark E.
 
 This module defines a small pluggable interface so that third-party
-agentic bioinformatics systems (BioMaster, AutoBA, CellAgent, …) can be
+agentic bioinformatics systems (BioMaster, AutoBA, Biomni, …) can be
 evaluated on the same prompt corpus + metric set as FlowAgent.
 
 Design
@@ -45,7 +45,44 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from harness.autoba_child_env import autoba_subprocess_environ
+
 LOG = logging.getLogger(__name__)
+
+
+def _parse_shim_stdout_json(
+    out: str,
+    stderr_b: bytes,
+    returncode: Optional[int],
+    label: str,
+) -> Dict[str, Any]:
+    """Parse the single JSON object shims print on stdout (tolerate extra lines)."""
+    err = stderr_b.decode(errors="replace")
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        pass
+    for line in reversed(out.splitlines()):
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    rc = returncode if returncode is not None else -1
+    o_prev = (out[:1200] + "…") if len(out) > 1200 else out
+    e_prev = (err[:2500] + "…") if len(err) > 2500 else err
+    hint = ""
+    # -11: Unix SIGSEGV — common when torch/MKL/OpenMP crash before flushing stderr.
+    if rc == -11 and not err.strip() and not out.strip():
+        hint = (
+            " Hint: native SIGSEGV (often PyTorch/BLAS on macOS); see "
+            "benchmarks/README.md (Benchmark E, AutoBA troubleshooting)."
+        )
+    raise RuntimeError(
+        f"{label} shim exited {rc}, no JSON envelope on stdout ({len(out)} chars). "
+        f"stdout_preview={o_prev!r} stderr_preview={e_prev!r}{hint}"
+    )
 
 
 # ── Shared plan schema ───────────────────────────────────────────
@@ -308,26 +345,8 @@ class BioMasterCompetitor(Competitor):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        out = stdout.decode(errors="replace")
-        # The shim always prints a JSON envelope on stdout, but a custom
-        # $BIOMASTER_CLI may intermix chatter. Try to parse the whole
-        # stream first; on failure, scan backwards for the last line that
-        # is a well-formed JSON object.
-        try:
-            return json.loads(out)
-        except json.JSONDecodeError:
-            pass
-        for line in reversed(out.splitlines()):
-            line = line.strip()
-            if line.startswith("{") and line.endswith("}"):
-                try:
-                    return json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-        raise RuntimeError(
-            f"BioMaster shim exited {proc.returncode}, "
-            f"no JSON envelope in stdout ({len(out)}B). "
-            f"stderr: {stderr.decode(errors='replace')[:400]}"
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "BioMaster"
         )
 
 
@@ -377,7 +396,8 @@ class AutoBACompetitor(Competitor):
         if self._autoba_dir and _AUTOBA_SHIM.exists():
             ab = Path(self._autoba_dir).expanduser()
             if (ab / "app.py").exists():
-                return [sys.executable, str(_AUTOBA_SHIM),
+                # -u: unbuffered stdout/stderr so a native crash still leaves traces.
+                return [sys.executable, "-u", str(_AUTOBA_SHIM),
                         "--autoba-dir", str(ab)]
         return None
 
@@ -427,24 +447,112 @@ class AutoBACompetitor(Competitor):
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=autoba_subprocess_environ(),
         )
         stdout, stderr = await proc.communicate()
-        out = stdout.decode(errors="replace")
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "AutoBA"
+        )
+
+
+# ── Biomni adapter ───────────────────────────────────────────────
+
+# Biomni: general biomedical agent (LangGraph ReAct). Upstream is a package +
+# heavy optional env; driven via ``biomni_shim.py`` like BioMaster/AutoBA.
+
+_BIOMNI_SHIM = Path(__file__).parent / "biomni_shim.py"
+
+_BIOMNI_IMPORT_HINT = (
+    "Biomni is not configured. Two-step setup:\n"
+    "  1. git clone https://github.com/snap-stanford/Biomni.git /path/to/Biomni\n"
+    "     cd /path/to/Biomni && pip install -e .\n"
+    "     (or follow biomni_env/README.md for the full upstream env)\n"
+    "  2. export BIOMNI_DIR=/path/to/Biomni\n"
+    "     Set API keys per upstream (.env): ANTHROPIC_API_KEY / OPENAI_API_KEY, "
+    "LLM_SOURCE, etc.\n"
+    "The harness drives Biomni via harness/biomni_shim.py.\n"
+    "Alternatively, set BIOMNI_CLI to your own executable.\n"
+    "Paper: https://www.biorxiv.org/content/10.1101/2025.05.30.656746v1"
+)
+
+
+class BiomniCompetitor(Competitor):
+    """Adapter for Biomni — drives upstream via ``biomni_shim.py``.
+
+    Same subprocess + JSON envelope pattern as :class:`AutoBACompetitor`.
+    """
+
+    id   = "biomni"
+    name = "Biomni"
+    url  = "https://www.biorxiv.org/content/10.1101/2025.05.30.656746v1"
+
+    def __init__(self, model: str = "gpt-4.1"):
+        self.model = model
+        self._cli = os.environ.get("BIOMNI_CLI")
+        self._biomni_dir = os.environ.get("BIOMNI_DIR")
+
+    def _effective_cli(self) -> Optional[List[str]]:
+        if self._cli and Path(self._cli).exists() and os.access(self._cli, os.X_OK):
+            return [self._cli]
+        if self._biomni_dir and _BIOMNI_SHIM.exists():
+            root = Path(self._biomni_dir).expanduser()
+            if (root / "biomni" / "__init__.py").exists():
+                return [sys.executable, str(_BIOMNI_SHIM),
+                        "--biomni-dir", str(root)]
+        return None
+
+    def available(self) -> Tuple[bool, str]:
+        return (True, "") if self._effective_cli() else (False, _BIOMNI_IMPORT_HINT)
+
+    async def plan(self, prompt: str, *, context=None) -> CompetitorResult:
+        ok, why = self.available()
+        if not ok:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=0.0,
+                error=f"not-available: {why.splitlines()[0]}",
+            )
+
+        t0 = time.perf_counter()
         try:
-            return json.loads(out)
-        except json.JSONDecodeError:
-            pass
-        for line in reversed(out.splitlines()):
-            line = line.strip()
-            if line.startswith("{") and line.endswith("}"):
-                try:
-                    return json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-        raise RuntimeError(
-            f"AutoBA shim exited {proc.returncode}, "
-            f"no JSON envelope in stdout ({len(out)}B). "
-            f"stderr: {stderr.decode(errors='replace')[:400]}"
+            envelope = await self._invoke_shim(prompt, context)
+        except Exception as e:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=time.perf_counter() - t0,
+                error=f"cli-adapter: {type(e).__name__}: {e}",
+            )
+
+        plan = _normalise_plan(envelope.get("plan") or {})
+        return CompetitorResult(
+            plan=plan,
+            wall_seconds=float(envelope.get("wall_seconds") or
+                               (time.perf_counter() - t0)),
+            prompt_tokens=int(envelope.get("prompt_tokens") or 0),
+            completion_tokens=int(envelope.get("completion_tokens") or 0),
+            llm_calls=int(envelope.get("llm_calls") or 0),
+            cost_usd=float(envelope.get("cost_usd") or 0.0),
+            raw_output=json.dumps(envelope)[:20_000],
+            error=envelope.get("error"),
+        )
+
+    async def _invoke_shim(self, prompt: str, context) -> Dict[str, Any]:
+        argv = self._effective_cli()
+        assert argv is not None
+        files: List[str] = []
+        if context and context.get("input_files"):
+            files = [f"{p}: input file" for p in context["input_files"]]
+        argv = [*argv, "--prompt", prompt,
+                "--files", json.dumps(files),
+                "--model", self.model]
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "Biomni"
         )
 
 
@@ -631,7 +739,7 @@ def build_registry(
     Parameters
     ----------
     model_cfg : dict, optional
-        Single-model cfg passed to FlowAgent / BioMaster / AutoBA lanes
+        Single-model cfg passed to FlowAgent / BioMaster / AutoBA / Biomni lanes
         (they all share one "driver model" for token accounting).
     raw_models : list[str], optional
         Model IDs to add as zero-shot raw-LLM baselines. Each becomes a
@@ -649,6 +757,7 @@ def build_registry(
     reg: Dict[str, Competitor] = {
         "autoba":     AutoBACompetitor(model=model_id),
         "biomaster":  BioMasterCompetitor(model=model_id),
+        "biomni":     BiomniCompetitor(model=model_id),
         "flowagent":  FlowAgentCompetitor(model_cfg=model_cfg),
     }
     for raw_id in (raw_models or []):

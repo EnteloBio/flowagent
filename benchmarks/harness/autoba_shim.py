@@ -489,6 +489,14 @@ def _collect_shells(output_dir: Path) -> Dict[int, str]:
 
 
 def main() -> None:
+    # Before ``runpy`` loads AutoBA / torch — same defaults as
+    # ``harness.autoba_child_env`` (OMP caps, unbuffered IO, faulthandler).
+    try:
+        from harness.autoba_child_env import apply_autoba_defaults
+        apply_autoba_defaults(os.environ)
+    except Exception:
+        os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
     args = _parse_args()
     t0 = time.perf_counter()
 

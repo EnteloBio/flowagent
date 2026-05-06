@@ -31,7 +31,7 @@ sys.path.insert(0, str(BENCH_DIR))
 sys.path.insert(0, str(BENCH_DIR.parent))
 
 from harness.competitors import (                       # noqa: E402
-    BioMasterCompetitor, Competitor, CompetitorResult,
+    BioMasterCompetitor, BiomniCompetitor, Competitor, CompetitorResult,
     FlowAgentCompetitor, _empty_plan, _normalise_plan, _normalise_step,
     build_registry,
 )
@@ -174,13 +174,39 @@ class TestBioMasterCompetitor:
         assert result.plan["steps"] == []
 
 
+class TestBiomniCompetitor:
+
+    def test_id_and_url(self):
+        c = BiomniCompetitor()
+        assert c.id == "biomni"
+        assert "biorxiv" in c.url.lower()
+
+    def test_unavailable_explains_install(self, monkeypatch):
+        monkeypatch.delenv("BIOMNI_CLI", raising=False)
+        monkeypatch.delenv("BIOMNI_DIR", raising=False)
+        c = BiomniCompetitor()
+        ok, why = c.available()
+        assert ok is False
+        assert "BIOMNI_DIR" in why or "BIOMNI_CLI" in why
+
+    def test_plan_returns_error_when_unavailable(self, monkeypatch):
+        monkeypatch.delenv("BIOMNI_CLI", raising=False)
+        monkeypatch.delenv("BIOMNI_DIR", raising=False)
+        c = BiomniCompetitor()
+        result = asyncio.run(c.plan("Run RNA-seq with kallisto"))
+        assert isinstance(result, CompetitorResult)
+        assert result.error is not None
+        assert "not-available" in result.error
+        assert result.plan["steps"] == []
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 class TestRegistry:
 
     def test_default_registry_has_known_competitors(self):
         reg = build_registry()
-        assert set(reg) == {"flowagent", "biomaster", "autoba"}
+        assert set(reg) == {"flowagent", "biomaster", "autoba", "biomni"}
         assert all(isinstance(v, Competitor) for v in reg.values())
 
     def test_unique_slugs_and_colours(self):

@@ -822,7 +822,7 @@
         <text class="st25" transform="translate(910 900)"><tspan x="0" y="0">Head-to-head vs competitors</tspan></text>
       </g>
       <g class="st27">
-        <text class="st15" transform="translate(910 918)"><tspan x="0" y="0">Same prompt corpus, same scoring: FlowAgent · BioMaster · AutoBA.</tspan></text>
+        <text class="st15" transform="translate(910 918)"><tspan x="0" y="0">Same prompt corpus, same scoring: FlowAgent · BioMaster · AutoBA · Biomni.</tspan></text>
       </g>
       <path class="st50" d="M0,0"/>
       <path class="st50" d="M1380.6,896.8l10.5,5.2-10.5,5.2v-10.5h0Z"/>

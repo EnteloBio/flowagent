@@ -1,6 +1,6 @@
 """Benchmark E — Head-to-head against other agentic bioinformatics systems.
 
-Each competitor (FlowAgent baseline, BioMaster, and future additions)
+Each competitor (FlowAgent baseline, BioMaster, AutoBA, Biomni, …)
 implements the ``Competitor`` interface in ``harness/competitors.py`` and
 must produce a FlowAgent-compatible plan dict. This module drives the
 evaluation loop, scoring every competitor with the same ``score_plan``
@@ -177,7 +177,13 @@ async def _drive(competitors: Dict[str, Competitor],
                 elapsed = time.perf_counter() - t0
                 status = ("pass" if row.get("overall_pass")
                           else (row.get("error") or "fail"))
-                print(f"{status[:40]} ({elapsed:.1f}s)", flush=True)
+                # Show a short line in the progress stream; long errors (e.g. shim
+                # tracebacks) would be unreadable. Print the full error on a
+                # second line when it is long or non-trivial.
+                line1 = str(status) if len(str(status)) <= 72 else str(status)[:69] + "…"
+                print(f"{line1} ({elapsed:.1f}s)", flush=True)
+                if row.get("error") and len(str(row["error"])) > 72:
+                    print(f"    {row['error']}", flush=True)
                 rows.append(row)
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +211,15 @@ async def _drive(competitors: Dict[str, Competitor],
 def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Group rows by competitor and compute pass/fail/crash counts + means.
 
+    Reports two co-primary outcomes per competitor:
+
+    * ``pass_rate`` — strict ``overall_pass`` rate. Every rubric gate
+      (workflow type, expected tools, forbidden tools, min step count,
+      schema, DAG) must hold.
+    * ``tool_recovery`` — mean ``tools_present_fraction`` over scored
+      cells (crashes excluded). Partial-credit view, so a 5-of-6 plan
+      contributes 0.83 instead of 0.
+
     pass = ``overall_pass`` is True
     crash = ``error`` is set AND the plan has zero scored steps (no plan
             produced — distinct from a plan that failed scoring)
@@ -214,15 +229,22 @@ def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for r in rows:
         by_comp.setdefault(r.get("competitor", "?"), []).append(r)
 
+    def _is_crash(r: Dict[str, Any]) -> bool:
+        return bool(r.get("error")) and not (r.get("plan") or {}).get("steps")
+
     out: List[Dict[str, Any]] = []
     for comp, cells in by_comp.items():
         total = len(cells)
         n_pass = sum(1 for r in cells if r.get("overall_pass"))
-        n_crash = sum(
-            1 for r in cells
-            if r.get("error") and not (r.get("plan") or {}).get("steps")
-        )
+        n_crash = sum(1 for r in cells if _is_crash(r))
         n_fail = total - n_pass - n_crash
+        scored = [r for r in cells if not _is_crash(r)]
+        if scored:
+            tool_recovery = sum(
+                float(r.get("tools_present_fraction") or 0.0) for r in scored
+            ) / len(scored)
+        else:
+            tool_recovery = 0.0
         def _mean(key: str) -> float:
             vals = [float(r.get(key) or 0.0) for r in cells]
             return sum(vals) / len(vals) if vals else 0.0
@@ -234,6 +256,8 @@ def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "fail": n_fail,
             "crash": n_crash,
             "pass_rate": n_pass / total if total else 0.0,
+            "tool_recovery": tool_recovery,
+            "n_scored": len(scored),
             "mean_cost_usd": _mean("cost_usd"),
             "mean_wall_s": _mean("wall_seconds"),
         })
@@ -243,25 +267,31 @@ def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _print_summary(summary: List[Dict[str, Any]]) -> None:
-    print("\nHead-to-head rollup (pass / fail / crash per competitor):")
+    print("\nHead-to-head rollup (two co-primary metrics + cost):")
+    print("  Pass% = strict overall_pass rate.  "
+          "Tools% = mean expected-tool fraction (partial credit, "
+          "crashes excluded).")
     header = (f"  {'Competitor':<14} {'Pass':>8} {'Fail':>6} "
-              f"{'Crash':>6} {'Pass%':>7} {'$/cell':>9} {'Wall':>7}")
+              f"{'Crash':>6} {'Pass%':>7} {'Tools%':>7} "
+              f"{'$/cell':>9} {'Wall':>7}")
     print(header)
     print("  " + "-" * (len(header) - 2))
     for s in summary:
         pr = f"{s['pass_rate'] * 100:.1f}%"
+        tr = f"{s['tool_recovery'] * 100:.1f}%"
         cost = f"${s['mean_cost_usd']:.4f}"
         wall = f"{s['mean_wall_s']:.1f}s"
         row = (f"  {s['name']:<14} "
                f"{s['pass']:>3}/{s['total']:<4} "
                f"{s['fail']:>6} {s['crash']:>6} "
-               f"{pr:>7} {cost:>9} {wall:>7}")
+               f"{pr:>7} {tr:>7} {cost:>9} {wall:>7}")
         print(row)
 
 
 def _format_summary_tsv(summary: List[Dict[str, Any]]) -> str:
     keys = ["competitor", "name", "total", "pass", "fail", "crash",
-            "pass_rate", "mean_cost_usd", "mean_wall_s"]
+            "pass_rate", "tool_recovery", "n_scored",
+            "mean_cost_usd", "mean_wall_s"]
     lines = ["\t".join(keys)]
     for s in summary:
         lines.append("\t".join(str(s[k]) for k in keys))

@@ -17,9 +17,27 @@
 #   legacy     — older generation, still callable, superseded by newer models.
 #   deprecated — scheduled for retirement; intentionally excluded from this list.
 #
-# Fields: id, provider, env_var, family, tier, context_k, pricing, [notes].
+# Fields: id, provider, env_var, family, tier, context_k, pricing,
+#         reasoning, reasoning_default, [notes].
 # The harness reads provider/env_var/pricing; the other fields are metadata
 # used by the plotting code and manuscript tables.
+#
+# ``reasoning`` (bool) — true if the model uses chain-of-thought / hidden
+#                        thinking tokens that are billed as output. Sourced
+#                        from each provider's documented model card:
+#                        OpenAI o-series + GPT-5.x; Anthropic extended-
+#                        thinking (Opus 4.5+, Sonnet 4.5+, Haiku 4.5);
+#                        Google Gemini 3.x (all variants thinking-capable),
+#                        Gemini 2.5 Pro/Flash (thinking on by default),
+#                        Gemini 2.5 Flash-Lite (thinking off by default).
+#                        This field is the SINGLE source of truth for the
+#                        ``recovery_reasoning_split`` figure — the previous
+#                        in-code allowlist excluded Sonnet 4.6, Gemini 3.x,
+#                        and Gemini 2.5 Pro/Flash, mis-grouping them as
+#                        non-reasoning despite their model cards.
+# ``reasoning_default`` — the default reasoning effort sent to the provider
+#                         when the harness does not override it. ``none``
+#                         on non-reasoning models.
 
 defaults:
   timeout_seconds: 300
@@ -38,6 +56,8 @@ models:
     family: gpt-5.4
     tier: current
     context_k: 270
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.0025, output_per_1k: 0.0150}
 
   - id: gpt-5.4-mini
@@ -46,6 +66,8 @@ models:
     family: gpt-5.4
     tier: current
     context_k: 270
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00075, output_per_1k: 0.00450}
 
   - id: gpt-5.4-nano
@@ -54,6 +76,8 @@ models:
     family: gpt-5.4
     tier: current
     context_k: 270
+    reasoning: true
+    reasoning_default: low
     pricing: {input_per_1k: 0.00020, output_per_1k: 0.00125}
 
 #  - id: gpt-5.4-pro
@@ -62,6 +86,8 @@ models:
 #    family: gpt-5.4
 #    tier: current
 #    context_k: 270
+#    reasoning: true
+#    reasoning_default: high
 #    pricing: {input_per_1k: 0.0300, output_per_1k: 0.1800}
 
   # ── GPT-4.1 family (long-context, released April 2025) ─────
@@ -71,6 +97,8 @@ models:
     family: gpt-4.1
     tier: current
     context_k: 1000
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00200, output_per_1k: 0.00800}
 
   - id: gpt-4.1-mini
@@ -79,6 +107,8 @@ models:
     family: gpt-4.1
     tier: current
     context_k: 1000
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00040, output_per_1k: 0.00160}
 
   - id: gpt-4.1-nano
@@ -87,6 +117,8 @@ models:
     family: gpt-4.1
     tier: current
     context_k: 1000
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
 
   # ── o-series reasoning models ──────────────────────────────
@@ -96,6 +128,8 @@ models:
     family: o-series
     tier: current
     context_k: 200
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00200, output_per_1k: 0.00800}
 
 #  - id: o3-pro
@@ -104,6 +138,8 @@ models:
 #    family: o-series
 #    tier: current
 #    context_k: 200
+#    reasoning: true
+#    reasoning_default: high
 #    pricing: {input_per_1k: 0.02000, output_per_1k: 0.08000}
 
   - id: o4-mini
@@ -112,6 +148,8 @@ models:
     family: o-series
     tier: current
     context_k: 200
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00110, output_per_1k: 0.00440}
 
   - id: o3-mini
@@ -120,6 +158,8 @@ models:
     family: o-series
     tier: current
     context_k: 200
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00050, output_per_1k: 0.00200}
 
   - id: o1
@@ -128,6 +168,8 @@ models:
     family: o-series
     tier: legacy
     context_k: 200
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.01500, output_per_1k: 0.06000}
 
 #  - id: o1-pro
@@ -136,6 +178,8 @@ models:
 #    family: o-series
 #    tier: legacy
 #    context_k: 200
+#    reasoning: true
+#    reasoning_default: high
 #    pricing: {input_per_1k: 0.15000, output_per_1k: 0.60000}
 
   # ── GPT-4o (legacy, still callable) ────────────────────────
@@ -145,6 +189,8 @@ models:
     family: gpt-4o
     tier: legacy
     context_k: 128
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00250, output_per_1k: 0.01000}
 
   - id: gpt-4o-mini
@@ -153,6 +199,8 @@ models:
     family: gpt-4o
     tier: legacy
     context_k: 128
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00015, output_per_1k: 0.00060}
 
   # ── GPT-4 Turbo + GPT-3.5 (legacy) ─────────────────────────
@@ -162,6 +210,8 @@ models:
     family: gpt-4
     tier: legacy
     context_k: 128
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.01000, output_per_1k: 0.03000}
 
   - id: gpt-3.5-turbo
@@ -170,6 +220,8 @@ models:
     family: gpt-3.5
     tier: legacy
     context_k: 16
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00050, output_per_1k: 0.00150}
 
   # ═════════════════════════════════════════════════════════════
@@ -183,6 +235,8 @@ models:
     family: claude-opus-4
     tier: current
     context_k: 1000
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00500, output_per_1k: 0.02500}
 
   - id: claude-opus-4-6
@@ -191,6 +245,8 @@ models:
     family: claude-opus-4
     tier: current
     context_k: 1000
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00500, output_per_1k: 0.02500}
 
   - id: claude-opus-4-5
@@ -199,6 +255,8 @@ models:
     family: claude-opus-4
     tier: current
     context_k: 1000
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00500, output_per_1k: 0.02500}
 
   - id: claude-opus-4-1
@@ -207,6 +265,8 @@ models:
     family: claude-opus-4
     tier: legacy
     context_k: 200
+    reasoning: true
+    reasoning_default: low
     pricing: {input_per_1k: 0.01500, output_per_1k: 0.07500}
 
   - id: claude-opus-4
@@ -215,6 +275,8 @@ models:
     family: claude-opus-4
     tier: legacy
     context_k: 200
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.01500, output_per_1k: 0.07500}
 
   # ── Claude Sonnet 4.x ──────────────────────────────────────
@@ -224,6 +286,8 @@ models:
     family: claude-sonnet-4
     tier: current
     context_k: 1000
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00300, output_per_1k: 0.01500}
 
   - id: claude-sonnet-4-5
@@ -232,6 +296,8 @@ models:
     family: claude-sonnet-4
     tier: current
     context_k: 1000
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00300, output_per_1k: 0.01500}
 
   - id: claude-sonnet-4
@@ -240,6 +306,8 @@ models:
     family: claude-sonnet-4
     tier: legacy
     context_k: 200
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00300, output_per_1k: 0.01500}
 
   # ── Claude Haiku 4.x / 3.5 ─────────────────────────────────
@@ -249,6 +317,8 @@ models:
     family: claude-haiku-4
     tier: current
     context_k: 200
+    reasoning: true
+    reasoning_default: low
     pricing: {input_per_1k: 0.00100, output_per_1k: 0.00500}
 
   - id: claude-haiku-3-5
@@ -257,6 +327,8 @@ models:
     family: claude-haiku-3
     tier: legacy
     context_k: 200
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00080, output_per_1k: 0.00400}
 
   # ═════════════════════════════════════════════════════════════
@@ -274,6 +346,8 @@ models:
     family: gemini-3
     tier: preview
     context_k: 1000
+    reasoning: true
+    reasoning_default: high
     pricing: {input_per_1k: 0.00200, output_per_1k: 0.01200}
     notes: "2x input rate for prompts >200K tokens"
 
@@ -283,6 +357,8 @@ models:
     family: gemini-3
     tier: preview
     context_k: 1000
+    reasoning: true
+    reasoning_default: low
     pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
 
   - id: gemini-3-flash-preview
@@ -291,6 +367,8 @@ models:
     family: gemini-3
     tier: preview
     context_k: 1000
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00050, output_per_1k: 0.00300}
 
   # ── Gemini 2.5 (stable production) ─────────────────────────
@@ -300,6 +378,8 @@ models:
     family: gemini-2.5
     tier: current
     context_k: 1000
+    reasoning: true
+    reasoning_default: medium
     pricing: {input_per_1k: 0.00125, output_per_1k: 0.01000}
     notes: "2x input rate for prompts >200K tokens"
 
@@ -309,6 +389,8 @@ models:
     family: gemini-2.5
     tier: current
     context_k: 1000
+    reasoning: true
+    reasoning_default: low
     pricing: {input_per_1k: 0.00030, output_per_1k: 0.00250}
 
   - id: gemini-2.5-flash-lite
@@ -317,6 +399,8 @@ models:
     family: gemini-2.5
     tier: current
     context_k: 1000
+    reasoning: false
+    reasoning_default: none
     pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
 
   # ── Gemini 1.5 (legacy, still callable) ────────────────────
@@ -326,6 +410,8 @@ models:
 #    family: gemini-1.5
 #    tier: legacy
 #    context_k: 2000
+#    reasoning: false
+#    reasoning_default: none
 #    pricing: {input_per_1k: 0.00125, output_per_1k: 0.00500}
 #    notes: "3.5x pricing above 128K tokens"
 
@@ -335,4 +421,6 @@ models:
 #    family: gemini-1.5
 #    tier: legacy
 #    context_k: 1000
+#    reasoning: false
+#    reasoning_default: none
 #    pricing: {input_per_1k: 0.000075, output_per_1k: 0.00030}

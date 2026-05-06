@@ -27,7 +27,7 @@ help:
 	@echo "  make recovery     - Benchmark B: error recovery (needs API key)"
 	@echo "  make gen          - Benchmark C: generator fidelity (no API key)"
 	@echo "  make exec         - Benchmark D: executor coverage (no API key)"
-	@echo "  make competitors  - Benchmark E: head-to-head vs BioMaster / other agents"
+	@echo "  make competitors  - Benchmark E: head-to-head vs BioMaster / AutoBA / Biomni / …"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
 	@echo "  make test         - run the benchmark test suite (pytest)"

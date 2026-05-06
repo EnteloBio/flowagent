@@ -263,7 +263,8 @@ def extract_tools_from_plan(plan: Dict[str, Any]) -> Set[str]:
 
 
 def tool_covered(expected: str, plan_tools: Set[str],
-                 plan: Optional[Dict[str, Any]] = None) -> bool:
+                 plan: Optional[Dict[str, Any]] = None,
+                 *, prose_fallback: bool = True) -> bool:
     """True iff ``expected`` is covered by any tool in ``plan_tools``.
 
     Matches are generous by design:
@@ -274,11 +275,16 @@ def tool_covered(expected: str, plan_tools: Set[str],
       * build/index siblings — ``hisat2`` matches ``hisat2-build``,
                  ``bowtie2`` matches ``bowtie2-build``
       * loose prefix for long names — ``star`` covers ``starsolo``
-      * R/Python library fallback — if ``plan`` is supplied and the
-        expected name appears as a word anywhere in a step's command or
-        name, credit it. This catches ``Rscript dada2_denoise.R`` and
-        ``Rscript -e 'library(tximport); ...'`` where the library is the
-        real tool but the process-level invocation is ``Rscript``.
+      * Prose fallback (``prose_fallback=True``, default) — if ``plan`` is
+        supplied and the expected name appears as a whole word in a step's
+        ``name``, ``command``, or ``description``, credit it. This catches
+        ``Rscript dada2_denoise.R``, narrative Biomni-style sentences like
+        ``Run Kallisto quantification`` where the CLI token is not the
+        first word of ``command``, and tools mentioned only in descriptions.
+
+    The inference scorer (``score_plan_inference``) sets
+    ``prose_fallback=False`` so the LLM cannot earn credit for naming a
+    tool in narrative without actually invoking it.
 
     Normalises ``-`` and ``_`` so ``featurecounts`` matches ``featureCounts``.
     """
@@ -300,19 +306,18 @@ def tool_covered(expected: str, plan_tools: Set[str],
         if len(e) >= 4 and n.startswith(e):
             return True
 
-    # Fallback: library-inside-runner match. Only applies when a plan is
-    # supplied and at least one step invokes a script runner, so we don't
-    # over-credit tools that appear only in filenames of unrelated plans.
-    if plan is not None and len(e) >= 4 and any(
-        t in _RUNNER_TOKENS for t in plan_tools
-    ):
-        # Alphanumeric-only boundaries — underscores count as separators,
-        # so ``dada2_denoise_script.R`` matches expected ``dada2``.
+    # Prose / narrative fallback: whole-word match in step text. Does not
+    # require an R/Python/bash runner in plan_tools (Biomni and similar agents
+    # often emit paragraph commands with no script-runner token).
+    if prose_fallback and plan is not None and len(e) >= 4:
         pat = re.compile(
             rf"(?<![a-zA-Z0-9]){re.escape(expected.lower())}(?![a-zA-Z0-9])"
         )
         for step in plan.get("steps", []):
-            text = f"{step.get('name', '')} {step.get('command', '')}".lower()
+            text = (
+                f"{step.get('name', '')} {step.get('command', '')} "
+                f"{step.get('description', '')}"
+            ).lower()
             if pat.search(text):
                 return True
     return False
@@ -444,16 +449,37 @@ def type_matches(actual, expected) -> bool:
 
 # ── Top-level scoring ─────────────────────────────────────────────
 
-def score_plan(plan: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, Any]:
+def score_plan(plan: Dict[str, Any], expected: Dict[str, Any],
+               *, strict_hallucinations: bool = False) -> Dict[str, Any]:
     """Compute Benchmark A metrics for one (plan, expectation) pair.
 
-    ``expected`` fields consumed:
+    Dispatches to :func:`score_plan_inference` when ``expected`` carries
+    ``acceptable_tool_sets`` (or ``tier == "inference"``); otherwise
+    runs the legacy transcription scorer below.
+
+    ``expected`` fields consumed (transcription tier):
       - ``expected_workflow_type``
       - ``expected_tools``        (list[str])
       - ``expected_min_steps``    (int)
       - ``forbidden_tools``       (list[str])
       - ``gold_preset``           (str, optional; preset id for concordance)
+
+    ``expected`` fields consumed (inference tier):
+      - ``acceptable_tool_sets``  (list[list[str]])
+      - ``expected_min_steps``    (int)
+      - ``forbidden_tools``       (list[str], optional)
+
+    ``strict_hallucinations``: when True, ``overall_pass`` requires
+    ``hallucination_rate == 0`` in addition to the existing gates. Off
+    by default to preserve back-compat with already-archived runs;
+    historical CSVs can be re-evaluated by passing the flag through
+    ``rescore_planning.py``.
     """
+    if expected.get("tier") == "inference" or "acceptable_tool_sets" in expected:
+        return score_plan_inference(
+            plan, expected, strict_hallucinations=strict_hallucinations,
+        )
+
     metrics: Dict[str, Any] = {}
 
     # Structural validity
@@ -526,8 +552,20 @@ def score_plan(plan: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, Any]
         except Exception:
             pass  # Gold concordance is best-effort
 
+    metrics["tier"] = "transcription"
+
+    # Command-semantic validity (non-gating in transcription tier; reported
+    # so the figure can show flag-correctness alongside tool-presence).
+    try:
+        from .command_validator import score_plan_commands
+        cmd_metrics = score_plan_commands(plan)
+        metrics.update(cmd_metrics)
+    except Exception:
+        # Validator is best-effort; never break scoring.
+        pass
+
     # Overall pass/fail (for stacked-bar summary)
-    metrics["overall_pass"] = bool(
+    base_pass = bool(
         metrics["plan_valid"]
         and metrics["dag_valid"]
         and metrics["type_correct"]
@@ -535,6 +573,117 @@ def score_plan(plan: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, Any]
         and metrics["no_forbidden_tools"]
         and metrics["step_count_ok"]
     )
+    if strict_hallucinations:
+        base_pass = base_pass and metrics["num_hallucinated_tools"] == 0
+    metrics["overall_pass"] = base_pass
+    return metrics
+
+
+def score_plan_inference(
+    plan: Dict[str, Any], expected: Dict[str, Any],
+    *, strict_hallucinations: bool = False,
+) -> Dict[str, Any]:
+    """Score an inference-tier prompt.
+
+    The plan passes if:
+      - structural validity (plan_valid + dag_valid),
+      - at least one ``acceptable_tool_sets`` entry is fully covered using
+        STRICT matching (no prose fallback — the tool name must appear as
+        the first token of a command segment, not just in narrative),
+      - ``forbidden_tools`` contains none of the planned tools,
+      - ``num_steps >= expected_min_steps``,
+      - ``commands_well_formed_fraction == 1.0`` from the per-tool flag
+        validator (gating; ensures the plan is a real shell pipeline,
+        not just a JSON wrapper around tool names).
+
+    ``strict_hallucinations`` (default False) additionally requires
+    ``hallucination_rate == 0``.
+
+    The returned metrics share the column names of ``score_plan`` so
+    both tiers can be merged into one CSV without schema surgery; the
+    ``tier`` field disambiguates per-row.
+    """
+    metrics: Dict[str, Any] = {}
+
+    metrics["plan_valid"] = plan_schema_valid(plan)
+    metrics["dag_valid"] = dag_valid(plan)
+
+    # Workflow-type is not a gate in the inference tier (the prompt does
+    # not constrain it); still recorded for analysis.
+    actual_type = plan.get("workflow_type", "")
+    metrics["actual_workflow_type"] = actual_type
+    metrics["type_correct"] = True  # not gated; permit any non-empty
+    if expected.get("expected_workflow_type"):
+        metrics["type_correct"] = type_matches(
+            actual_type, expected.get("expected_workflow_type"),
+        )
+
+    plan_tools = extract_tools_from_plan(plan)
+    metrics["num_tools"] = len(plan_tools)
+
+    h = hallucinated_tools(plan_tools)
+    metrics["num_hallucinated_tools"] = len(h)
+    metrics["hallucination_rate"] = (
+        len(h) / len(plan_tools) if plan_tools else 0.0
+    )
+    metrics["hallucinated_tools"] = ";".join(sorted(h)) if h else ""
+
+    forbidden = [t.lower() for t in (expected.get("forbidden_tools") or [])]
+    metrics["no_forbidden_tools"] = not any(
+        tool_covered(t, plan_tools, prose_fallback=False) for t in forbidden
+    )
+
+    sets = expected.get("acceptable_tool_sets") or []
+    matched_set: Optional[List[str]] = None
+    best_fraction = 0.0
+    for tool_set in sets:
+        if not tool_set:
+            continue
+        present = [
+            t for t in tool_set
+            if tool_covered(t, plan_tools, prose_fallback=False)
+        ]
+        frac = len(present) / len(tool_set) if tool_set else 1.0
+        if frac > best_fraction:
+            best_fraction = frac
+        if frac == 1.0 and matched_set is None:
+            matched_set = list(tool_set)
+    metrics["tools_present_fraction"] = best_fraction
+    metrics["matched_tool_set"] = (
+        ",".join(matched_set) if matched_set is not None else ""
+    )
+    metrics["any_tool_set_matched"] = matched_set is not None
+    # Compatibility: leave ``expected_tools`` as the matched set so
+    # downstream merging code that keys on it still works.
+
+    n_steps = len(plan.get("steps", []))
+    metrics["num_steps"] = n_steps
+    metrics["step_count_ok"] = n_steps >= (expected.get("expected_min_steps") or 0)
+
+    metrics["tier"] = "inference"
+
+    # Command-semantic validity (gating in inference tier).
+    cmd_ok = True
+    try:
+        from .command_validator import score_plan_commands
+        cmd_metrics = score_plan_commands(plan)
+        metrics.update(cmd_metrics)
+        cmd_ok = metrics.get("commands_well_formed_fraction", 1.0) == 1.0
+    except Exception:
+        # Validator missing or broken — be conservative and don't gate.
+        cmd_ok = True
+
+    base_pass = bool(
+        metrics["plan_valid"]
+        and metrics["dag_valid"]
+        and metrics["any_tool_set_matched"]
+        and metrics["no_forbidden_tools"]
+        and metrics["step_count_ok"]
+        and cmd_ok
+    )
+    if strict_hallucinations:
+        base_pass = base_pass and metrics["num_hallucinated_tools"] == 0
+    metrics["overall_pass"] = base_pass
     return metrics
 
 
