@@ -11,8 +11,39 @@ OpenAI strict mode requirements:
 """
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+
+
+# ── Node typing (DAG-Plan inspired) ────────────────────────────
+#
+# Bioinformatics-domain analogue of DAG-Plan's
+# {occupy, tool_use, release, operate, complete} taxonomy. The
+# enum is small and stable so the planner LLM can emit one of
+# these values reliably. The validator in
+# ``flowagent/core/completeness.py`` uses these labels (or
+# heuristically infers them from ``command`` / ``name`` when the
+# LLM omits the field) to enforce structural completeness:
+# ``align`` requires an ``index`` ancestor, ``de`` requires a
+# ``report`` descendant, every ``download`` must be consumed, etc.
+#
+# ``other`` is the safe escape hatch for steps that don't fit any
+# specialised category (e.g. ``mkdir -p``, custom Rscript glue).
+class StepKind(str, Enum):
+    DOWNLOAD = "download"
+    INDEX = "index"
+    QC = "qc"
+    TRIM = "trim"
+    ALIGN = "align"
+    SORT = "sort"
+    DEDUP = "dedup"
+    CALL = "call"
+    QUANTIFY = "quantify"
+    DE = "de"
+    REPORT = "report"
+    TERMINAL = "terminal"
+    OTHER = "other"
 
 
 # ── Pipeline planning context ─────────────────────────────────
@@ -55,6 +86,18 @@ class WorkflowStepSchema(BaseModel):
     dependencies: List[str] = Field(default_factory=list, description="Names of prerequisite steps")
     outputs: List[str] = Field(default_factory=list, description="Expected output file patterns")
     description: str = Field("", description="Brief description of the step")
+    kind: StepKind = Field(
+        StepKind.OTHER,
+        description=(
+            "Structural category of this step. One of: download, index, qc, "
+            "trim, align, sort, dedup, call, quantify, de, report, terminal, "
+            "other. The completeness validator uses these labels to enforce "
+            "structural rules (every align needs an index ancestor; every "
+            "de/call/quantify needs a report descendant; every download must "
+            "be consumed downstream). Use 'other' only when no specialised "
+            "category fits (e.g. mkdir, custom glue)."
+        ),
+    )
 
     model_config = {"extra": "forbid"}
 

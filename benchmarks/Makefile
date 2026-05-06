@@ -17,7 +17,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -32,6 +32,9 @@ help:
 	@echo "  make ablation     - Benchmark H: DAG-aware vs DAG-blind planner ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make ablation-pilot - Benchmark H smoke: 5 prompts × 1 replicate × 2 arms (validates the ablation pipeline)"
 	@echo "  make ablation-figure ABLATION_DIR=results/ablation/<ts> - render figure_ablation.pdf + stats_ablation.tsv"
+	@echo "  make reflection   - Benchmark I: completeness-reflection ablation (66 prompts × replicates × 2 arms)"
+	@echo "  make reflection-pilot - Benchmark I smoke: 8 prompts × 1 replicate × 2 arms"
+	@echo "  make reflection-figure REFLECTION_DIR=results/reflection/<ts> - render figure_reflection.pdf + stats_reflection.tsv"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
 	@echo "  make test         - run the benchmark test suite (pytest)"
@@ -112,6 +115,41 @@ ablation-figure:
 	$(PY) make_ablation_figure.py \
 	    --paired=$(ABLATION_DIR)/paired_metrics.csv \
 	    --out=figure_ablation
+
+# Benchmark I -- completeness-reflection ablation.
+# Both arms keep LLM_DAG_AWARE=true; only LLM_COMPLETENESS_REFLECT is
+# toggled. Tests whether the DAG-Plan-style completeness validator + LLM
+# retry loop introduced in flowagent/core/completeness.py improves plan
+# quality (measured via the new completeness_pass + stage_efficiency
+# columns from harness/metrics.py).
+reflection:
+	$(PY) bench_reflection_ablation.py \
+	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --replicates=$(REPLICATES) \
+	    $(if $(MAX_RETRIES),--max-retries=$(MAX_RETRIES),) \
+	    --out=$(RESULTS_DIR)
+
+# Quick smoke for Benchmark I: 8 prompts × 1 replicate × 2 arms.
+# ~2-5 min, ~$0.20 on Claude Haiku 4.5.
+reflection-pilot:
+	$(PY) bench_reflection_ablation.py \
+	    --models=$(MODEL) \
+	    --replicates=1 \
+	    --limit=8 \
+	    --out=$(RESULTS_DIR)
+
+# Render figure_reflection.pdf + stats_reflection.tsv from a finished run.
+# Pass REFLECTION_DIR=results/reflection/<timestamp>/ to point at a specific run.
+REFLECTION_DIR ?= $(shell ls -td $(RESULTS_DIR)/reflection/*/ 2>/dev/null | head -1)
+reflection-figure:
+	@if [ -z "$(REFLECTION_DIR)" ]; then \
+	    echo "No reflection runs found under $(RESULTS_DIR)/reflection. "; \
+	    echo "Run \`make reflection\` first or pass REFLECTION_DIR=...."; \
+	    exit 1; \
+	fi
+	$(PY) make_reflection_figure.py \
+	    --paired=$(REFLECTION_DIR)/paired_metrics.csv \
+	    --out=figure_reflection
 
 # Benchmark F — output fidelity (pure scoring; no LLM calls).
 # Use this when the candidate dirs already exist on disk.

@@ -18,6 +18,7 @@ from ..utils.logging import get_logger
 from .providers import create_provider, LLMProvider
 from .schemas import (
     PipelineContext,
+    StepKind,
     WorkflowPlanSchema,
     WorkflowPlanSchemaNoDAG,
     to_json_schema,
@@ -983,6 +984,81 @@ Return a JSON object in this EXACT format:
                     "suggested_time_min": 60,
                 }
 
+    async def _fetch_plan_json(
+        self,
+        messages: List[Dict[str, str]],
+        prompt: str,
+        matched_files: List[str],
+        dag_aware: bool,
+    ) -> Dict[str, Any]:
+        """Fetch a workflow plan as JSON, with three fallback strategies.
+
+        1. Structured-output call against the appropriate schema
+           (``WorkflowPlanSchema`` for DAG-aware, ``WorkflowPlanSchemaNoDAG``
+           for the ablation arm).
+        2. Plain chat + ``_clean_llm_response`` regex repair.
+        3. Last-ditch shorter prompt asking only for the minimal field
+           set required by the runtime.
+
+        Raises the most-recent error if all three attempts fail.
+
+        Extracted from the body of ``generate_workflow_plan`` so the
+        completeness-reflection loop can call it once per retry without
+        duplicating the fallback logic.
+        """
+        workflow_plan: Optional[Dict[str, Any]] = None
+        last_err: Optional[Exception] = None
+
+        try:
+            schema_cls = (
+                WorkflowPlanSchema if dag_aware else WorkflowPlanSchemaNoDAG
+            )
+            schema = to_json_schema(schema_cls)
+            resp = await self.provider.chat_structured(messages, schema)
+            workflow_plan = (
+                json.loads(resp.content) if isinstance(resp.content, str) else resp.content
+            )
+        except Exception as structured_err:
+            self.logger.debug(
+                "Structured output failed (%s), trying plain chat", structured_err,
+            )
+            last_err = structured_err
+
+        if workflow_plan is None:
+            try:
+                response = await self._call_openai(messages)
+                cleaned = self._clean_llm_response(response)
+                workflow_plan = json.loads(cleaned)
+            except (json.JSONDecodeError, Exception) as parse_err:
+                self.logger.debug(
+                    "First plain-chat parse failed (%s), retrying", parse_err,
+                )
+                last_err = parse_err
+
+        if workflow_plan is None:
+            try:
+                _retry_keys = (
+                    "name, command, dependencies" if dag_aware else "name, command"
+                )
+                retry_messages = [
+                    messages[0],
+                    {"role": "user", "content": (
+                        f"Generate a workflow plan as a JSON object for: {prompt}\n"
+                        f"Input files: {matched_files}\n"
+                        "Return JSON with keys: workflow_type (string), "
+                        f"steps (array of objects with {_retry_keys}). "
+                        "Return ONLY valid JSON, no markdown."
+                    )},
+                ]
+                response = await self._call_openai(retry_messages)
+                cleaned = self._clean_llm_response(response)
+                workflow_plan = json.loads(cleaned)
+            except Exception as retry_err:
+                self.logger.error("All JSON parse attempts failed")
+                raise last_err or retry_err
+
+        return workflow_plan
+
     async def generate_workflow_plan(
         self, prompt: str, *, context: Optional[PipelineContext] = None,
     ) -> Dict[str, Any]:
@@ -1145,6 +1221,7 @@ Important:
             _live_settings = Settings()
             _dag_aware = _live_settings.LLM_DAG_AWARE
             if _dag_aware:
+                _kind_values = ", ".join(k.value for k in StepKind)
                 enhanced_prompt = f"""
 You are a bioinformatics workflow expert. Generate a workflow plan as a JSON object with the following structure:
 {{
@@ -1155,7 +1232,8 @@ You are a bioinformatics workflow expert. Generate a workflow plan as a JSON obj
             "command": "command_to_execute",
             "parameters": {{"param1": "value1"}},
             "dependencies": ["dependent_step_name1"],
-            "outputs": ["expected_output1"]
+            "outputs": ["expected_output1"],
+            "kind": "align"
         }}
     ]
 }}
@@ -1175,6 +1253,14 @@ Rules:
 6. The bioinformatics tool (fastqc, kallisto, multiqc, etc.) MUST be the first token of the command. Do not prepend 'mkdir -p' or other shell prefixes; rely on the directory-creation step instead.
 7. For multiqc, always pass '-f' (force overwrite) and '-n multiqc_report' (fixed filename) so re-runs produce the same output path.
 8. Return ONLY the JSON object, no markdown formatting or other text
+9. Each step MUST carry a "kind" field labelling its structural role.
+   Valid values (pick the most specific one that fits): {_kind_values}.
+   Structural rules the planner enforces post-hoc:
+     - every alignment step ("kind": "align") needs an "index" or "download" ancestor;
+     - every "download" step must have a downstream consumer;
+     - "quantify" / "call" / "de" steps must feed a "report" descendant or be DAG sinks;
+     - the DAG must be weakly connected and have at least one terminal sink.
+   Use "other" only for setup/glue (e.g. mkdir).
 """
             else:
                 enhanced_prompt = f"""
@@ -1266,95 +1352,115 @@ Resource Management Rules:
                 {"role": "user", "content": enhanced_prompt},
             ]
 
-            # Try structured output first, then plain chat, repairing JSON if needed
-            workflow_plan = None
-            last_err = None
+            # Reflection loop (DAG-Plan style; arXiv:2406.09953):
+            #
+            # After the LLM emits a plan we run domain-specific structural
+            # checks (``flowagent.core.completeness``). If they fail and
+            # ``LLM_COMPLETENESS_REFLECT`` is enabled, we append the
+            # failure list to the conversation and ask the LLM to
+            # regenerate, up to ``LLM_COMPLETENESS_MAX_RETRIES`` times.
+            # The most recent plan is returned regardless; the verdict is
+            # surfaced as ``plan["_completeness"]`` so the benchmark
+            # harness can score completeness pass-rate per cell.
+            from .completeness import (
+                fill_missing_kinds,
+                render_completeness_feedback,
+                validate_workflow_completeness,
+            )
 
-            # Attempt 1: structured output (guaranteed JSON schema).
-            # Pick the DAG-aware or DAG-blind schema based on settings.
-            try:
-                schema_cls = (
-                    WorkflowPlanSchema if _dag_aware else WorkflowPlanSchemaNoDAG
+            do_reflect = bool(_live_settings.LLM_COMPLETENESS_REFLECT)
+            max_retries = max(0, int(_live_settings.LLM_COMPLETENESS_MAX_RETRIES))
+
+            workflow_plan: Optional[Dict[str, Any]] = None
+            last_failures: List[str] = []
+            attempts_done = 0
+            attempt_messages = list(messages)
+
+            for attempt in range(max_retries + 1):
+                attempts_done = attempt + 1
+
+                # ── Fetch JSON from LLM (3-attempt fallback) ────────
+                workflow_plan = await self._fetch_plan_json(
+                    attempt_messages, prompt, matched_files, _dag_aware,
                 )
-                schema = to_json_schema(schema_cls)
-                resp = await self.provider.chat_structured(messages, schema)
-                workflow_plan = json.loads(resp.content) if isinstance(resp.content, str) else resp.content
-            except Exception as structured_err:
-                self.logger.debug("Structured output failed (%s), trying plain chat", structured_err)
-                last_err = structured_err
 
-            # Attempt 2: plain chat + clean/repair
-            if workflow_plan is None:
-                try:
-                    response = await self._call_openai(messages)
-                    cleaned = self._clean_llm_response(response)
-                    workflow_plan = json.loads(cleaned)
-                except (json.JSONDecodeError, Exception) as parse_err:
-                    self.logger.debug("First plain-chat parse failed (%s), retrying", parse_err)
-                    last_err = parse_err
+                # ── DAG-blind ablation: inject empty dependency lists
+                # so downstream code (DAG construction, benchmark
+                # ``dag_valid``) sees a trivially valid DAG. The
+                # ``dag_edge_density`` metric in the benchmark harness
+                # will confirm the ablation took effect.
+                if not _dag_aware:
+                    for step in workflow_plan.get("steps", []):
+                        step["dependencies"] = []
 
-            # Attempt 3: retry with a shorter prompt asking for fewer details
-            if workflow_plan is None:
-                try:
-                    if _dag_aware:
-                        _retry_keys = "name, command, dependencies"
-                    else:
-                        _retry_keys = "name, command"
-                    retry_messages = [
-                        messages[0],
-                        {"role": "user", "content": (
-                            f"Generate a workflow plan as a JSON object for: {prompt}\n"
-                            f"Input files: {matched_files}\n"
-                            "Return JSON with keys: workflow_type (string), "
-                            f"steps (array of objects with {_retry_keys}). "
-                            "Return ONLY valid JSON, no markdown."
-                        )},
-                    ]
-                    response = await self._call_openai(retry_messages)
-                    cleaned = self._clean_llm_response(response)
-                    workflow_plan = json.loads(cleaned)
-                except Exception as retry_err:
-                    self.logger.error("All JSON parse attempts failed")
-                    raise last_err or retry_err
+                # ── Prepend reference-download steps when context asks
+                # for them. Idempotent across reflection retries: name
+                # collisions are filtered before re-inserting.
+                if context:
+                    from .pipeline_planner import build_reference_download_steps
+                    dl_steps = build_reference_download_steps(context)
+                    if dl_steps:
+                        dl_names = {s["name"] for s in dl_steps}
+                        existing = workflow_plan.get("steps", [])
+                        existing = [s for s in existing if s.get("name") not in dl_names]
+                        for step in existing:
+                            cmd_lower = (step.get("command") or "").lower()
+                            name_lower = (step.get("name") or "").lower()
+                            needs_ref = any(kw in cmd_lower for kw in [
+                                "index", "genome", "reference/", "transcriptome", "genes.gtf",
+                            ]) or any(kw in name_lower for kw in [
+                                "index", "genome",
+                            ])
+                            if needs_ref:
+                                deps = step.get("dependencies", [])
+                                for dl_name in dl_names:
+                                    if dl_name not in deps:
+                                        deps.append(dl_name)
+                                step["dependencies"] = deps
+                        workflow_plan["steps"] = dl_steps + existing
 
-            # DAG-blind ablation: the LLM was told nothing about
-            # dependencies, but downstream code (DAG construction,
-            # benchmark scoring's ``dag_valid``) expects each step to
-            # carry a ``dependencies`` list. Inject empty lists so the
-            # plan is a trivially valid DAG with zero edges; the
-            # ``dag_edge_density`` metric in the benchmark harness will
-            # confirm the ablation took effect.
-            if not _dag_aware:
-                for step in workflow_plan.get("steps", []):
-                    step["dependencies"] = []
+                # ── Heuristic-fill missing 'kind' values (always; the
+                # validator needs them, and the DAG-blind path never
+                # asks the LLM for them).
+                fill_missing_kinds(workflow_plan)
 
-            # Prepend reference download steps if the context indicates
-            # that references need to be fetched.
-            if context:
-                from .pipeline_planner import build_reference_download_steps
-                dl_steps = build_reference_download_steps(context)
-                if dl_steps:
-                    dl_names = {s["name"] for s in dl_steps}
-                    existing = workflow_plan.get("steps", [])
-                    # Remove any LLM-generated steps whose name collides
-                    # with the download steps we are about to prepend.
-                    existing = [s for s in existing if s.get("name") not in dl_names]
-                    # Wire index/align steps to depend on downloads
-                    for step in existing:
-                        cmd_lower = (step.get("command") or "").lower()
-                        name_lower = (step.get("name") or "").lower()
-                        needs_ref = any(kw in cmd_lower for kw in [
-                            "index", "genome", "reference/", "transcriptome", "genes.gtf",
-                        ]) or any(kw in name_lower for kw in [
-                            "index", "genome",
-                        ])
-                        if needs_ref:
-                            deps = step.get("dependencies", [])
-                            for dl_name in dl_names:
-                                if dl_name not in deps:
-                                    deps.append(dl_name)
-                            step["dependencies"] = deps
-                    workflow_plan["steps"] = dl_steps + existing
+                # ── Validate completeness; reflect if failing.
+                ok, failures = validate_workflow_completeness(workflow_plan)
+                last_failures = failures
+
+                if ok or not do_reflect or attempt >= max_retries:
+                    break
+
+                # Build reflection message: original prompt + previous
+                # plan (so the LLM can see what it produced) + failure
+                # list with explicit guidance.
+                feedback = render_completeness_feedback(failures)
+                self.logger.info(
+                    "Plan failed completeness checks (attempt %d/%d): %s",
+                    attempts_done, max_retries + 1, failures,
+                )
+                attempt_messages = list(messages) + [
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {
+                                k: v for k, v in workflow_plan.items()
+                                if not k.startswith("_")
+                            },
+                            default=str,
+                        ),
+                    },
+                    {"role": "user", "content": feedback},
+                ]
+
+            # Surface verdict on the plan envelope so the benchmark
+            # harness records ``completeness_pass`` and the failure list.
+            workflow_plan["_completeness"] = {
+                "pass": not last_failures,
+                "failures": list(last_failures),
+                "attempts": attempts_done,
+                "reflect_enabled": do_reflect,
+            }
 
             # Log workflow plan
             self.logger.info("Generated workflow plan:")

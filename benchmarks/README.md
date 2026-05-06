@@ -1,10 +1,13 @@
 # FlowAgent Benchmarks
 
-Reproducible benchmarks that measure FlowAgent's seven core claims: natural-language
+Reproducible benchmarks that measure FlowAgent's nine core claims: natural-language
 **planning correctness**, **per-model cost**, **adaptive error recovery**,
 **generator fidelity**, **executor coverage**, **output fidelity** against
-published references, and **biological-interpretation quality**. Drive the
-manuscript figures.
+published references, **biological-interpretation quality**, and two planner
+ablations -- **DAG-awareness** (does telling the LLM about the dependency
+graph help?) and **completeness reflection** (does a DAG-Plan-style
+"regenerate if structurally incomplete" loop help?). Drive the manuscript
+figures.
 
 ## Layout
 
@@ -16,7 +19,7 @@ benchmarks/
 │   ├── fidelity_cases.yaml             # Output-fidelity cases (Benchmark F)
 │   └── interpretation_questions.yaml   # MCQ + open-ended questions (Benchmark G)
 ├── corpus/
-│   └── prompts.yaml                    # 41 prompts (23 standard + 18 hard)
+│   └── prompts.yaml                    # 66 prompts (23 standard + 18 hard transcription + 25 inference)
 ├── references/                         # Materialised gold-standard outputs (gitignored)
 │   ├── download_references.py          # Orchestrator — fetches each Benchmark F reference
 │   ├── install_r_deps.R                # Installs Bioconductor packages used by R recipes
@@ -45,6 +48,10 @@ benchmarks/
 ├── bench_fidelity.py                   # F — pure scoring layer for output fidelity
 ├── bench_fidelity_run.py               # F — end-to-end driver (runs flowagent then scores)
 ├── bench_interpretation.py             # G — MCQ + open-ended interpretation
+├── bench_ablation.py                   # H — DAG-aware vs DAG-blind planner ablation
+├── make_ablation_figure.py             # H — figure + paired stats for Benchmark H
+├── bench_reflection_ablation.py        # I — completeness-reflection ablation
+├── make_reflection_figure.py           # I — figure + paired stats for Benchmark I
 ├── rescore_planning.py                 # Re-evaluate existing plans with updated metrics
 ├── recovery_taxonomy.py                # Classify Benchmark B responses
 ├── merge_runs.py                       # Combine runs across models/sessions
@@ -53,18 +60,19 @@ benchmarks/
 └── results/                            # Gitignored outputs (CSV, JSON, PDF)
 ```
 
-## The eight benchmarks
+## The nine benchmarks
 
-| ID | Claim | Needs API key | Needs infra |
-|---|---|---|---|
-| **A** | FlowAgent generates valid plans from natural language | yes | no |
-| **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no |
-| **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` |
-| **D** | All six execution backends function | no | best-effort — mock mode if infra absent |
-| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni + Claude Code + Edison clones / CLIs / API keys |
-| **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download |
-| **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F |
-| **H** | Telling the LLM about the dependency DAG improves bioinformatics plan quality | yes | no |
+| ID | Claim | Needs API key | Needs infra | Make target |
+|---|---|---|---|---|
+| **A** | FlowAgent generates valid plans from natural language | yes | no | `make plan` / `make plan-all` |
+| **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no | `make recovery` |
+| **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` | `make gen` |
+| **D** | All six execution backends function | no | best-effort — mock mode if infra absent | `make exec` |
+| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni + Claude Code + Edison clones / CLIs / API keys | `make competitors` / `make competitors-all` |
+| **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download | `make fidelity-run` (live) / `make fidelity` (score-only) |
+| **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F | `make interpretation` |
+| **H** | Telling the LLM about the dependency DAG improves bioinformatics plan quality | yes | no | `make ablation` / `make ablation-pilot` |
+| **I** | DAG-Plan-style completeness validator + LLM reflection retry improves plan quality | yes | no | `make reflection` / `make reflection-pilot` |
 
 ### Prompt corpus
 
@@ -295,8 +303,15 @@ Keys set in the shell win over `.env` (standard dotenv semantics).
 make smoke
 ```
 
-Runs every benchmark in mock mode to verify the harness imports cleanly and
-the scoring pipeline is sound.
+Runs Benchmarks A–D in mock mode to verify the harness imports cleanly and
+the scoring pipeline is sound. The two ablations (H, I) and the live-run
+benchmarks (E, F, G) are not in `make smoke` because they require API
+keys; pilot them instead with:
+
+```bash
+make ablation-pilot   MODEL=claude-haiku-4-5   # ~$0.05, 5 prompts × 2 arms
+make reflection-pilot MODEL=claude-haiku-4-5   # ~$0.20, 8 prompts × 2 arms
+```
 
 ### Single model — Benchmark A
 
@@ -897,8 +912,10 @@ make ablation-pilot MODEL=claude-haiku-4-5
 # Full 66-prompt × MODEL × REPLICATES × 2 arms sweep
 make ablation MODEL=claude-haiku-4-5 REPLICATES=3
 
-# Render figure_ablation.pdf + stats_ablation.tsv (uses the most recent run)
+# Render figure_ablation.pdf + figure_ablation__stats.tsv (uses the most recent run)
 make ablation-figure
+# Or point at a specific run
+make ablation-figure ABLATION_DIR=results/ablation/2026-05-06T21-33-42
 ```
 
 Tests whether telling the LLM about the dependency DAG -- the standard
@@ -921,10 +938,16 @@ delta show up only in metrics that actually reflect plan quality:
 |---|---|---|
 | `dag_edge_density` | [`harness/metrics.dag_shape`](harness/metrics.py) | edges / max(steps - 1, 1). Sanity: should be 0 for `dag_blind`. |
 | `parallel_width` | same | max width of a topological layer. Sanity: 1 for `dag_blind`. |
+| `stage_efficiency` | same | `num_steps / num_dag_layers` (DAG-Plan analogue, Gao & Mu 2025). 1.0 for linear; >1 for parallel; normalised to 1.0 when there are zero edges. |
+| `completeness_pass` | [`harness/metrics.completeness_metrics`](harness/metrics.py) | does the plan satisfy the four DAG-Plan-style structural rules (every `align` has an `index`/`download` ancestor; every `download` has a consumer; every `quantify`/`call`/`de` reaches an informative sink; weakly connected with terminal sink)? |
 | `tools_present_fraction` | [`score_plan`](harness/metrics.py) | did DAG awareness change tool selection? |
 | `hallucination_rate` | same | did it suppress unknown / made-up tool names? |
 | `preset_command_f1` | same | did it improve adherence to the gold preset commands? |
 | `overall_pass` | same | did it move the gating outcome? (paired McNemar) |
+
+`stage_efficiency` and `completeness_pass` were added to support
+Benchmark I (see below) but are recorded for *every* run, so they
+appear as new columns in Benchmark H's `paired_metrics.csv` too.
 
 Output:
 
@@ -937,7 +960,8 @@ Output:
 * `figure_ablation.pdf` / `.png` -- per-metric arm means with bootstrap
   95% CIs.
 * `figure_ablation__stats.tsv` -- paired Wilcoxon (continuous) and
-  McNemar (`overall_pass`) per metric.
+  McNemar (`overall_pass`) per metric (default basename `<out>__stats.tsv`,
+  override with `--stats-out`).
 
 **Pilot results (3 prompts, Claude Haiku 4.5, single replicate)
 already in the repo** confirm the ablation is working end-to-end:
@@ -946,6 +970,111 @@ the two arms; an early `hallucination_rate` signal (0.0 vs 0.21) hints
 that DAG awareness keeps the LLM more disciplined, but a full 66-prompt
 sweep is needed to call statistical significance. See
 [`figures/figure_ablation_pilot.pdf`](../figures/figure_ablation_pilot.pdf).
+
+### Benchmark I — completeness-reflection ablation
+
+```bash
+# 8-prompt smoke (validates the whole pipeline; ~$0.20 on Claude Haiku)
+make reflection-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep
+make reflection MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Same sweep but cap retries (default 2) — useful to study cost/benefit
+make reflection MODEL=claude-haiku-4-5 REPLICATES=3 MAX_RETRIES=1
+
+# Render figure_reflection.pdf + stats_reflection.tsv (uses the most recent run)
+make reflection-figure
+# Or point at a specific run
+make reflection-figure REFLECTION_DIR=results/reflection/2026-05-06T22-09-17
+```
+
+Tests whether the DAG-Plan-style structural completeness validator
+(introduced in [`flowagent/core/completeness.py`](../flowagent/core/completeness.py))
+plus an LLM reflection retry loop improves plan quality. Both arms keep
+`LLM_DAG_AWARE=true` so this is a clean A/B of the reflection retry
+alone (not a confound with the Benchmark H DAG-prompt toggle):
+
+| Arm | `LLM_COMPLETENESS_REFLECT` | Behaviour |
+|---|---|---|
+| `reflect_on` | `true` (default) | After each plan, run [`validate_workflow_completeness`](../flowagent/core/completeness.py). On failure, append the failure list to the conversation as a reflection prompt and re-query the LLM, up to `LLM_COMPLETENESS_MAX_RETRIES` times (default 2 → max 3 LLM calls). The most recent plan wins regardless. |
+| `reflect_off` | `false` | The validator still runs at score time (so `completeness_pass` and `num_completeness_failures` are reported for both arms), but the planner accepts the first draft without retry. |
+
+Both arms share the rest of the planner stack: the typed-node `kind`
+field on each step, the post-hoc heuristic `fill_missing_kinds` fallback,
+the reference-download wiring, and the structured-output schema. The
+delta is the retry loop alone.
+
+The four structural rules the validator enforces (each contributes at
+most one failure message; see
+[`validate_workflow_completeness`](../flowagent/core/completeness.py)):
+
+1. Every `align` step needs an `index` or `download` ancestor.
+2. Every `download` step must have a downstream consumer (no
+   "fetched but never used" references).
+3. Every `quantify`/`call`/`de` step must reach an informative sink
+   (`report`, `terminal`, or another `quantify`/`call`/`de`) — chains
+   ending in a glue `other` sink fail.
+4. The DAG must be weakly connected with at least one terminal sink
+   and no cycles.
+
+Step `kind` is one of `download | index | qc | trim | align | sort |
+dedup | call | quantify | de | report | terminal | other` and is
+emitted by the LLM (asked for in the prompt) or, on the
+`WorkflowPlanSchemaNoDAG` ablation arm + JSON-repair retries that drop
+fields, inferred heuristically from `command + name`.
+
+Headline metrics for this benchmark:
+
+| Metric | What it measures |
+|---|---|
+| `completeness_pass` | binary pass/fail per plan against the four rules. Headline McNemar test in `stats_reflection.tsv`. |
+| `num_completeness_failures` | count of rule violations per plan. |
+| `completeness_attempts` | number of LLM calls used to reach the final plan (1 = no retries; 2-3 = reflection fired). |
+| `stage_efficiency` | `num_steps / num_dag_layers`. Reflected here because reflection can change graph topology. |
+| `cost_usd` | the cost overhead of reflection — directly comparable across arms. |
+| `overall_pass`, `tools_present_fraction`, `hallucination_rate` | inherited from `score_plan`; should be neutral in a clean reflection-only ablation. |
+
+Output (mirrors Benchmark H's layout):
+
+* `results/reflection/<ts>/reflect_on/results.jsonl` + `metrics.csv`
+* `results/reflection/<ts>/reflect_off/results.jsonl` + `metrics.csv`
+* `results/reflection/<ts>/paired_metrics.csv` -- joined by
+  `(model, input_id, replicate)`.
+* `figure_reflection.pdf` / `.png` -- per-metric arm means with
+  bootstrap 95% CIs (panels: `completeness_pass`, `stage_efficiency`,
+  `overall_pass`, `dag_edge_density`, `parallel_width`,
+  `completeness_failures`, `hallucination_rate`,
+  `tools_present_fraction`, `num_steps`).
+* `stats_reflection.tsv` -- paired Wilcoxon (continuous) + McNemar
+  (binary) per metric, with `mean_reflect_on`, `mean_reflect_off`,
+  `mean_diff`, `p_value`, `test`, and `(b_only, c_only)` discordant
+  counts for the McNemar tests.
+
+**Pilot results (8 RNA-seq prompts, Claude Haiku 4.5, single
+replicate)** in `results/reflection/2026-05-06T22-09-17/`:
+`completeness_pass` rises from 0.75 to 1.00 (`c_only=2, b_only=0` —
+2 plans recovered by reflection, none degraded). The two recovered
+plans were `rnaseq_kallisto_basic` and `rnaseq_geo`, both with
+`download_*` steps that lacked a downstream consumer in the first
+draft. Cost overhead is concentrated on the cells that actually
+retry: per-cell mean cost rose from $0.013 to $0.018 (~40%) but only
+2/8 cells issued retries.
+
+Use the new `MAX_RETRIES` knob to study cost/benefit:
+
+```bash
+# 1 retry only (max 2 LLM calls per plan)
+make reflection MAX_RETRIES=1
+
+# Validation runs but no retries — completeness_pass still reported
+make reflection MAX_RETRIES=0
+```
+
+`MAX_RETRIES=0` is also useful as a third arm: it keeps the validator
+in the scoring loop (so the metric is comparable) but disables the
+retry, isolating the cost of *running the validator* from the cost of
+*acting on it*.
 
 ### Everything at once
 
@@ -959,14 +1088,22 @@ Use `make all` for a quick end-to-end smoke of one model (fast, cheap). Use
 `rescore → merge → report` in the right order so all models appear in the
 final figures.
 
-Benchmarks F and G are **not** included in `all-sweep` because they have
-distinct workflow shapes (F needs prior FlowAgent runs to score; G is an
-LLM-only sweep against fixed reference inputs). Run them separately:
+Benchmarks F, G, H, and I are **not** included in `all-sweep` because they
+have distinct workflow shapes:
+- **F** needs prior FlowAgent runs to score (or `fidelity-run` to drive
+  end-to-end pipelines that take hours).
+- **G** is an LLM-only sweep against fixed reference inputs.
+- **H** and **I** are paired ablations (two arms per model) and would
+  double the planning cost of `all-sweep`.
+
+Run them separately:
 
 ```bash
 make references                                # one-time, materialises Benchmark F refs
 make fidelity                                  # bulk-score a fidelity_runs/ tree
 make interpretation MODEL=gpt-4.1 JUDGE=gpt-5.4
+make ablation MODEL=claude-haiku-4-5 REPLICATES=3 && make ablation-figure
+make reflection MODEL=claude-haiku-4-5 REPLICATES=3 && make reflection-figure
 ```
 
 ## Post-processing (important order)
@@ -1142,6 +1279,11 @@ Rough guide at current (Apr 2026) rates across the full 30-model registry.
 | `make fidelity-run MODELS=a,b,c` | 3 | ~30+ h sequential | ~$10–45 (21 cells); without `CLEANUP=1`, **>1 TB peak disk** |
 | `make interpretation` | 1 | ~5–10 min (32 questions) | ~$0.50–$2 |
 | `bench_interpretation.py --models=…` | 10 | ~30–60 min | ~$5–15 |
+| `make ablation-pilot` | 1 | ~3–5 min (5 prompts × 2 arms) | ~$0.05 on Claude Haiku |
+| `make ablation` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1–4 on Claude Haiku, ~$10+ on flagship |
+| `make reflection-pilot` | 1 | ~3–5 min (8 prompts × 2 arms) | ~$0.20 on Claude Haiku |
+| `make reflection` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1.5–6 on Claude Haiku, ~$15+ on flagship (~40% overhead vs Benchmark H from retries) |
+| `make ablation-figure` / `make reflection-figure` | — | ~10–20 s | $0 |
 | `make rescore` / `merge` / `report` | — | ~5 s | $0 |
 | `make install-r-deps` | — | ~5–10 min (one-off) | $0 |
 

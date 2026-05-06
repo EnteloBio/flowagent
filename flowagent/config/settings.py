@@ -45,6 +45,33 @@ class Settings(BaseSettings):
             "steps and does not mention dependencies. Used by benchmarks/bench_ablation.py."
         ),
     )
+    LLM_COMPLETENESS_REFLECT: bool = Field(
+        True,
+        description=(
+            "When True (default), after the LLM emits a workflow plan the "
+            "planner runs domain-specific structural checks "
+            "(flowagent.core.completeness.validate_workflow_completeness): "
+            "every align needs an index/download ancestor; every download "
+            "must be consumed; analysis steps must feed a report or be "
+            "DAG sinks; the graph must be weakly connected with at least "
+            "one terminal sink. If checks fail, the planner reflects the "
+            "LLM with the failure list and accepts the next draft (up to "
+            "LLM_COMPLETENESS_MAX_RETRIES). Inspired by DAG-Plan "
+            "(arXiv:2406.09953). Disable to measure the contribution of "
+            "reflection in the ablation matrix."
+        ),
+    )
+    LLM_COMPLETENESS_MAX_RETRIES: int = Field(
+        2,
+        description=(
+            "Maximum number of completeness-reflection retries before "
+            "accepting the most recent plan as-is. The first attempt does "
+            "not count as a retry; with the default of 2 the planner "
+            "performs at most 3 LLM calls per plan (initial + 2 retries). "
+            "Set to 0 to disable retries while keeping the validation "
+            "metric in the score CSV."
+        ),
+    )
 
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API Key")
     ANTHROPIC_API_KEY: Optional[str] = Field(None, description="Anthropic API Key")

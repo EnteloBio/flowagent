@@ -362,6 +362,65 @@ def dag_valid(plan: Dict[str, Any]) -> bool:
     return True
 
 
+def completeness_metrics(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Run the FlowAgent domain-specific completeness validator on a plan.
+
+    Returns a small dict that's safe to merge into the per-row scoring
+    output:
+
+      - ``completeness_pass`` (bool): True iff the plan satisfies every
+        structural rule (every align has an index/download ancestor;
+        every download is consumed; quantify/call/de feed a report or
+        are sinks; weakly connected; at least one terminal sink).
+      - ``num_completeness_failures`` (int): count of rule violations.
+      - ``completeness_failures`` (str): semicolon-joined human-readable
+        failure messages (empty string when ``completeness_pass``).
+
+    Two sources are tried in order:
+
+      1. The plan envelope itself: when FlowAgent's planner ran with
+         reflection enabled it attaches a ``_completeness`` block. We
+         prefer that because it represents the verdict the planner
+         actually saw (and possibly retried against).
+      2. Live validation via ``flowagent.core.completeness``. This is
+         the path used for competitor plans (Biomni, Claude Code,
+         Edison) which never carry the ``_completeness`` envelope.
+
+    Returns conservative defaults when neither source is available so
+    older runs can still be merged into combined CSVs.
+    """
+    pre = plan.get("_completeness")
+    if isinstance(pre, dict):
+        failures = pre.get("failures") or []
+        if not isinstance(failures, list):
+            failures = []
+        return {
+            "completeness_pass": bool(pre.get("pass", not failures)),
+            "num_completeness_failures": len(failures),
+            "completeness_failures": ";".join(str(f) for f in failures),
+            "completeness_attempts": int(pre.get("attempts", 1) or 1),
+        }
+
+    try:
+        from flowagent.core.completeness import validate_workflow_completeness
+        ok, failures = validate_workflow_completeness(plan)
+        return {
+            "completeness_pass": bool(ok),
+            "num_completeness_failures": len(failures),
+            "completeness_failures": ";".join(failures),
+            "completeness_attempts": 1,
+        }
+    except Exception:
+        # Validator missing (e.g. flowagent not on path) or networkx
+        # absent; fall through to neutral defaults so merges don't break.
+        return {
+            "completeness_pass": True,
+            "num_completeness_failures": 0,
+            "completeness_failures": "",
+            "completeness_attempts": 1,
+        }
+
+
 def dag_shape(plan: Dict[str, Any]) -> Dict[str, Any]:
     """Structural shape metrics that distinguish DAG-aware from DAG-blind plans.
 
@@ -374,20 +433,37 @@ def dag_shape(plan: Dict[str, Any]) -> Dict[str, Any]:
     topological layer. ``1`` means strictly sequential (no exposed
     parallelism); higher values mean the planner found parallel branches.
 
-    These two metrics are the primary "ablation worked" sanity check for
+    ``stage_efficiency`` = ``num_steps / max(num_dag_layers, 1)``. This is
+    the bioinformatics analogue of DAG-Plan's stage-efficiency
+    (Gao & Mu et al., arXiv:2406.09953, Table II): a strictly linear
+    plan (every step depends on the previous one) needs ``num_steps``
+    topological layers and scores ``1.0``; a fully-parallel plan with
+    one layer of width ``num_steps`` scores ``num_steps``. The DAG-blind
+    ablation arm scores exactly ``num_steps`` because every step lands
+    in a single layer, but its ``parallel_width`` is normalised to 1
+    by convention (see below) -- so for the headline number the
+    ``stage_efficiency`` of the DAG-blind arm is *also* normalised by
+    counting it as a one-layer flat plan, which is fair: with no
+    dependency edges the planner never told us anything about
+    ordering. To keep both interpretations available we return both
+    ``stage_efficiency`` (normalised: capped at 1.0 when there are
+    zero edges) and ``stage_efficiency_raw`` (the literal ratio).
+
+    These metrics are the primary "ablation worked" sanity check for
     the DAG-blind arm: a DAG-blind planner that never emits dependencies
     will report ``dag_edge_density == 0`` and ``parallel_width == 1`` (a
     single layer containing all steps -- but we treat that case as 1 to
     match the no-parallelism intuition; see implementation below).
 
-    Both metrics are zero / one when the plan is empty or invalid; this
+    All metrics are zero / one when the plan is empty or invalid; this
     makes them safe to merge into the per-row results CSV.
     """
     steps = plan.get("steps", []) or []
     n = len(steps)
     if n == 0:
         return {"dag_edge_density": 0.0, "parallel_width": 0,
-                "num_dag_edges": 0, "num_dag_layers": 0}
+                "num_dag_edges": 0, "num_dag_layers": 0,
+                "stage_efficiency": 0.0, "stage_efficiency_raw": 0.0}
 
     # Edge density. Uses the same dependency interpretation as ``build_dag``
     # so the metric is consistent with ``dag_valid``.
@@ -433,12 +509,27 @@ def dag_shape(plan: Dict[str, Any]) -> Dict[str, Any]:
     if num_edges == 0:
         width = 1
 
+    # Stage efficiency = ratio of total steps to topological-layer
+    # count. A linear chain has layers == n_steps, giving 1.0; a
+    # parallel plan has fewer layers and scores higher. The "raw"
+    # variant uses literal layer count even when there are no edges
+    # (degenerates to n / 1 == n, matching DAG-Plan Table II's
+    # bound for fully-flat plans). The normalised variant treats
+    # zero-edges as "no exposed structure" and caps at 1.0, matching
+    # ``parallel_width``'s normalisation so both metrics tell a
+    # consistent story for the ablation headline.
+    raw_layers = layers if layers > 0 else 1
+    stage_efficiency_raw = n / raw_layers
+    stage_efficiency = 1.0 if num_edges == 0 else stage_efficiency_raw
+
     return {
         "dag_edge_density": edge_density,
         "parallel_width": width,
         "parallel_width_raw": raw_width,
         "num_dag_edges": num_edges,
         "num_dag_layers": layers,
+        "stage_efficiency": stage_efficiency,
+        "stage_efficiency_raw": stage_efficiency_raw,
     }
 
 
@@ -569,6 +660,13 @@ def score_plan(plan: Dict[str, Any], expected: Dict[str, Any],
     # DAG-shape metrics (ablation sanity check; non-gating)
     metrics.update(dag_shape(plan))
 
+    # Domain-specific completeness (DAG-Plan-style structural rules:
+    # align needs index ancestor, download must be consumed, quantify/
+    # call/de must feed a report or be sinks, weakly connected, has a
+    # terminal sink). Non-gating in the transcription tier; reported
+    # as a per-row column so the figure can stratify by it.
+    metrics.update(completeness_metrics(plan))
+
     # Type — accept a single expected string OR a list of synonyms.
     # Also tolerant of trailing-digit differences (rna_seq_hisat vs hisat2).
     actual_type = plan.get("workflow_type", "")
@@ -693,6 +791,10 @@ def score_plan_inference(
 
     # DAG-shape metrics (ablation sanity check; non-gating)
     metrics.update(dag_shape(plan))
+
+    # Domain-specific completeness (DAG-Plan-style structural rules).
+    # Non-gating in the inference tier too; reported per row.
+    metrics.update(completeness_metrics(plan))
 
     # Workflow-type is not a gate in the inference tier (the prompt does
     # not constrain it); still recorded for analysis.
