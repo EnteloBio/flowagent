@@ -9,6 +9,85 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning is benchmark-only and independent of the FlowAgent core
 release cadence.
 
+## [v2.1] — 2026-05-08 — Hardened hallucination detector
+
+### Benchmark A — Planning (`bench_planning.py`)
+
+#### `hallucinated_tools` column — schema change (v1 → v2)
+
+| Version | Format | Example |
+|---------|--------|---------|
+| v1 (≤ v2.0) | `"name;name;..."` | `"kalsito;fakeblast"` |
+| v2 (≥ v2.1) | `"name:category[:correction];..."` | `"kalsito:typo:kallisto;fakeblast:unknown"` |
+
+Parsers that only need the names can split on `;` and take the substring
+before the first `:`. Old archived CSVs (v1 schema) are still plotted
+correctly; the figure auto-detects the schema version.
+
+Migration: re-score an existing results directory to upgrade the column:
+
+```
+make rescore RESULTS_DIR=results/planning/<timestamp>
+```
+
+#### New columns (both `score_plan` and `score_plan_inference`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `num_hallucinated_typos` | int | Count of flagged tokens classified as `typo` |
+| `hallucinated_typos` | str | `"token->correction;..."` for each typo |
+
+#### New known-tools source
+
+The hallucination check now uses a checked-in snapshot
+(`data/known_tools.yaml`, ~16 k entries) built from:
+
+- **Bioconda** channel repodata (`noarch` + `linux-64`)
+- **Bioconductor** Software, Annotation, and Experiment package lists
+- **Hand-curated runtime / infra list** (~60 entries: `bash`, `conda`,
+  `nextflow`, `docker`, `aws`, `kubectl`, etc.)
+
+The snapshot replaces the ~150-entry `_BIOINFO_TOOLS` hand-curated
+whitelist.  `_BIOINFO_TOOLS` is retained as a fallback for environments
+where `data/known_tools.yaml` has not been generated.
+
+Refresh the snapshot (maintainer-only, ~6-month cadence):
+
+```
+make refresh-tools
+```
+
+#### Typo detection
+
+Tokens not in the snapshot are now run through a Damerau-Levenshtein
+fuzzy matcher (≥5 chars, distance ≤ 2) against the full known-tools set.
+Near-matches are classified as `typo:<correction>` rather than `unknown`.
+
+#### Four-category classification
+
+Each unrecognised token is assigned one of:
+
+| Category | Meaning |
+|----------|---------|
+| `typo` | Close Levenshtein match to a known tool |
+| `filename` | Has a path separator or biodata file extension |
+| `runtime_glue` | Common shell / infra command (not a bioinfo tool) |
+| `unknown` | Genuinely unknown — true hallucination candidate |
+
+#### Figure update
+
+`hallucination_figure` gains a third panel **(c) Category breakdown**:
+a per-model stacked bar showing the share of each category among all
+flagged tokens.  Falls back to the original 2-panel layout for CSVs
+that pre-date the v2 column schema.
+
+**Invalidates.** The `hallucinated_tools` column in all v2.0 and older
+`metrics.csv` files has changed schema.  `overall_pass`, `hallucination_rate`,
+and `num_hallucinated_tools` are **not** affected.  Re-score with
+`make rescore` to populate `num_hallucinated_typos` and `hallucinated_typos`.
+
+---
+
 ## [v2.0] — 2026-05-06 — Reviewer fix matrix
 
 This release implements the deep-fix plan addressing the reviewer's

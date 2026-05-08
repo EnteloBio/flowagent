@@ -6,9 +6,11 @@ scalar fields, so results serialise cleanly to CSV for figure generation.
 
 from __future__ import annotations
 
+import functools
 import re
 import shlex
-from typing import Any, Dict, Iterable, List, Optional, Set
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 try:
     import networkx as nx  # type: ignore
@@ -135,38 +137,181 @@ def _normalise_tool_name(name: str) -> str:
     return name.lower().replace("-", "_")
 
 
-def hallucinated_tools(plan_tools: Iterable[str]) -> List[str]:
-    """Return the subset of ``plan_tools`` not recognised as real CLI tools.
+# ── Known-tools snapshot loader ───────────────────────────────────
 
-    A tool is recognised if:
-      * its normalised name is in :data:`_BIOINFO_TOOLS`, or
-      * it is a family-prefix of a whitelist entry (``bwa_mem2`` covers
-        ``bwa``; ``hisat2_build`` covers ``hisat2``), or
-      * it is a runner token (``rscript``, ``python``, …).
+_SNAPSHOT_PATH = Path(__file__).parent.parent / "data" / "known_tools.yaml"
 
-    Everything else — typos (``kallsito``), made-up names
-    (``super_aligner_pro``), filenames (``raw_data``), etc. — is flagged
-    as a hallucination candidate.
+# Extended shell/infrastructure tokens beyond _SHELL_TOKENS — covers common
+# runtime-glue commands that legitimately appear as first tokens in pipelines.
+_RUNTIME_GLUE_TOKENS: Set[str] = {
+    "parallel", "xargs", "find", "gsutil", "gcloud", "aws", "az",
+    "kubectl", "helm", "terraform", "sbatch", "srun", "bsub", "qsub",
+    "qstat", "squeue", "nohup", "screen", "tmux",
+    "jq", "yq", "xmllint", "bc", "date", "hostname",
+    "tar", "gzip", "gunzip", "zcat", "pigz", "bzip2", "xz",
+    "bgzip", "tabix", "wget", "curl", "aria2", "aria2c", "rsync",
+    "scp", "sftp", "cp", "mv", "rm", "ln", "mkdir", "touch",
+    "chmod", "chown", "split", "join", "paste", "tee",
+    "make", "cmake", "git", "gcc", "java", "docker", "singularity",
+    "apptainer", "podman", "conda", "mamba", "micromamba", "pip",
+    "pixi", "brew", "nextflow", "snakemake", "cromwell", "toil",
+    "cwltool", "python", "python3", "python2", "rscript", "r",
+    "julia", "perl", "ruby", "node", "bash", "sh", "zsh",
+}
+
+
+@functools.lru_cache(maxsize=1)
+def _load_known_tools() -> Set[str]:
+    """Load the checked-in Bioconda/Bioconductor/runtime snapshot.
+
+    Returns a normalised (lower-case, hyphens → underscores) set of known
+    tool/package names.  Falls back to :data:`_BIOINFO_TOOLS` (the legacy
+    hand-curated set) if the snapshot file is absent, so existing test runs
+    and CI jobs without the generated file still work correctly.
     """
-    out: List[str] = []
+    if not _SNAPSHOT_PATH.exists():
+        # Graceful fallback — normalise the legacy set for consistency.
+        return {_normalise_tool_name(t) for t in _BIOINFO_TOOLS}
+
+    try:
+        text = _SNAPSHOT_PATH.read_text(encoding="utf-8")
+        names: Set[str] = set()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("- "):
+                names.add(_normalise_tool_name(line[2:].strip()))
+        return names
+    except Exception:
+        # Any parse error → fall back to legacy set.
+        return {_normalise_tool_name(t) for t in _BIOINFO_TOOLS}
+
+
+# ── Token classifier ──────────────────────────────────────────────
+
+def _edit_distance(a: str, b: str) -> int:
+    """Damerau-Levenshtein distance (pure-Python fallback, O(mn))."""
+    la, lb = len(a), len(b)
+    prev2 = list(range(lb + 1))
+    prev  = list(range(lb + 1))
+    curr  = [0] * (lb + 1)
+    for i in range(1, la + 1):
+        curr[0] = i
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            curr[j] = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                curr[j] = min(curr[j], prev2[j - 2] + cost)
+        prev2, prev, curr = prev, curr, [0] * (lb + 1)
+    return prev[lb]
+
+
+def _classify_unknown_token(
+    token: str,
+    known: Optional[Set[str]] = None,
+) -> Tuple[str, Optional[str]]:
+    """Classify a token that was not found in the known-tools set.
+
+    Returns ``(category, correction)`` where category is one of:
+
+    * ``"filename"``     — token has a path separator or a biodata file
+                          extension; not a hallucinated tool name.
+    * ``"typo"``         — close Damerau-Levenshtein match to a known tool
+                          (distance ≤ 2, both token and match ≥ 5 chars).
+    * ``"runtime_glue"`` — common shell/infra word; not a bioinfo tool but
+                          also not a hallucination.
+    * ``"unknown"``      — genuinely unknown; true hallucination candidate.
+
+    ``known`` defaults to :func:`_load_known_tools()`.
+    """
+    if known is None:
+        known = _load_known_tools()
+
+    n = _normalise_tool_name(token)
+
+    # 1. Filename / path
+    if "/" in token or _FILE_EXT_RE.search(n):
+        return ("filename", None)
+
+    # 2. Runtime glue
+    if n in _RUNTIME_GLUE_TOKENS or n in _SHELL_TOKENS:
+        return ("runtime_glue", None)
+
+    # 3. Typo — fuzzy match against known tools (≥5 chars on both sides)
+    if len(n) >= 5:
+        try:
+            from rapidfuzz.distance import DamerauLevenshtein  # type: ignore
+            scorer = lambda cand: DamerauLevenshtein.distance(n, cand)
+        except ImportError:
+            scorer = lambda cand: _edit_distance(n, cand)
+
+        best_match: Optional[str] = None
+        best_dist = 3  # threshold: distance ≤ 2 → typo
+        for cand in known:
+            if len(cand) < 5:
+                continue
+            d = scorer(cand)
+            if d < best_dist:
+                best_dist = d
+                best_match = cand
+        if best_match is not None:
+            return ("typo", best_match)
+
+    # 4. Unknown
+    return ("unknown", None)
+
+
+def hallucinated_tools(
+    plan_tools: Iterable[str],
+) -> List[Tuple[str, str, Optional[str]]]:
+    """Return classified hallucination candidates from ``plan_tools``.
+
+    A tool is *recognised* (and therefore excluded from the result) if:
+      * its normalised name is in the known-tools snapshot
+        (:func:`_load_known_tools`), which covers Bioconda + Bioconductor +
+        the curated runtime list, or
+      * it is a runner token (``rscript``, ``python``, …), or
+      * it is a family-prefix of any known entry (``bwa_mem2`` covers
+        ``bwa``; ``hisat2_build`` covers ``hisat2``).
+
+    Each unrecognised token is further *classified* via
+    :func:`_classify_unknown_token` into one of four categories:
+
+    * ``"typo"``         — probable misspelling of a known tool
+    * ``"filename"``     — looks like a file path or has a biodata extension
+    * ``"runtime_glue"`` — common shell/infra command, not a bioinfo tool
+    * ``"unknown"``      — genuinely unknown (true hallucination candidate)
+
+    Returns ``List[Tuple[token, category, correction]]`` where ``correction``
+    is the closest known tool for typos, ``None`` otherwise.
+
+    Callers that only need the names can use :func:`hallucinated_tool_names`.
+    """
+    known = _load_known_tools()
+    out: List[Tuple[str, str, Optional[str]]] = []
     for t in plan_tools:
         n = _normalise_tool_name(t)
-        if not n or n in _RUNNER_TOKENS or n in _BIOINFO_TOOLS:
+        if not n or n in _RUNNER_TOKENS or n in known:
             continue
-        # Family-prefix: any whitelist entry that is a prefix-component match
+        # Family-prefix match against the full snapshot set
         hit = False
-        for w in _BIOINFO_TOOLS:
-            if n == w or n.startswith(w + "_") or w.startswith(n + "_"):
+        for w in known:
+            if n.startswith(w + "_") or w.startswith(n + "_"):
                 hit = True
                 break
-        # Core-family fallback (e.g. ``bowtie2-build`` ≈ ``bowtie2``)
-        if not hit and any(
-            n.startswith(w) and len(w) >= 4 for w in _BIOINFO_TOOLS
-        ):
+        if not hit and any(n.startswith(w) and len(w) >= 4 for w in known):
             hit = True
         if not hit:
-            out.append(t)
+            category, correction = _classify_unknown_token(t, known)
+            out.append((t, category, correction))
     return out
+
+
+def hallucinated_tool_names(plan_tools: Iterable[str]) -> List[str]:
+    """Back-compat shim — return just the token strings from
+    :func:`hallucinated_tools`.  Use when only the names are needed and
+    category/correction metadata is irrelevant.
+    """
+    return [t for t, _cat, _corr in hallucinated_tools(plan_tools)]
 
 
 # Labels from the FlowAgent system prompt (``"Sort BAM: samtools sort ..."``)
@@ -212,7 +357,7 @@ def _strip_label_prefix(seg: str) -> str:
     if not m:
         return seg
     first = seg.split(maxsplit=1)[0].rstrip(":,")
-    if _normalise_tool_name(first) in _BIOINFO_TOOLS:
+    if _normalise_tool_name(first) in _load_known_tools():
         return seg
     return seg[m.end():]
 
@@ -645,6 +790,32 @@ def type_matches(actual, expected) -> bool:
     return any(e == a_norm for e in accept_norm)
 
 
+# ── Hallucination formatting helper ───────────────────────────────
+
+def _format_hallucinated(
+    classified: List[Tuple[str, str, Optional[str]]],
+) -> str:
+    """Serialise the classified hallucination list to a CSV-friendly string.
+
+    New schema (v2): ``"name:category[:correction];..."``
+
+    Example: ``"kallsito:typo:kallisto;fakealigner:unknown"``
+
+    Old schema (v1) was just ``"name;name;..."`` — parsers that receive the
+    new format and only care about names can split on ``;`` then take the
+    substring before the first ``:``.
+    """
+    if not classified:
+        return ""
+    parts: List[str] = []
+    for token, category, correction in sorted(classified, key=lambda x: x[0]):
+        if correction:
+            parts.append(f"{token}:{category}:{correction}")
+        else:
+            parts.append(f"{token}:{category}")
+    return ";".join(parts)
+
+
 # ── Top-level scoring ─────────────────────────────────────────────
 
 def score_plan(plan: Dict[str, Any], expected: Dict[str, Any],
@@ -709,12 +880,18 @@ def score_plan(plan: Dict[str, Any], expected: Dict[str, Any],
     # Hallucination check — tools the LLM invoked that we don't recognise
     # as real bioinformatics CLI tools.  Reported as a count and a fraction
     # of the plan's unique tool set (to make it comparable across plan sizes).
-    h = hallucinated_tools(plan_tools)
-    metrics["num_hallucinated_tools"] = len(h)
+    h_classified = hallucinated_tools(plan_tools)
+    metrics["num_hallucinated_tools"] = len(h_classified)
     metrics["hallucination_rate"] = (
-        len(h) / len(plan_tools) if plan_tools else 0.0
+        len(h_classified) / len(plan_tools) if plan_tools else 0.0
     )
-    metrics["hallucinated_tools"] = ";".join(sorted(h)) if h else ""
+    # New schema: "name:category[:correction];..." (CHANGELOG §hallucinated_tools)
+    metrics["hallucinated_tools"] = _format_hallucinated(h_classified)
+    typos = [(t, corr) for t, cat, corr in h_classified if cat == "typo"]
+    metrics["num_hallucinated_typos"] = len(typos)
+    metrics["hallucinated_typos"] = (
+        ";".join(f"{t}->{corr}" for t, corr in typos) if typos else ""
+    )
     expected_tools = [t.lower() for t in (expected.get("expected_tools") or [])]
     forbidden = [t.lower() for t in (expected.get("forbidden_tools") or [])]
     if expected_tools:
@@ -836,12 +1013,17 @@ def score_plan_inference(
     plan_tools = extract_tools_from_plan(plan)
     metrics["num_tools"] = len(plan_tools)
 
-    h = hallucinated_tools(plan_tools)
-    metrics["num_hallucinated_tools"] = len(h)
+    h_classified = hallucinated_tools(plan_tools)
+    metrics["num_hallucinated_tools"] = len(h_classified)
     metrics["hallucination_rate"] = (
-        len(h) / len(plan_tools) if plan_tools else 0.0
+        len(h_classified) / len(plan_tools) if plan_tools else 0.0
     )
-    metrics["hallucinated_tools"] = ";".join(sorted(h)) if h else ""
+    metrics["hallucinated_tools"] = _format_hallucinated(h_classified)
+    typos = [(t, corr) for t, cat, corr in h_classified if cat == "typo"]
+    metrics["num_hallucinated_typos"] = len(typos)
+    metrics["hallucinated_typos"] = (
+        ";".join(f"{t}->{corr}" for t, corr in typos) if typos else ""
+    )
 
     forbidden = [t.lower() for t in (expected.get("forbidden_tools") or [])]
     metrics["no_forbidden_tools"] = not any(

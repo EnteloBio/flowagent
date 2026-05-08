@@ -6,6 +6,7 @@ Keeps Benchmark A scoring rules honest (overall_pass, tools, forbidden, DAG).
 from __future__ import annotations
 
 import sys
+import unittest.mock
 from pathlib import Path
 
 import pytest
@@ -16,10 +17,15 @@ sys.path.insert(0, str(BENCH_DIR))
 sys.path.insert(0, str(BENCH_DIR.parent))
 
 from harness.metrics import (  # noqa: E402
+    _classify_unknown_token,
+    _load_known_tools,
     completeness_metrics,
     dag_shape,
+    hallucinated_tool_names,
+    hallucinated_tools,
     plan_schema_valid,
     score_plan,
+    score_plan_inference,
     tool_covered,
 )
 from harness.mock_plans import mock_plan_from_prompt  # noqa: E402
@@ -351,3 +357,142 @@ class TestMockPlanFromPrompt:
         }
         plan = mock_plan_from_prompt(entry, step_name=lambda i: f"t{i}")
         assert isinstance(plan["workflow_type"], str)
+
+
+# ── Hallucination-detector tests (v2 classifier) ────────────────────────────
+
+class TestClassifyUnknownToken:
+    """Unit tests for _classify_unknown_token()."""
+
+    # A small but sufficient known-tool set used to avoid loading the full
+    # snapshot on every call.
+    _KNOWN: frozenset = frozenset({"kallisto", "fastqc", "samtools", "bowtie2"})
+
+    def test_typo_detected_with_correction(self):
+        """'kalsito' is close enough to 'kallisto' to be flagged as a typo."""
+        cat, correction = _classify_unknown_token("kalsito", set(self._KNOWN))
+        assert cat == "typo"
+        assert correction == "kallisto"
+
+    def test_filename_classified_as_filename(self):
+        """Tokens with biodata extensions are classified as filenames."""
+        cat, correction = _classify_unknown_token("reads.fastq.gz", set(self._KNOWN))
+        assert cat == "filename"
+        assert correction is None
+
+    def test_runtime_glue_not_hallucination(self):
+        """Common infrastructure commands should never be labelled hallucinations."""
+        cat, correction = _classify_unknown_token("parallel", set(self._KNOWN))
+        assert cat == "runtime_glue"
+        assert correction is None
+
+    def test_unknown_implausible_stays_unknown(self):
+        """An invented name with no near match is classified as unknown."""
+        cat, correction = _classify_unknown_token(
+            "super_aligner_pro", set(self._KNOWN)
+        )
+        assert cat == "unknown"
+        assert correction is None
+
+    def test_short_token_no_typo_correction(self):
+        """Tokens shorter than 5 characters are not eligible for fuzzy matching."""
+        # 'kb' is a real tool but also very short; it must not match 'kallisto'
+        # (Levenshtein distance 6) or any other entry via the typo path.
+        cat, _corr = _classify_unknown_token("kb", set(self._KNOWN))
+        # Short token: either runtime_glue or unknown, but never typo.
+        assert cat != "typo"
+
+
+class TestHallucinatedTools:
+    """Tests for the rewritten hallucinated_tools() and back-compat shim."""
+
+    def _make_known(self) -> set:
+        return {"kallisto", "fastqc", "samtools", "bowtie2", "multiqc"}
+
+    def test_strict_hallucinations_gates_pass(self):
+        """strict_hallucinations=True → overall_pass=False if any hallucination."""
+        plan = {
+            "workflow_type": "rna_seq_kallisto",
+            "steps": [
+                {"name": "qc",   "command": "fastqc reads.fq.gz",
+                 "dependencies": [], "outputs": [], "description": ""},
+                {"name": "quant","command": "kalsito quant -i idx -o out reads.fq.gz",
+                 "dependencies": ["qc"], "outputs": [], "description": ""},
+                {"name": "rep",  "command": "multiqc out",
+                 "dependencies": ["quant"], "outputs": [], "description": ""},
+            ],
+        }
+        expected = {
+            "expected_workflow_type": "rna_seq_kallisto",
+            "expected_tools": ["fastqc", "multiqc"],
+            "expected_min_steps": 3,
+            "forbidden_tools": [],
+        }
+        m = score_plan(plan, expected, strict_hallucinations=True)
+        # 'kalsito' is not in the known-tools snapshot → hallucination detected.
+        assert m["num_hallucinated_tools"] >= 1
+        assert m["overall_pass"] is False
+
+    def test_known_tools_yaml_fallback(self):
+        """If known_tools.yaml is absent, _load_known_tools() falls back
+        to _BIOINFO_TOOLS without raising."""
+        import harness.metrics as hm
+        # Patch _SNAPSHOT_PATH to a non-existent path to trigger the fallback.
+        missing = Path("/tmp/__nonexistent_known_tools__.yaml")
+        hm._load_known_tools.cache_clear()
+        with unittest.mock.patch.object(hm, "_SNAPSHOT_PATH", missing):
+            known = hm._load_known_tools()
+        # Fallback must contain core bioinfo tools.
+        assert "kallisto" in known
+        assert "fastqc" in known
+        # Restore cache for subsequent tests.
+        hm._load_known_tools.cache_clear()
+
+    def test_score_plan_emits_new_columns(self):
+        """score_plan must include num_hallucinated_typos and hallucinated_typos."""
+        plan = {
+            "workflow_type": "rna_seq_kallisto",
+            "steps": [
+                {"name": "qc",   "command": "fastqc reads.fq.gz",
+                 "dependencies": [], "outputs": [], "description": ""},
+                {"name": "quant","command": "kallisto quant -i idx -o out reads.fq.gz",
+                 "dependencies": ["qc"], "outputs": [], "description": ""},
+                {"name": "rep",  "command": "multiqc out",
+                 "dependencies": ["quant"], "outputs": [], "description": ""},
+            ],
+        }
+        expected = {
+            "expected_workflow_type": "rna_seq_kallisto",
+            "expected_tools": ["fastqc", "kallisto", "multiqc"],
+            "expected_min_steps": 3,
+            "forbidden_tools": [],
+        }
+        m = score_plan(plan, expected)
+        assert "num_hallucinated_typos" in m
+        assert "hallucinated_typos" in m
+        assert isinstance(m["num_hallucinated_typos"], int)
+        # A clean plan has no typos.
+        assert m["num_hallucinated_typos"] == 0
+        assert m["hallucinated_typos"] == ""
+
+    def test_score_plan_inference_emits_new_columns(self):
+        """score_plan_inference must also include the new hallucination columns."""
+        plan = {
+            "workflow_type": "chip_seq",
+            "steps": [
+                {"name": "align", "command": "bowtie2 -x idx -U reads.fq -S out.sam",
+                 "dependencies": [], "outputs": [], "description": ""},
+                {"name": "sort",  "command": "samtools sort out.sam -o out.bam",
+                 "dependencies": ["align"], "outputs": [], "description": ""},
+                {"name": "peaks", "command": "macs2 callpeak -t out.bam -n sample",
+                 "dependencies": ["sort"], "outputs": [], "description": ""},
+            ],
+        }
+        expected = {
+            "acceptable_tool_sets": [["bowtie2", "samtools", "macs2"]],
+            "expected_min_steps": 3,
+            "forbidden_tools": [],
+        }
+        m = score_plan_inference(plan, expected)
+        assert "num_hallucinated_typos" in m
+        assert "hallucinated_typos" in m

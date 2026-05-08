@@ -3076,14 +3076,61 @@ def consistency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
 # ── Hallucination rate ───────────────────────────────────────────
 
-def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+def _parse_hallucinated_tools_column(series: "pd.Series") -> "pd.DataFrame":
+    """Parse the ``hallucinated_tools`` column into per-row category counts.
+
+    Supports two schema versions:
+
+    * **v1** (legacy): ``"name;name;..."``  — all tokens classified as
+      ``unknown`` for rendering purposes (no category info present).
+    * **v2** (current): ``"name:category[:correction];..."``
+
+    Returns a DataFrame with columns ``typo``, ``filename``,
+    ``runtime_glue``, ``unknown`` (int counts per row).
+    """
+    import pandas as pd
+
+    cats = ["typo", "filename", "runtime_glue", "unknown"]
+    rows = []
+    for cell in series:
+        counts = dict.fromkeys(cats, 0)
+        cell = str(cell) if cell is not None else ""
+        if not cell:
+            rows.append(counts)
+            continue
+        for entry in cell.split(";"):
+            entry = entry.strip()
+            if not entry:
+                continue
+            parts = entry.split(":")
+            if len(parts) >= 2:
+                cat = parts[1]
+            else:
+                # v1 schema — no category; treat as unknown
+                cat = "unknown"
+            if cat in counts:
+                counts[cat] += 1
+            else:
+                counts["unknown"] += 1
+        rows.append(counts)
+    return pd.DataFrame(rows)
+
+
+def hallucination_figure(df: "pd.DataFrame") -> "Optional[plt.Figure]":
     """Per-model hallucinated-tool fraction.
 
-    Two panels:
-      (a) fraction of plans with ≥1 hallucinated tool
-      (b) mean hallucination rate per plan (hallucinated / total tools)
+    **3-panel layout** (when the v2 ``hallucinated_tools`` column is present):
+      (a) Fraction of plans with ≥1 hallucinated tool
+      (b) Mean hallucination rate per plan (hallucinated / total tools)
+      (c) Per-category breakdown — stacked bars showing the share of
+          ``typo`` / ``unknown`` / ``filename`` / ``runtime_glue`` tokens
+          across all flagged tokens for that model
 
-    Returns ``None`` if the hallucination metric is absent.
+    Falls back to the original 2-panel layout when the ``hallucinated_tools``
+    column is absent or contains only v1-style entries (no ``:category``
+    marker), so archived run CSVs still produce valid figures.
+
+    Returns ``None`` if hallucination metrics are entirely absent.
     """
     if "hallucination_rate" not in df.columns and "num_hallucinated_tools" not in df.columns:
         return None
@@ -3099,24 +3146,61 @@ def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         df["hallucination_rate"] = pd.to_numeric(
             df["hallucination_rate"], errors="coerce").fillna(0)
     else:
-        df["hallucination_rate"] = 0
+        df["hallucination_rate"] = 0.0
 
     g = (df.groupby("model")
             .agg(frac_plans=("any_hallucination", "mean"),
                  mean_rate=("hallucination_rate", "mean"))
-            .reset_index())
+            .reset_index()
+            .sort_values("frac_plans")
+            .reset_index(drop=True))
+
     if g.empty or (g["frac_plans"].sum() == 0 and g["mean_rate"].sum() == 0):
         return None
 
-    g = g.sort_values("frac_plans").reset_index(drop=True)
+    # ── Detect v2 category data ──────────────────────────────────────────────
+    _CAT_COLS = ["typo", "filename", "runtime_glue", "unknown"]
+    _CAT_COLOURS = {
+        "typo":         "#f59e0b",   # amber
+        "filename":     "#6366f1",   # indigo
+        "runtime_glue": "#10b981",   # emerald
+        "unknown":      "#ef4444",   # red
+    }
 
-    fig_h = max(3.2, 0.26 * len(g) + 1.2)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.4, fig_h), sharey=True)
+    has_category = False
+    cat_by_model: "Optional[pd.DataFrame]" = None
+    if "hallucinated_tools" in df.columns:
+        sample = df["hallucinated_tools"].dropna().str.strip()
+        sample = sample[sample != ""]
+        # v2 entries contain ":" — check at least one row has it
+        if sample.str.contains(":").any():
+            has_category = True
+            cat_df = _parse_hallucinated_tools_column(df["hallucinated_tools"])
+            cat_df["model"] = df["model"].values
+            cat_by_model = (cat_df.groupby("model")[_CAT_COLS]
+                            .sum()
+                            .reindex(g["model"])
+                            .reset_index())
+            # Normalise to fractions (share of total flagged tokens)
+            row_totals = cat_by_model[_CAT_COLS].sum(axis=1).replace(0, 1)
+            for col in _CAT_COLS:
+                cat_by_model[col] = cat_by_model[col] / row_totals
 
-    y = np.arange(len(g))
+    # ── Layout ───────────────────────────────────────────────────────────────
+    n_models = len(g)
+    fig_h = max(3.2, 0.26 * n_models + 1.2)
+    n_panels = 3 if has_category else 2
+    fig_w = 11.0 if has_category else 7.4
+    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, fig_h),
+                             sharey=True)
+    ax1, ax2 = axes[0], axes[1]
+    ax3 = axes[2] if n_panels == 3 else None
+
+    y = np.arange(n_models)
     cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
             for m in g["model"]]
 
+    # Panel (a) — any hallucination
     ax1.barh(y, g["frac_plans"], color=cols, edgecolor="white",
              linewidth=0.6, height=0.72)
     for i, v in enumerate(g["frac_plans"]):
@@ -3129,6 +3213,7 @@ def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     ax1.set_title("a  Any hallucination", loc="left")
     _style_value_axis(ax1, x=True)
 
+    # Panel (b) — mean rate
     ax2.barh(y, g["mean_rate"], color=cols, edgecolor="white",
              linewidth=0.6, height=0.72)
     for i, v in enumerate(g["mean_rate"]):
@@ -3138,6 +3223,22 @@ def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     ax2.set_xlabel("Mean hallucinated-tool fraction per plan")
     ax2.set_title("b  Mean rate per plan", loc="left")
     _style_value_axis(ax2, x=True)
+
+    # Panel (c) — per-category stacked bars (v2 only)
+    if ax3 is not None and cat_by_model is not None:
+        lefts = np.zeros(n_models)
+        for cat in _CAT_COLS:
+            vals = cat_by_model[cat].fillna(0).values
+            ax3.barh(y, vals, left=lefts, height=0.72,
+                     color=_CAT_COLOURS[cat], edgecolor="white",
+                     linewidth=0.4, label=cat.replace("_", " "))
+            lefts += vals
+        ax3.set_xlim(0, 1.0)
+        ax3.set_xlabel("Share of flagged tokens by category")
+        ax3.set_title("c  Category breakdown", loc="left")
+        _style_value_axis(ax3, x=True)
+        ax3.legend(loc="lower right", fontsize=7,
+                   framealpha=0.85, edgecolor="#e5e7eb")
 
     providers = sorted(
         {_provider_from_model(m) for m in g["model"]},

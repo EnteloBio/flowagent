@@ -1323,6 +1323,81 @@ make reflection MODEL=claude-haiku-4-5 REPLICATES=3 && make reflection-figure
 make competitor-dag-ablation CDAG_MODEL=claude-haiku-4-5 REPLICATES=3 && make competitor-dag-figure
 ```
 
+## Hallucination detector
+
+The planning benchmarks (A, H, I, J) detect *tool hallucinations* — CLI
+tool names produced by the model that are not recognised as real
+bioinformatics tools.
+
+### Source of truth
+
+The detector uses a checked-in snapshot (`data/known_tools.yaml`, ~16 k
+entries) built from three sources:
+
+| Source | Coverage | Example entries |
+|--------|----------|-----------------|
+| **Bioconda** (noarch + linux-64 repodata) | ~12 k packages | `kallisto`, `star`, `macs2` |
+| **Bioconductor** (Software + Annotation + Experiment) | ~3.7 k packages | `deseq2`, `edger`, `chipqc` |
+| **Runtime / infra list** | ~60 curated entries | `bash`, `conda`, `nextflow`, `docker`, `aws` |
+
+The snapshot replaces the legacy ~150-entry `_BIOINFO_TOOLS` hand-curated
+set. `_BIOINFO_TOOLS` is retained as an automatic fallback when
+`data/known_tools.yaml` has not been generated (e.g. fresh checkouts before
+`make refresh-tools`).
+
+### Refresh cadence
+
+The snapshot is checked in; CI and every evaluation run use it without
+network access. Refresh it before a manuscript-grade sweep (roughly every
+6 months or when a major Bioconda release cycle turns over):
+
+```bash
+make refresh-tools            # fetches bioconda + bioconductor, writes data/known_tools.yaml
+# or
+python benchmarks/refresh_known_tools.py --skip-bioconductor
+```
+
+### Four-category classification
+
+Each unrecognised token is classified rather than simply counted:
+
+| Category | Meaning | Example |
+|----------|---------|---------|
+| `typo` | Damerau-Levenshtein distance ≤ 2 to a known tool (both ≥ 5 chars) | `kalsito` → `kallisto` |
+| `filename` | Has a path separator or a biodata extension (`.bam`, `.fastq`, …) | `reads.fastq.gz` |
+| `runtime_glue` | Common shell / cloud / HPC command — not a bioinfo tool but not a hallucination | `parallel`, `aws`, `sbatch` |
+| `unknown` | Genuinely unrecognised — true hallucination candidate | `super_aligner_pro` |
+
+### Metrics emitted
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `num_hallucinated_tools` | int | Total flagged tokens (all categories combined) |
+| `hallucination_rate` | float | `num_hallucinated_tools / num_tools` |
+| `hallucinated_tools` | str | `"name:category[:correction];..."` (v2 schema) |
+| `num_hallucinated_typos` | int | Tokens classified as `typo` |
+| `hallucinated_typos` | str | `"token->correction;..."` for each typo |
+
+`overall_pass` always keys on `num_hallucinated_tools == 0` when
+`strict_hallucinations=True`; the category breakdown is informational.
+
+### Parsing the `hallucinated_tools` column
+
+```python
+# Minimal v1-compatible parse (names only):
+names = [e.split(":")[0] for e in row["hallucinated_tools"].split(";") if e]
+
+# Full v2 parse:
+for entry in row["hallucinated_tools"].split(";"):
+    if not entry:
+        continue
+    parts = entry.split(":")
+    token, category = parts[0], parts[1] if len(parts) > 1 else "unknown"
+    correction = parts[2] if len(parts) > 2 else None
+```
+
+---
+
 ## Post-processing (important order)
 
 When scoring logic or `prompts.yaml` is updated, you can re-evaluate existing
@@ -1411,7 +1486,7 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 | `planning_latency.pdf` | Per-model wall-clock + speed-vs-quality trade-off |
 | `planning_turns.pdf` | Mean LLM calls per plan (turns to completion) |
 | `planning_consistency.pdf` | Inter-replicate unanimity per model |
-| `planning_hallucination.pdf` | Hallucinated-tool fraction per model |
+| `planning_hallucination.pdf` | Hallucinated-tool fraction per model; 3-panel with category breakdown when v2 data is present |
 | `planning_tokens.pdf` | Mean prompt + completion tokens per plan |
 | `recovery.pdf` | Benchmark B per-fault recovery, grouped Easy / Hard / Unrecoverable |
 | `recovery_tier_summary.pdf` | Compact per-tier summary |

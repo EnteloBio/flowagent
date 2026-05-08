@@ -17,7 +17,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help refresh-tools
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -45,6 +45,7 @@ help:
 	@echo "  make all-sweep    - full multi-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report"
 	@echo "  make report       - regenerate figures (uses _merged if present)"
 	@echo "  make clean        - delete results/"
+	@echo "  make refresh-tools - regenerate data/known_tools.yaml from Bioconda/Bioconductor (maintainer-only)"
 
 smoke:
 	$(PY) bench_planning.py   --mock --models=$(MODEL) --replicates=1 --out=$(RESULTS_DIR)
@@ -252,6 +253,13 @@ interpretation:
 
 test:
 	$(PY) -m pytest tests -v
+
+# Refresh the Bioconda + Bioconductor + runtime snapshot used by the
+# hallucination detector.  Run occasionally (every ~6 months or before a
+# manuscript sweep) — the resulting data/known_tools.yaml is checked in and
+# used by CI without any network access.
+refresh-tools:
+	$(PY) refresh_known_tools.py $(if $(OUT),--out $(OUT),)
 
 all: plan recovery gen exec report
 
