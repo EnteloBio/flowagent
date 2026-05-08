@@ -209,6 +209,14 @@ class AnalysisReport(BaseModel):
 
 def _make_strict(schema: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively enforce OpenAI strict-mode constraints on a JSON Schema."""
+    # OpenAI strict mode forbids sibling keywords alongside $ref.
+    # When a schema node is purely a reference, keep only the $ref key.
+    if "$ref" in schema:
+        ref = schema["$ref"]
+        schema.clear()
+        schema["$ref"] = ref
+        return schema
+
     if schema.get("type") == "object":
         schema["additionalProperties"] = False
         props = schema.get("properties", {})
@@ -219,8 +227,6 @@ def _make_strict(schema: Dict[str, Any]) -> Dict[str, Any]:
             prop.pop("default", None)
     if "items" in schema:
         _make_strict(schema["items"])
-    if "$ref" in schema:
-        pass  # $ref is resolved at the top level via $defs
     for key in ("anyOf", "oneOf", "allOf"):
         if key in schema:
             for sub in schema[key]:

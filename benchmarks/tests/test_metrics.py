@@ -436,17 +436,21 @@ class TestHallucinatedTools:
     def test_known_tools_yaml_fallback(self):
         """If known_tools.yaml is absent, _load_known_tools() falls back
         to _BIOINFO_TOOLS without raising."""
-        import harness.metrics as hm
-        # Patch _SNAPSHOT_PATH to a non-existent path to trigger the fallback.
+        from flowagent import tool_catalog as tc
+        # Point every snapshot candidate at a non-existent path so the
+        # loader has to fall back to the bundled _BIOINFO_TOOLS set.
         missing = Path("/tmp/__nonexistent_known_tools__.yaml")
-        hm._load_known_tools.cache_clear()
-        with unittest.mock.patch.object(hm, "_SNAPSHOT_PATH", missing):
-            known = hm._load_known_tools()
+        tc._load_known_tools.cache_clear()
+        with unittest.mock.patch.dict(
+            "os.environ", {"FLOWAGENT_KNOWN_TOOLS_PATH": str(missing)}
+        ), unittest.mock.patch.object(tc, "_SNAPSHOT_PATH", missing), \
+             unittest.mock.patch.object(tc, "_PKG_ROOT", missing.parent):
+            known = tc._load_known_tools()
         # Fallback must contain core bioinfo tools.
         assert "kallisto" in known
         assert "fastqc" in known
         # Restore cache for subsequent tests.
-        hm._load_known_tools.cache_clear()
+        tc._load_known_tools.cache_clear()
 
     def test_score_plan_emits_new_columns(self):
         """score_plan must include num_hallucinated_typos and hallucinated_typos."""

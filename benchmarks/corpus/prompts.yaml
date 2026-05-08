@@ -339,8 +339,13 @@ prompts:
 
   - id: hard_metagenomics_kraken
     # D+C: shotgun-metagenomics taxonomic profiling — niche enough that
-    # weaker models will reach for bwa/bowtie2 against a reference instead
-    # of using a k-mer classifier.
+    # weaker models will reach for bwa/bowtie2 *as a classifier* instead
+    # of using a k-mer classifier.  bowtie2 is intentionally NOT forbidden
+    # here because host-decontamination (aligning to GRCh38 and discarding
+    # human reads) is a legitimate and common pre-step before Kraken2.
+    # The gate that matters is expected_tools: [kraken2] — if the model
+    # omits the k-mer classifier it fails on tool coverage, not on the
+    # forbidden list.
     prompt: >-
       Shotgun-metagenomics taxonomic profiling on paired-end reads:
       QC with FastQC, host-decontaminate by removing human reads, classify
@@ -350,7 +355,7 @@ prompts:
     expected_workflow_type: [metagenomics, custom]
     expected_tools: [fastqc, kraken2, bracken, multiqc]
     expected_min_steps: 5
-    forbidden_tools: [wget, bwa, bowtie2, kallisto, star]
+    forbidden_tools: [wget, kallisto, star]
 
   # ── Extra hard benchmarks (10) — domain breadth + tricky planning ──
   # These extend the hard set to probe specific LLM failure modes:

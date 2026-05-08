@@ -1256,7 +1256,6 @@ You are a bioinformatics workflow expert. Generate a workflow plan as a JSON obj
         {{
             "name": "step_name",
             "command": "command_to_execute",
-            "parameters": {{"param1": "value1"}},
             "dependencies": ["dependent_step_name1"],
             "outputs": ["expected_output1"],
             "kind": "align"
@@ -2231,9 +2230,17 @@ If you are being asked to generate a title, set "success" to false.
         # First, deterministically auto-fix the archive-nesting
         # antipattern (LLM gets stuck looping on this even with
         # explicit fix-suggestion in the validator message).
-        for note in self._autofix_generated_steps(valid_steps):
-            self.logger.info("Auto-fix: %s", note)
-        errors = self._validate_generated_steps(valid_steps, srr_list_path=None)
+        # Validator gating: FLOWAGENT_VALIDATOR_ENABLED ablation (todo T0).
+        if self._validator_enabled():
+            for note in self._autofix_generated_steps(valid_steps):
+                self.logger.info("Auto-fix: %s", note)
+            errors = self._validate_generated_steps(valid_steps, srr_list_path=None)
+        else:
+            self.logger.info(
+                "Validator disabled via FLOWAGENT_VALIDATOR_ENABLED=false; "
+                "skipping autofix + validation on inferred-download plan",
+            )
+            errors = []
         if errors:
             self.logger.warning(
                 "Inferred-download plan validation failed (attempt 1): "
@@ -3294,6 +3301,16 @@ If you are being asked to generate a title, set "success" to false.
         ]
         # First attempt
         steps = await self._llm_steps_attempt(messages)
+        # Validator gating: FLOWAGENT_VALIDATOR_ENABLED ablation (todo T0).
+        # When disabled, ship the LLM's first emission unchanged — no autofix,
+        # no retry — so the off arm doesn't lose to the on arm on extra
+        # inference rounds rather than on validator quality.
+        if not self._validator_enabled():
+            self.logger.info(
+                "Validator disabled via FLOWAGENT_VALIDATOR_ENABLED=false; "
+                "skipping autofix + validation on analysis-steps plan",
+            )
+            return steps
         # Auto-fix deterministic patterns (archive-nesting) before
         # validation, so the LLM doesn't keep getting rejected on
         # things we already know how to correct ourselves.
@@ -3365,6 +3382,31 @@ If you are being asked to generate a title, set "success" to false.
             s.setdefault("profile_name", "default")
             valid.append(s)
         return valid
+
+    @staticmethod
+    def _validator_enabled() -> bool:
+        """Whether the post-generation validator + auto-fix layer should run.
+
+        Read fresh from ``FLOWAGENT_VALIDATOR_ENABLED`` on every call so the
+        benchmark harness can flip it per-cell (same pattern ``LLM_DAG_AWARE``
+        uses for the DAG-awareness ablation). Defaults to ``True`` so
+        production behaviour is unchanged when the flag is unset.
+
+        The flag gates the planner's post-generation defenses (todo T0 in the
+        FlowAgent architecture review):
+
+        * deterministic auto-fix transforms (``_autofix_generated_steps``)
+        * validator rules + retry loop (``_validate_generated_steps`` and the
+          single retry it triggers)
+
+        With the flag off, the LLM's first emission ships unchanged. The
+        ablation arm should not include the retry path either, since under a
+        fixed inference budget the off-arm would otherwise lose to the on-arm
+        on retry chances rather than on validator quality.
+        """
+        return os.environ.get("FLOWAGENT_VALIDATOR_ENABLED", "true").strip().lower() not in {
+            "0", "false", "no", "off",
+        }
 
     def _autofix_generated_steps(
         self, steps: List[Dict[str, Any]],
