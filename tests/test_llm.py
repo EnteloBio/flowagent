@@ -173,3 +173,60 @@ async def test_generate_workflow_plan_with_steps(llm_interface, mock_file_patter
         assert "workflow_type" in result
         assert "steps" in result
         assert len(result["steps"]) > 0
+
+
+class TestDetectWorkflowType:
+    """Pin ``_detect_workflow_type``'s tool-compatibility guard.
+
+    Regression context (Benchmark E, 2026-05-08): the ``chipseq_macs2``
+    prompt was misclassified as ``custom`` on 3/3 replicates because the
+    guard treated ``macs2`` and ``macs3`` as distinct tools, even though
+    they share the same CLI and outputs. Adding a tool-equivalence map
+    (``_TOOL_EQUIVALENCE``) canonicalises sibling tools so the guard does
+    not trip on a name difference that has no semantic effect on the plan.
+    """
+
+    def test_chipseq_macs2_classified_as_chip_seq(self, llm_interface):
+        """The exact benchmark prompt that caused the regression."""
+        prompt = (
+            "Run ChIP-seq analysis: align reads with Bowtie2, "
+            "call peaks with MACS2, aggregate with MultiQC"
+        )
+        wf_type, _ = llm_interface._detect_workflow_type(prompt)
+        assert wf_type == "chip_seq", (
+            f"chipseq_macs2 prompt misclassified as {wf_type!r}; "
+            "expected 'chip_seq' (macs2 ↔ macs3 are interchangeable)"
+        )
+
+    def test_chipseq_macs3_classified_as_chip_seq(self, llm_interface):
+        """Symmetric case: explicit macs3 must also match chip_seq."""
+        prompt = (
+            "Run ChIP-seq analysis: align with Bowtie2, "
+            "call peaks with MACS3"
+        )
+        wf_type, _ = llm_interface._detect_workflow_type(prompt)
+        assert wf_type == "chip_seq"
+
+    def test_chipseq_with_incompatible_aligner_falls_back_to_custom(
+        self, llm_interface
+    ):
+        """Negative case: ChIP-seq with STAR (not bowtie2) must still trip guard.
+
+        Pins that the equivalence map only short-circuits genuine sibling
+        tools (macs2/macs3) and does not weaken the guard's protection
+        against truly incompatible tool requests.
+        """
+        prompt = "Run ChIP-seq analysis: align with STAR, call peaks with MACS3"
+        wf_type, _ = llm_interface._detect_workflow_type(prompt)
+        assert wf_type == "custom", (
+            f"ChIP-seq+STAR should fall back to custom; got {wf_type!r}. "
+            "STAR is not in chip_seq's tool list and has no equivalence."
+        )
+
+    def test_tool_equivalence_map_contains_macs_group(self, llm_interface):
+        """Pin the canonical macs2/macs3 equivalence so removal trips a test."""
+        eq = llm_interface._TOOL_EQUIVALENCE
+        assert eq.get("macs2") == eq.get("macs3"), (
+            "macs2 and macs3 must canonicalise to the same group"
+        )
+        assert eq.get("macs2") is not None, "macs2 must be in equivalence map"

@@ -228,9 +228,19 @@ def _compact_json(obj: Any, limit: int = 800) -> str:
 
 
 def _messages_to_steps(messages: Sequence[Any]) -> List[Dict[str, Any]]:
-    """Build FlowAgent-shaped steps from LangChain message history."""
+    """Build FlowAgent-shaped steps from LangChain message history.
+
+    Fairness convention (Benchmark E): ``dependencies`` is left empty.
+    Biomni's ReAct loop never asked the model to emit a DAG, so any
+    ``[step_N-1]`` chain we wrote here would be a parsing artifact -- a
+    record of *execution* order that we'd then mis-score as the agent's
+    *planning* output. Recording empty deps means the metric pipeline
+    sees a flat-list plan (``dag_edge_density=0``, normalised
+    ``parallel_width=1``, ``stage_efficiency=1.0``) which is the honest
+    representation of what Biomni actually emitted and matches the
+    DAG-blind defaults of every other competitor.
+    """
     steps: List[Dict[str, Any]] = []
-    prev_name: Optional[str] = None
 
     for msg in messages:
         tool_calls = getattr(msg, "tool_calls", None) or []
@@ -248,17 +258,22 @@ def _messages_to_steps(messages: Sequence[Any]) -> List[Dict[str, Any]]:
             steps.append({
                 "name": step_name,
                 "command": cmd,
-                "dependencies": [prev_name] if prev_name else [],
+                "dependencies": [],
                 "outputs": [],
                 "description": f"Biomni tool call: {name}",
             })
-            prev_name = step_name
 
     return steps
 
 
 def _fallback_steps_from_text(text: str) -> List[Dict[str, Any]]:
-    """If there were no tool calls, derive coarse steps from assistant text."""
+    """If there were no tool calls, derive coarse steps from assistant text.
+
+    Same fairness convention as :func:`_messages_to_steps`: we leave
+    ``dependencies`` empty rather than synthesising a linear chain
+    from the order of bullets in Biomni's reply. The bullets are
+    presentation order, not declared dependencies.
+    """
     text = (text or "").strip()
     if not text:
         return []
@@ -275,17 +290,15 @@ def _fallback_steps_from_text(text: str) -> List[Dict[str, Any]]:
     bodies = step_like if len(step_like) >= 2 else [text[:6000]]
 
     steps: List[Dict[str, Any]] = []
-    prev: Optional[str] = None
     for i, body in enumerate(bodies):
         name = f"narrative_{i + 1}"
         steps.append({
             "name": name,
             "command": body[:1200],
-            "dependencies": [prev] if prev else [],
+            "dependencies": [],
             "outputs": [],
             "description": body[:8000],
         })
-        prev = name
     return steps
 
 

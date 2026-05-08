@@ -19,6 +19,7 @@ import pytest
 from flowagent.core.completeness import (
     fill_missing_kinds,
     infer_step_kind,
+    normalize_plan_steps,
     render_completeness_feedback,
     validate_workflow_completeness,
 )
@@ -290,3 +291,82 @@ class TestRenderCompletenessFeedback:
         assert "download dl1" in out
         # Must contain explicit guidance to retry / regenerate.
         assert "regenerate" in out.lower()
+
+
+class TestNormalizePlanSteps:
+    """Defensive guard for malformed plans where ``steps`` mixes
+    strings and dicts.
+
+    The bug this guards against: Opus / Gemini occasionally emit plans
+    via the regex-repair fallback path where the first step is a prose
+    sentence instead of a step dict. Without normalisation, every
+    downstream ``step.get(...)`` call raises ``AttributeError`` and
+    discards the entire plan -- even when 19 of 20 steps were valid.
+    """
+
+    def test_all_dicts_unchanged(self) -> None:
+        plan = {"steps": [
+            {"name": "a", "command": "echo a"},
+            {"name": "b", "command": "echo b"},
+        ]}
+        out = normalize_plan_steps(plan)
+        assert out is plan  # mutates in-place
+        assert len(out["steps"]) == 2
+
+    def test_drops_string_steps(self) -> None:
+        plan = {"steps": [
+            "Download FASTQ via fasterq-dump",
+            {"name": "trim", "command": "fastp r1.fq -o t.fq"},
+            {"name": "align", "command": "bwa mem ref t.fq"},
+        ]}
+        out = normalize_plan_steps(plan)
+        assert len(out["steps"]) == 2
+        assert {s["name"] for s in out["steps"]} == {"trim", "align"}
+
+    def test_handles_missing_steps_key(self) -> None:
+        plan = {"workflow_type": "x"}
+        out = normalize_plan_steps(plan)
+        assert out["steps"] == []
+
+    def test_handles_non_list_steps(self) -> None:
+        plan = {"steps": "not a list"}
+        out = normalize_plan_steps(plan)
+        assert out["steps"] == []
+
+    def test_drops_other_non_dict_types(self) -> None:
+        plan = {"steps": [
+            42,
+            None,
+            ["nested", "list"],
+            {"name": "valid", "command": "echo ok"},
+        ]}
+        out = normalize_plan_steps(plan)
+        assert len(out["steps"]) == 1
+        assert out["steps"][0]["name"] == "valid"
+
+    def test_fill_missing_kinds_survives_string_steps(self) -> None:
+        """``fill_missing_kinds`` calls ``normalize_plan_steps`` defensively
+        so a malformed plan no longer raises AttributeError."""
+        plan = {"steps": [
+            "narrative description",
+            {"name": "trim", "command": "fastp r.fq -o t.fq"},
+        ]}
+        # Before the fix this raised: AttributeError: 'str' has no .get
+        out = fill_missing_kinds(plan)
+        assert len(out["steps"]) == 1
+        assert out["steps"][0]["kind"] == StepKind.TRIM.value
+
+    def test_validate_completeness_survives_string_steps(self) -> None:
+        """The completeness validator also normalises defensively, so a
+        partially malformed plan can still be scored."""
+        plan = {
+            "workflow_type": "rna_seq",
+            "steps": [
+                "Download reads",
+                {"name": "idx", "command": "bwa index ref.fa", "kind": "index", "dependencies": []},
+                {"name": "aln", "command": "bwa mem ref.fa r.fq", "kind": "align", "dependencies": ["idx"]},
+            ],
+        }
+        ok, _ = validate_workflow_completeness(plan)
+        # The string is dropped; the bwa index→align chain is valid.
+        assert ok

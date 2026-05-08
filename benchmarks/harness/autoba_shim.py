@@ -459,6 +459,15 @@ def _map_plan(plan_tasks: List[str], shells: Dict[int, str]) -> List[Dict[str, A
     and produced a per-task ``<N>.sh``, its body is the ``command``;
     otherwise we derive a tool-first command from the task sentence via
     :func:`_command_from_task` so ``score_plan`` can grep it.
+
+    Fairness convention (Benchmark E): ``dependencies`` is left empty.
+    AutoBA's plan is a flat list of task sentences; the linear
+    ``[step_N-1]`` chain we used to write was a parsing artefact (it
+    just mirrored enumeration order, not anything AutoBA declared).
+    Recording empty deps means metrics see a flat-list plan, matching
+    the DAG-blind defaults of every other competitor. The metric
+    pipeline normalises flat plans so they're scored consistently
+    (``parallel_width=1``, ``stage_efficiency=1.0``).
     """
     steps: List[Dict[str, Any]] = []
     for idx, task in enumerate(plan_tasks, 1):
@@ -467,7 +476,7 @@ def _map_plan(plan_tasks: List[str], shells: Dict[int, str]) -> List[Dict[str, A
         steps.append({
             "name":         f"step_{idx}",
             "command":      command,
-            "dependencies": [f"step_{idx - 1}"] if idx > 1 else [],
+            "dependencies": [],
             "outputs":      [],
             "description":  str(task),
         })

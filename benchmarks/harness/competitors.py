@@ -591,17 +591,42 @@ class ClaudeCodeCompetitor(Competitor):
     The driver model defaults to whichever Claude version Claude Code
     selects; pass ``CLAUDE_CODE_MODEL`` (env) or ``--model`` (kwarg) to
     pin a specific Anthropic model.
+
+    DAG-awareness convention
+    ------------------------
+    Default is ``with_dag=False`` -- the shim uses its DAG-blind prompt
+    template (no ``dependencies`` field, no topological-order rule).
+    This is the fair head-to-head baseline for Benchmark E: FlowAgent's
+    differentiator is its DAG-aware planner, so giving Claude Code a
+    free DAG instruction in its prompt would be a confound. The default
+    slug ``claude_code`` therefore refers to the DAG-blind variant.
+
+    Pass ``with_dag=True`` to opt-in to the DAG-aware prompt template
+    (the prompt-level equivalent of FlowAgent's ``LLM_DAG_AWARE=true``).
+    The slug becomes ``claude_code_dag_aware`` so paired runs don't
+    collide in the registry / results CSV. Benchmark J's ``dag_aware``
+    arm uses this opt-in.
     """
 
     id   = "claude_code"
     name = "Claude Code"
     url  = "https://docs.claude.com/en/docs/claude-code/overview"
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(self, model: Optional[str] = None, *, with_dag: bool = False):
         # ``None`` means "let Claude Code choose its default model" so the
         # adapter works out of the box. Benchmark runners that want to
         # pin a model pass it here.
         self.model = model
+        self.with_dag = with_dag
+        # Distinguish ablation arms in the registry / results CSV. The
+        # default ``False`` arm keeps the historical id ``claude_code``
+        # so existing Benchmark E callers see the slug they expect (now
+        # backed by the fair DAG-blind prompt). The DAG-aware arm is
+        # opt-in and gets a ``_dag_aware`` suffix so paired runs in
+        # Benchmark J don't collide.
+        if with_dag:
+            self.id = "claude_code_dag_aware"
+            self.name = "Claude Code (DAG-aware)"
 
     def _binary(self) -> Optional[str]:
         explicit = os.environ.get("CLAUDE_CODE_BIN")
@@ -658,6 +683,12 @@ class ClaudeCodeCompetitor(Competitor):
                 "--files", json.dumps(files)]
         if self.model:
             argv += ["--model", self.model]
+        # Forward the ablation arm. The shim defaults to the DAG-blind
+        # template (fair head-to-head); we pass ``--with-dag-instruction``
+        # explicitly only when the caller opts-in (Benchmark J's
+        # ``dag_aware`` arm).
+        if self.with_dag:
+            argv += ["--with-dag-instruction"]
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
@@ -710,16 +741,27 @@ class EdisonCompetitor(Competitor):
     Reports unavailable when ``EDISON_API_KEY`` is unset or the
     ``edison-client`` package is missing -- soft-skipped per cell so
     a competitor sweep without an Edison account still runs.
+
+    DAG-awareness convention
+    ------------------------
+    Default is ``with_dag=False`` -- the shim uses its DAG-blind
+    system-prompt template. Pass ``with_dag=True`` to opt-in to the
+    DAG-aware template; the slug becomes ``edison_dag_aware`` so
+    paired ablation runs don't collide in the registry / results CSV.
+    Same fairness rationale as :class:`ClaudeCodeCompetitor`.
     """
 
     id   = "edison"
     name = "Edison Analysis"
     url  = "https://docs.edisonscientific.com/agents.md#analysis"
 
-    def __init__(self):
+    def __init__(self, *, with_dag: bool = False):
         # Edison's model selection happens server-side; nothing to do here.
         # The shim honours EDISON_LANGUAGE / EDISON_MAX_STEPS / EDISON_TIMEOUT.
-        pass
+        self.with_dag = with_dag
+        if with_dag:
+            self.id = "edison_dag_aware"
+            self.name = "Edison Analysis (DAG-aware)"
 
     def _has_sdk(self) -> bool:
         try:
@@ -775,6 +817,10 @@ class EdisonCompetitor(Competitor):
         if context and context.get("input_files"):
             files = [f"{p}: input file" for p in context["input_files"]]
         argv = [*argv, "--prompt", prompt, "--files", json.dumps(files)]
+        # Forward the ablation arm. Shim defaults to DAG-blind; only
+        # opt-in arms pass ``--with-dag-instruction`` (Benchmark J).
+        if self.with_dag:
+            argv += ["--with-dag-instruction"]
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
@@ -800,7 +846,23 @@ class EdisonCompetitor(Competitor):
 # rubric. No context gathering, no repair loop, no presets — exactly
 # one provider call per cell.
 
-_RAW_LLM_SYSTEM_PROMPT = """You are a bioinformatics pipeline planner.
+# Two raw-LLM system prompts following the same DAG-aware/blind
+# convention as the Claude Code + Edison shims:
+#
+# * The DEFAULT (``_RAW_LLM_SYSTEM_PROMPT_NO_DAG``) is DAG-blind. The
+#   raw-LLM lane is meant to test whether FlowAgent's *full* stack
+#   (scaffolding + DAG-aware prompt + DAG-aware schema) beats a naive
+#   one-shot LLM call. Giving the raw lane a free DAG instruction in
+#   its prompt would short-circuit that comparison (the raw lane
+#   would inherit FlowAgent's prompt-engineering wins for free).
+#
+# * ``_RAW_LLM_SYSTEM_PROMPT_DAG_AWARE`` is opt-in via
+#   ``RawLLMCompetitor(with_dag=True)``; useful when a researcher
+#   wants to test a different question -- e.g. "what does FlowAgent's
+#   scaffolding add *over and above* the DAG instruction the planner
+#   already includes?" -- but it isn't the default for fairness.
+
+_RAW_LLM_SYSTEM_PROMPT_DAG_AWARE = """You are a bioinformatics pipeline planner.
 Given a user's request, produce a JSON workflow plan using this schema:
 
 {
@@ -826,6 +888,48 @@ Rules:
 - Include every step needed to go from raw input to the requested output.
 
 Return ONLY the JSON object. No markdown fences. No commentary."""
+
+
+_RAW_LLM_SYSTEM_PROMPT_NO_DAG = """You are a bioinformatics pipeline planner.
+Given a user's request, produce a JSON workflow plan using this schema:
+
+{
+  "name": "<workflow_name>",
+  "description": "<short description>",
+  "workflow_type": "<rna_seq_kallisto | rna_seq_star | rna_seq_hisat | chip_seq | atac_seq | variant_calling | single_cell_10x | single_cell_kb | qc_only | custom>",
+  "steps": [
+    {
+      "name": "<unique_snake_case_id>",
+      "command": "<runnable shell command>",
+      "outputs": ["<declared output paths>"]
+    }
+  ]
+}
+
+Rules:
+- Commands should be runnable shell pipelines using standard
+  bioinformatics tools (fastqc, kallisto, salmon, STAR, bwa, samtools,
+  macs2, cellranger, kb-python, deseq2 via Rscript, multiqc, etc.).
+- Include every step needed to go from raw input to the requested output.
+
+Return ONLY the JSON object. No markdown fences. No commentary."""
+
+
+def _select_raw_llm_system_prompt(*, dag_aware: bool) -> str:
+    """Return the raw-LLM system prompt for the requested ablation arm."""
+    return (
+        _RAW_LLM_SYSTEM_PROMPT_DAG_AWARE
+        if dag_aware
+        else _RAW_LLM_SYSTEM_PROMPT_NO_DAG
+    )
+
+
+# Backwards-compat alias: any caller that imported _RAW_LLM_SYSTEM_PROMPT
+# from this module historically got the DAG-aware version. Now points
+# at the DAG-blind variant (the new default) so they get the fair
+# head-to-head prompt by default. Callers that explicitly want the
+# DAG-aware prompt should reach for ``_RAW_LLM_SYSTEM_PROMPT_DAG_AWARE``.
+_RAW_LLM_SYSTEM_PROMPT = _RAW_LLM_SYSTEM_PROMPT_NO_DAG
 
 
 _PROVIDER_ENV_VARS = {
@@ -856,13 +960,36 @@ class RawLLMCompetitor(Competitor):
     FlowAgent's planning infrastructure. If ``raw_gpt-5.4`` produces plans
     of comparable quality to FlowAgent on the same scoring rubric, the
     scaffolding isn't adding value; if it's measurably worse, it is.
+
+    DAG-awareness convention
+    ------------------------
+    By default the raw-LLM system prompt is **DAG-blind** (see
+    ``_RAW_LLM_SYSTEM_PROMPT_NO_DAG``) so the head-to-head against
+    FlowAgent isolates FlowAgent's full stack (scaffolding + DAG-aware
+    planner + retry loop) from a naive one-shot call. Pass
+    ``with_dag=True`` to opt-in to the DAG-aware system prompt; the
+    slug then becomes ``raw_<model>_dag_aware`` so paired runs don't
+    collide in the registry / results CSV.
     """
 
-    def __init__(self, model_id: str, models_yaml_cfg: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        model_id: str,
+        models_yaml_cfg: Optional[Dict[str, Any]] = None,
+        *,
+        with_dag: bool = False,
+    ):
         self.model_id = model_id
+        self.with_dag = with_dag
         # Slug-safe id for results CSV; keep model id human-readable in name.
-        self.id = f"raw_{model_id}"
-        self.name = f"Raw LLM ({model_id})"
+        # The DAG-aware opt-in lane gets a distinct slug so the two
+        # configurations can co-exist in the registry / results.
+        suffix = "_dag_aware" if with_dag else ""
+        self.id = f"raw_{model_id}{suffix}"
+        self.name = (
+            f"Raw LLM ({model_id}, DAG-aware)" if with_dag
+            else f"Raw LLM ({model_id})"
+        )
         self.url = ""
         # Used for pricing lookup. Accept either a single {id: ..., pricing: ...}
         # dict, or a full models.yaml cfg dict {"models": [...]}.
@@ -906,7 +1033,9 @@ class RawLLMCompetitor(Competitor):
             tracker = _TokenTracker(provider)
             resp = await tracker.chat(
                 [
-                    {"role": "system", "content": _RAW_LLM_SYSTEM_PROMPT},
+                    {"role": "system",
+                     "content": _select_raw_llm_system_prompt(
+                         dag_aware=self.with_dag)},
                     {"role": "user", "content": prompt},
                 ],
                 model=self.model_id,

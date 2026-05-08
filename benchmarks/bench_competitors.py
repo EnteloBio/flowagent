@@ -22,6 +22,16 @@ Subset of competitors / prompts::
     python bench_competitors.py --competitors=flowagent,biomaster \\
         --prompts=rnaseq_kallisto_basic,hard_full_germline_pipeline \\
         --replicates=2
+
+Opt-in competitors
+------------------
+Some lanes are excluded from the default sweep because they are slow,
+expensive, or not directly comparable (see :data:`_OPT_IN_COMPETITORS`).
+To include them, name them explicitly via ``--competitors``. As of
+this writing only ``edison`` is opt-in; routine ``make competitors``
+runs therefore skip Edison Analysis. The full four-way comparison
+remains available via ``make competitors-all`` (which lists ``edison``
+explicitly) or ``--competitors=edison`` for an Edison-only sweep.
 """
 
 from __future__ import annotations
@@ -51,6 +61,55 @@ from harness.runner import (                                    # noqa: E402
 
 LOG = logging.getLogger("bench_competitors")
 HERE = Path(__file__).parent
+
+
+# ── Opt-in competitors (excluded from the default sweep) ─────────
+#
+# Some competitors are too slow / expensive / unreliable to include in
+# routine ``make competitors`` runs but are still wanted for the
+# manuscript-grade comparison or for explicit opt-in via
+# ``--competitors=<name>``.
+#
+# ``edison`` belongs here because:
+#   * Its analysis API runs the workflow end-to-end (3-15 min/task) while
+#     every other competitor only *plans* it — they are not directly
+#     comparable on wall-clock or pass-rate.
+#   * Each cell consumes real Edison credits even when the harness times
+#     out, which makes accidental inclusion costly.
+#   * The harness's default ``--timeout=180`` triggers a kill before
+#     Edison's polling loop typically finishes (its own
+#     ``EDISON_TIMEOUT`` defaults to 1800), so default-sweep cells fail
+#     systematically.
+#
+# Edison stays in :func:`harness.competitors.build_default_competitor_registry`
+# (so the DAG-toggle invariant tests and Benchmark J still see it), and
+# it remains opt-in via ``--competitors=edison`` on the CLI or via
+# ``make competitors-all`` which names it explicitly.
+_OPT_IN_COMPETITORS: frozenset[str] = frozenset({"edison"})
+
+
+def _filter_to_run_set(
+    registry: Dict[str, Competitor],
+    requested: Optional[str],
+) -> Dict[str, Competitor]:
+    """Apply the default-vs-explicit-opt-in selection for a sweep.
+
+    * If ``requested`` is set (a comma-separated list of competitor ids,
+      from ``--competitors``), return exactly that subset. Opt-in
+      competitors are included when named explicitly.
+    * Otherwise return the registry minus :data:`_OPT_IN_COMPETITORS`,
+      so a routine ``make competitors`` invocation does not pull in
+      slow / expensive lanes by accident.
+
+    Raises :class:`SystemExit` if ``requested`` names no known competitor.
+    """
+    if requested:
+        wanted = {s.strip() for s in requested.split(",") if s.strip()}
+        out = {k: v for k, v in registry.items() if k in wanted}
+        if not out:
+            raise SystemExit(f"No known competitors in {requested!r}")
+        return out
+    return {k: v for k, v in registry.items() if k not in _OPT_IN_COMPETITORS}
 
 
 # ── Mock fallback ────────────────────────────────────────────────
@@ -314,8 +373,12 @@ def _load_prompts(path: Path, ids: Optional[List[str]]) -> List[Dict[str, Any]]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--competitors",
-                    help="Comma-separated competitor ids "
-                         "(default: all registered, including raw-LLM lanes)")
+                    help="Comma-separated competitor ids. Default: all "
+                         "registered EXCEPT opt-in lanes "
+                         f"({', '.join(sorted(_OPT_IN_COMPETITORS))}). "
+                         "Name them explicitly to include them, e.g. "
+                         "``--competitors=edison`` for an Edison-only sweep, "
+                         "or use ``make competitors-all``.")
     ap.add_argument("--raw-models",
                     default="gpt-5.4,claude-opus-4-7,gemini-2.5-pro",
                     help="Comma-separated model IDs to run as zero-shot "
@@ -390,11 +453,7 @@ def main() -> None:
         raw_models=raw_models,
         models_yaml_cfg=cfg,
     )
-    if args.competitors:
-        wanted = set(args.competitors.split(","))
-        registry = {k: v for k, v in registry.items() if k in wanted}
-        if not registry:
-            raise SystemExit(f"No known competitors in {args.competitors!r}")
+    registry = _filter_to_run_set(registry, args.competitors)
 
     # Prompts — default to a compact balanced subset if none specified
     default_subset = [

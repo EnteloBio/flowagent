@@ -17,7 +17,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -35,6 +35,9 @@ help:
 	@echo "  make reflection   - Benchmark I: completeness-reflection ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make reflection-pilot - Benchmark I smoke: 8 prompts × 1 replicate × 2 arms"
 	@echo "  make reflection-figure REFLECTION_DIR=results/reflection/<ts> - render figure_reflection.pdf + stats_reflection.tsv"
+	@echo "  make competitor-dag-ablation - Benchmark J: competitor DAG-prompt ablation (Claude Code, 66 prompts × replicates × 2 arms)"
+	@echo "  make competitor-dag-ablation-pilot - Benchmark J smoke: 3 prompts × 1 replicate × 2 arms"
+	@echo "  make competitor-dag-figure CDAG_DIR=results/competitor_dag_ablation/<ts> - render figure_competitor_dag__<comp>.pdf + stats"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
 	@echo "  make test         - run the benchmark test suite (pytest)"
@@ -70,8 +73,26 @@ gen:
 exec:
 	$(PY) bench_executors.py --out=$(RESULTS_DIR)
 
+# Optional: narrow the sweep to specific competitors and / or override the
+# raw-LLM baselines. Defaults preserve historical behaviour (all default-
+# sweep competitors + the three frontier raw lanes). Examples::
+#
+#   make competitors COMPETITORS=flowagent RAW_MODELS=""
+#       # FlowAgent only -- no third-party shims, no raw baselines.
+#   make competitors COMPETITORS=flowagent,claude_code RAW_MODELS=""
+#       # Plan-only head-to-head, no raw lanes.
+#   make competitors RAW_MODELS="gpt-4.1,claude-haiku-4-5"
+#       # Default competitors + a custom raw-LLM lane set.
+#
+# The opt-in lane ``edison`` is excluded from the default sweep; name it
+# explicitly via COMPETITORS=...,edison or use ``make competitors-all``.
+RAW_MODELS ?= gpt-5.4,claude-opus-4-7,gemini-2.5-pro
+COMPETITORS_FLAG := $(if $(COMPETITORS),--competitors=$(COMPETITORS),)
 competitors:
-	$(PY) bench_competitors.py --model=$(MODEL) --replicates=$(REPLICATES) --out=$(RESULTS_DIR)
+	$(PY) bench_competitors.py --model=$(MODEL) --replicates=$(REPLICATES) \
+	    $(COMPETITORS_FLAG) \
+	    --raw-models="$(RAW_MODELS)" \
+	    --out=$(RESULTS_DIR)
 
 # Four-way comparison covering FlowAgent + the three competitor frameworks
 # requested in the ablation study (Claude Code, Biomni, Edison Analysis).
@@ -150,6 +171,50 @@ reflection-figure:
 	$(PY) make_reflection_figure.py \
 	    --paired=$(REFLECTION_DIR)/paired_metrics.csv \
 	    --out=figure_reflection
+
+# Benchmark J -- competitor DAG-prompt ablation.
+# Toggles whether the COMPETITOR's prompt template asks for a DAG
+# (`dependencies` field + topological-order rule) vs a flat list. Currently
+# wired up for Claude Code only; Biomni / Edison need the same shim-level
+# template toggle before they can be added (see bench_competitor_dag_ablation.py).
+#
+# COMPETITORS  -- comma-separated competitor slugs (default: claude_code).
+# CDAG_MODEL   -- driver model for the competitor's shim
+#                  (default: claude-haiku-4-5).
+# REPLICATES   -- replicates per (prompt, arm) cell.
+COMPETITORS ?= claude_code
+CDAG_MODEL  ?= claude-haiku-4-5
+competitor-dag-ablation:
+	$(PY) bench_competitor_dag_ablation.py \
+	    --competitors=$(COMPETITORS) \
+	    --model=$(CDAG_MODEL) \
+	    --replicates=$(REPLICATES) \
+	    --out=$(RESULTS_DIR)
+
+# Quick smoke for Benchmark J: 3 prompts × 1 replicate × 2 arms.
+# ~$0.10-0.50 on Claude Haiku 4.5 (depends on prompt length).
+competitor-dag-ablation-pilot:
+	$(PY) bench_competitor_dag_ablation.py \
+	    --competitors=$(COMPETITORS) \
+	    --model=$(CDAG_MODEL) \
+	    --replicates=1 \
+	    --limit=3 \
+	    --out=$(RESULTS_DIR)
+
+# Render figure_competitor_dag__<comp>.pdf + per-competitor stats from a
+# finished run. Pass CDAG_DIR=results/competitor_dag_ablation/<timestamp>/
+# to point at a specific run; defaults to the most recent.
+CDAG_DIR ?= $(shell ls -td $(RESULTS_DIR)/competitor_dag_ablation/*/ 2>/dev/null | head -1)
+competitor-dag-figure:
+	@if [ -z "$(CDAG_DIR)" ]; then \
+	    echo "No competitor DAG-ablation runs found under "; \
+	    echo "$(RESULTS_DIR)/competitor_dag_ablation. "; \
+	    echo "Run \`make competitor-dag-ablation\` first or pass CDAG_DIR=...."; \
+	    exit 1; \
+	fi
+	$(PY) make_competitor_dag_figure.py \
+	    --paired=$(CDAG_DIR)/paired_metrics.csv \
+	    --out=figure_competitor_dag
 
 # Benchmark F — output fidelity (pure scoring; no LLM calls).
 # Use this when the candidate dirs already exist on disk.

@@ -20,6 +20,7 @@ from harness.metrics import (  # noqa: E402
     dag_shape,
     plan_schema_valid,
     score_plan,
+    tool_covered,
 )
 from harness.mock_plans import mock_plan_from_prompt  # noqa: E402
 
@@ -119,6 +120,67 @@ class TestScorePlan:
 
     def test_empty_plan_not_schema_valid(self):
         assert plan_schema_valid({"workflow_type": "custom", "steps": []}) is False
+
+    def test_macs3_satisfies_macs2_rubric(self):
+        """MACS3 is a drop-in successor — covers ``expected: macs2``.
+
+        Regression: ``chipseq_macs2`` used to fail when frontier models
+        emitted ``macs3 callpeak`` even though the call is identical to
+        ``macs2 callpeak`` for narrow-peak ChIP-seq. See
+        ``_TOOL_FAMILY_ALIASES`` in :mod:`harness.metrics`.
+        """
+        plan = {
+            "workflow_type": "chip_seq",
+            "steps": [
+                {"name": "align", "command": "bowtie2 -x idx -U r.fq -S a.sam",
+                 "dependencies": [], "outputs": [], "description": ""},
+                {"name": "peaks", "command": "macs3 callpeak -t a.bam -f BAM -g hs -n s",
+                 "dependencies": ["align"], "outputs": [], "description": ""},
+                {"name": "qc", "command": "multiqc results",
+                 "dependencies": ["peaks"], "outputs": [], "description": ""},
+                {"name": "extra", "command": "samtools sort a.bam -o s.bam",
+                 "dependencies": ["align"], "outputs": [], "description": ""},
+            ],
+        }
+        expected = {
+            "expected_workflow_type": "chip_seq",
+            "expected_tools": ["bowtie2", "macs2", "multiqc"],
+            "expected_min_steps": 4,
+            "forbidden_tools": ["wget"],
+        }
+        m = score_plan(plan, expected)
+        assert m["tools_present_fraction"] == 1.0
+        assert m["overall_pass"] is True
+
+    def test_macs2_still_satisfies_macs2_rubric(self):
+        """Sanity: the alias map doesn't break the exact-match path."""
+        assert tool_covered("macs2", {"macs2"}) is True
+        assert tool_covered("macs3", {"macs3"}) is True
+
+    def test_aliases_are_bidirectional(self):
+        assert tool_covered("macs2", {"macs3"}) is True
+        assert tool_covered("macs3", {"macs2"}) is True
+
+    def test_alias_does_not_credit_unrelated_tool(self):
+        """``macs2`` must NOT match ``bowtie2`` or other non-family tools."""
+        assert tool_covered("macs2", {"bowtie2"}) is False
+        assert tool_covered("macs2", {"samtools"}) is False
+        # Bowtie / Bowtie2 are deliberately NOT in the alias map.
+        assert tool_covered("bowtie2", {"bowtie"}) is False
+
+    def test_macs3_in_prose_satisfies_macs2_rubric(self):
+        """Narrative-style plan (Biomni-shape) must also benefit from alias."""
+        plan = {
+            "workflow_type": "chip_seq",
+            "steps": [
+                {"name": "narrative",
+                 "command": "Run macs3 callpeak on the sorted BAM",
+                 "dependencies": [], "outputs": [], "description": ""},
+            ],
+        }
+        # No CLI lead token (the leading word is "Run") -> exercises the
+        # prose-fallback branch in tool_covered.
+        assert tool_covered("macs2", set(), plan=plan) is True
 
 
 class TestDagShape:

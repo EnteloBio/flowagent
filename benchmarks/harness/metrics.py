@@ -262,6 +262,24 @@ def extract_tools_from_plan(plan: Dict[str, Any]) -> Set[str]:
     return tools
 
 
+# Drop-in successor families — tools the field treats as interchangeable
+# for the same task. Bidirectional: an ``expected_tools: [macs2]`` rubric
+# is satisfied by ``macs3`` in the plan, and vice versa. Add tools here
+# ONLY when (a) the same group/lab maintains both, (b) the CLI surface
+# is compatible enough that pipelines swap them without code changes,
+# and (c) the published output is interchangeable for downstream use.
+#
+# Deliberately NOT included (each fails at least one of those criteria):
+#   - bowtie / bowtie2  (different aligners; different defaults)
+#   - gatk3 / gatk4     (GATK4 broke many GATK3 commands)
+#   - hisat / hisat2    (handled by trailing-digit family-prefix logic)
+#   - bwa  / bwa-mem2   (handled by ``startswith(e + "_")`` family rule)
+_TOOL_FAMILY_ALIASES: Dict[str, Set[str]] = {
+    "macs2": {"macs3"},
+    "macs3": {"macs2"},
+}
+
+
 def tool_covered(expected: str, plan_tools: Set[str],
                  plan: Optional[Dict[str, Any]] = None,
                  *, prose_fallback: bool = True) -> bool:
@@ -275,6 +293,9 @@ def tool_covered(expected: str, plan_tools: Set[str],
       * build/index siblings — ``hisat2`` matches ``hisat2-build``,
                  ``bowtie2`` matches ``bowtie2-build``
       * loose prefix for long names — ``star`` covers ``starsolo``
+      * drop-in successor (``_TOOL_FAMILY_ALIASES``) — ``macs2`` covers
+        ``macs3`` and vice versa, since the field treats those as
+        interchangeable for narrow-peak calling. Curated, not heuristic.
       * Prose fallback (``prose_fallback=True``, default) — if ``plan`` is
         supplied and the expected name appears as a whole word in a step's
         ``name``, ``command``, or ``description``, credit it. This catches
@@ -292,9 +313,10 @@ def tool_covered(expected: str, plan_tools: Set[str],
         return s.lower().replace("-", "_")
 
     e = norm(expected)
+    aliases = _TOOL_FAMILY_ALIASES.get(e, set())
     for t in plan_tools:
         n = norm(t)
-        if n == e:
+        if n == e or n in aliases:
             return True
         if n.startswith(e + "_") or n.startswith(e + "build"):
             return True
@@ -309,9 +331,14 @@ def tool_covered(expected: str, plan_tools: Set[str],
     # Prose / narrative fallback: whole-word match in step text. Does not
     # require an R/Python/bash runner in plan_tools (Biomni and similar agents
     # often emit paragraph commands with no script-runner token).
+    # Includes drop-in successor aliases so ``Run macs3 callpeak ...``
+    # narrative satisfies an ``expected: macs2`` rubric (and vice versa).
     if prose_fallback and plan is not None and len(e) >= 4:
+        names = [expected.lower(), *sorted(aliases)]
         pat = re.compile(
-            rf"(?<![a-zA-Z0-9]){re.escape(expected.lower())}(?![a-zA-Z0-9])"
+            r"(?<![a-zA-Z0-9])(?:"
+            + "|".join(re.escape(n) for n in names)
+            + r")(?![a-zA-Z0-9])"
         )
         for step in plan.get("steps", []):
             text = (

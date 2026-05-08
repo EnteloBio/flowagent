@@ -122,6 +122,67 @@ def infer_step_kind(step: Dict[str, Any]) -> StepKind:
     return StepKind.OTHER
 
 
+def normalize_plan_steps(
+    plan: Dict[str, Any],
+    *,
+    logger: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Drop non-dict entries from ``plan['steps']`` with a warning log.
+
+    LLM fallback paths (plain-chat + regex repair, last-ditch minimal-prompt
+    retry in :meth:`flowagent.core.llm.LLMInterface._fetch_plan_json`)
+    occasionally surface malformed JSON where some ``steps`` items are bare
+    strings -- e.g. Opus narrating the first step as a sentence:
+
+        {
+          "workflow_type": "rna_seq",
+          "steps": [
+            "Download FASTQ via fasterq-dump",          # ← string, not dict
+            {"name": "trim", "command": "fastp ..."},
+            ...
+          ]
+        }
+
+    Without this guard, the very next ``step.get(...)`` call (in
+    :func:`fill_missing_kinds`, :func:`_build_graph`, the DAG-blind
+    dependency-injection loop, the reference-download merge, or the
+    ``_update_rule_resources`` walk) raises ``AttributeError: 'str' object
+    has no attribute 'get'`` and discards the entire plan -- even when 19
+    of 20 steps were perfectly valid dicts.
+
+    The salvage rule is intentionally simple: if the entry isn't a dict,
+    drop it. We don't try to coerce strings into skeletal dicts because
+    we have no reliable way to invent ``command``/``dependencies``/``kind``
+    fields from prose. Dropping is conservative: the resulting plan loses
+    one step but the remaining graph is still valid.
+
+    Mutates and returns ``plan`` for chaining convenience. Safe to call
+    repeatedly; a no-op when every entry is already a dict.
+    """
+    raw_steps = plan.get("steps")
+    if not isinstance(raw_steps, list):
+        plan["steps"] = []
+        return plan
+    cleaned: List[Dict[str, Any]] = []
+    dropped: List[Tuple[int, str]] = []
+    for i, item in enumerate(raw_steps):
+        if isinstance(item, dict):
+            cleaned.append(item)
+        else:
+            dropped.append((i, type(item).__name__))
+    if dropped and logger is not None:
+        logger.warning(
+            "normalize_plan_steps: dropped %d non-dict step(s) at indices %s "
+            "(types: %s). Plan retained %d valid step(s).",
+            len(dropped),
+            [i for i, _ in dropped],
+            sorted({t for _, t in dropped}),
+            len(cleaned),
+        )
+    plan["steps"] = cleaned
+    return plan
+
+
 def fill_missing_kinds(plan: Dict[str, Any]) -> Dict[str, Any]:
     """Mutate ``plan`` so every step has a valid ``kind`` field.
 
@@ -129,7 +190,12 @@ def fill_missing_kinds(plan: Dict[str, Any]) -> Dict[str, Any]:
     or enum) are left alone. Missing or unrecognised values are filled
     via :func:`infer_step_kind`. Returns the same plan dict (mutated)
     for chaining convenience.
+
+    Idempotent with :func:`normalize_plan_steps`: callers that haven't
+    already normalised get a defensive normalisation here, so this
+    function never raises ``AttributeError`` on a malformed plan.
     """
+    normalize_plan_steps(plan)
     valid = {k.value for k in StepKind}
     for step in plan.get("steps", []) or []:
         raw = step.get("kind")
@@ -147,6 +213,7 @@ def fill_missing_kinds(plan: Dict[str, Any]) -> Dict[str, Any]:
 def _build_graph(plan: Dict[str, Any]) -> Optional["nx.DiGraph"]:
     if nx is None:
         return None
+    normalize_plan_steps(plan)
     g = nx.DiGraph()
     for step in plan.get("steps", []) or []:
         name = step.get("name")

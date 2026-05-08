@@ -26,11 +26,31 @@ CLI envelope (printed verbatim to stdout, single line / object):
       "llm_calls":         <int>,
       "cost_usd":          <float>,
       "wall_seconds":      <float>,
+      "dag_aware":         <bool>,
       "error":             <str | null>
     }
 
 The plan shape matches FlowAgent's ``WorkflowPlanSchema`` so
 ``harness.metrics.score_plan`` can grade it on the same rubric.
+
+DAG-awareness convention:
+
+By default the shim uses a **DAG-blind** prompt template -- no
+``dependencies`` field in the schema example, no topological-order
+rule. This is the fair head-to-head baseline for Benchmark E:
+FlowAgent's contribution is its DAG-aware planner, so giving Claude
+Code a free DAG instruction in its prompt would be a confound.
+Pass ``--with-dag-instruction`` to opt-in to the DAG-aware template
+(the prompt-level equivalent of FlowAgent's ``LLM_DAG_AWARE=true``)
+-- this is what Benchmark J's ``dag_aware`` arm uses to test whether
+prompt-level DAG instruction alone changes Claude Code's plan
+quality.
+
+The toggle is symmetric -- the only difference between the two
+templates is the ``dependencies`` field + topological-order rule.
+Every other rule (tool-first command, no side effects, no markdown
+fences, etc.) is byte-identical, pinned by the unit test
+``TestSelectTemplate.test_non_dag_rules_unchanged_between_arms``.
 
 Configuration knobs (env vars):
 
@@ -40,7 +60,7 @@ Configuration knobs (env vars):
 * ``CLAUDE_CODE_MODEL``   : model id passed via ``--model`` (default: CLI default).
 
 Run as ``python claude_code_shim.py --prompt <text> [--files JSON]
-[--model <id>]``.
+[--model <id>] [--with-dag-instruction]``.
 """
 
 from __future__ import annotations
@@ -58,6 +78,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 # ── Plan extraction (same JSON envelope as the planner) ─────────────
+#
+# Two templates. The DEFAULT (``_PLAN_INSTRUCTION_TEMPLATE_NO_DAG``) is
+# the DAG-blind prompt -- it does NOT ask for a ``dependencies`` field
+# and has no topological-order rule. This is the fair head-to-head
+# baseline for Benchmark E: FlowAgent's differentiator is its
+# DAG-aware planner, so Claude Code shouldn't get a free DAG
+# instruction in its prompt.
+#
+# ``_PLAN_INSTRUCTION_TEMPLATE`` (DAG-aware) is opt-in via
+# ``--with-dag-instruction``; this is the prompt-level equivalent of
+# FlowAgent's ``LLM_DAG_AWARE=true`` and is used by Benchmark J's
+# ``dag_aware`` arm. Toggling between the two is what Benchmark J
+# actually measures.
 
 _PLAN_INSTRUCTION_TEMPLATE = """You are a bioinformatics pipeline planner.
 
@@ -92,6 +125,60 @@ Rules:
 Return ONLY the JSON object, no markdown fences, no commentary, no
 explanation, no preamble.
 """
+
+
+# DAG-blind variant for Benchmark J. Same shell of a prompt, but:
+#   * the schema example has no ``dependencies`` field,
+#   * the topological-order rule is removed,
+#   * the dependency-reference rule is removed.
+# Everything else (workflow_type vocabulary, command rules, no-side-
+# effects rule, no-fences rule) is identical to the DAG-aware
+# template, so the only experimental variable is the DAG instruction
+# itself. Symmetric to FlowAgent's ``WorkflowPlanSchemaNoDAG``.
+_PLAN_INSTRUCTION_TEMPLATE_NO_DAG = """You are a bioinformatics pipeline planner.
+
+Task: {prompt}
+
+Available input files (treat as already on disk): {files}
+
+Return EXACTLY ONE JSON object describing the workflow plan, with this schema:
+
+{{
+  "workflow_type": "<rna_seq_kallisto | rna_seq_star | rna_seq_hisat | chip_seq | atac_seq | variant_calling | single_cell_10x | single_cell_kb | qc_only | custom>",
+  "steps": [
+    {{
+      "name": "<unique_snake_case_id>",
+      "command": "<runnable shell pipeline using real bioinformatics tools>",
+      "outputs": ["<expected output paths>"]
+    }}
+  ]
+}}
+
+Rules:
+- The first token of each ``command`` MUST be the bioinformatics tool
+  itself (``fastqc``, ``kallisto``, ``samtools``, etc.). Do not prepend
+  ``mkdir -p`` or other shell prefixes -- emit a separate step for setup.
+- Cover every step from raw input to the requested final output.
+- Do NOT actually create files, edit code, or call any tools. Just emit
+  the JSON plan.
+
+Return ONLY the JSON object, no markdown fences, no commentary, no
+explanation, no preamble.
+"""
+
+
+def _select_template(*, dag_aware: bool) -> str:
+    """Return the prompt template for the requested ablation arm.
+
+    Exposed as a module-level helper so tests can pin the two arms
+    diverge only in the DAG-related sentences -- never via accidental
+    drift in unrelated rules.
+    """
+    return (
+        _PLAN_INSTRUCTION_TEMPLATE
+        if dag_aware
+        else _PLAN_INSTRUCTION_TEMPLATE_NO_DAG
+    )
 
 
 # ── JSON extraction from free-form Claude output ────────────────────
@@ -211,6 +298,7 @@ def _envelope(
     llm_calls: int = 0,
     cost_usd: float = 0.0,
     wall_seconds: float = 0.0,
+    dag_aware: bool = True,
     error: Optional[str] = None,
 ) -> Dict[str, Any]:
     return {
@@ -220,6 +308,7 @@ def _envelope(
         "llm_calls":         llm_calls,
         "cost_usd":          cost_usd,
         "wall_seconds":      wall_seconds,
+        "dag_aware":         dag_aware,
         "error":             error,
     }
 
@@ -235,12 +324,27 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="JSON-encoded list of 'name: description' strings")
     ap.add_argument("--model", default=None,
                     help="Override model id (CLAUDE_CODE_MODEL also honoured)")
+    # Ablation arm switch for Benchmark J. The default is DAG-blind so
+    # head-to-head Benchmark E doesn't quietly hand Claude Code the same
+    # DAG instruction FlowAgent's planner uses; pass --with-dag-instruction
+    # to opt-in to the DAG-aware template (Benchmark J's `dag_aware` arm).
+    ap.add_argument(
+        "--with-dag-instruction", dest="with_dag_instruction",
+        action="store_true",
+        help="Use the DAG-aware prompt template (asks for `dependencies` "
+             "field + topological-order rule). Default is DAG-blind so "
+             "head-to-head benchmarks don't confound Claude Code with a "
+             "DAG instruction FlowAgent reserves for its own planner.",
+    )
     args = ap.parse_args(argv)
+
+    dag_aware = args.with_dag_instruction
 
     binary = _resolve_claude_bin()
     if not binary:
         print(json.dumps(_envelope(
             _empty_plan(),
+            dag_aware=dag_aware,
             error=("claude binary not found on PATH. Install Claude Code "
                    "and authenticate, or set CLAUDE_CODE_BIN to its path."),
         )))
@@ -259,7 +363,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except ValueError:
         timeout = 300.0
 
-    structured_prompt = _PLAN_INSTRUCTION_TEMPLATE.format(
+    structured_prompt = _select_template(dag_aware=dag_aware).format(
         prompt=args.prompt,
         files=", ".join(files) if files else "(none provided)",
     )
@@ -282,12 +386,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         wall = time.perf_counter() - t0
         print(json.dumps(_envelope(
             _empty_plan(), wall_seconds=wall,
+            dag_aware=dag_aware,
             error=f"timeout after {timeout:.0f}s",
         )))
         return 0
     except FileNotFoundError as fnf:
         print(json.dumps(_envelope(
-            _empty_plan(), error=f"FileNotFoundError: {fnf}",
+            _empty_plan(),
+            dag_aware=dag_aware,
+            error=f"FileNotFoundError: {fnf}",
         )))
         return 0
 
@@ -371,6 +478,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         llm_calls=turns,
         cost_usd=cost,
         wall_seconds=wall,
+        dag_aware=dag_aware,
         error=err_msg,
     )))
     return 0

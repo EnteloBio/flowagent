@@ -547,6 +547,24 @@ Use the exact sample name '{sample_name}' for output directories.""",
         "htseq": "htseq-count",
     }
 
+    # Tool-equivalence groups: tools that share a CLI / output format and are
+    # therefore interchangeable for workflow-type matching, even if a workflow
+    # canonicalises on one specific name. Used by ``_detect_workflow_type``'s
+    # tool-compatibility guard to avoid spurious fallbacks to ``custom`` when
+    # a user prompt names a sibling tool.
+    #
+    # Keep canonical names in each workflow's ``tools`` list intact; this
+    # mapping is consulted *only* by the guard. Add a new group when a real
+    # benchmark prompt (or user report) demonstrates a misclassification.
+    _TOOL_EQUIVALENCE = {
+        # macs2 and macs3 share the same CLI and narrowPeak output. FlowAgent
+        # prefers macs3 in plans because the bioconda macs2 wheel crashes on
+        # glibc≥2.31 (see chip_seq workflow comment), but a prompt asking for
+        # macs2 should still match chip_seq.
+        "macs2": "macs",
+        "macs3": "macs",
+    }
+
     def _detect_mentioned_tools(self, prompt: str) -> Set[str]:
         """Extract primary bioinformatics tools explicitly named in *prompt*."""
         prompt_lower = prompt.lower()
@@ -650,6 +668,10 @@ Use the exact sample name '{sample_name}' for output directories.""",
         # misleading (e.g. prompt says "align with STAR" but keyword scoring
         # picked rna_seq_kallisto because of "RNA-seq").  Fall back to
         # "custom" so the LLM can use the tools the user actually asked for.
+        #
+        # Sibling tools that share a CLI (macs2 ↔ macs3, …) are canonicalised
+        # via ``_TOOL_EQUIVALENCE`` so the guard does not trip on a name
+        # difference that has no semantic effect on the plan.
         mentioned = self._detect_mentioned_tools(prompt)
         if mentioned:
             wf_tools = {t.lower() for t in
@@ -660,7 +682,11 @@ Use the exact sample name '{sample_name}' for output directories.""",
                         "deeptools", "trim_galore"}
             specific_mentioned = mentioned - _GENERIC
             specific_workflow = wf_tools - _GENERIC
-            if specific_mentioned and not specific_mentioned.issubset(specific_workflow):
+            canon_mentioned = {self._TOOL_EQUIVALENCE.get(t, t)
+                               for t in specific_mentioned}
+            canon_workflow = {self._TOOL_EQUIVALENCE.get(t, t)
+                              for t in specific_workflow}
+            if canon_mentioned and not canon_mentioned.issubset(canon_workflow):
                 self.logger.info(
                     "Tool-compatibility guard: prompt mentions %s but %s "
                     "only provides %s — falling back to custom",
@@ -1364,6 +1390,7 @@ Resource Management Rules:
             # harness can score completeness pass-rate per cell.
             from .completeness import (
                 fill_missing_kinds,
+                normalize_plan_steps,
                 render_completeness_feedback,
                 validate_workflow_completeness,
             )
@@ -1383,6 +1410,16 @@ Resource Management Rules:
                 workflow_plan = await self._fetch_plan_json(
                     attempt_messages, prompt, matched_files, _dag_aware,
                 )
+
+                # ── Defensive normalisation: drop non-dict step entries.
+                # Opus/Gemini regex-repair fallbacks occasionally surface
+                # plans where ``steps`` is a mix of strings + dicts; left
+                # unhandled, the very next ``step.get(...)`` call
+                # (DAG-blind dep-injection, reference-download merge,
+                # fill_missing_kinds, _update_rule_resources) raises
+                # AttributeError and discards the entire plan. Salvaging
+                # the dict subset preserves 19/20 valid steps instead.
+                normalize_plan_steps(workflow_plan, logger=self.logger)
 
                 # ── DAG-blind ablation: inject empty dependency lists
                 # so downstream code (DAG construction, benchmark

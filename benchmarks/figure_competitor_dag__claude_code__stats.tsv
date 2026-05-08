@@ -1,0 +1,10 @@
+metric	kind	mean_dag_aware	mean_dag_blind	n	mean_diff	median_diff	p_value	test	b_only	c_only
+tools_present_fraction	continuous	1	0.333333	3	0.666667	1	0.5	wilcoxon		
+hallucination_rate	continuous	0	0	3	0	0	1	all-zero		
+preset_command_f1	continuous	0	0	3	0	0	1	all-zero		
+preset_name_jaccard	continuous	0	0	3	0	0	1	all-zero		
+num_steps	continuous	5	1.66667	3	3.33333	5	0.5	wilcoxon		
+dag_edge_density	continuous	1	0	3	1	1	0.25	wilcoxon		
+parallel_width	continuous	2	0.333333	3	1.66667	2	0.25	wilcoxon		
+stage_efficiency	continuous	1.52778	0.333333	3	1.19444	1.66667	0.25	wilcoxon		
+overall_pass	binary	1	0.333333	3			0.5	mcnemar	0	2

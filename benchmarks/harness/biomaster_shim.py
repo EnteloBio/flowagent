@@ -102,6 +102,17 @@ def _map_step(raw: Dict[str, Any], idx: int) -> Dict[str, Any]:
     ``tools`` (tool-name string) as the ``command`` source so
     ``score_plan``'s tool matcher sees what BioMaster *planned* to use,
     ``description`` for context, and ``output_filename`` for outputs.
+
+    Fairness convention (Benchmark E): ``dependencies`` is left empty.
+    BioMaster's PLAN.json has no ``dependencies`` field; the linear
+    ``[step_N-1]`` chain we used to synthesise here was a parsing
+    artefact (it just mirrored ``step_number`` ordering). Recording
+    empty deps means metrics see a flat-list plan -- the honest
+    representation of BioMaster's output -- and matches the DAG-blind
+    defaults of every other competitor. ``num_dag_layers`` /
+    ``parallel_width`` / ``stage_efficiency`` are normalised by
+    ``metrics.compute_dag_metrics`` so flat-list plans get
+    ``parallel_width=1`` and ``stage_efficiency=1.0`` by convention.
     """
     step_number = raw.get("step_number", idx + 1)
     tools = raw.get("tools", "")
@@ -110,7 +121,7 @@ def _map_step(raw: Dict[str, Any], idx: int) -> Dict[str, Any]:
     return {
         "name":         f"step_{step_number}",
         "command":      str(tools),
-        "dependencies": [f"step_{step_number - 1}"] if step_number > 1 else [],
+        "dependencies": [],
         "outputs":      raw.get("output_filename") or [],
         "description":  raw.get("description") or "",
     }

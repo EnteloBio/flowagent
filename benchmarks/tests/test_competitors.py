@@ -206,14 +206,77 @@ class TestRegistry:
 
     def test_default_registry_has_known_competitors(self):
         reg = build_registry()
-        # ``claude_code`` and ``edison`` were added alongside the DAG-blind
-        # ablation work (Benchmark H); keep this test aligned with
-        # ``build_registry`` so a missing or renamed slug is loudly caught.
+        # ``claude_code`` and ``edison`` were added alongside Benchmark H
+        # and are now the DAG-blind defaults (fair head-to-head). The
+        # DAG-aware variants live under ``_dag_aware``-suffixed slugs and
+        # are *not* in the default registry -- they're opt-in via
+        # Benchmark J's bench_competitor_dag_ablation.py.
         assert set(reg) == {
             "flowagent", "biomaster", "autoba", "biomni",
             "claude_code", "edison",
         }
         assert all(isinstance(v, Competitor) for v in reg.values())
+
+    def test_default_competitors_are_dag_blind(self):
+        """The fairness invariant for Benchmark E: every non-FlowAgent
+        competitor in the default registry must be in DAG-blind mode.
+        FlowAgent's contribution is its DAG-aware planner; giving any
+        competitor a free DAG instruction in its prompt -- or
+        synthesising one in the shim's parser -- would confound the
+        head-to-head.
+
+        Two flavours of compliance, depending on the competitor:
+
+        * **Prompt-level toggle** (Claude Code, Edison): the shim ships
+          two prompt templates; ``with_dag=False`` selects the
+          DAG-blind one. Pinned here.
+        * **Parser-level no-synthesis** (Biomni, BioMaster, AutoBA):
+          the shim never asks the agent for a DAG, so there's nothing
+          to toggle, but the parser must not fabricate
+          ``[step_N-1]`` linear chains. Pinned by
+          ``test_shim_no_dag_synthesis.py`` at the unit level.
+
+        FlowAgent itself is intentionally excluded -- its DAG-aware
+        planner *is* the system under test.
+        """
+        reg = build_registry()
+
+        # Prompt-level toggle: claude_code + edison both expose ``with_dag``.
+        for slug in ("claude_code", "edison"):
+            comp = reg[slug]
+            assert getattr(comp, "with_dag", None) is False, (
+                f"{slug} default should be DAG-blind; got with_dag="
+                f"{getattr(comp, 'with_dag', None)!r}"
+            )
+
+        # Parser-level no-synthesis: biomni / biomaster / autoba. Run their
+        # parsers against a tiny synthetic input and assert empty deps so a
+        # future regression in *either* the parser OR the registry mapping
+        # gets caught here, not just at the per-shim unit level.
+        from types import SimpleNamespace
+        from harness import biomni_shim, biomaster_shim, autoba_shim
+        biomni_steps = biomni_shim._messages_to_steps([
+            SimpleNamespace(tool_calls=[{"name": "fastqc", "args": {}}]),
+            SimpleNamespace(tool_calls=[{"name": "kallisto", "args": {}}]),
+        ])
+        biomaster_steps = [
+            biomaster_shim._map_step({"step_number": i, "tools": "tool"}, i - 1)
+            for i in (1, 2)
+        ]
+        autoba_steps = autoba_shim._map_plan(["task A", "task B"], shells={})
+
+        for shim_name, steps in [
+            ("biomni",    biomni_steps),
+            ("biomaster", biomaster_steps),
+            ("autoba",    autoba_steps),
+        ]:
+            assert steps, f"{shim_name} parser produced no steps"
+            for s in steps:
+                assert s["dependencies"] == [], (
+                    f"{shim_name} shim synthesised "
+                    f"dependencies={s['dependencies']!r} -- breaks the "
+                    f"universal no-DAG-synthesis Benchmark E invariant"
+                )
 
     def test_unique_slugs_and_colours(self):
         reg = build_registry()
@@ -222,6 +285,68 @@ class TestRegistry:
             assert slug in _COMPETITOR_COLOURS, (
                 f"Competitor {slug!r} missing from _COMPETITOR_COLOURS — "
                 f"figure would fall back to grey")
+
+
+# ── Opt-in filter (default sweep skips slow / costly lanes) ──────
+
+class TestOptInFilter:
+    """Pin :func:`bench_competitors._filter_to_run_set`.
+
+    The default ``make competitors`` sweep must not pull in lanes that
+    are too slow or expensive to run unattended (currently only
+    ``edison``). They remain available via explicit
+    ``--competitors=edison`` opt-in or ``make competitors-all``.
+    """
+
+    def _registry(self):
+        return build_registry()
+
+    def test_edison_in_opt_in_set(self):
+        from bench_competitors import _OPT_IN_COMPETITORS
+        assert "edison" in _OPT_IN_COMPETITORS, (
+            "edison must be opt-in: each cell can take 3-15 min and "
+            "consumes real Edison credits even when the harness times out"
+        )
+
+    def test_default_sweep_excludes_opt_in(self):
+        from bench_competitors import _filter_to_run_set, _OPT_IN_COMPETITORS
+        out = _filter_to_run_set(self._registry(), requested=None)
+        assert "edison" not in out, (
+            "edison leaked into the default sweep — accidental inclusion "
+            "burns credits and timeouts blow the run budget"
+        )
+        assert _OPT_IN_COMPETITORS.isdisjoint(out)
+        # Non-opt-in lanes must still be present.
+        assert {"flowagent", "claude_code", "biomaster",
+                "autoba", "biomni"}.issubset(out)
+
+    def test_explicit_opt_in_includes_edison(self):
+        from bench_competitors import _filter_to_run_set
+        out = _filter_to_run_set(self._registry(), requested="edison")
+        assert set(out) == {"edison"}
+
+    def test_explicit_mixed_subset_includes_named_opt_in(self):
+        from bench_competitors import _filter_to_run_set
+        out = _filter_to_run_set(self._registry(),
+                                 requested="flowagent,edison")
+        assert set(out) == {"flowagent", "edison"}
+
+    def test_explicit_subset_without_opt_in_works_unchanged(self):
+        from bench_competitors import _filter_to_run_set
+        out = _filter_to_run_set(self._registry(),
+                                 requested="flowagent,claude_code")
+        assert set(out) == {"flowagent", "claude_code"}
+
+    def test_explicit_unknown_competitor_exits(self):
+        from bench_competitors import _filter_to_run_set
+        with pytest.raises(SystemExit):
+            _filter_to_run_set(self._registry(), requested="not_a_real_one")
+
+    def test_explicit_handles_whitespace_and_empty_segments(self):
+        from bench_competitors import _filter_to_run_set
+        out = _filter_to_run_set(self._registry(),
+                                 requested=" flowagent , ,edison ")
+        assert set(out) == {"flowagent", "edison"}
 
 
 # ── Stub competitor — exercises scoring end-to-end ───────────────

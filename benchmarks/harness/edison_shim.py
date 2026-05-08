@@ -54,8 +54,22 @@ from typing import Any, Dict, List, Optional
 
 
 # ── Plan-only system prompt (FlowAgent schema) ─────────────────────
+#
+# Two templates, matching the convention introduced for Claude Code:
+#
+# * The DEFAULT (``_PLAN_GUIDELINES_NO_DAG``) is the DAG-blind prompt --
+#   no ``dependencies`` field in the schema example, no topological-
+#   order rule. This is the fair head-to-head baseline for Benchmark
+#   E: FlowAgent's differentiator is its DAG-aware planner, so giving
+#   Edison a free DAG instruction would be a confound.
+#
+# * ``_PLAN_GUIDELINES_DAG_AWARE`` is opt-in via ``--with-dag-instruction``
+#   (Benchmark J's ``dag_aware`` arm).
+#
+# Pinned by the symmetry test so future edits can't drift unrelated
+# rules between the two arms.
 
-_PLAN_GUIDELINES = """STRICT OUTPUT FORMAT.
+_PLAN_GUIDELINES_DAG_AWARE = """STRICT OUTPUT FORMAT.
 
 Do not execute any tool, do not run any code, do not write any files.
 Your entire reply must be a single JSON object describing a
@@ -81,6 +95,47 @@ Rules:
 - Cover every step from raw input to the requested final output.
 - Return ONLY the JSON object. No markdown fences, no commentary.
 """
+
+
+_PLAN_GUIDELINES_NO_DAG = """STRICT OUTPUT FORMAT.
+
+Do not execute any tool, do not run any code, do not write any files.
+Your entire reply must be a single JSON object describing a
+bioinformatics workflow plan, matching this schema:
+
+{
+  "workflow_type": "<rna_seq_kallisto | rna_seq_star | rna_seq_hisat | chip_seq | atac_seq | variant_calling | single_cell_10x | single_cell_kb | qc_only | custom>",
+  "steps": [
+    {
+      "name": "<unique_snake_case_id>",
+      "command": "<runnable shell pipeline using a real bioinformatics tool>",
+      "outputs": ["<expected output paths>"]
+    }
+  ]
+}
+
+Rules:
+- The first token of each ``command`` MUST be the bioinformatics tool
+  itself (``fastqc``, ``kallisto``, ``samtools``, etc.).
+- Cover every step from raw input to the requested final output.
+- Return ONLY the JSON object. No markdown fences, no commentary.
+"""
+
+
+def _select_guidelines(*, dag_aware: bool) -> str:
+    """Return the system-prompt guidelines for the requested ablation arm.
+
+    Exposed as a module-level helper so unit tests can pin the two
+    arms diverge only in the DAG-related sentences -- never via
+    accidental drift in unrelated rules.
+    """
+    return _PLAN_GUIDELINES_DAG_AWARE if dag_aware else _PLAN_GUIDELINES_NO_DAG
+
+
+# Backwards-compat alias: existing callers / docs still reference
+# ``_PLAN_GUIDELINES``. Kept pointing at the DAG-blind variant (the
+# new default) so any direct access uses the fair head-to-head prompt.
+_PLAN_GUIDELINES = _PLAN_GUIDELINES_NO_DAG
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
@@ -172,6 +227,7 @@ def _envelope(
     llm_calls: int = 0,
     cost_usd: float = 0.0,
     wall_seconds: float = 0.0,
+    dag_aware: bool = False,
     error: Optional[str] = None,
 ) -> Dict[str, Any]:
     return {
@@ -181,6 +237,7 @@ def _envelope(
         "llm_calls":         llm_calls,
         "cost_usd":          cost_usd,
         "wall_seconds":      wall_seconds,
+        "dag_aware":         dag_aware,
         "error":             error,
     }
 
@@ -196,6 +253,7 @@ async def _run_edison(
     language: str,
     poll_seconds: float,
     overall_timeout: float,
+    dag_aware: bool = False,
 ) -> Dict[str, Any]:
     """Submit one Edison Analysis task and return parsed plan + usage."""
     try:
@@ -205,6 +263,7 @@ async def _run_edison(
     except Exception as ie:
         return _envelope(
             _empty_plan(),
+            dag_aware=dag_aware,
             error=("edison-client not installed. Install with "
                    f"``pip install edison-client``. Underlying error: {ie}"),
         )
@@ -216,7 +275,8 @@ async def _run_edison(
         environment_config={
             "language": language,
             "prompting_config": {
-                "system_prompt_additional_guidelines": _PLAN_GUIDELINES,
+                "system_prompt_additional_guidelines":
+                    _select_guidelines(dag_aware=dag_aware),
             },
             # Empty data_storage_uris keeps Edison from staging real data;
             # the agent should treat input files in the user prompt as
@@ -246,6 +306,7 @@ async def _run_edison(
         return _envelope(
             _empty_plan(),
             wall_seconds=time.perf_counter() - t0,
+            dag_aware=dag_aware,
             error=f"edison-create-task: {type(e).__name__}: {e}",
         )
 
@@ -257,6 +318,7 @@ async def _run_edison(
             return _envelope(
                 _empty_plan(),
                 wall_seconds=time.perf_counter() - t0,
+                dag_aware=dag_aware,
                 error=f"timeout after {overall_timeout:.0f}s "
                       f"(trajectory_id={trajectory_id})",
             )
@@ -277,6 +339,7 @@ async def _run_edison(
         return _envelope(
             _empty_plan(),
             wall_seconds=wall,
+            dag_aware=dag_aware,
             error=f"task ended with status={status!r} ({last_err or 'no error detail'})",
         )
 
@@ -289,6 +352,7 @@ async def _run_edison(
     except Exception as e:
         return _envelope(
             _empty_plan(), wall_seconds=wall,
+            dag_aware=dag_aware,
             error=f"edison-get-task-verbose: {type(e).__name__}: {e}",
         )
 
@@ -370,6 +434,7 @@ async def _run_edison(
         llm_calls=turns,
         cost_usd=cost_usd,
         wall_seconds=wall,
+        dag_aware=dag_aware,
         error=err_msg,
     )
 
@@ -379,12 +444,26 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--prompt", required=True, help="Natural-language task")
     ap.add_argument("--files", default="[]",
                     help="JSON-encoded list of 'name: description' strings")
+    # Default DAG-blind for fair head-to-head comparisons; opt-in to
+    # DAG-aware via --with-dag-instruction (Benchmark J's `dag_aware` arm).
+    ap.add_argument(
+        "--with-dag-instruction", dest="with_dag_instruction",
+        action="store_true",
+        help="Use the DAG-aware system-prompt template (asks for "
+             "`dependencies` + topological-order rule). Default is "
+             "DAG-blind so head-to-head benchmarks don't confound "
+             "Edison with a DAG instruction FlowAgent reserves for "
+             "its own planner.",
+    )
     args = ap.parse_args(argv)
+
+    dag_aware = args.with_dag_instruction
 
     api_key = os.environ.get("EDISON_API_KEY")
     if not api_key:
         print(json.dumps(_envelope(
             _empty_plan(),
+            dag_aware=dag_aware,
             error=("EDISON_API_KEY is not set. Sign up at "
                    "https://platform.edisonscientific.com (academic .edu "
                    "accounts get a free credit allocation), generate a key, "
@@ -398,6 +477,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if used >= cap:
             print(json.dumps(_envelope(
                 _empty_plan(),
+                dag_aware=dag_aware,
                 error=(f"EDISON_BUDGET_CREDITS={cap} exhausted "
                        f"(used={used:.2f}). Reset the budget file at "
                        f"{_budget_file_path()} or raise the cap."),
@@ -432,6 +512,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         language=language,
         poll_seconds=poll_seconds,
         overall_timeout=overall_timeout,
+        dag_aware=dag_aware,
     ))
     print(json.dumps(envelope))
     return 0

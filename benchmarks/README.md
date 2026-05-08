@@ -1,13 +1,16 @@
 # FlowAgent Benchmarks
 
-Reproducible benchmarks that measure FlowAgent's nine core claims: natural-language
-**planning correctness**, **per-model cost**, **adaptive error recovery**,
-**generator fidelity**, **executor coverage**, **output fidelity** against
-published references, **biological-interpretation quality**, and two planner
-ablations -- **DAG-awareness** (does telling the LLM about the dependency
-graph help?) and **completeness reflection** (does a DAG-Plan-style
-"regenerate if structurally incomplete" loop help?). Drive the manuscript
-figures.
+Reproducible benchmarks that measure FlowAgent's ten core claims:
+natural-language **planning correctness**, **per-model cost**, **adaptive
+error recovery**, **generator fidelity**, **executor coverage**, **output
+fidelity** against published references, **biological-interpretation
+quality**, and three ablation studies -- FlowAgent's **DAG-awareness**
+(does telling the LLM about the dependency graph help?), FlowAgent's
+**completeness reflection** (does a DAG-Plan-style "regenerate if
+structurally incomplete" loop help?), and a competitor-side
+**DAG-prompt** ablation that asks the same DAG-vs-no-DAG question of an
+external framework (Claude Code) over which we have only prompt-level
+control. Drive the manuscript figures.
 
 ## Layout
 
@@ -52,6 +55,8 @@ benchmarks/
 ├── make_ablation_figure.py             # H — figure + paired stats for Benchmark H
 ├── bench_reflection_ablation.py        # I — completeness-reflection ablation
 ├── make_reflection_figure.py           # I — figure + paired stats for Benchmark I
+├── bench_competitor_dag_ablation.py    # J — competitor DAG-prompt ablation (Claude Code)
+├── make_competitor_dag_figure.py       # J — figure + paired stats for Benchmark J
 ├── rescore_planning.py                 # Re-evaluate existing plans with updated metrics
 ├── recovery_taxonomy.py                # Classify Benchmark B responses
 ├── merge_runs.py                       # Combine runs across models/sessions
@@ -60,7 +65,7 @@ benchmarks/
 └── results/                            # Gitignored outputs (CSV, JSON, PDF)
 ```
 
-## The nine benchmarks
+## The ten benchmarks
 
 | ID | Claim | Needs API key | Needs infra | Make target |
 |---|---|---|---|---|
@@ -68,11 +73,12 @@ benchmarks/
 | **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no | `make recovery` |
 | **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` | `make gen` |
 | **D** | All six execution backends function | no | best-effort — mock mode if infra absent | `make exec` |
-| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni + Claude Code + Edison clones / CLIs / API keys | `make competitors` / `make competitors-all` |
+| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni + Claude Code clones / CLIs (Edison opt-in) | `make competitors` / `make competitors-all` |
 | **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download | `make fidelity-run` (live) / `make fidelity` (score-only) |
 | **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F | `make interpretation` |
-| **H** | Telling the LLM about the dependency DAG improves bioinformatics plan quality | yes | no | `make ablation` / `make ablation-pilot` |
+| **H** | Telling FlowAgent's planner about the dependency DAG improves bioinformatics plan quality | yes | no | `make ablation` / `make ablation-pilot` |
 | **I** | DAG-Plan-style completeness validator + LLM reflection retry improves plan quality | yes | no | `make reflection` / `make reflection-pilot` |
+| **J** | Telling a *competitor* framework (Claude Code) about the DAG via prompt-only intervention improves its plan quality | yes (Claude Code CLI auth) | Claude Code CLI installed | `make competitor-dag-ablation` / `make competitor-dag-ablation-pilot` |
 
 ### Prompt corpus
 
@@ -304,13 +310,14 @@ make smoke
 ```
 
 Runs Benchmarks A–D in mock mode to verify the harness imports cleanly and
-the scoring pipeline is sound. The two ablations (H, I) and the live-run
-benchmarks (E, F, G) are not in `make smoke` because they require API
-keys; pilot them instead with:
+the scoring pipeline is sound. The three ablations (H, I, J) and the
+live-run benchmarks (E, F, G) are not in `make smoke` because they
+require API keys (or a Claude Code login for J); pilot them instead with:
 
 ```bash
-make ablation-pilot   MODEL=claude-haiku-4-5   # ~$0.05, 5 prompts × 2 arms
-make reflection-pilot MODEL=claude-haiku-4-5   # ~$0.20, 8 prompts × 2 arms
+make ablation-pilot              MODEL=claude-haiku-4-5         # ~$0.05, 5 prompts × 2 arms
+make reflection-pilot            MODEL=claude-haiku-4-5         # ~$0.20, 8 prompts × 2 arms
+make competitor-dag-ablation-pilot CDAG_MODEL=claude-haiku-4-5  # ~$0.10-0.50, 3 prompts × 2 arms (Claude Code)
 ```
 
 ### Single model — Benchmark A
@@ -397,10 +404,76 @@ make exec     # Benchmark D: executor coverage
 make competitors MODEL=gpt-4.1 REPLICATES=3
 ```
 
-Runs every registered competitor (currently `flowagent`, `biomaster`,
-`autoba`, `biomni`, `claude_code`, `edison`, plus optional zero-shot
-`raw_<model_id>` baselines) on the same prompt corpus, scored with the
-same `score_plan` metrics so the comparison is apples-to-apples.
+Runs the default-sweep competitors (currently `flowagent`,
+`biomaster`, `autoba`, `biomni`, `claude_code`, plus optional
+zero-shot `raw_<model_id>` baselines) on the same prompt corpus,
+scored with the same `score_plan` metrics so the comparison is
+apples-to-apples.
+
+**Opt-in lanes excluded from the default sweep.** `edison` is
+registered but **not** included in `make competitors`. Edison
+Analysis is structurally different from the other competitors -- it
+runs the full bioinformatics pipeline end-to-end (3-15 min/task and
+real credits) instead of just generating a plan, so it is not
+directly comparable on wall-clock or pass-rate. Each timed-out cell
+also still consumes credits because the analysis continues on
+Edison's servers after the harness kills the local subprocess. To
+include it, name it explicitly:
+
+```bash
+# Edison-only sweep (use a long timeout so polling can finish):
+python bench_competitors.py --competitors=edison \
+    --model=gpt-4.1 --replicates=3 --timeout=1800 --out=results
+
+# Manuscript-grade four-way comparison (FlowAgent + Claude Code +
+# Biomni + Edison) — uses --competitors=...,edison explicitly and
+# enforces a credit cap:
+make competitors-all MODEL=claude-haiku-4-5 REPLICATES=3 EDISON_BUDGET=50
+```
+
+The opt-in set is defined as `_OPT_IN_COMPETITORS` in
+[`bench_competitors.py`](bench_competitors.py) and pinned by
+`tests/test_competitors.py::TestOptInFilter`.
+
+**Fairness convention -- universal no-DAG default for competitors.**
+Every non-FlowAgent competitor in Benchmark E runs in **DAG-blind**
+mode by default. FlowAgent's differentiator is its DAG-aware planner
+(prompt + retry loop + structured-output schema), and any
+DAG-related signal in a competitor's plan would silently hand them
+part of FlowAgent's contribution. The flip is enforced at two
+layers, depending on whether the competitor exposes a prompt knob:
+
+| Competitor | Mechanism | Default |
+|---|---|---|
+| `claude_code` | Shim has two prompt templates; `--with-dag-instruction` flag toggles. `ClaudeCodeCompetitor(with_dag=...)` propagates. | `with_dag=False` (DAG-blind prompt) |
+| `edison` | Shim has two `_PLAN_GUIDELINES` system-prompt variants; `--with-dag-instruction` flag toggles. `EdisonCompetitor(with_dag=...)` propagates. | `with_dag=False` (DAG-blind prompt) |
+| `raw_<model>` | Shim has two `_RAW_LLM_SYSTEM_PROMPT` variants. `RawLLMCompetitor(with_dag=...)` propagates. | `with_dag=False` (DAG-blind prompt) |
+| `biomni` | Agent has no DAG-aware mode upstream (LangChain ReAct loop). Shim **does not synthesise** linear `[step_N-1]` deps from tool-call order. | Always empty `dependencies` |
+| `biomaster` | PLAN.json has no `dependencies` field. Shim **does not synthesise** `[step_N-1]` from `step_number` ordering. | Always empty `dependencies` |
+| `autoba` | Plan is a flat list of task sentences. Shim **does not synthesise** `[step_N-1]` from enumeration order. | Always empty `dependencies` |
+| `flowagent` | The system under test. Uses its DAG-aware planner. | `LLM_DAG_AWARE=true` (real DAG) |
+
+The combined effect: in Benchmark E, only `flowagent` plans carry
+non-trivial `dependencies`, so `dag_edge_density` /
+`parallel_width` / `stage_efficiency` become a clean signal of "did
+the planner actually think about a DAG?" rather than a parsing
+artefact. The metric pipeline normalises flat-list plans
+(`parallel_width=1`, `stage_efficiency=1.0`) so flat competitors
+aren't unfairly inflated either way. See [Benchmark
+J](#benchmark-j--prompt-level-dag-instruction-for-competitors) for
+the paired ablation that turns the prompt-level DAG instruction back
+on for competitors only, in isolation. The DAG-aware opt-in lanes
+live under `*_dag_aware`-suffixed slugs and are exercised only by
+Benchmark J.
+
+**Pinned by tests.** The convention is enforced by:
+- `tests/test_competitors.py::TestRegistry::test_default_competitors_are_dag_blind` -- registry-level black-box check.
+- `tests/test_shim_no_dag_synthesis.py` -- per-shim unit tests for Biomni / BioMaster / AutoBA parsers.
+- `tests/test_claude_code_shim.py`, `tests/test_edison_shim_dag_toggle.py`, `tests/test_raw_llm_dag_toggle.py` -- prompt-template defaults + slug rename for the toggleable competitors.
+
+A future PR that re-introduces a DAG instruction or a synthetic
+`[step_N-1]` chain in any default Benchmark E competitor will turn
+at least one of these red.
 
 The four-way ablation comparison (FlowAgent vs Claude Code vs Biomni vs
 Edison Analysis) requested by the manuscript can be launched as:
@@ -1076,6 +1149,147 @@ in the scoring loop (so the metric is comparable) but disables the
 retry, isolating the cost of *running the validator* from the cost of
 *acting on it*.
 
+### Benchmark J — competitor DAG-prompt ablation
+
+```bash
+# 3-prompt smoke (~$0.10-0.50 on Claude Haiku 4.5)
+make competitor-dag-ablation-pilot CDAG_MODEL=claude-haiku-4-5
+
+# Full 66-prompt × REPLICATES × 2 arms sweep, Claude Code only
+make competitor-dag-ablation CDAG_MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_competitor_dag__claude_code.pdf + per-competitor stats
+make competitor-dag-figure
+# Or point at a specific run
+make competitor-dag-figure CDAG_DIR=results/competitor_dag_ablation/2026-05-07T15-06-15
+```
+
+#### What it tests
+
+Benchmark H toggles FlowAgent's **own** DAG awareness, which flips
+both the planner prompt **and** the structured-output schema
+(`WorkflowPlanSchemaNoDAG` removes the `dependencies` field entirely).
+That ablation conflates "prompt-level DAG instruction" with
+"schema-level DAG enforcement".
+
+For *competitor* frameworks (Claude Code, Biomni, Edison) we don't
+control the schema. Benchmark J asks the cleanest question we can:
+**does prompt-level DAG instruction alone change a competitor's plan
+quality?** If yes, prompt engineering is enough. If no — and FlowAgent's
+H ablation shows a positive delta — schema-level enforcement is the
+necessary intervention, not just any mention of the word "dependency"
+in a prompt. That's the manuscript story for FlowAgent's contribution
+beyond raw LLM prompting.
+
+#### Arms (Claude Code)
+
+The Claude Code shim
+([`harness/claude_code_shim.py`](harness/claude_code_shim.py)) ships
+with two prompt templates and a `--with-dag-instruction` CLI flag.
+`ClaudeCodeCompetitor(with_dag=...)` propagates the flag.
+
+| Arm | Prompt template | Slug |
+|---|---|---|
+| `dag_blind` | Schema example has **no** `dependencies` field; no topological-order rule. **This is the default** -- the slug `claude_code` in every other benchmark refers to this DAG-blind variant. | `claude_code` |
+| `dag_aware` | Schema includes `dependencies: [<prior step>]`, plus rules: *"Steps must be in topological order"* and *"`dependencies` must reference names of prior steps exactly."* Every other rule (tool-first command, no side effects, no markdown fences, etc.) is byte-identical to `dag_blind`, so the only experimental variable is the DAG instruction. Pinned by the unit test `TestSelectTemplate.test_non_dag_rules_unchanged_between_arms`. | `claude_code_dag_aware` |
+
+The asymmetry between the two slugs is intentional: it lets the same
+ablation arms co-exist as separate competitors in the registry (so
+Benchmark J can run them paired) while keeping `claude_code` --
+the slug Benchmark E uses -- pointing at the *fair head-to-head*
+DAG-blind variant. The figure script knows which arm each row came
+from via the `competitor_arm` column. The same convention applies to
+`EdisonCompetitor` (default `edison` = DAG-blind, opt-in
+`edison_dag_aware`) and `RawLLMCompetitor` (default `raw_<model>` =
+DAG-blind, opt-in `raw_<model>_dag_aware`).
+
+#### Why DAG-blind is the default for competitors
+
+FlowAgent's contribution is a **DAG-aware planner** (LLM prompt asks
+for `dependencies`, retry loop validates them against
+`networkx.is_directed_acyclic_graph`, and the structured-output
+schema reserves a slot for them). Other competitors don't have any
+of that scaffolding; their only knob is the prompt template the
+shim wraps around the user's request.
+
+If we ran Benchmark E's head-to-head with the competitor shims
+**also** asking for `dependencies`, the comparison would be
+contaminated: any "FlowAgent wins" delta could just as easily come
+from "FlowAgent's prompt happens to ask for the right field". By
+defaulting every competitor (including the raw-LLM lane) to the
+DAG-blind template, Benchmark E isolates the value of FlowAgent's
+*full* DAG-aware stack -- planner + retry loop + schema -- against
+agents that get a vanilla bioinformatics-pipeline prompt with no
+graph instructions. Benchmark J then re-introduces the DAG
+instruction *only on the competitor side* to measure how much of
+that gap closes from prompt engineering alone.
+
+#### Currently supported competitors
+
+* **Claude Code** — wired up. Default driver model
+  `claude-haiku-4-5` (override with `CDAG_MODEL=claude-sonnet-4-5`
+  for the manuscript figure).
+* **Edison Analysis** — shim has the
+  `--with-dag-instruction` toggle and `EdisonCompetitor(with_dag=...)`
+  is supported (the default `edison` slug in Benchmark E is
+  DAG-blind). Not yet enabled in `_build_arm_competitors`; flipping
+  it on is a one-line change once the manuscript run gets a budget
+  allocation for paired Edison cells (each task is 3-10 min and
+  costs credits per call).
+* **Biomni** — not wired up. Biomni's LangGraph ReAct loop has its
+  own upstream system prompt and may ignore user-level DAG
+  instructions entirely; adding it requires a shim-level prompt
+  template the harness can toggle, plus an availability sanity-check
+  that the framework actually emits `dependencies` fields when asked.
+* **Raw LLM** — `RawLLMCompetitor(model_id, with_dag=...)` is
+  supported (default `raw_<model>` slug is DAG-blind). Not currently
+  in `_build_arm_competitors` because the manuscript story for
+  Benchmark J focuses on agentic competitors with their own
+  scaffolding; raw-LLM ablations against a DAG instruction
+  duplicate Benchmark H's question more directly.
+
+#### Headline metrics (same set as Benchmark H, plotted side by side)
+
+| Metric | What it measures |
+|---|---|
+| `dag_edge_density` | Sanity: did the DAG-aware arm actually emit dependencies? On Claude Code we expect ≫0 in `dag_aware` and ≈0 in `dag_blind`. |
+| `parallel_width` | Sanity: max width of a topological layer. Should rise with `dag_edge_density`. |
+| `stage_efficiency` | `num_steps / num_dag_layers`. Higher = more parallelism exposed. |
+| `overall_pass` | Strict gating outcome. Headline McNemar test in `figure_competitor_dag__claude_code__stats.tsv`. |
+| `tools_present_fraction` | Partial-credit tool coverage. |
+| `hallucination_rate` | Fraction of plan tools we don't recognise. |
+| `preset_command_f1` | Token-F1 vs the gold preset command (subset metric — ~5 of 66 prompts have a gold preset). |
+| `preset_name_jaccard` | Step-name Jaccard vs the gold preset (same subset). |
+| `num_steps` | Raw step count. |
+
+#### Output layout
+
+```
+results/competitor_dag_ablation/<ts>/
+├── claude_code/
+│   ├── dag_aware/
+│   │   └── results.jsonl + results.json + metrics.csv + manifest.json
+│   ├── dag_blind/
+│   │   └── results.jsonl + ...
+│   └── paired_metrics.csv          # joined by (model, input_id, replicate)
+├── paired_metrics.csv              # cross-competitor — one row per cell
+└── manifest.json
+```
+
+The figure script renders one PDF per competitor:
+`figure_competitor_dag__claude_code.pdf` + the matching
+`__stats.tsv`. When future competitors are added, each gets its own
+PDF in the same run output.
+
+#### Decision tree for interpreting the result
+
+| dag_edge_density (aware) | overall_pass delta | What it tells you |
+|---|---|---|
+| ≈ 0 | any | Claude Code ignored the `dependencies` instruction. Prompt-level DAG instruction is insufficient for this framework. **Null result is itself a finding.** |
+| > 0, sane | aware ≫ blind | Prompt engineering alone helps Claude Code. (FlowAgent's H delta should still be larger if schema-level enforcement adds value.) |
+| > 0, sane | aware ≈ blind | Claude Code can emit DAGs but it doesn't help its plan quality. Suggests other quality determinants (tool selection, command syntax) dominate over graph structure. |
+| > 0, sane | aware < blind | Adding the DAG instruction *hurts* — likely confuses the planner. (Unlikely but possible — useful signal that prompt engineering is fragile.) |
+
 ### Everything at once
 
 ```bash
@@ -1088,13 +1302,15 @@ Use `make all` for a quick end-to-end smoke of one model (fast, cheap). Use
 `rescore → merge → report` in the right order so all models appear in the
 final figures.
 
-Benchmarks F, G, H, and I are **not** included in `all-sweep` because they
-have distinct workflow shapes:
+Benchmarks F, G, H, I, and J are **not** included in `all-sweep` because
+they have distinct workflow shapes:
 - **F** needs prior FlowAgent runs to score (or `fidelity-run` to drive
   end-to-end pipelines that take hours).
 - **G** is an LLM-only sweep against fixed reference inputs.
 - **H** and **I** are paired ablations (two arms per model) and would
   double the planning cost of `all-sweep`.
+- **J** drives an external CLI (Claude Code) and uses different
+  authentication / cost accounting than FlowAgent's own benchmarks.
 
 Run them separately:
 
@@ -1104,6 +1320,7 @@ make fidelity                                  # bulk-score a fidelity_runs/ tre
 make interpretation MODEL=gpt-4.1 JUDGE=gpt-5.4
 make ablation MODEL=claude-haiku-4-5 REPLICATES=3 && make ablation-figure
 make reflection MODEL=claude-haiku-4-5 REPLICATES=3 && make reflection-figure
+make competitor-dag-ablation CDAG_MODEL=claude-haiku-4-5 REPLICATES=3 && make competitor-dag-figure
 ```
 
 ## Post-processing (important order)
@@ -1283,7 +1500,9 @@ Rough guide at current (Apr 2026) rates across the full 30-model registry.
 | `make ablation` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1–4 on Claude Haiku, ~$10+ on flagship |
 | `make reflection-pilot` | 1 | ~3–5 min (8 prompts × 2 arms) | ~$0.20 on Claude Haiku |
 | `make reflection` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1.5–6 on Claude Haiku, ~$15+ on flagship (~40% overhead vs Benchmark H from retries) |
-| `make ablation-figure` / `make reflection-figure` | — | ~10–20 s | $0 |
+| `make competitor-dag-ablation-pilot` | Claude Code (1) | ~2–4 min (3 prompts × 2 arms) | ~$0.10–$0.50 on Claude Haiku 4.5 |
+| `make competitor-dag-ablation` | Claude Code (1) | ~30–60 min (66 prompts × 3 reps × 2 arms, conc=2) | ~$5–15 on Claude Haiku 4.5; multiply by ~3-5× for Sonnet |
+| `make ablation-figure` / `make reflection-figure` / `make competitor-dag-figure` | — | ~10–20 s | $0 |
 | `make rescore` / `merge` / `report` | — | ~5 s | $0 |
 | `make install-r-deps` | — | ~5–10 min (one-off) | $0 |
 

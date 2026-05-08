@@ -159,7 +159,27 @@ def _plot(df: pd.DataFrame, *, out_base: Path) -> Path:
     fig, axes = plt.subplots(nrows, ncols, figsize=(4.0 * ncols, 3.4 * nrows))
     axes = np.atleast_2d(axes).flatten()
 
-    for ax, (key, label, kind) in zip(axes, _PLOT_METRICS):
+    # Pre-compute per-metric paired n + modal n; flag subset panels in
+    # red so the reader can't misread a small-subset panel's bars as
+    # full-corpus. Mirrors make_ablation_figure.py's _plot.
+    panel_ns: List[Tuple[int, int]] = []
+    for key, _label, _kind in _PLOT_METRICS:
+        if key not in df.columns:
+            panel_ns.append((0, 0))
+            continue
+        a_vals = pd.to_numeric(on.get(key), errors="coerce").to_numpy()
+        b_vals = pd.to_numeric(off.get(key), errors="coerce").to_numpy()
+        panel_ns.append((
+            int(np.sum(~np.isnan(a_vals))),
+            int(np.sum(~np.isnan(b_vals))),
+        ))
+    valid_ns = [max(a, b) for a, b in panel_ns if max(a, b) > 0]
+    modal_n = int(max(valid_ns)) if valid_ns else 0
+    subset_threshold = max(1, int(modal_n * 0.7)) if modal_n else 0
+
+    for ax, ((key, label, kind), (n_a, n_b)) in zip(
+        axes, zip(_PLOT_METRICS, panel_ns),
+    ):
         if key not in df.columns:
             ax.set_visible(False)
             continue
@@ -188,7 +208,22 @@ def _plot(df: pd.DataFrame, *, out_base: Path) -> Path:
         )
         ax.set_xticks(x)
         ax.set_xticklabels(["reflect_on", "reflect_off"])
-        ax.set_title(label, fontsize=10)
+
+        is_subset = (
+            modal_n > 0
+            and 0 < max(n_a, n_b) < subset_threshold
+        )
+        n_disp = n_a if n_a == n_b else f"{n_a}/{n_b}"
+        title_n_suffix = (
+            f"\n(subset: n={n_disp} of {modal_n})" if is_subset
+            else f"  (n={n_disp})"
+        )
+        ax.set_title(
+            label + title_n_suffix,
+            fontsize=10,
+            color="#b22222" if is_subset else "black",
+            fontweight="bold" if is_subset else "normal",
+        )
         if kind == "fraction":
             ax.set_ylim(0.0, 1.0 if (np.nanmax(means) <= 1) else float(np.nanmax(means)) * 1.1)
         elif kind == "count":
@@ -197,13 +232,23 @@ def _plot(df: pd.DataFrame, *, out_base: Path) -> Path:
         ax.spines[["top", "right"]].set_visible(False)
         ax.grid(axis="y", linestyle=":", alpha=0.4)
 
-        n_a = int(np.sum(~np.isnan(a_vals)))
-        n_b = int(np.sum(~np.isnan(b_vals)))
+        annotation_lines = [f"n_on  = {n_a}", f"n_off = {n_b}"]
+        if is_subset:
+            annotation_lines.append(
+                f"({100 * max(n_a, n_b) / max(modal_n, 1):.0f}% of corpus)"
+            )
         ax.text(
-            0.98, 0.96,
-            f"n_on={n_a}\nn_off={n_b}",
+            0.04, 0.96,
+            "\n".join(annotation_lines),
             transform=ax.transAxes,
-            ha="right", va="top", fontsize=7, color="grey",
+            ha="left", va="top",
+            fontsize=8.5,
+            color="#b22222" if is_subset else "#333333",
+            fontweight="bold" if is_subset else "normal",
+            bbox=dict(boxstyle="round,pad=0.25",
+                      facecolor="white", alpha=0.85,
+                      edgecolor="#b22222" if is_subset else "#cccccc",
+                      linewidth=0.8),
         )
 
     for k in range(len(_PLOT_METRICS), len(axes)):

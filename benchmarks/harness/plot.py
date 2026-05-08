@@ -1615,9 +1615,20 @@ _COMPETITOR_COLOURS = {
     "cellagent":   "#2563eb",   # blue
     # Added alongside the DAG-awareness ablation (Benchmark H). Keep the
     # same colour for the same agent across every paper figure.
-    "claude_code": "#1e40af",   # indigo (Anthropic)
-    "edison":      "#15803d",   # green (Edison Scientific)
-    "other":       "#6b7280",
+    #
+    # ``claude_code`` and ``edison`` are the *DAG-blind* defaults: that
+    # is the fair head-to-head baseline used in Benchmark E (FlowAgent
+    # is the only system that gets a DAG-aware planner; competitors
+    # don't get a free DAG instruction in their prompts). The opt-in
+    # DAG-aware variants get a separate ``_dag_aware`` slug so the two
+    # arms don't collide in paired Benchmark J figures; they're shown
+    # in the same hue family but desaturated so the relationship is
+    # read instantly.
+    "claude_code":           "#1e40af",   # indigo (Anthropic)
+    "claude_code_dag_aware": "#94a3b8",   # slate (DAG-aware opt-in)
+    "edison":                "#15803d",   # green (Edison Scientific)
+    "edison_dag_aware":      "#86efac",   # pale green (DAG-aware opt-in)
+    "other":                 "#6b7280",
 }
 
 
