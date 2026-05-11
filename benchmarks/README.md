@@ -65,7 +65,7 @@ benchmarks/
 └── results/                            # Gitignored outputs (CSV, JSON, PDF)
 ```
 
-## The ten benchmarks
+## The twelve benchmarks
 
 | ID | Claim | Needs API key | Needs infra | Make target |
 |---|---|---|---|---|
@@ -79,6 +79,8 @@ benchmarks/
 | **H** | Telling FlowAgent's planner about the dependency DAG improves bioinformatics plan quality | yes | no | `make ablation` / `make ablation-pilot` |
 | **I** | DAG-Plan-style completeness validator + LLM reflection retry improves plan quality | yes | no | `make reflection` / `make reflection-pilot` |
 | **J** | Telling a *competitor* framework (Claude Code) about the DAG via prompt-only intervention improves its plan quality | yes (Claude Code CLI auth) | Claude Code CLI installed | `make competitor-dag-ablation` / `make competitor-dag-ablation-pilot` |
+| **K** | The post-generation command-level validator + auto-fix layer improves plan quality on top of the LLM (todo T0 in the architecture review) | yes | no | `make validator-ablation` / `make validator-ablation-pilot` |
+| **L** | An independently-prompted CoVe verifier (todo T4) produces a useful signal for predicting plan failure, suitable for a future abstention gate | yes | no | `make cove-ablation` / `make cove-ablation-pilot` |
 
 ### Prompt corpus
 
@@ -1289,6 +1291,229 @@ PDF in the same run output.
 | > 0, sane | aware ≫ blind | Prompt engineering alone helps Claude Code. (FlowAgent's H delta should still be larger if schema-level enforcement adds value.) |
 | > 0, sane | aware ≈ blind | Claude Code can emit DAGs but it doesn't help its plan quality. Suggests other quality determinants (tool selection, command syntax) dominate over graph structure. |
 | > 0, sane | aware < blind | Adding the DAG instruction *hurts* — likely confuses the planner. (Unlikely but possible — useful signal that prompt engineering is fragile.) |
+
+### Benchmark K — command-level validator ablation (todo T0)
+
+```bash
+# 5-prompt smoke (~$0.10 on Claude Haiku 4.5)
+make validator-ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep (~$5-8, ~30 min on Haiku)
+make validator-ablation MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_validator.pdf + figure_validator__stats.tsv (uses the most recent run)
+make validator-figure
+# Or point at a specific run
+make validator-figure VALIDATOR_DIR=results/validator_ablation/2026-05-08T22-00-59
+```
+
+Tests how much of FlowAgent's robustness comes from the
+post-generation command-level validator + auto-fix layer
+([`flowagent/core/llm.py`](../flowagent/core/llm.py),
+`_autofix_generated_steps` + `_validate_generated_steps`) versus the
+underlying LLM's first-pass plan quality. Motivated by the validator-
+as-mitigation pattern catalogued in the architecture review §3.6 and
+by the unanswered question of whether retry-driven correction earns
+its keep on the planning hot path.
+
+| Arm | `FLOWAGENT_VALIDATOR_ENABLED` | Behaviour |
+|---|---|---|
+| `validator_on` | `true` (default) | Auto-fix transforms (archive nesting, `\n`-literal escape, T3 typo correction) run on the LLM-emitted plan; the command-level validator's rule set fires (placeholder paths, role-name globs, fictional script invocations, archive-target nesting, …); validator failures are appended to the existing reflection feedback so the LLM gets one combined retry message per attempt. |
+| `validator_off` | `false` | Both the autofix and the validator are bypassed on the primary path. The retry triggered by validator failures is therefore also skipped — so the off-arm doesn't lose to the on-arm on extra inference rounds rather than on validator quality. |
+
+Both arms keep `LLM_DAG_AWARE=true` and the structural completeness
+reflection (`LLM_COMPLETENESS_REFLECT=true`). The structural completeness
+validator is intentionally *not* gated; the ablation scope is the
+command-level layer alone.
+
+#### Plan envelopes
+
+Every cell's `plan` field carries a `_validator` envelope so the
+benchmark scorer doesn't have to re-derive validator outcome from logs:
+
+```json
+"_validator": {
+  "pass": true,
+  "failures": [],
+  "enabled": true
+}
+```
+
+`enabled` reflects the env-var at planning time; `failures` is the
+*final* validator outcome after retries (a plan that converged inside
+the retry budget reads `pass=true` even if earlier attempts failed).
+
+#### Headline metrics (all in `paired_metrics.csv`)
+
+Same set as Benchmark H plus completeness columns. The McNemar test on
+`overall_pass` is the headline answer to the ablation; `attempts`
+(LLM call count per plan) and `cost_usd` quantify the retry-loop
+overhead the on-arm pays.
+
+#### What the manuscript run on Claude Haiku 4.5 found
+
+198 paired cells (66 × 3 reps), 0 errors, $8.32 total. Headline
+`overall_pass`: 77.8% on, 78.8% off (McNemar p=0.73). No continuous
+metric significantly favoured the on-arm; `stage_efficiency` slightly
+favoured the off-arm (p=0.017). The on-arm triggered 4× more retries
+(81 vs 21 cells) without converting them into measurable plan-quality
+gains — and `completeness_pass` actually regressed (88% on vs 100%
+off), because the retry budget that structural reflection wants to use
+was exhausted on command-level fixes that the LLM didn't reliably
+produce.
+
+This null result is consistent with the recovery-taxonomy benchmark
+(Benchmark B): LLMs are reliably bad at correction-on-feedback in the
+same context as the original generation. The validator's autofix
+transforms — which don't loop the LLM — are still useful (the
+recovery-taxonomy ceiling doesn't apply to deterministic rewrites);
+the *retry* triggered by validator failures is what earns nothing on
+this evidence. See the architecture review §3.6 for the
+prevention-vs-correction framing this result strengthens.
+
+Output:
+
+* `results/validator_ablation/<ts>/validator_on/results.jsonl` + `metrics.csv`
+* `results/validator_ablation/<ts>/validator_off/results.jsonl` + `metrics.csv`
+* `results/validator_ablation/<ts>/paired_metrics.csv` — joined by
+  `(model, input_id, replicate)`.
+* `figure_validator.pdf` / `.png` — per-metric arm means with bootstrap
+  95% CIs.
+* `figure_validator__stats.tsv` — paired Wilcoxon (continuous) and
+  McNemar (`overall_pass`) per metric.
+
+### Benchmark L — CoVe verifier ablation (todo T4)
+
+```bash
+# 5-prompt smoke (~$0.20 on Claude Haiku 4.5)
+make cove-ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep (~$5-8, ~30-40 min)
+make cove-ablation MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_cove.pdf + figure_cove__stats.tsv + figure_cove__signal.tsv
+make cove-figure
+# Or point at a specific run
+make cove-figure COVE_DIR=results/cove_ablation/2026-05-09T08-25-41
+```
+
+Tests whether an independently-prompted Chain-of-Verification verifier
+(Dhuliawala et al. 2024, [arXiv:2309.11495](https://arxiv.org/abs/2309.11495))
+produces a signal that correlates with downstream plan failure.
+Implemented in [`flowagent/core/verifier.py`](../flowagent/core/verifier.py):
+runs after the existing reflection loop, in a fresh LLM context with
+no generator chain-of-thought visible, and asks five targeted questions
+(tool-name reality, assay/tool match, report-sink wiring, dependency
+consistency, workflow-type match). The verifier returns one
+`VerificationConcern` per question (question + answer + concern flag +
+severity). The planner uses the *count* of severity-weighted concerns
+as an abstention signal.
+
+#### Why this benchmark is signal-measurement, not behaviour-change
+
+This run **always runs in annotation-only mode**: the verifier records
+its concerns on the plan envelope but the plan still ships regardless
+of what the verifier finds. The benchmark's question is "does the
+verifier's signal correlate with `overall_pass`?" — not "does refusing
+flagged plans improve outcomes?". A separate run with
+`FLOWAGENT_COVE_ABSTAIN=true` will test the abstention behaviour change
+once the signal is shown to be useful here.
+
+| Arm | `FLOWAGENT_COVE_VERIFY` | `FLOWAGENT_COVE_ABSTAIN` | Behaviour |
+|---|---|---|---|
+| `verifier_off` | `false` | `false` | Baseline. No verifier call, no overhead beyond today's planner. |
+| `verifier_on` | `true` | `false` | Verifier runs after the reflection loop; concerns recorded on `plan["_verifier"]`; plan ships even when concerns are raised. |
+
+Both arms keep `LLM_DAG_AWARE=true` and `FLOWAGENT_VALIDATOR_ENABLED=true`
+(the T0-recommended default).
+
+#### Empirical motivation: the recovery-taxonomy ceiling
+
+The recovery taxonomy (Benchmark B / `recovery_taxonomy.py`) shows
+~37% correct refusal vs ~57% confabulated-fix across 9 reasoning
+models on unrecoverable-tier faults. The lesson: LLMs are reliably bad
+at correction-on-feedback when the verifier shares context with the
+generator. CoVe's *factored* variant breaks that failure mode by
+running the verifier in a fresh context — it can't anchor on the
+generator's hallucinations because it never saw the generator's
+reasoning trace.
+
+The *abstention semantics* (rather than feedback-driven retry) are
+the second design choice: the planner uses concern counts to *refuse*
+flagged plans rather than asking the LLM to fix them. That sidesteps
+the retry-reliability ceiling entirely; abstention is the only
+behaviour the recovery taxonomy shows LLMs do reliably (the green
+bar in the taxonomy figure). The catch: we don't ask the LLM to
+abstain — *we* (the planner) do, based on a count threshold.
+
+#### Plan envelopes
+
+Every cell's `plan` field carries a `_verifier` envelope:
+
+```json
+"_verifier": {
+  "enabled": true,
+  "pass": true,
+  "weighted_concern_count": 0,
+  "abstention_threshold": 2,
+  "concerns": [
+    {"question": "...", "answer": "all real",
+     "concern": false, "severity": "high"},
+    ...
+  ]
+}
+```
+
+`weighted_concern_count` weights `high`=2, `medium`=1, `low`=0; the
+default threshold of 2 means a single ship-blocking concern is enough
+to flag, and two medium concerns are also enough.
+
+#### Env knobs
+
+| Var | Default | Effect |
+|---|---|---|
+| `FLOWAGENT_COVE_VERIFY` | `false` | Master toggle. False = 0ms no-op; provider never called. |
+| `FLOWAGENT_COVE_ABSTAIN` | `false` | When true, threshold breach raises `ValueError` rather than just annotating the envelope. **Pinned false in this benchmark.** |
+| `FLOWAGENT_COVE_THRESHOLD` | `2` | Severity-weighted concern count needed to flag. |
+
+#### Headline outputs
+
+Same per-metric paired figure as the other ablations, plus a
+**verifier-signal contingency table** (`figure_cove__signal.tsv`)
+specific to T4:
+
+```
+verifier_flagged | overall_pass=True | overall_pass=False
+-----------------|-------------------|-------------------
+       True      |        FP         |         TP
+       False     |        TN         |         FN
+```
+
+with derived `precision = TP/(TP+FP)`, `recall = TP/(TP+FN)`, and
+`abstention rate = (TP+FP)/N`. The benchmark scorer doesn't re-run any
+LLM calls to build this table — it reads `_verifier.weighted_concern_count`
+and `_verifier.abstention_threshold` straight from the JSONL.
+
+#### Decision rule for interpreting the result
+
+| Verifier precision | Verifier recall | Implication |
+|---|---|---|
+| ≥ 70% | ≥ 30% | Useful failure predictor; flip `FLOWAGENT_COVE_ABSTAIN=true` for a follow-up run to measure the abstention behaviour change. |
+| 40-70% | any | Marginal. Tune the questions / threshold (`FLOWAGENT_COVE_THRESHOLD`) before shipping abstention. |
+| ≤ 40% | any | Verifier flags too many good plans. Reframe as instrumentation only or change the question set. |
+| any | < 10% | Most failures slip past the verifier. Different problem — questions don't cover the missed failure modes. |
+
+Output:
+
+* `results/cove_ablation/<ts>/verifier_on/results.jsonl` + `metrics.csv`
+* `results/cove_ablation/<ts>/verifier_off/results.jsonl` + `metrics.csv`
+* `results/cove_ablation/<ts>/paired_metrics.csv` — joined by
+  `(model, input_id, replicate)`.
+* `figure_cove.pdf` / `.png` — per-metric arm means with bootstrap 95% CIs.
+* `figure_cove__stats.tsv` — paired Wilcoxon + McNemar per metric.
+* `figure_cove__signal.tsv` — verifier-as-failure-predictor
+  contingency table (built from the `_verifier` envelopes in the
+  `verifier_on` JSONL).
 
 ### Everything at once
 

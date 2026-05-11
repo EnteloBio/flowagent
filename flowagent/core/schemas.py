@@ -159,6 +159,59 @@ class FilePatternResponse(BaseModel):
     relationships: FileRelationships
 
 
+# ── Plan verification (CoVe) ──────────────────────────────────
+#
+# Used by ``flowagent.core.verifier`` for the CoVe-style independent
+# verifier (todo T4). The verifier runs in a fresh LLM context with no
+# generator chain-of-thought visible, asks targeted questions about the
+# plan, and returns a list of (question, answer, concern) tuples. The
+# planner then uses the count of ``concern=True`` items to decide
+# whether to abstain (refuse to ship) or ship with annotations.
+
+class VerificationConcern(BaseModel):
+    """One verifier question + answer + concern flag."""
+    question: str = Field(
+        ..., description="The targeted question asked of the verifier",
+    )
+    answer: str = Field(
+        ...,
+        description=(
+            "The verifier's free-form answer. Cited so a human reviewer "
+            "can audit the verifier's reasoning, not just the boolean."
+        ),
+    )
+    concern: bool = Field(
+        ...,
+        description=(
+            "True iff the answer reveals a real problem with the plan. "
+            "False means the plan passes this check."
+        ),
+    )
+    severity: str = Field(
+        "medium",
+        description=(
+            "One of 'low', 'medium', 'high'. High = ship-blocking issue "
+            "(wrong workflow type, fictional tool). Medium = should fix "
+            "but plan may still execute. Low = nit / preference."
+        ),
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class VerificationResult(BaseModel):
+    """Top-level shape for the CoVe verifier's structured response."""
+    concerns: List[VerificationConcern] = Field(
+        default_factory=list,
+        description=(
+            "One entry per question the verifier was asked. Order matches "
+            "the question order in the prompt so callers can correlate."
+        ),
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 # ── Prompt routing ─────────────────────────────────────────────
 
 class PromptRouting(BaseModel):

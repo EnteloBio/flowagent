@@ -17,7 +17,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help refresh-tools
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help refresh-tools
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -38,6 +38,12 @@ help:
 	@echo "  make competitor-dag-ablation - Benchmark J: competitor DAG-prompt ablation (Claude Code, 66 prompts × replicates × 2 arms)"
 	@echo "  make competitor-dag-ablation-pilot - Benchmark J smoke: 3 prompts × 1 replicate × 2 arms"
 	@echo "  make competitor-dag-figure CDAG_DIR=results/competitor_dag_ablation/<ts> - render figure_competitor_dag__<comp>.pdf + stats"
+	@echo "  make validator-ablation - T0: command-level validator on/off ablation (66 prompts × replicates × 2 arms)"
+	@echo "  make validator-ablation-pilot - T0 smoke: 5 prompts × 1 replicate × 2 arms"
+	@echo "  make validator-figure VALIDATOR_DIR=results/validator_ablation/<ts> - render figure_validator.pdf + stats"
+	@echo "  make cove-ablation - T4: CoVe verifier on/off ablation, annotation-only mode (66 prompts × replicates × 2 arms)"
+	@echo "  make cove-ablation-pilot - T4 smoke: 5 prompts × 1 replicate × 2 arms"
+	@echo "  make cove-figure COVE_DIR=results/cove_ablation/<ts> - render figure_cove.pdf + stats + signal table"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
 	@echo "  make test         - run the benchmark test suite (pytest)"
@@ -216,6 +222,79 @@ competitor-dag-figure:
 	$(PY) make_competitor_dag_figure.py \
 	    --paired=$(CDAG_DIR)/paired_metrics.csv \
 	    --out=figure_competitor_dag
+
+# Todo T0 -- command-level validator on/off ablation.
+# Toggles FLOWAGENT_VALIDATOR_ENABLED; both arms keep LLM_DAG_AWARE=true and
+# LLM_COMPLETENESS_REFLECT=true. The on-arm runs _autofix_generated_steps +
+# _validate_generated_steps in the primary planning loop and triggers a retry
+# on any command-level violation; the off-arm bypasses both. Structural
+# completeness reflection stays on in both arms — we're ablating the
+# command-level layer only. See bench_validator_ablation.py docstring for
+# rationale + recovery-taxonomy framing.
+validator-ablation:
+	$(PY) bench_validator_ablation.py \
+	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --replicates=$(REPLICATES) \
+	    --out=$(RESULTS_DIR)
+
+# Quick smoke: 5 prompts × 1 replicate × 2 arms.
+validator-ablation-pilot:
+	$(PY) bench_validator_ablation.py \
+	    --models=$(MODEL) \
+	    --replicates=1 \
+	    --limit=5 \
+	    --out=$(RESULTS_DIR)
+
+# Render figure_validator.pdf + stats_validator.tsv from a finished run.
+# Pass VALIDATOR_DIR=results/validator_ablation/<timestamp>/ to point at a
+# specific run; defaults to the most recent.
+VALIDATOR_DIR ?= $(shell ls -td $(RESULTS_DIR)/validator_ablation/*/ 2>/dev/null | head -1)
+validator-figure:
+	@if [ -z "$(VALIDATOR_DIR)" ]; then \
+	    echo "No validator-ablation runs found under $(RESULTS_DIR)/validator_ablation. "; \
+	    echo "Run \`make validator-ablation\` first or pass VALIDATOR_DIR=...."; \
+	    exit 1; \
+	fi
+	$(PY) make_validator_figure.py \
+	    --paired=$(VALIDATOR_DIR)/paired_metrics.csv \
+	    --out=figure_validator
+
+# Todo T4 -- CoVe verifier on/off ablation (annotation-only mode).
+# Toggles FLOWAGENT_COVE_VERIFY; pins FLOWAGENT_COVE_ABSTAIN=false in both
+# arms so the verifier's concerns are recorded on the plan envelope but the
+# plan still ships. This is a SIGNAL-MEASUREMENT run, not a behaviour-change
+# run: a follow-up with FLOWAGENT_COVE_ABSTAIN=true measures the abstention
+# behaviour change once the signal is shown to be useful.
+# Both arms keep LLM_DAG_AWARE=true and FLOWAGENT_VALIDATOR_ENABLED=true.
+cove-ablation:
+	$(PY) bench_cove_ablation.py \
+	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --replicates=$(REPLICATES) \
+	    --out=$(RESULTS_DIR)
+
+# Quick smoke: 5 prompts × 1 replicate × 2 arms.
+cove-ablation-pilot:
+	$(PY) bench_cove_ablation.py \
+	    --models=$(MODEL) \
+	    --replicates=1 \
+	    --limit=5 \
+	    --out=$(RESULTS_DIR)
+
+# Render figure_cove.pdf + stats_cove.tsv + stats_cove_signal.tsv from a
+# finished run. The signal table reports verifier precision / recall as a
+# failure predictor (built from the verifier_on JSONL's _verifier envelope).
+# Pass COVE_DIR=results/cove_ablation/<timestamp>/ to point at a specific
+# run; defaults to the most recent.
+COVE_DIR ?= $(shell ls -td $(RESULTS_DIR)/cove_ablation/*/ 2>/dev/null | head -1)
+cove-figure:
+	@if [ -z "$(COVE_DIR)" ]; then \
+	    echo "No cove-ablation runs found under $(RESULTS_DIR)/cove_ablation. "; \
+	    echo "Run \`make cove-ablation\` first or pass COVE_DIR=...."; \
+	    exit 1; \
+	fi
+	$(PY) make_cove_figure.py \
+	    --paired=$(COVE_DIR)/paired_metrics.csv \
+	    --out=figure_cove
 
 # Benchmark F — output fidelity (pure scoring; no LLM calls).
 # Use this when the candidate dirs already exist on disk.
