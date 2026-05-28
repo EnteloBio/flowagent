@@ -107,4 +107,18 @@ wheels/
 
 # Benchmark outputs (generated; corpus/ and config/ are checked in)
 benchmarks/results/
+benchmarks/old_results/
+old_results/
+
+# Generated ablation / validator figures (reproducible via make *-figure)
+benchmarks/figure_*.pdf
+benchmarks/figure_*.png
+benchmarks/figure_*__stats.tsv
+
+# Example / run-time workflow artefacts (not source)
+benchmarks/flowagent_output/
+flowagent_output/
+workflow_state/
+.flowagent_state/
+
 .env_tmp

@@ -10,6 +10,7 @@ import traceback
 
 from ..utils.logging import get_logger
 from .executors import BaseExecutor, LocalExecutor, HPCExecutor, KubernetesExecutor
+from .executors import normalize_step_status, step_status_failed, step_status_succeeded
 
 logger = get_logger(__name__)
 
@@ -265,10 +266,10 @@ class WorkflowDAG:
                     if is_start_node:
                         color = "#FFD700"  # Gold
                         start_nodes.append(node)
-                    elif status == "completed":
+                    elif step_status_succeeded(status):
                         color = "#90EE90"  # Light green
                         completed_nodes.append(node)
-                    elif status in ["failed", "error"]:
+                    elif step_status_failed(status):
                         color = "#FFA07A"  # Light salmon
                         failed_nodes.append(node)
                     else:
@@ -398,14 +399,16 @@ class WorkflowDAG:
                         raise item
                     step_name, result = item
                     jobs[step_name] = result
-                    self.graph.nodes[step_name]["step"]["status"] = result.get("status", "pending")
+                    self.graph.nodes[step_name]["step"]["status"] = normalize_step_status(
+                        result.get("status"), default="pending",
+                    )
 
                     # Persist a command-hash sidecar after success so
                     # smart-resume can detect when a planner-side command
                     # change requires re-execution on the next run.
                     # See ``write_step_state`` in
                     # ``flowagent/core/smart_resume.py``.
-                    if result.get("status") == "completed":
+                    if step_status_succeeded(result.get("status")):
                         try:
                             from flowagent.core.smart_resume import write_step_state
                             step_data = self.graph.nodes[step_name]["step"]
@@ -420,7 +423,7 @@ class WorkflowDAG:
                                 "step %s: %s", step_name, exc,
                             )
 
-                    if result.get("status") == "failed":
+                    if step_status_failed(result.get("status")):
                         error_msg = result.get("stderr", "")
                         cmd = self.graph.nodes[step_name]["step"].get("command", "")
                         logger.error(f"Step {step_name} failed:\nCommand: {cmd}\nError: {error_msg}")
@@ -436,7 +439,9 @@ class WorkflowDAG:
                             step_data = self.graph.nodes[step_name]["step"]
                             try:
                                 recovery_result = await recovery_fn(step_data, result)
-                                if recovery_result and recovery_result.get("status") == "completed":
+                                if recovery_result and step_status_succeeded(
+                                    recovery_result.get("status"),
+                                ):
                                     logger.info(f"Step {step_name} recovered successfully via LLM")
                                     jobs[step_name] = recovery_result
                                     self.graph.nodes[step_name]["step"]["status"] = "completed"
@@ -498,7 +503,9 @@ class WorkflowDAG:
                                                 self.graph.nodes[new_step["name"]]["step"]["status"] = (
                                                     new_result.get("status", "pending")
                                                 )
-                                                ran_new = new_result.get("status") == "completed"
+                                                ran_new = step_status_succeeded(
+                                                    new_result.get("status"),
+                                                )
                                             except Exception as patch_exec_err:
                                                 logger.warning(
                                                     "Failed to execute patch-introduced step "
@@ -517,7 +524,9 @@ class WorkflowDAG:
                                                     self.graph.nodes[step_name]["step"]["status"] = (
                                                         rerun_result.get("status", "pending")
                                                     )
-                                                    if rerun_result.get("status") == "completed":
+                                                    if step_status_succeeded(
+                                                        rerun_result.get("status"),
+                                                    ):
                                                         recovered = True
                                                         logger.info(
                                                             "Step %s recovered via DAG patch (%s)",
@@ -553,7 +562,9 @@ class WorkflowDAG:
 
             results = await self.executor.wait_for_completion(jobs)
             for step_name, result in results.items():
-                self.graph.nodes[step_name]["step"]["status"] = result.get("status", "completed")
+                self.graph.nodes[step_name]["step"]["status"] = normalize_step_status(
+                    result.get("status"), default="completed",
+                )
 
             return {
                 "status": "success",

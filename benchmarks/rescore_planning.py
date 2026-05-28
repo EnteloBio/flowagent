@@ -14,6 +14,9 @@ Usage:
     # Rescore the latest planning run
     python rescore_planning.py
 
+    # Rescore every run under results/planning/ (needed before merge)
+    python rescore_planning.py --all
+
     # Rescore a specific run
     python rescore_planning.py --run results/planning/2026-04-13T11-08-06
 """
@@ -35,41 +38,38 @@ from harness.metrics import score_plan, cost_usd    # noqa: E402
 from harness.runner import _write_csv, load_yaml    # noqa: E402
 
 
-def _latest_planning_run(base: Path) -> Optional[Path]:
+def _planning_run_dirs(base: Path) -> List[Path]:
     pdir = base / "planning"
     if not pdir.exists():
-        return None
-    # Skip ``rescored_*`` (nested output) and ``_*`` dirs like ``_merged``
-    # which don't hold a top-level ``results.json``.
-    runs = [p for p in pdir.iterdir()
-            if p.is_dir()
-            and not p.name.startswith("rescored")
-            and not p.name.startswith("_")
-            and (p / "results.json").exists()]
-    return max(runs, key=lambda p: p.stat().st_mtime) if runs else None
+        return []
+    return sorted(
+        (p for p in pdir.iterdir()
+         if p.is_dir()
+         and not p.name.startswith("rescored")
+         and not p.name.startswith("_")
+         and (p / "results.json").exists()),
+        key=lambda p: p.stat().st_mtime,
+    )
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--run", help="Path to a planning run directory; "
-                                   "defaults to the most recent under results/planning/")
-    ap.add_argument("--prompts", default=str(_HERE_DIR / "corpus" / "prompts.yaml"))
-    ap.add_argument("--results-base", default="results")
-    args = ap.parse_args()
+def _latest_planning_run(base: Path) -> Optional[Path]:
+    runs = _planning_run_dirs(base)
+    return runs[-1] if runs else None
 
-    run_dir = Path(args.run) if args.run else _latest_planning_run(Path(args.results_base))
-    if run_dir is None or not run_dir.exists():
-        raise SystemExit(f"No planning run found at {args.run or args.results_base}")
 
+def rescore_run(
+    run_dir: Path,
+    *,
+    prompts_path: Path,
+    models_cfg: Dict[str, Any],
+) -> Path:
+    """Re-score one planning run; return the ``rescored_<ts>/`` output dir."""
     src = run_dir / "results.json"
     if not src.exists():
-        raise SystemExit(f"{src} does not exist")
+        raise FileNotFoundError(f"{src} does not exist")
 
     rows = json.loads(src.read_text())
-    prompts_by_id = {p["id"]: p for p in load_yaml(Path(args.prompts))["prompts"]}
-
-    # Model pricing lookup for cost re-computation
-    models_cfg = load_yaml(_HERE_DIR / "config" / "models.yaml")
+    prompts_by_id = {p["id"]: p for p in load_yaml(prompts_path)["prompts"]}
     pricing_by_id = {m["id"]: m for m in models_cfg.get("models", [])}
 
     rescored: List[Dict[str, Any]] = []
@@ -82,8 +82,6 @@ def main():
             continue
         new_metrics = score_plan(plan, expected)
 
-        # Preserve token counts (fixed at runtime) and re-compute cost using
-        # current pricing — handy when you update models.yaml rates.
         prompt_tok     = int(row.get("prompt_tokens", 0) or 0)
         completion_tok = int(row.get("completion_tokens", 0) or 0)
         cost = cost_usd(prompt_tok, completion_tok,
@@ -106,17 +104,44 @@ def main():
     (out / "results.json").write_text(json.dumps(rescored, indent=2, default=str))
     _write_csv(out / "metrics.csv", rescored)
 
-    # Summary stats
     n = len(rescored)
-    n_valid = sum(1 for r in rescored if r.get("plan_valid"))
-    n_type  = sum(1 for r in rescored if r.get("type_correct"))
-    n_dag   = sum(1 for r in rescored if r.get("dag_valid"))
-    n_pass  = sum(1 for r in rescored if r.get("overall_pass"))
+    n_pass = sum(1 for r in rescored if r.get("overall_pass"))
+    n_hall = sum(1 for r in rescored if int(r.get("num_hallucinated_tools") or 0) > 0)
     print(f"[ok] rescored {n} rows → {out}")
-    print(f"     plan_valid:    {n_valid}/{n}  ({100*n_valid/n:.0f}%)")
-    print(f"     type_correct:  {n_type}/{n}  ({100*n_type/n:.0f}%)")
-    print(f"     dag_valid:     {n_dag}/{n}  ({100*n_dag/n:.0f}%)")
     print(f"     overall_pass:  {n_pass}/{n}  ({100*n_pass/n:.0f}%)")
+    print(f"     any_hallucination (typo+unknown): {n_hall}/{n}  ({100*n_hall/n:.0f}%)")
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--run", help="Path to a planning run directory; "
+                                   "defaults to the most recent under results/planning/")
+    ap.add_argument("--all", action="store_true",
+                    help="Rescore every run under results/planning/ "
+                         "(use before merge when scoring logic changes)")
+    ap.add_argument("--prompts", default=str(_HERE_DIR / "corpus" / "prompts.yaml"))
+    ap.add_argument("--results-base", default="results")
+    args = ap.parse_args()
+
+    base = Path(args.results_base)
+    prompts_path = Path(args.prompts)
+    models_cfg = load_yaml(_HERE_DIR / "config" / "models.yaml")
+
+    if args.all:
+        runs = _planning_run_dirs(base)
+        if not runs:
+            raise SystemExit(f"No planning runs found under {base / 'planning'}")
+        for run_dir in runs:
+            print(f"[rescore] {run_dir.name}")
+            rescore_run(run_dir, prompts_path=prompts_path, models_cfg=models_cfg)
+        return
+
+    run_dir = Path(args.run) if args.run else _latest_planning_run(base)
+    if run_dir is None or not run_dir.exists():
+        raise SystemExit(f"No planning run found at {args.run or args.results_base}")
+
+    rescore_run(run_dir, prompts_path=prompts_path, models_cfg=models_cfg)
 
 
 if __name__ == "__main__":

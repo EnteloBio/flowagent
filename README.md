@@ -122,7 +122,7 @@ Set `LLM_PROVIDER` to one of: `openai`, `anthropic`, `google`, `ollama`.
 | Provider | Typical `LLM_MODEL` | API key / notes |
 |----------|---------------------|-----------------|
 | **openai** | `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `o3`, `o4-mini` | `OPENAI_API_KEY`; optional `OPENAI_BASE_URL` for proxies. |
-| **anthropic** | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` | `ANTHROPIC_API_KEY`; install `anthropic`. |
+| **anthropic** | `claude-sonnet-4-6`, `claude-opus-4-7` | `ANTHROPIC_API_KEY`; install `anthropic`. |
 | **google** | `gemini-2.5-flash`, `gemini-2.5-pro` | `GOOGLE_API_KEY`; install `google-genai`. |
 | **ollama** | `llama4`, `mistral`, `qwen`, `deepseek` | Usually `LLM_BASE_URL=http://localhost:11434/v1`; key can be a placeholder. |
 
@@ -552,7 +552,8 @@ Figures are written to `benchmarks/results/figures/` as both `.pdf`
 
 ### Subset runs
 
-You rarely want to sweep every model in one go — the full corpus is 35 models
+You rarely want to sweep every model in one go — the default `plan-all` sweep
+is 30 models (40 in the registry; 10 deprecated IDs are skipped):
 × 41 prompts × 3 replicates ≈ 4,300 cells. Narrow the sweep with `--models`:
 
 ```bash
@@ -636,7 +637,7 @@ for a 10× cheaper sweep.
 |---|---|---|---|
 | `make smoke` | 0 | ~3 s | $0 |
 | `make plan` (1 model) | 123 | ~5–15 min | $0.05–$5 (depends on tier) |
-| `make plan-all` (35 models) | ~4,300 | ~2–4 h (concurrent) | $150–300 full, $20–40 without premium reasoning |
+| `make plan-all` (30 models) | ~3,700 | ~2–4 h (concurrent) | $150–300 full, $20–40 without premium reasoning |
 | `make recovery` (1 model × 5 seeds) | 140 | ~35–45 min | $2–3 |
 | `make competitors` (3 systems × 1 model) | ~125 | ~30 min | $3–5 |
 | `make gen` | — | <1 min | $0 |
@@ -681,7 +682,7 @@ mkdocs serve   # http://127.0.0.1:8000 — use another port if Chainlit already 
 
 ## License
 
-MIT License — see the [LICENSE](LICENSE) file.
+GPL-3.0 License — see the [LICENSE](LICENSE) file.
 
 ---
 

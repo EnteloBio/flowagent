@@ -500,3 +500,105 @@ class TestHallucinatedTools:
         m = score_plan_inference(plan, expected)
         assert "num_hallucinated_typos" in m
         assert "hallucinated_typos" in m
+
+
+class TestHallucinationParserFixes:
+    """Quote-aware parsing, CLI aliases, and r_code classification."""
+
+    def test_rscript_inline_r_not_split_on_semicolons(self):
+        from harness.metrics import extract_tools_from_plan
+
+        plan = {
+            "workflow_type": "rna_seq",
+            "steps": [{
+                "name": "de",
+                "command": (
+                    "Rscript -e 'library(DESeq2); dds <- DESeqDataSetFromMatrix("
+                    "countData=cts, colData=coldata, design=~condition); "
+                    "write.csv(as.data.frame(results(dds)), \"de.csv\")'"
+                ),
+                "dependencies": [], "outputs": [], "description": "",
+            }],
+        }
+        tools = extract_tools_from_plan(plan)
+        assert tools == set()
+        assert "dds" not in tools
+        assert "write.csv(as.data.frame(results(dds))" not in tools
+
+    def test_featurecounts_recognised_via_cli_alias(self):
+        from harness.metrics import extract_tools_from_plan, score_plan
+
+        plan = {
+            "workflow_type": "rna_seq",
+            "steps": [
+                {"name": "count", "command": "featureCounts -a genes.gtf -o c.txt a.bam",
+                 "dependencies": [], "outputs": [], "description": ""},
+            ],
+        }
+        assert "featurecounts" in extract_tools_from_plan(plan)
+        m = score_plan(plan, {
+            "expected_workflow_type": "rna_seq",
+            "expected_tools": ["featurecounts"],
+            "expected_min_steps": 1,
+            "forbidden_tools": [],
+        })
+        assert m["num_hallucinated_tools"] == 0
+
+    def test_deeptools_subcommand_not_unknown(self):
+        from flowagent.tool_catalog import hallucinated_tools
+
+        flagged = hallucinated_tools({"hicfindtads", "hicplotmatrix"})
+        assert flagged == []
+
+    def test_bare_r_variables_classified_as_r_code(self):
+        from flowagent.tool_catalog import _classify_unknown_token
+
+        cat, corr = _classify_unknown_token("dds", set())
+        assert cat == "r_code"
+        assert corr is None
+
+    def test_true_unknown_still_unknown(self):
+        from flowagent.tool_catalog import _classify_unknown_token
+
+        cat, corr = _classify_unknown_token("super_aligner_pro", set())
+        assert cat == "unknown"
+        assert corr is None
+
+    def test_hallucination_rate_ignores_r_code(self):
+        from harness.metrics import _hallucination_metrics
+
+        stats = _hallucination_metrics({"dds", "kalsito"})
+        assert stats["num_hallucinated_tools"] == 1
+        assert stats["num_r_code_tokens"] == 1
+        assert "kalsito:typo" in stats["hallucinated_tools"] or \
+               "kalsito:unknown" in stats["hallucinated_tools"]
+
+    def test_piped_commands_still_split(self):
+        from harness.metrics import extract_tools_from_plan
+
+        plan = {
+            "workflow_type": "chip_seq",
+            "steps": [{
+                "name": "sort",
+                "command": "bowtie2 -x idx -U reads.fq | samtools sort -o out.bam",
+                "dependencies": [], "outputs": [], "description": "",
+            }],
+        }
+        tools = extract_tools_from_plan(plan)
+        assert tools == {"bowtie2", "samtools"}
+
+    def test_nan_hallucinated_tools_not_parsed_as_unknown(self):
+        import math
+        import pandas as pd
+        from harness.plot import _parse_hallucinated_tools_column
+
+        cat = _parse_hallucinated_tools_column(pd.Series([math.nan, "", "nan"]))
+        assert cat["unknown"].sum() == 0
+        assert cat["r_code"].sum() == 0
+
+    def test_py_script_classified_as_filename_not_unknown(self):
+        from flowagent.tool_catalog import _classify_unknown_token
+
+        cat, corr = _classify_unknown_token("collapse_reads.py", set())
+        assert cat == "filename"
+        assert corr is None

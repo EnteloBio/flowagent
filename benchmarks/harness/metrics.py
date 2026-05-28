@@ -34,7 +34,9 @@ from flowagent.tool_catalog import (  # noqa: E402
     _classify_unknown_token,
     _edit_distance,
     _load_known_tools,
+    _looks_like_r_code,
     _normalise_tool_name,
+    HALLUCINATION_SCORE_CATEGORIES,
     hallucinated_tool_names,
     hallucinated_tools,
 )
@@ -117,6 +119,54 @@ def _strip_label_prefix(seg: str) -> str:
     return seg[m.end():]
 
 
+_SEG_SPLIT_RE = re.compile(r"(?:\|\||&&|;|\||&)")
+
+
+def _split_command_segments(cmd: str) -> List[str]:
+    """Split a shell command into segments without breaking quoted strings.
+
+    Semicolons inside ``Rscript -e '...'`` (or any single/double-quoted
+    span) must not spawn fake segments — otherwise inline R is mis-parsed
+    as a chain of CLI invocations.
+    """
+    segments: List[str] = []
+    buf: List[str] = []
+    quote: Optional[str] = None
+    i = 0
+    n = len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if quote:
+            if ch == "\\" and i + 1 < n:
+                buf.append(cmd[i : i + 2])
+                i += 2
+                continue
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        m = _SEG_SPLIT_RE.match(cmd, i)
+        if m:
+            seg = "".join(buf).strip()
+            if seg:
+                segments.append(seg)
+            buf = []
+            i = m.end()
+            continue
+        buf.append(ch)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        segments.append(tail)
+    return segments
+
+
 def extract_tools_from_plan(plan: Dict[str, Any]) -> Set[str]:
     """Return every CLI tool invoked anywhere in any step command.
 
@@ -129,12 +179,11 @@ def extract_tools_from_plan(plan: Dict[str, Any]) -> Set[str]:
     ``"Sort BAM: samtools sort ..."`` records ``samtools``, not ``sort``.
     """
     tools: Set[str] = set()
-    seg_splitter = re.compile(r"(?:\|\||&&|;|\||&)")
     for step in plan.get("steps", []):
         cmd = (step.get("command", "") or "").strip()
         if not cmd:
             continue
-        for seg in seg_splitter.split(cmd):
+        for seg in _split_command_segments(cmd):
             seg = seg.strip().lstrip("()<> ")
             if not seg:
                 continue
@@ -149,7 +198,7 @@ def extract_tools_from_plan(plan: Dict[str, Any]) -> Set[str]:
             # leave on tokens when echoing rule text.
             raw = tokens[0]
             first = raw.split("/")[-1].rstrip(":,;").lower()
-            if not first or first in _SHELL_TOKENS:
+            if not first or first in _SHELL_TOKENS or first in _RUNNER_TOKENS:
                 continue
             if first.startswith("-") or "=" in first:
                 continue
@@ -565,6 +614,29 @@ def _format_hallucinated(
     return ";".join(parts)
 
 
+def _hallucination_metrics(plan_tools: Set[str]) -> Dict[str, Any]:
+    """Compute hallucination counters from extracted plan tool tokens."""
+    h_classified = hallucinated_tools(plan_tools)
+    scored = [
+        (t, cat, corr) for t, cat, corr in h_classified
+        if cat in HALLUCINATION_SCORE_CATEGORIES
+    ]
+    typos = [(t, corr) for t, cat, corr in h_classified if cat == "typo"]
+    r_code = sum(1 for _t, cat, _c in h_classified if cat == "r_code")
+    return {
+        "num_hallucinated_tools": len(scored),
+        "hallucination_rate": (
+            len(scored) / len(plan_tools) if plan_tools else 0.0
+        ),
+        "hallucinated_tools": _format_hallucinated(h_classified),
+        "num_hallucinated_typos": len(typos),
+        "hallucinated_typos": (
+            ";".join(f"{t}->{corr}" for t, corr in typos) if typos else ""
+        ),
+        "num_r_code_tokens": r_code,
+    }
+
+
 # ── Top-level scoring ─────────────────────────────────────────────
 
 def score_plan(plan: Dict[str, Any], expected: Dict[str, Any],
@@ -626,21 +698,8 @@ def score_plan(plan: Dict[str, Any], expected: Dict[str, Any],
     plan_tools = extract_tools_from_plan(plan)
     metrics["num_tools"] = len(plan_tools)
 
-    # Hallucination check — tools the LLM invoked that we don't recognise
-    # as real bioinformatics CLI tools.  Reported as a count and a fraction
-    # of the plan's unique tool set (to make it comparable across plan sizes).
-    h_classified = hallucinated_tools(plan_tools)
-    metrics["num_hallucinated_tools"] = len(h_classified)
-    metrics["hallucination_rate"] = (
-        len(h_classified) / len(plan_tools) if plan_tools else 0.0
-    )
-    # New schema: "name:category[:correction];..." (CHANGELOG §hallucinated_tools)
-    metrics["hallucinated_tools"] = _format_hallucinated(h_classified)
-    typos = [(t, corr) for t, cat, corr in h_classified if cat == "typo"]
-    metrics["num_hallucinated_typos"] = len(typos)
-    metrics["hallucinated_typos"] = (
-        ";".join(f"{t}->{corr}" for t, corr in typos) if typos else ""
-    )
+    metrics.update(_hallucination_metrics(plan_tools))
+
     expected_tools = [t.lower() for t in (expected.get("expected_tools") or [])]
     forbidden = [t.lower() for t in (expected.get("forbidden_tools") or [])]
     if expected_tools:
@@ -762,17 +821,7 @@ def score_plan_inference(
     plan_tools = extract_tools_from_plan(plan)
     metrics["num_tools"] = len(plan_tools)
 
-    h_classified = hallucinated_tools(plan_tools)
-    metrics["num_hallucinated_tools"] = len(h_classified)
-    metrics["hallucination_rate"] = (
-        len(h_classified) / len(plan_tools) if plan_tools else 0.0
-    )
-    metrics["hallucinated_tools"] = _format_hallucinated(h_classified)
-    typos = [(t, corr) for t, cat, corr in h_classified if cat == "typo"]
-    metrics["num_hallucinated_typos"] = len(typos)
-    metrics["hallucinated_typos"] = (
-        ";".join(f"{t}->{corr}" for t, corr in typos) if typos else ""
-    )
+    metrics.update(_hallucination_metrics(plan_tools))
 
     forbidden = [t.lower() for t in (expected.get("forbidden_tools") or [])]
     metrics["no_forbidden_tools"] = not any(

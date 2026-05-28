@@ -21,4 +21,4 @@ We use GitHub to host code, to track issues and feature requests, as well as acc
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under its MIT License.
+By contributing, you agree that your contributions will be licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).

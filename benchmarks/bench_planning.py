@@ -143,6 +143,9 @@ def _load_models(cfg_path: Path, only: List[str]) -> List[Dict[str, Any]]:
         models = [m for m in models if m["id"] in wanted]
         if not models:
             raise SystemExit(f"No models in {cfg_path} match: {only}")
+    else:
+        # Default ``make plan-all`` sweep: skip retired / scheduled models.
+        models = [m for m in models if m.get("tier") != "deprecated"]
     return models
 
 

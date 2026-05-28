@@ -2,7 +2,7 @@
 #
 # All targets are thin wrappers that forward to the bench_*.py entrypoints.
 # Override defaults with make variables, e.g.
-#     make plan MODEL=claude-sonnet-4-20250514 REPLICATES=5
+#     make plan MODEL=claude-sonnet-4-6 REPLICATES=5
 
 # Prefer `python` if it exists, else fall back to `python3`. Override by
 # setting PY on the command line, e.g. `make plan PY=/path/to/venv/bin/python`.
@@ -67,6 +67,9 @@ plan-all:
 
 rescore:
 	$(PY) rescore_planning.py --results-base=$(RESULTS_DIR)
+
+rescore-all:
+	$(PY) rescore_planning.py --all --results-base=$(RESULTS_DIR)
 
 merge:
 	$(PY) merge_runs.py --results-base=$(RESULTS_DIR) $(if $(REFRESH),--refresh,)

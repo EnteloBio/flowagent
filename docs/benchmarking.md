@@ -60,7 +60,7 @@ export OPENAI_API_KEY=sk-...
 make plan MODEL=gpt-4.1
 
 export ANTHROPIC_API_KEY=sk-ant-...
-make plan MODEL=claude-sonnet-4-20250514
+make plan MODEL=claude-sonnet-4-6
 ```
 
 See [LLM Providers](user-guide/llm-providers.md).

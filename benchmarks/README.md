@@ -261,14 +261,19 @@ notes, sizes, and license caveats. CI / no-R-install runs:
 
 ### Models
 
-`config/models.yaml` defines **30 models** across three tiers, plus
-several legacy/preview aliases for back-compatibility with archived runs:
+`config/models.yaml` defines **40 models** across four tiers; the default
+``make plan-all`` sweep runs **30** (skips ``tier: deprecated`` only).
+Legacy-tier entries include **generational baselines** — GPT-3.5 era,
+Claude 3.x, and Gemini 1.5 — that still plot in the legacy heatmap panel.
+Alias rows in ``supp_table_models.py`` map retired IDs to current successors
+for longitudinal figures:
 
 | Tier | OpenAI | Anthropic | Google |
 |---|---|---|---|
-| current | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `o3`, `o3-mini`, `o4-mini` | `claude-opus-4-5/6/7`, `claude-sonnet-4-5/6`, `claude-haiku-4-5` | `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
-| preview | — | — | `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite-preview`, `gemini-3-flash-preview` |
-| legacy | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o1` | `claude-opus-4`, `claude-opus-4-1`, `claude-sonnet-4`, `claude-haiku-3-5` | `gemini-1.5-pro`, `gemini-1.5-flash` |
+| current | `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.5-mini`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.4-pro`, `gpt-4.1`, `gpt-4.1-mini`, `o3` | `claude-opus-4-5/6/7`, `claude-sonnet-4-5/6`, `claude-haiku-4-5` | `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| preview | — | — | `gemini-3.1-pro-preview` |
+| legacy | `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo` | `claude-opus-4-1`, `claude-3-5-sonnet-20241022`, `claude-3-haiku-20240307` | `gemini-1.5-pro`, `gemini-1.5-flash` |
+| deprecated | `gpt-4-turbo`, `gpt-4.1-nano`, `o1`, `o3-mini`, `o4-mini` | `claude-opus-4`, `claude-sonnet-4`, `claude-haiku-3-5` | `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview` |
 
 Add or remove a model by editing `config/models.yaml` — the harness,
 scoring, and plot code pick up new IDs automatically (so long as the
@@ -954,7 +959,7 @@ make interpretation MODEL=gpt-4.1 JUDGE=gpt-5.4
 
 # Multi-model sweep (recommended for the manuscript figure)
 python bench_interpretation.py \
-  --models gpt-5.4,gpt-5.4-mini,o3,gpt-4.1,claude-opus-4-7,claude-sonnet-4-6,claude-haiku-4-5,gemini-2.5-pro,gemini-2.5-flash,gemini-3.1-flash-lite-preview \
+  --models gpt-5.5,gpt-5.4,gpt-5.4-mini,o3,gpt-4.1,claude-opus-4-7,claude-sonnet-4-6,claude-haiku-4-5,gemini-3.5-flash,gemini-2.5-pro,gemini-2.5-flash,gemini-3.1-flash-lite \
   --judge gpt-5.4
 
 # Every model in models.yaml
@@ -1582,26 +1587,33 @@ make refresh-tools            # fetches bioconda + bioconductor, writes data/kno
 python benchmarks/refresh_known_tools.py --skip-bioconductor
 ```
 
-### Four-category classification
+### Five-category classification
 
 Each unrecognised token is classified rather than simply counted:
 
-| Category | Meaning | Example |
-|----------|---------|---------|
-| `typo` | Damerau-Levenshtein distance ≤ 2 to a known tool (both ≥ 5 chars) | `kalsito` → `kallisto` |
-| `filename` | Has a path separator or a biodata extension (`.bam`, `.fastq`, …) | `reads.fastq.gz` |
-| `runtime_glue` | Common shell / cloud / HPC command — not a bioinfo tool but not a hallucination | `parallel`, `aws`, `sbatch` |
-| `unknown` | Genuinely unrecognised — true hallucination candidate | `super_aligner_pro` |
+| Category | Meaning | Counts toward `hallucination_rate`? |
+|----------|---------|-------------------------------------|
+| `typo` | Damerau-Levenshtein distance ≤ 2 to a known tool (both ≥ 5 chars) | **Yes** |
+| `unknown` | Genuinely unrecognised — true hallucination candidate | **Yes** |
+| `r_code` | Inline R expression / object name misparsed as a CLI token | No |
+| `filename` | Has a path separator or a biodata extension (`.bam`, `.fastq`, …) | No |
+| `runtime_glue` | Common shell / cloud / HPC command — not a bioinfo tool | No |
+
+Command parsing is **quote-aware** so semicolons inside ``Rscript -e
+'...'`` do not spawn fake CLI segments. Common CLI aliases (e.g.
+``featureCounts`` → ``subread``, deepTools subcommands → ``deeptools``)
+are resolved against the catalog before classification.
 
 ### Metrics emitted
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `num_hallucinated_tools` | int | Total flagged tokens (all categories combined) |
+| `num_hallucinated_tools` | int | Typo + unknown tokens only (true hallucination candidates) |
 | `hallucination_rate` | float | `num_hallucinated_tools / num_tools` |
-| `hallucinated_tools` | str | `"name:category[:correction];..."` (v2 schema) |
+| `hallucinated_tools` | str | `"name:category[:correction];..."` (v2 schema; all categories) |
 | `num_hallucinated_typos` | int | Tokens classified as `typo` |
 | `hallucinated_typos` | str | `"token->correction;..."` for each typo |
+| `num_r_code_tokens` | int | Inline R fragments classified as `r_code` (informational) |
 
 `overall_pass` always keys on `num_hallucinated_tools == 0` when
 `strict_hallucinations=True`; the category breakdown is informational.
@@ -1629,10 +1641,14 @@ When scoring logic or `prompts.yaml` is updated, you can re-evaluate existing
 runs without spending more API budget. **The order matters**:
 
 ```bash
-make rescore    # 1. Rescore each run with the current metrics code
-make merge      # 2. Combine rescored runs into one deduplicated CSV
-make report     # 3. Render figures from the merged CSV
+make rescore-all  # 1. Rescore *every* planning run (not just the latest)
+make merge        # 2. Combine rescored runs into one deduplicated CSV
+make report       # 3. Render figures from the merged CSV
 ```
+
+For a single fresh run, ``make rescore`` is enough; after scoring-logic
+changes always prefer ``make rescore-all`` so older model sweeps pick up
+the new metrics too.
 
 - `rescore` reads each run's `results.json`, re-applies `score_plan` with the
   current `metrics.py`, preserves token counts, and re-computes `cost_usd`
@@ -1703,7 +1719,7 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 
 | File | Content |
 |---|---|
-| `planning.pdf` | Pass rate by model, split into standard vs. hard prompts |
+| `planning.pdf` | Pass rate by model, split into transcription (standard / hard) and inference panels |
 | `planning_heatmap.pdf` | Per-prompt × per-model pass-rate heatmap |
 | `planning_heatmap_by_tier.pdf` | Heatmap split into current vs legacy model panels |
 | `planning_cost_summary.pdf` | Per-model cost bar chart (two panels) |
@@ -1778,7 +1794,8 @@ make report
 
 ## Cost + wall-clock estimates
 
-Rough guide at current (Apr 2026) rates across the full 30-model registry.
+Rough guide at current (May 2026) rates across the default 30-model plan-all sweep
+(40 in the registry; deprecated IDs excluded):
 
 | Target | Models | Wall time | API cost |
 |---|---|---|---|

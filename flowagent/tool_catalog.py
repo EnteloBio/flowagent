@@ -124,6 +124,74 @@ _BIOINFO_TOOLS: Set[str] = {
     "gff3sort",
 }
 
+# CLI executable names that differ from Bioconda package names in the snapshot.
+# Keys and values are normalised (lower-case, ``-`` → ``_``).  A token matches
+# if its alias maps to a package present in :func:`_load_known_tools`.
+_TOOL_CLI_ALIASES: Dict[str, str] = {
+    "featurecounts": "subread",
+    "featurecount": "subread",
+    # deepTools multi-command entry points (package ``deeptools``)
+    "alignmentssieve": "deeptools",
+    "bamcompare": "deeptools",
+    "bamcoverage": "deeptools",
+    "bamcorrelate": "deeptools",
+    "bigwigaverageoverbed": "deeptools",
+    "bigwigcompare": "deeptools",
+    "computematrix": "deeptools",
+    "correspond": "deeptools",
+    "estimatereadfiltering": "deeptools",
+    "hicfindtads": "deeptools",
+    "hicplotmatrix": "deeptools",
+    "hicplotter": "deeptools",
+    "multibamsummary": "deeptools",
+    "multibigwigsummary": "deeptools",
+    "plotaggregateprofile": "deeptools",
+    "plotcorrelation": "deeptools",
+    "plotcoverage": "deeptools",
+    "plotfingerprint": "deeptools",
+    "plotheatmap": "deeptools",
+    "plotpca": "deeptools",
+    "plotprofile": "deeptools",
+    "plotsummary": "deeptools",
+    # GATK front-end scripts
+    "mutect2": "gatk",
+    "haplotypecaller": "gatk",
+    "genomicsdbimport": "gatk",
+    "genotypegvcfs": "gatk",
+    "variantfiltration": "gatk",
+    "baserecalibrator": "gatk",
+    "applybqsr": "gatk",
+    # Other common CLI ↔ package mismatches
+    "cellranger": "cellranger",
+    "kb": "kb_python",
+    "mirdeep2": "mirdeep2",
+    "htseq_count": "htseq",
+    "htseqcount": "htseq",
+}
+
+# Short R object / argument names that sometimes appear as spurious first
+# tokens when a step command is bare inline R (no ``Rscript`` wrapper).
+_R_OBJECT_NAMES: Set[str] = {
+    "dds", "txi", "tx", "cts", "coldata", "samples", "quant_dir",
+    "tx2gene", "out", "files", "gtf", "dir", "counts", "design",
+}
+
+_R_CODE_FRAGMENT_RE = re.compile(
+    r"(?:"
+    r"library\s*\(|"
+    r"suppresspackagestartupmessages\s*\(|"
+    r"require\s*\(|"
+    r"write\.csv\s*\(|"
+    r"read\.csv\s*\(|"
+    r"saveRDS\s*\(|"
+    r"readRDS\s*\(|"
+    r"as\.data\.frame\s*\(|"
+    r"results\s*\(|"
+    r"deseqdatasetfrommatrix\s*\("
+    r")",
+    re.IGNORECASE,
+)
+
 
 # Common bio/data file extensions, used to recognise paths masquerading as
 # "first tokens" after label stripping.
@@ -131,7 +199,8 @@ _FILE_EXT_RE = re.compile(
     r"\.(?:bam|sam|cram|crai|bai|fa|fasta|fna|ffn|faa|fai|gff|gff3|gtf|"
     r"bed|bedgraph|bw|bigwig|wig|vcf|vcf_gz|bcf|tbi|tsv|csv|txt|log|"
     r"fastq|fq|jsn|json|yaml|yml|html|pdf|png|jpg|idx|mtx|h5|h5ad|"
-    r"loom|mcool|cool|pairs|narrowpeak|broadpeak|xls|xlsx|bed_gz)"
+    r"loom|mcool|cool|pairs|narrowpeak|broadpeak|xls|xlsx|bed_gz|"
+    r"py|r|pl|sh|bash)"
     r"(?:\.gz|\.bz2|\.xz)?$"
 )
 
@@ -167,6 +236,29 @@ def _candidate_snapshot_paths() -> List[Path]:
 
 def _normalise_tool_name(name: str) -> str:
     return name.lower().replace("-", "_")
+
+
+def _looks_like_r_code(token: str) -> bool:
+    """True when *token* is almost certainly inline R, not a CLI executable."""
+    if "$" in token or "(" in token:
+        return True
+    if _R_CODE_FRAGMENT_RE.search(token):
+        return True
+    n = _normalise_tool_name(token)
+    return len(n) <= 12 and n in _R_OBJECT_NAMES
+
+
+def _tool_is_known(n: str, known: Set[str]) -> bool:
+    """Return True if normalised token *n* is covered by the catalog."""
+    if not n or n in known:
+        return bool(n)
+    canon = _TOOL_CLI_ALIASES.get(n)
+    if canon and canon in known:
+        return True
+    for w in known:
+        if n.startswith(w + "_") or w.startswith(n + "_"):
+            return True
+    return any(n.startswith(w) and len(w) >= 4 for w in known)
 
 
 @functools.lru_cache(maxsize=1)
@@ -228,6 +320,7 @@ def _classify_unknown_token(
                           (distance ≤ 2, both token and match ≥ 5 chars).
     * ``"runtime_glue"`` — common shell/infra word; not a bioinfo tool but
                           also not a hallucination.
+    * ``"r_code"``       — inline R expression / object name, not a CLI tool.
     * ``"unknown"``      — genuinely unknown; true hallucination candidate.
 
     ``known`` defaults to :func:`_load_known_tools()`.
@@ -245,7 +338,11 @@ def _classify_unknown_token(
     if n in _RUNTIME_GLUE_TOKENS or n in _SHELL_TOKENS:
         return ("runtime_glue", None)
 
-    # 3. Typo — fuzzy match against known tools (≥5 chars on both sides)
+    # 3. Inline R fragments misparsed as command tokens
+    if _looks_like_r_code(token):
+        return ("r_code", None)
+
+    # 4. Typo — fuzzy match against known tools (≥5 chars on both sides)
     if len(n) >= 5:
         try:
             from rapidfuzz.distance import DamerauLevenshtein  # type: ignore
@@ -265,8 +362,12 @@ def _classify_unknown_token(
         if best_match is not None:
             return ("typo", best_match)
 
-    # 4. Unknown
+    # 5. Unknown
     return ("unknown", None)
+
+
+# Categories that count toward ``num_hallucinated_tools`` / ``hallucination_rate``.
+HALLUCINATION_SCORE_CATEGORIES: frozenset = frozenset({"typo", "unknown"})
 
 
 def hallucinated_tools(
@@ -283,12 +384,16 @@ def hallucinated_tools(
         ``bwa``; ``hisat2_build`` covers ``hisat2``).
 
     Each unrecognised token is further *classified* via
-    :func:`_classify_unknown_token` into one of four categories:
+    :func:`_classify_unknown_token` into one of five categories:
 
     * ``"typo"``         — probable misspelling of a known tool
     * ``"filename"``     — looks like a file path or has a biodata extension
     * ``"runtime_glue"`` — common shell/infra command, not a bioinfo tool
+    * ``"r_code"``       — inline R expression / object name
     * ``"unknown"``      — genuinely unknown (true hallucination candidate)
+
+    Only ``typo`` and ``unknown`` feed ``num_hallucinated_tools``; the other
+    categories are parse/classification artifacts recorded for auditing.
 
     Returns ``List[Tuple[token, category, correction]]`` where ``correction``
     is the closest known tool for typos, ``None`` otherwise.
@@ -299,28 +404,19 @@ def hallucinated_tools(
     out: List[Tuple[str, str, Optional[str]]] = []
     for t in plan_tools:
         n = _normalise_tool_name(t)
-        if not n or n in _RUNNER_TOKENS or n in known:
+        if not n or n in _RUNNER_TOKENS or _tool_is_known(n, known):
             continue
-        # Family-prefix match against the full snapshot set
-        hit = False
-        for w in known:
-            if n.startswith(w + "_") or w.startswith(n + "_"):
-                hit = True
-                break
-        if not hit and any(n.startswith(w) and len(w) >= 4 for w in known):
-            hit = True
-        if not hit:
-            category, correction = _classify_unknown_token(t, known)
-            out.append((t, category, correction))
+        category, correction = _classify_unknown_token(t, known)
+        out.append((t, category, correction))
     return out
 
 
 def hallucinated_tool_names(plan_tools: Iterable[str]) -> List[str]:
-    """Back-compat shim — return just the token strings from
-    :func:`hallucinated_tools`.  Use when only the names are needed and
-    category/correction metadata is irrelevant.
-    """
-    return [t for t, _cat, _corr in hallucinated_tools(plan_tools)]
+    """Return token strings classified as ``typo`` or ``unknown`` only."""
+    return [
+        t for t, cat, _corr in hallucinated_tools(plan_tools)
+        if cat in HALLUCINATION_SCORE_CATEGORIES
+    ]
 
 
 __all__ = [
@@ -330,10 +426,14 @@ __all__ = [
     "_RUNTIME_GLUE_TOKENS",
     "_SHELL_TOKENS",
     "_SNAPSHOT_PATH",
+    "_TOOL_CLI_ALIASES",
     "_classify_unknown_token",
     "_edit_distance",
     "_load_known_tools",
+    "_looks_like_r_code",
     "_normalise_tool_name",
+    "_tool_is_known",
+    "HALLUCINATION_SCORE_CATEGORIES",
     "hallucinated_tool_names",
     "hallucinated_tools",
 ]

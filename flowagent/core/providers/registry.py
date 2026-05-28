@@ -1,7 +1,7 @@
 """Provider factory and model-string resolution.
 
 Model strings can be specified as ``provider/model`` (e.g.
-``openai/gpt-4.1``, ``anthropic/claude-sonnet-4-20250514``, ``ollama/llama4``)
+``openai/gpt-4.1``, ``anthropic/claude-sonnet-4-6``, ``ollama/llama4``)
 or as just a provider name when using the settings' default model.
 """
 
@@ -129,7 +129,7 @@ def get_provider_for_model(
     Examples::
 
         get_provider_for_model("openai/gpt-4.1")
-        get_provider_for_model("anthropic/claude-sonnet-4-20250514")
+        get_provider_for_model("anthropic/claude-sonnet-4-6")
         get_provider_for_model("gpt-4.1")         # inferred → openai
         get_provider_for_model("ollama/llama4")
     """

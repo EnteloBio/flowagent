@@ -23,6 +23,7 @@ from .executor import Executor
 from .executor_factory import ExecutorFactory
 from .agent_types import WorkflowStep, Workflow
 from .workflow_dag import WorkflowDAG
+from .executors import normalize_step_status, step_status_failed, step_status_succeeded
 from .smart_resume import detect_completed_steps, filter_workflow_steps
 from ..agents.agentic.analysis_system import AgenticAnalysisSystem
 
@@ -158,8 +159,18 @@ class WorkflowManager:
         return list(dict.fromkeys(executables))  # dedupe, preserve order
 
     @staticmethod
+    def _resolve_output_path(out_path: str, output_dir: Optional[str]) -> Path:
+        """Resolve a declared output path against the workflow output directory."""
+        p = Path(out_path)
+        if p.is_absolute() or not output_dir:
+            return p
+        return Path(output_dir) / p
+
+    @staticmethod
     def _verify_recovery_outputs(
         step: Dict[str, Any],
+        *,
+        output_dir: Optional[str] = None,
     ) -> Optional[str]:
         """Check whether a step's declared outputs actually exist after recovery.
 
@@ -193,10 +204,13 @@ class WorkflowManager:
         for out in declared:
             out_path = str(out)
             if any(ch in out_path for ch in "*?[]"):
-                if not _glob.glob(out_path):
+                glob_target = str(
+                    WorkflowManager._resolve_output_path(out_path, output_dir)
+                )
+                if not _glob.glob(glob_target):
                     problems.append(f"glob ``{out_path}`` matched no files")
                 continue
-            p = Path(out_path)
+            p = WorkflowManager._resolve_output_path(out_path, output_dir)
             if not p.exists():
                 problems.append(f"``{out_path}`` does not exist")
             elif p.is_file() and p.stat().st_size == 0:
@@ -647,7 +661,7 @@ class WorkflowManager:
             new_result["failure_class"] = failure_class
             new_result["response_action"] = response_action or "patch_command"
 
-            if new_result.get("status") in ("error", "failed"):
+            if step_status_failed(new_result.get("status")):
                 # Recurse with the fixed step so subsequent attempts build on each fix
                 return await self._attempt_error_recovery(
                     fixed_step, new_result, output_dir,
@@ -661,7 +675,9 @@ class WorkflowManager:
             # ``[ -e $f ] || continue`` skips, ``while read fq; do if
             # [ -f $fq ]; …; fi; done`` over not-yet-downloaded inputs);
             # (b) commands that wrote to a different path than declared.
-            verify_problem = self._verify_recovery_outputs(fixed_step)
+            verify_problem = self._verify_recovery_outputs(
+                fixed_step, output_dir=output_dir,
+            )
             if verify_problem is not None:
                 self.logger.warning(
                     "Recovery attempt %d for '%s' exit-coded 0 but "
@@ -698,6 +714,7 @@ class WorkflowManager:
                 "(outputs verified)",
                 step.get("name"), attempt,
             )
+            new_result["status"] = normalize_step_status(new_result.get("status"))
             return new_result
 
         except asyncio.TimeoutError:
@@ -847,6 +864,12 @@ class WorkflowManager:
                         self._step_executor.execute_step,
                         recovery_fn=_dag_recovery,
                     )
+
+                    if isinstance(dag_results, dict) and dag_results.get("status") == "failed":
+                        raise RuntimeError(
+                            dag_results.get("error") or "DAG-parallel execution failed"
+                        )
+
                     # ``dag_executed`` flips True the moment the DAG returns —
                     # BEFORE any bookkeeping below runs. A formatting/
                     # normalisation bug in post-processing must NOT trigger a
@@ -854,7 +877,16 @@ class WorkflowManager:
                     # (previously this re-downloaded FASTQs on deseq2 failure).
                     dag_executed = True
 
-                    raw_results = list(dag_results.values()) if isinstance(dag_results, dict) else (dag_results or [])
+                    if isinstance(dag_results, dict):
+                        step_results = dag_results.get("results")
+                        if isinstance(step_results, dict):
+                            raw_results = list(step_results.values())
+                        elif isinstance(step_results, list):
+                            raw_results = step_results
+                        else:
+                            raw_results = []
+                    else:
+                        raw_results = dag_results or []
 
                     # Normalise every entry to a dict; anything that isn't
                     # (strings from partial failures, None, etc.) becomes a
@@ -863,11 +895,14 @@ class WorkflowManager:
                     for r in raw_results:
                         if isinstance(r, dict):
                             if "step_name" not in r:
-                                r["step_name"] = r.get("step_id", r.get("name", "unknown"))
+                                r["step_name"] = r.get(
+                                    "step_id", r.get("name", "unknown"),
+                                )
+                            r["status"] = normalize_step_status(r.get("status"))
                             results.append(r)
                         else:
                             results.append({
-                                "status": "error",
+                                "status": "failed",
                                 "step_name": "unknown",
                                 "error": f"Non-dict result from DAG: {type(r).__name__}",
                                 "raw": str(r)[:500],
@@ -876,7 +911,7 @@ class WorkflowManager:
                     completed = [
                         r.get("step_name", "")
                         for r in results
-                        if isinstance(r, dict) and r.get("status") not in ("error", "failed")
+                        if isinstance(r, dict) and step_status_succeeded(r.get("status"))
                     ]
                     ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
                     try:
@@ -946,13 +981,16 @@ class WorkflowManager:
                 results.append(step_result)
 
                 # Write checkpoint after every step
-                completed = [r["step_name"] for r in results if r.get("status") not in ("error", "failed")]
+                completed = [
+                    r["step_name"] for r in results
+                    if step_status_succeeded(r.get("status"))
+                ]
                 ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
                 self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
                 
-                # Check if step failed (accept both legacy "error" and canonical "failed")
+                # Check if step failed (accept legacy "error" and canonical "failed")
                 step_status = step_result.get("status", "")
-                if step_status in ("error", "failed"):
+                if step_status_failed(step_status):
                     error_msg = step_result.get('error', '')
                     stderr = step_result.get('stderr', '')
 
@@ -969,7 +1007,9 @@ class WorkflowManager:
                     # The helper returns status="rejected" for unrecoverable cases,
                     # which previously slipped through a negative check and got
                     # logged as "recovered successfully".
-                    if recovery_result and recovery_result.get("status") in ("completed", "success"):
+                    if recovery_result and step_status_succeeded(
+                        recovery_result.get("status"),
+                    ):
                         self.logger.info(f"Step '{step_name}' recovered successfully")
                         results[-1] = recovery_result  # replace failed result
                     elif step.get("critical", False):

@@ -186,14 +186,22 @@ def _short_name(model: str) -> str:
         ("claude-3-sonnet-20240229",   "Sonnet 3"),
         ("claude-sonnet-4-20250514",   "Sonnet 4"),
         # ── Google ─────────────────────────────────────────
-        ("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash-Lite"),
+        ("gemini-3.5-flash",           "Gemini 3.5 Flash"),
+        ("gemini-3.1-flash-lite",      "Gemini 3.1 Flash-Lite"),
+        ("gemini-3.1-flash-lite-preview", "Gemini 3.1 FL (prev)"),
+        ("gemini-3.1-pro-preview",     "Gemini 3.1 Pro"),
         ("gemini-3.1-pro",             "Gemini 3.1 Pro"),
+        ("gemini-3-flash-preview",     "Gemini 3 Flash (prev)"),
         ("gemini-3-flash",             "Gemini 3 Flash"),
         ("gemini-2.5-flash-lite",      "Gemini 2.5 Flash-Lite"),
         ("gemini-2.5-flash",           "Gemini 2.5 Flash"),
         ("gemini-2.5-pro",             "Gemini 2.5 Pro"),
         ("gemini-1.5-flash",           "Gemini 1.5 Flash"),
         ("gemini-1.5-pro",             "Gemini 1.5 Pro"),
+        # ── OpenAI (current — GPT-5.5) ─────────────────────
+        ("gpt-5.5-pro",                "GPT-5.5 Pro"),
+        ("gpt-5.5-mini",               "GPT-5.5 mini"),
+        ("gpt-5.5",                    "GPT-5.5"),
         # ── OpenAI (current — GPT-5.4) ─────────────────────
         ("gpt-5.4-nano",               "GPT-5.4 nano"),
         ("gpt-5.4-mini",               "GPT-5.4 mini"),
@@ -320,10 +328,19 @@ def _tier_of(model: str) -> str:
     plotting buckets, which map to ``_TIER_ORDER``. Pre-current-gen
     snapshots (2024 and earlier) are ``legacy``; mid-generation bridges
     (gpt-4o, Sonnet 3.5, Gemini 2.0/1.5 Pro, etc.) are ``mid``; the
-    2026 flagships (GPT-5.4 family, Claude 4.5+/Sonnet 4.5+/Haiku 4.5,
-    Gemini 2.5+/3.x, o3/o4 reasoning) are ``frontier``.
+    2026 flagships (GPT-5.5/5.4 family, Claude 4.6+/Opus 4.7+/Haiku 4.5,
+    Gemini 2.5+/3.x/3.5, o3 reasoning) are ``frontier``.
+
+    Exact-match checks avoid ``claude-sonnet-4`` matching ``claude-sonnet-4-6``.
     """
     m = model.lower()
+    # Retired bare IDs — exact match so versioned successors stay frontier.
+    if m in {
+        "claude-sonnet-4", "claude-opus-4", "claude-haiku-3-5",
+        "gemini-3.1-flash-lite-preview", "gemini-3-flash-preview",
+        "gpt-4.1-nano",
+    }:
+        return "legacy"
     # Legacy — pre-current-gen or explicitly superseded.
     legacy_markers = (
         "gpt-3.5-turbo", "gpt-4-turbo",
@@ -336,8 +353,9 @@ def _tier_of(model: str) -> str:
     mid_markers = (
         "claude-3-5-", "claude-haiku-3-5",
         "gpt-4o", "gpt-4o-mini",
-        "o1", "o1-pro",
-        "gemini-2.0-", "claude-sonnet-4-20250514", "claude-opus-4-20250514",
+        "o1", "o1-pro", "o3-mini", "o4-mini",
+        "gemini-2.0-", "gemini-3-flash-preview",
+        "claude-sonnet-4-20250514", "claude-opus-4-20250514",
     )
     if any(k in m for k in mid_markers):
         return "mid"
@@ -450,12 +468,23 @@ def _add_provider_legend(fig: plt.Figure, providers_present: List[str],
                columnspacing=1.4)
 
 
+def _split_planning_df_by_tier(df: pd.DataFrame):
+    """Partition planning metrics into transcription standard / hard / inference."""
+    ids = df["input_id"].astype(str)
+    std = df[~ids.str.startswith(("hard_", "inf_"))]
+    hard = df[ids.str.startswith("hard_")]
+    inf = df[ids.str.startswith("inf_")]
+    return std, hard, inf
+
+
 def planning_figure(df: pd.DataFrame) -> plt.Figure:
-    """Two-panel bar chart: standard prompts vs hard prompts.
+    """Three-panel bar chart: transcription standard / hard / inference.
 
     Pass rate per model with 95% Wilson confidence intervals, bars coloured
     by provider.  Rows with a non-null ``error`` column are filtered out so
-    they don't collapse the aggregate.
+    they don't collapse the aggregate.  Falls back to a single panel when
+    the run contains only the legacy transcription corpus (no ``hard_`` or
+    ``inf_`` prompts).
     """
     if "error" in df.columns:
         df = df[df["error"].isna()]
@@ -471,20 +500,22 @@ def planning_figure(df: pd.DataFrame) -> plt.Figure:
         else str(v).strip().lower() == "true"
     ).astype(int)
 
-    has_hard = df["input_id"].str.startswith("hard_").any()
+    std, hard, inf = _split_planning_df_by_tier(df)
+    has_hard = not hard.empty
+    has_inf = not inf.empty
 
     n_models = df["model"].nunique()
     panel_height = max(3.0, 0.28 * n_models + 1.2)
 
-    if has_hard:
-        orig = df[~df["input_id"].str.startswith("hard_")]
-        hard = df[ df["input_id"].str.startswith("hard_")]
-
-        fig, (ax1, ax2) = plt.subplots(
-            1, 2, figsize=(7.2, panel_height), sharey=False,
+    if has_hard or has_inf:
+        fig, (ax1, ax2, ax3) = plt.subplots(
+            1, 3, figsize=(10.8, panel_height), sharey=False,
         )
-        _pass_rate_panel(ax1, orig, "a  Standard prompts")
-        _pass_rate_panel(ax2, hard, "b  Hard prompts")
+        _pass_rate_panel(ax1, std, "a  Transcription (standard)",
+                         show_xlabel=False)
+        _pass_rate_panel(ax2, hard, "b  Transcription (hard)",
+                         show_xlabel=False)
+        _pass_rate_panel(ax3, inf, "c  Inference")
     else:
         fig, ax = plt.subplots(figsize=(5.2, panel_height))
         _pass_rate_panel(ax, df, "All prompts")
@@ -3086,16 +3117,20 @@ def _parse_hallucinated_tools_column(series: "pd.Series") -> "pd.DataFrame":
     * **v2** (current): ``"name:category[:correction];..."``
 
     Returns a DataFrame with columns ``typo``, ``filename``,
-    ``runtime_glue``, ``unknown`` (int counts per row).
+    ``runtime_glue``, ``r_code``, ``unknown`` (int counts per row).
     """
+    import math
     import pandas as pd
 
-    cats = ["typo", "filename", "runtime_glue", "unknown"]
+    cats = ["typo", "filename", "runtime_glue", "r_code", "unknown"]
     rows = []
     for cell in series:
         counts = dict.fromkeys(cats, 0)
-        cell = str(cell) if cell is not None else ""
-        if not cell:
+        if cell is None or (isinstance(cell, float) and math.isnan(cell)):
+            rows.append(counts)
+            continue
+        cell = str(cell).strip()
+        if not cell or cell.lower() in ("nan", "none", "null"):
             rows.append(counts)
             continue
         for entry in cell.split(";"):
@@ -3120,11 +3155,11 @@ def hallucination_figure(df: "pd.DataFrame") -> "Optional[plt.Figure]":
     """Per-model hallucinated-tool fraction.
 
     **3-panel layout** (when the v2 ``hallucinated_tools`` column is present):
-      (a) Fraction of plans with ≥1 hallucinated tool
-      (b) Mean hallucination rate per plan (hallucinated / total tools)
+      (a) Fraction of plans with ≥1 typo/unknown token (true hallucination)
+      (b) Mean hallucination rate per plan (typo + unknown only)
       (c) Per-category breakdown — stacked bars showing the share of
-          ``typo`` / ``unknown`` / ``filename`` / ``runtime_glue`` tokens
-          across all flagged tokens for that model
+          ``typo`` / ``unknown`` / ``r_code`` / ``filename`` /
+          ``runtime_glue`` tokens across all flagged tokens for that model
 
     Falls back to the original 2-panel layout when the ``hallucinated_tools``
     column is absent or contains only v1-style entries (no ``:category``
@@ -3159,12 +3194,17 @@ def hallucination_figure(df: "pd.DataFrame") -> "Optional[plt.Figure]":
         return None
 
     # ── Detect v2 category data ──────────────────────────────────────────────
-    _CAT_COLS = ["typo", "filename", "runtime_glue", "unknown"]
+    # Panel (c) shows the mix among *scored* hallucinations only (typo vs
+    # unknown).  R-code / filename / runtime-glue artifacts are excluded
+    # from panels (a–b) and would dominate the colour scale misleadingly.
+    _CAT_COLS = ["typo", "filename", "runtime_glue", "r_code", "unknown"]
+    _CAT_COLS_PANEL_C = ["typo", "unknown"]
     _CAT_COLOURS = {
         "typo":         "#f59e0b",   # amber
+        "unknown":      "#ef4444",   # red — true hallucination candidate
+        "r_code":         "#a855f7",   # purple — inline R misparsed as CLI
         "filename":     "#6366f1",   # indigo
         "runtime_glue": "#10b981",   # emerald
-        "unknown":      "#ef4444",   # red
     }
 
     has_category = False
@@ -3181,10 +3221,10 @@ def hallucination_figure(df: "pd.DataFrame") -> "Optional[plt.Figure]":
                             .sum()
                             .reindex(g["model"])
                             .reset_index())
-            # Normalise to fractions (share of total flagged tokens)
-            row_totals = cat_by_model[_CAT_COLS].sum(axis=1).replace(0, 1)
-            for col in _CAT_COLS:
-                cat_by_model[col] = cat_by_model[col] / row_totals
+            # Normalise typo/unknown to shares *within each model* (panel c).
+            for col in _CAT_COLS_PANEL_C:
+                totals = cat_by_model[_CAT_COLS_PANEL_C].sum(axis=1).replace(0, 1)
+                cat_by_model[col] = cat_by_model[col] / totals
 
     # ── Layout ───────────────────────────────────────────────────────────────
     n_models = len(g)
@@ -3204,38 +3244,56 @@ def hallucination_figure(df: "pd.DataFrame") -> "Optional[plt.Figure]":
     ax1.barh(y, g["frac_plans"], color=cols, edgecolor="white",
              linewidth=0.6, height=0.72)
     for i, v in enumerate(g["frac_plans"]):
-        ax1.text(v + 0.005, i, f"{v:.0%}", va="center", ha="left",
+        label = "0%  (clean)" if v == 0 else f"{v:.0%}"
+        x = max(v + 0.005, 0.012)
+        ax1.text(x, i, label, va="center", ha="left",
                  fontsize=7.5, color="#1f2937")
     ax1.set_yticks(y)
     ax1.set_yticklabels([_short_name(m) for m in g["model"]])
     ax1.set_xlim(0, max(g["frac_plans"].max() * 1.35, 0.05))
-    ax1.set_xlabel("Fraction of plans with a hallucinated tool")
-    ax1.set_title("a  Any hallucination", loc="left")
+    ax1.set_xlabel("Fraction of plans with typo or unknown tool token")
+    ax1.set_title("a  True hallucination", loc="left")
     _style_value_axis(ax1, x=True)
 
     # Panel (b) — mean rate
     ax2.barh(y, g["mean_rate"], color=cols, edgecolor="white",
              linewidth=0.6, height=0.72)
     for i, v in enumerate(g["mean_rate"]):
-        ax2.text(v + 0.002, i, f"{v:.1%}", va="center", ha="left",
+        label = "0.0%  (clean)" if v == 0 else f"{v:.1%}"
+        x = max(v + 0.002, 0.004)
+        ax2.text(x, i, label, va="center", ha="left",
                  fontsize=7.5, color="#1f2937")
     ax2.set_xlim(0, max(g["mean_rate"].max() * 1.35, 0.02))
-    ax2.set_xlabel("Mean hallucinated-tool fraction per plan")
+    ax2.set_xlabel("Mean typo+unknown fraction per plan")
     ax2.set_title("b  Mean rate per plan", loc="left")
     _style_value_axis(ax2, x=True)
 
-    # Panel (c) — per-category stacked bars (v2 only)
+    # Panel (c) — typo vs unknown mix among scored hallucinations only
     if ax3 is not None and cat_by_model is not None:
         lefts = np.zeros(n_models)
-        for cat in _CAT_COLS:
+        has_breakdown = False
+        for cat in _CAT_COLS_PANEL_C:
             vals = cat_by_model[cat].fillna(0).values
+            if vals.sum() > 0:
+                has_breakdown = True
             ax3.barh(y, vals, left=lefts, height=0.72,
                      color=_CAT_COLOURS[cat], edgecolor="white",
                      linewidth=0.4, label=cat.replace("_", " "))
             lefts += vals
+        # Per-model label when a model has no scored hallucination tokens.
+        for i, model in enumerate(g["model"]):
+            row = cat_by_model.loc[cat_by_model["model"] == model,
+                                   _CAT_COLS_PANEL_C]
+            if row.empty or row.sum(axis=1).iloc[0] == 0:
+                ax3.text(0.5, y[i], "0 flagged tokens",
+                         ha="center", va="center",
+                         fontsize=8, color="#15803d", fontweight="bold")
+        if not has_breakdown:
+            ax3.text(0.5, 0.5, "No flagged tokens", ha="center", va="center",
+                     transform=ax3.transAxes, color="#6b7280")
         ax3.set_xlim(0, 1.0)
-        ax3.set_xlabel("Share of flagged tokens by category")
-        ax3.set_title("c  Category breakdown", loc="left")
+        ax3.set_xlabel("Share of typo + unknown tokens (per model)")
+        ax3.set_title("c  Typo vs unknown mix", loc="left")
         _style_value_axis(ax3, x=True)
         ax3.legend(loc="lower right", fontsize=7,
                    framealpha=0.85, edgecolor="#e5e7eb")
@@ -3246,8 +3304,8 @@ def hallucination_figure(df: "pd.DataFrame") -> "Optional[plt.Figure]":
         if p in _PROVIDER_COLOURS else 99,
     )
     _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.015))
-    fig.suptitle("Tool hallucination benchmark", fontsize=11,
-                 fontweight="bold", y=1.06)
+    fig.suptitle("Tool hallucination benchmark  —  0% = no typo/unknown CLI tokens detected",
+                 fontsize=10.5, fontweight="bold", y=1.06)
     return fig
 
 

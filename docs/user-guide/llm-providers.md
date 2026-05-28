@@ -8,9 +8,9 @@ variables — no code changes required.
 
 | Provider | Set `LLM_PROVIDER=` | Auth env var | Examples of `LLM_MODEL` |
 |---|---|---|---|
-| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4.1`, `gpt-4o`, `o3-mini` |
-| Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514`, `claude-opus-4` |
-| Google Gemini | `google` | `GOOGLE_API_KEY` | `gemini-2.5-flash`, `gemini-2.5-pro` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-5.5`, `gpt-5.4-mini`, `gpt-4.1`, `o3` |
+| Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6`, `claude-opus-4-7` |
+| Google Gemini | `google` | `GOOGLE_API_KEY` | `gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-2.5-pro` |
 | Ollama (local) | `ollama` | none | `llama3.1:70b`, `qwen2.5:32b`, `mistral` |
 
 The provider is auto-detected from `LLM_MODEL` if you omit
@@ -34,7 +34,7 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 
 ```bash
 export LLM_PROVIDER=anthropic
-export LLM_MODEL=claude-sonnet-4-20250514
+export LLM_MODEL=claude-sonnet-4-6
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 

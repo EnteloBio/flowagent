@@ -91,13 +91,30 @@ def _read_sample_sheet(path: Path, max_rows: int = 20) -> Tuple[List[str], List[
     return header, rows
 
 
-def _fallback_r_script(txi_path: str, sample_sheet: str, out_csv: str) -> str:
+def _fallback_r_script(
+    txi_path: str,
+    sample_sheet: str,
+    out_csv: str,
+    *,
+    reference_phrase: Optional[str] = None,
+) -> str:
+    ref_block = ""
+    if reference_phrase:
+        # Best-effort grep match against factor levels when the LLM is unavailable.
+        ref_block = (
+            f"._ref_hint <- '{reference_phrase.replace(chr(39), '')}'\n"
+            "._lvls <- levels(factor(coldata$condition))\n"
+            "._ref <- ._lvls[grep(._ref_hint, ._lvls, ignore.case=TRUE)][1]\n"
+            "if (length(._ref) && !is.na(._ref)) "
+            "coldata$condition <- relevel(factor(coldata$condition), ref=._ref[1])\n"
+        )
     return (
         "# Deterministic fallback — LLM generation unavailable\n"
         "suppressPackageStartupMessages(library(DESeq2))\n"
         f"txi <- readRDS('{txi_path}')\n"
         f"coldata <- read.table('{sample_sheet}', header=TRUE, row.names=1, sep='\\t')\n"
         "coldata$condition <- factor(coldata$condition)\n"
+        f"{ref_block}"
         "keep <- intersect(colnames(txi$counts), rownames(coldata))\n"
         "stopifnot(length(keep) >= 2)\n"
         "txi$counts    <- txi$counts[, keep]\n"
@@ -110,6 +127,7 @@ def _fallback_r_script(txi_path: str, sample_sheet: str, out_csv: str) -> str:
 
 
 async def _call_llm(user_prompt: str, system_prompt: str) -> str:
+    """Call the configured LLM provider (OpenAI, Anthropic, Google, …)."""
     from flowagent.core.llm import LLMInterface
 
     llm = LLMInterface()
@@ -249,8 +267,13 @@ async def _main_async(args: argparse.Namespace) -> int:
         len(quant_tx_ids), len(gtf_tx_ids), len(sample_rows),
     )
 
+    ref_phrase = _extract_reference_level(args.prompt or "")
+
     if args.dry_run:
-        script = _fallback_r_script(args.txi, str(sample_sheet), args.out_csv)
+        script = _fallback_r_script(
+            args.txi, str(sample_sheet), args.out_csv,
+            reference_phrase=ref_phrase,
+        )
         out.write_text(script)
         print(f"Wrote fallback R script to {out} (--dry-run)")
         return 0
@@ -276,7 +299,10 @@ async def _main_async(args: argparse.Namespace) -> int:
             )
     except Exception as exc:
         logger.warning("LLM generation failed: %s — writing deterministic fallback", exc)
-        script = _fallback_r_script(args.txi, str(sample_sheet), args.out_csv)
+        script = _fallback_r_script(
+            args.txi, str(sample_sheet), args.out_csv,
+            reference_phrase=ref_phrase,
+        )
 
     out.write_text(script)
     print(f"Wrote {out} ({len(script)} bytes)")
