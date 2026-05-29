@@ -96,6 +96,14 @@ class Settings(BaseSettings):
     MAX_RETRIES: int = 5
     RETRY_DELAY: float = 2.0
     TIMEOUT: float = 60.0
+    LLM_TIMEOUT_SECONDS: float = Field(
+        300,
+        description=(
+            "Per-call LLM API timeout in seconds. Reasoning / preview models "
+            "(Gemini 3.1 Pro, o3, Opus) often need 300–600. Override in .env "
+            "or per-model via benchmarks/config/models.yaml timeout_seconds."
+        ),
+    )
 
     # ── Workflow ─────────────────────────────────────────────
     MAX_CONCURRENT_WORKFLOWS: int = 5

@@ -51,7 +51,7 @@ sys.path.insert(0, str(_HERE_DIR))
 sys.path.insert(0, str(_HERE_DIR.parent))
 
 from harness.competitors import (                              # noqa: E402
-    Competitor, CompetitorResult, build_registry, _empty_plan,
+    Competitor, CompetitorResult, RawLLMCompetitor, build_registry, _empty_plan,
 )
 from harness.metrics import score_plan, cost_usd               # noqa: E402
 from harness.mock_plans import mock_plan_from_prompt             # noqa: E402
@@ -129,13 +129,16 @@ def _mock_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
 async def _run_cell(competitor: Competitor, prompt_entry: Dict[str, Any],
                     replicate: int, *, mock: bool, timeout: float,
                     model_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    row_model = model_cfg.get("id", "")
+    if isinstance(competitor, RawLLMCompetitor):
+        row_model = competitor.model_id
     row_base = {
         "competitor":  competitor.id,
         "competitor_name": competitor.name,
         "input_id":    prompt_entry["id"],
         "prompt":      prompt_entry["prompt"],
         "replicate":   replicate,
-        "model":       model_cfg.get("id", ""),
+        "model":       row_model,
     }
 
     if mock:

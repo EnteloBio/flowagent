@@ -7,6 +7,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from openai import AsyncOpenAI, RateLimitError
 
 from .base import LLMProvider, ProviderResponse
+from .openai_models import resolve_openai_model
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ class OpenAIProvider(LLMProvider):
         )
 
     def _model(self, override: Optional[str]) -> str:
-        return override or self.default_model
+        return resolve_openai_model(override or self.default_model)
 
     # -- core methods ---------------------------------------------------
 
@@ -187,10 +188,4 @@ class OpenAIProvider(LLMProvider):
                 wait = 2 ** attempt
                 logger.warning("OpenAI rate-limited, retrying in %ss…", wait)
                 await asyncio.sleep(wait)
-            except Exception as exc:
-                if "model_not_found" in str(exc) and kwargs.get("model") != "gpt-4.1-mini":
-                    logger.warning("Model %s not found, falling back to gpt-4.1-mini", kwargs["model"])
-                    kwargs["model"] = "gpt-4.1-mini"
-                    continue
-                raise
         raise last_err  # type: ignore[misc]

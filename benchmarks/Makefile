@@ -10,6 +10,7 @@ PY          ?= $(shell command -v python 2>/dev/null || command -v python3)
 MODEL       ?= gpt-4.1
 JUDGE       ?= gpt-5.4
 REPLICATES  ?= 3
+TIMEOUT     ?=
 SEEDS       ?= 5
 RESULTS_DIR ?= results
 
@@ -17,7 +18,7 @@ ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation rescore merge report test clean help refresh-tools
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation rescore rescore-all merge prune-models report test clean help refresh-tools
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -46,6 +47,7 @@ help:
 	@echo "  make cove-figure COVE_DIR=results/cove_ablation/<ts> - render figure_cove.pdf + stats + signal table"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
+	@echo "  make prune-models - Drop MODELS=... from all planning run artifacts (see prune_planning_models.py)"
 	@echo "  make test         - run the benchmark test suite (pytest)"
 	@echo "  make all          - single MODEL end-to-end: plan + recovery + gen + exec + report"
 	@echo "  make all-sweep    - full multi-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report"
@@ -60,10 +62,10 @@ smoke:
 	$(PY) bench_executors.py  --out=$(RESULTS_DIR)
 
 plan:
-	$(PY) bench_planning.py --models=$(MODEL) --replicates=$(REPLICATES) --out=$(RESULTS_DIR)
+	$(PY) bench_planning.py --models=$(MODEL) --replicates=$(REPLICATES) --out=$(RESULTS_DIR) $(if $(TIMEOUT),--timeout $(TIMEOUT),)
 
 plan-all:
-	$(PY) bench_planning.py --replicates=$(REPLICATES) --out=$(RESULTS_DIR)
+	$(PY) bench_planning.py --replicates=$(REPLICATES) --out=$(RESULTS_DIR) $(if $(TIMEOUT),--timeout $(TIMEOUT),)
 
 rescore:
 	$(PY) rescore_planning.py --results-base=$(RESULTS_DIR)
@@ -73,6 +75,11 @@ rescore-all:
 
 merge:
 	$(PY) merge_runs.py --results-base=$(RESULTS_DIR) $(if $(REFRESH),--refresh,)
+
+# Default ids for ``make prune-models`` only (retired Gemini 1.5 rows).
+PRUNE_MODELS ?= gemini-1.5-pro,gemini-1.5-flash
+prune-models:
+	$(PY) prune_planning_models.py --models="$(or $(MODELS),$(PRUNE_MODELS))" --all --results-base=$(RESULTS_DIR) $(if $(DELETE_EMPTY),--delete-empty,)
 
 recovery:
 	$(PY) bench_recovery.py --model=$(MODEL) --seeds=$(SEEDS) --out=$(RESULTS_DIR)
@@ -122,7 +129,7 @@ competitors-all:
 # pass MODELS=a,b,c to sweep multiple models.
 ablation:
 	$(PY) bench_ablation.py \
-	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
 	    --replicates=$(REPLICATES) \
 	    --out=$(RESULTS_DIR)
 
@@ -155,7 +162,7 @@ ablation-figure:
 # columns from harness/metrics.py).
 reflection:
 	$(PY) bench_reflection_ablation.py \
-	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
 	    --replicates=$(REPLICATES) \
 	    $(if $(MAX_RETRIES),--max-retries=$(MAX_RETRIES),) \
 	    --out=$(RESULTS_DIR)
@@ -236,7 +243,7 @@ competitor-dag-figure:
 # rationale + recovery-taxonomy framing.
 validator-ablation:
 	$(PY) bench_validator_ablation.py \
-	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
 	    --replicates=$(REPLICATES) \
 	    --out=$(RESULTS_DIR)
 
@@ -271,7 +278,7 @@ validator-figure:
 # Both arms keep LLM_DAG_AWARE=true and FLOWAGENT_VALIDATOR_ENABLED=true.
 cove-ablation:
 	$(PY) bench_cove_ablation.py \
-	    $(if $(MODELS),--models=$(MODELS),--models=$(MODEL)) \
+	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
 	    --replicates=$(REPLICATES) \
 	    --out=$(RESULTS_DIR)
 

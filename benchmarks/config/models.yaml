@@ -23,7 +23,11 @@
 #                rescoring, alias joins, and longitudinal figures).
 #
 # Fields: id, provider, env_var, family, tier, context_k, pricing,
-#         reasoning, reasoning_default, [notes].
+#         reasoning, reasoning_default, [api_id], [notes].
+# ``api_id`` — optional provider API string when it differs from ``id``
+#              (common for Google Gemini versioned names). Benchmark CSVs
+#              and figures always use ``id``; ``set_provider`` passes
+#              ``api_id`` to the LLM client.
 # The harness reads provider/env_var/pricing; the other fields are metadata
 # used by the plotting code and manuscript tables.
 #
@@ -122,12 +126,13 @@ models:
     provider: openai
     env_var: OPENAI_API_KEY
     family: gpt-5.5
-    tier: current
+    tier: deprecated
     context_k: 270
     reasoning: true
     reasoning_default: medium
+    api_id: gpt-5.4-mini
     pricing: {input_per_1k: 0.00075, output_per_1k: 0.00450}
-    notes: "Replacement for o3-mini / gpt-3.5-turbo"
+    notes: "Not released on OpenAI API (May 2026). api_id pins gpt-5.4-mini as interim successor for o3-mini / gpt-3.5-turbo. Prefer id gpt-5.4-mini for new sweeps."
 
   # ── GPT-4.1 family (long-context, released April 2025) ─────
   - id: gpt-4.1
@@ -412,6 +417,7 @@ models:
   - id: gemini-3.5-flash
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-3.5-flash
     family: gemini-3.5
     tier: current
     context_k: 1000
@@ -423,6 +429,7 @@ models:
   - id: gemini-3.1-flash-lite
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-3.1-flash-lite
     family: gemini-3
     tier: current
     context_k: 1000
@@ -434,13 +441,15 @@ models:
   - id: gemini-3.1-pro-preview
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-3.1-pro-preview
     family: gemini-3
     tier: preview
     context_k: 1000
     reasoning: true
     reasoning_default: high
+    timeout_seconds: 600
     pricing: {input_per_1k: 0.00200, output_per_1k: 0.01200}
-    notes: "2x input rate for prompts >200K tokens"
+    notes: "2x input rate for prompts >200K tokens; slow reasoning — allow 600s per LLM call"
 
   - id: gemini-3.1-flash-lite-preview
     provider: google
@@ -468,6 +477,7 @@ models:
   - id: gemini-2.5-pro
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-2.5-pro
     family: gemini-2.5
     tier: current
     context_k: 1000
@@ -479,6 +489,7 @@ models:
   - id: gemini-2.5-flash
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-2.5-flash
     family: gemini-2.5
     tier: current
     context_k: 1000
@@ -489,6 +500,7 @@ models:
   - id: gemini-2.5-flash-lite
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-2.5-flash-lite
     family: gemini-2.5
     tier: current
     context_k: 1000
@@ -496,25 +508,27 @@ models:
     reasoning_default: none
     pricing: {input_per_1k: 0.00010, output_per_1k: 0.00040}
 
-  # ── Gemini 1.5 (legacy comparative baselines) ──────────────
+  # ── Gemini 1.5 (API retired — historical results only) ─────
   - id: gemini-1.5-pro
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-1.5-pro-002
     family: gemini-1.5
-    tier: legacy
+    tier: deprecated
     context_k: 2000
     reasoning: false
     reasoning_default: none
     pricing: {input_per_1k: 0.00125, output_per_1k: 0.00500}
-    notes: "2024 flagship; generational comparison vs Gemini 2.5/3.x"
+    notes: "Google AI API retired all 1.5 models (404 on v1beta as of May 2026). Keep for rescoring / legacy figures only — use merged April 2026 sweep data."
 
   - id: gemini-1.5-flash
     provider: google
     env_var: GOOGLE_API_KEY
+    api_id: gemini-1.5-flash-002
     family: gemini-1.5
-    tier: legacy
+    tier: deprecated
     context_k: 1000
     reasoning: false
     reasoning_default: none
     pricing: {input_per_1k: 0.000075, output_per_1k: 0.00030}
-    notes: "2024 fast tier; generational comparison vs Gemini 2.5 Flash"
+    notes: "Google AI API retired all 1.5 models (404 on v1beta as of May 2026). Keep for rescoring / legacy figures only — use merged April 2026 sweep data."

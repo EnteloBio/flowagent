@@ -189,12 +189,16 @@ class FlowAgentCompetitor(Competitor):
         from flowagent.core.llm import LLMInterface
         from flowagent.core.schemas import PipelineContext
         from harness.metrics import cost_usd
+        from harness.runner import set_provider
 
         # Reuse the _TokenTracker from bench_planning
         import sys
         bench_dir = Path(__file__).resolve().parent.parent
         sys.path.insert(0, str(bench_dir))
         from bench_planning import _TokenTracker  # noqa: E402
+
+        if self.model_cfg:
+            set_provider(self.model_cfg)
 
         ctx = PipelineContext(
             input_files=(context or {}).get(

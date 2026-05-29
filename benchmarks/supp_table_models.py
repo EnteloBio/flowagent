@@ -62,7 +62,7 @@ _ID_ALIASES = {
     "gpt-4-turbo":                     "gpt-5.5",
     "gpt-4.1-nano":                    "gpt-5.4-nano",
     "o1":                              "gpt-5.5",
-    "o3-mini":                         "gpt-5.5-mini",
+    "o3-mini":                         "gpt-5.4-mini",
     "o4-mini":                         "gpt-5.4-mini",
 }
 

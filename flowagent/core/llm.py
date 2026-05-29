@@ -795,9 +795,28 @@ Use the exact sample name '{sample_name}' for output directories.""",
 
         return best_match[0], self.WORKFLOW_TYPES[best_match[0]]
 
+    def _llm_timeout_seconds(self) -> float:
+        """Resolve per-call timeout; env wins (set by benchmark ``set_provider``)."""
+        raw = os.environ.get("LLM_TIMEOUT_SECONDS")
+        if raw:
+            return float(raw)
+        return float(getattr(settings, "LLM_TIMEOUT_SECONDS", 300))
+
+    async def _await_llm(self, coro):
+        """Run an LLM provider coroutine with a configurable timeout."""
+        timeout = self._llm_timeout_seconds()
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            self.logger.error(
+                "LLM API call timed out after %.0fs (provider=%s)",
+                timeout, settings.LLM_PROVIDER,
+            )
+            raise
+
     async def _call_openai(
         self, messages: List[Dict[str, str]], model: Optional[str] = None,
-        timeout: float = 120,
+        timeout: Optional[float] = None,
     ) -> str:
         """Call the configured LLM provider with retry / fallback logic.
 
@@ -806,20 +825,21 @@ Use the exact sample name '{sample_name}' for output directories.""",
 
         Parameters
         ----------
-        timeout : float
-            Maximum seconds to wait for the API response (default 120).
+        timeout : float, optional
+            Override ``LLM_TIMEOUT_SECONDS`` for this call only.
         """
+        effective = timeout if timeout is not None else self._llm_timeout_seconds()
         try:
             resp = await asyncio.wait_for(
                 self.provider.chat(messages, model=model),
-                timeout=timeout,
+                timeout=effective,
             )
             self.logger.info("LLM call succeeded (provider=%s)", settings.LLM_PROVIDER)
             return resp.content
         except asyncio.TimeoutError:
             self.logger.error(
                 "LLM API call timed out after %.0fs (provider=%s)",
-                timeout, settings.LLM_PROVIDER,
+                effective, settings.LLM_PROVIDER,
             )
             raise
         except Exception as e:
@@ -1139,7 +1159,9 @@ Return a JSON object in this EXACT format:
                 WorkflowPlanSchema if dag_aware else WorkflowPlanSchemaNoDAG
             )
             schema = to_json_schema(schema_cls)
-            resp = await self.provider.chat_structured(messages, schema)
+            resp = await self._await_llm(
+                self.provider.chat_structured(messages, schema)
+            )
             workflow_plan = (
                 json.loads(resp.content) if isinstance(resp.content, str) else resp.content
             )
@@ -2254,7 +2276,9 @@ If you are being asked to generate a title, set "success" to false.
         result: Optional[Dict[str, Any]] = None
         try:
             schema = to_json_schema(FilePatternResponse)
-            resp = await self.provider.chat_structured(messages, schema)
+            resp = await self._await_llm(
+                self.provider.chat_structured(messages, schema)
+            )
             raw = (
                 json.loads(resp.content)
                 if isinstance(resp.content, str)

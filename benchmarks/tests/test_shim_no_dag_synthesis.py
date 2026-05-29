@@ -128,6 +128,28 @@ class TestBiomasterShimNoDagSynthesis:
 
 # ── AutoBA ─────────────────────────────────────────────────────────
 
+class TestAutobaGptImportShortcuts:
+
+    def test_installs_lightweight_module_stubs(self):
+        saved = {k: sys.modules[k] for k in list(sys.modules) if k.startswith("src.")}
+        try:
+            for k in saved:
+                del sys.modules[k]
+            autoba_shim._install_autoba_gpt_import_shortcuts()
+            assert "src.build_RAG_private" in sys.modules
+            assert "src.local_llm" in sys.modules
+            rag = sys.modules["src.build_RAG_private"]
+            assert rag.preload_retriever() is None
+            assert rag.retrive() == ""
+            llm = sys.modules["src.local_llm"]
+            assert llm.api_preload() is None
+        finally:
+            for k in list(sys.modules):
+                if k.startswith("src."):
+                    del sys.modules[k]
+            sys.modules.update(saved)
+
+
 class TestAutobaShimNoDagSynthesis:
 
     def test_map_plan_emits_empty_deps(self):

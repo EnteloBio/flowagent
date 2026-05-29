@@ -5,6 +5,7 @@ import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from .base import LLMProvider, ProviderResponse
+from .gemini_models import resolve_gemini_model
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class GoogleProvider(LLMProvider):
         self.client = genai.Client(api_key=api_key)
 
     def _model(self, override: Optional[str]) -> str:
-        return override or self.default_model
+        return resolve_gemini_model(override or self.default_model)
 
     @staticmethod
     def _to_genai_contents(messages: List[Dict[str, str]]):

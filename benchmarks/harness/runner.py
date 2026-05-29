@@ -66,7 +66,7 @@ _DOTENV_PATH = _load_dotenv_once()
 
 # ── Provider switching ────────────────────────────────────────────
 
-def set_provider(model_cfg: Dict[str, Any]) -> None:
+def set_provider(model_cfg: Dict[str, Any], *, defaults: Optional[Dict[str, Any]] = None) -> None:
     """Switch FlowAgent to a specific LLM provider+model for the current process.
 
     Mutates environment variables that ``flowagent.config.settings.Settings``
@@ -74,7 +74,18 @@ def set_provider(model_cfg: Dict[str, Any]) -> None:
     because ``Settings`` is re-constructed on demand in FlowAgent.
     """
     os.environ["LLM_PROVIDER"] = model_cfg["provider"]
-    os.environ["LLM_MODEL"] = model_cfg["id"]
+    # Optional api_id: registry label (id) vs provider API string (api_id).
+    api_model = model_cfg.get("api_id") or model_cfg["id"]
+    if model_cfg["provider"] == "openai":
+        from flowagent.core.providers.openai_models import resolve_openai_model
+        api_model = resolve_openai_model(api_model)
+    os.environ["LLM_MODEL"] = api_model
+
+    timeout = model_cfg.get("timeout_seconds")
+    if timeout is None and defaults:
+        timeout = defaults.get("timeout_seconds")
+    if timeout is not None:
+        os.environ["LLM_TIMEOUT_SECONDS"] = str(int(timeout))
 
     env_var = model_cfg.get("env_var")
     if env_var and env_var not in os.environ:

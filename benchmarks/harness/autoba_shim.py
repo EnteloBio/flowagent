@@ -82,6 +82,34 @@ def _parse_args() -> argparse.Namespace:
     return ap.parse_args()
 
 
+def _install_autoba_gpt_import_shortcuts() -> None:
+    """Pre-seed stand-ins for AutoBA modules that pull in local LLM / RAG stacks.
+
+    Benchmark E drives gpt-* models with ``rag=False``. ``src.agent`` still
+    imports ``src.local_llm`` (torch/transformers/llama) and
+    ``src.build_RAG_private`` (llama_index) at load time even though those
+    paths are unused. Registering minimal modules first avoids import-time
+    failures from missing sentencepiece, stub/transformers clashes, etc.
+    """
+    import types
+
+    if "src.build_RAG_private" not in sys.modules:
+        rag_mod = types.ModuleType("src.build_RAG_private")
+        rag_mod.preload_retriever = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+        rag_mod.retrive = lambda *args, **kwargs: ""  # type: ignore[attr-defined]
+        sys.modules["src.build_RAG_private"] = rag_mod
+
+    if "src.local_llm" not in sys.modules:
+        llm_mod = types.ModuleType("src.local_llm")
+        for name in (
+            "api_preload", "api_generator",
+            "api_preload_deepseek", "api_generator_deepseek",
+            "api_preload_hf", "api_generator_hf",
+        ):
+            setattr(llm_mod, name, lambda *args, **kwargs: None)
+        sys.modules["src.local_llm"] = llm_mod
+
+
 def _install_unused_import_stubs() -> None:
     """Prevent AutoBA's load-time imports of local-LLM deps from crashing.
 
@@ -105,6 +133,11 @@ def _install_unused_import_stubs() -> None:
     import types
 
     class _LenientModule(types.ModuleType):
+        def __new__(cls, name, doc=None, *args, **kwargs):
+            # Some importlib paths pass a third positional arg; real
+            # ModuleType rejects it in Python 3.11.
+            return super().__new__(cls, name, doc if doc is not None else "")
+
         def __getattr__(self, name):
             if name.startswith("__"):
                 raise AttributeError(name)
@@ -144,8 +177,9 @@ def _install_unused_import_stubs() -> None:
     # ``from transformers.utils import ExplicitEnum`` and then uses it as
     # a base class — the stub's module-call signature clashes with
     # metaclass machinery.
-    candidates = ("fire", "transformers", "fairscale",
-                  "sentencepiece", "llama")
+    # Never stub ``transformers`` — llama_index (pulled by build_RAG_private)
+    # needs the real package and breaks with a fake ModuleType subclass.
+    candidates = ("fire", "fairscale", "sentencepiece", "llama")
     stubbed = []
     for name in candidates:
         if name in sys.modules:
@@ -154,7 +188,7 @@ def _install_unused_import_stubs() -> None:
             __import__(name)
         except ImportError:
             stubbed.append(name)
-        except Exception:
+        except ModuleNotFoundError:
             stubbed.append(name)
     if stubbed:
         sys.meta_path.insert(0, _StubFinder(stubbed))
@@ -370,30 +404,10 @@ def _install_openai_token_patch() -> Dict[str, int]:
     it post-invocation. Only non-streaming responses are captured, which is
     what AutoBA uses.
     """
-    stats = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
-    try:
-        from openai.resources.chat.completions import Completions
-    except Exception as e:
-        print(f"[autoba_shim] could not import openai Completions: {e}",
-              file=sys.stderr)
-        return stats
-    original_create = Completions.create
+    from harness.openai_completions_patch import install_openai_completions_patch
 
-    def _patched_create(self, *args, **kwargs):
-        resp = original_create(self, *args, **kwargs)
-        try:
-            u = getattr(resp, "usage", None)
-            if u is not None:
-                stats["prompt_tokens"] += int(
-                    getattr(u, "prompt_tokens", 0) or 0)
-                stats["completion_tokens"] += int(
-                    getattr(u, "completion_tokens", 0) or 0)
-                stats["calls"] += 1
-        except Exception:
-            # Token accounting is best-effort — never let it break the run.
-            pass
-        return resp
-    Completions.create = _patched_create  # type: ignore[assignment]
+    stats: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
+    install_openai_completions_patch(stats=stats)
     return stats
 
 
@@ -563,6 +577,7 @@ def main() -> None:
     with contextlib.redirect_stdout(sys.stderr):
         try:
             import runpy
+            _install_autoba_gpt_import_shortcuts()
             _install_unused_import_stubs()
             _patch_autoba_model_whitelist(autoba_dir)
             stats = _install_openai_token_patch()
@@ -583,7 +598,8 @@ def main() -> None:
                     pass
                 except Exception as run_exc:
                     error = (f"app.py raised: "
-                             f"{type(run_exc).__name__}: {run_exc}")
+                             f"{type(run_exc).__name__}: {run_exc}\n"
+                             f"{traceback.format_exc()[-1200:]}")
             finally:
                 sys.argv = prev_argv
 

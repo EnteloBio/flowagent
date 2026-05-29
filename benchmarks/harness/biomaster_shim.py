@@ -286,6 +286,8 @@ def main() -> None:
                 from langchain_community.callbacks import get_openai_callback
             except Exception:
                 from langchain.callbacks import get_openai_callback  # type: ignore
+            from harness.openai_completions_patch import install_openai_completions_patch
+            install_openai_completions_patch()
             import runpy
 
             # Ape ``python run.py config.yaml`` exactly: set argv, cwd,

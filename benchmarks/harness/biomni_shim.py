@@ -374,6 +374,10 @@ def main() -> None:
 
         with contextlib.redirect_stdout(sys.stderr):
             try:
+                from harness.openai_completions_patch import (
+                    install_openai_completions_patch,
+                )
+                install_openai_completions_patch()
                 _install_biomni_api_schema_patches()
                 from biomni.agent.react import react  # type: ignore
             except Exception as imp_exc:

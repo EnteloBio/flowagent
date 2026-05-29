@@ -200,7 +200,6 @@ def _short_name(model: str) -> str:
         ("gemini-1.5-pro",             "Gemini 1.5 Pro"),
         # ── OpenAI (current — GPT-5.5) ─────────────────────
         ("gpt-5.5-pro",                "GPT-5.5 Pro"),
-        ("gpt-5.5-mini",               "GPT-5.5 mini"),
         ("gpt-5.5",                    "GPT-5.5"),
         # ── OpenAI (current — GPT-5.4) ─────────────────────
         ("gpt-5.4-nano",               "GPT-5.4 nano"),
@@ -282,6 +281,12 @@ def _load_models_yaml() -> Tuple[Dict[str, bool], Dict[str, str]]:
     _REASONING_MAP_CACHE = reasoning_map
     _TIER_MAP_CACHE = tier_map
     return reasoning_map, tier_map
+
+
+def _remap_registry_model_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse registry placeholder ids onto their API canonical ids."""
+    from harness.model_registry import remap_model_column
+    return remap_model_column(df)
 
 
 def _is_reasoning_model(model_id: str) -> bool:
@@ -380,6 +385,46 @@ def _empty_figure(msg: str) -> plt.Figure:
             fontsize=9, color="#6b7280")
     ax.set_axis_off()
     return fig
+
+
+def _coerce_overall_pass(series: pd.Series) -> pd.Series:
+    """Map ``overall_pass`` to 0/1; NaN for missing or unscored rows."""
+
+    def _cell(v):
+        if v is None:
+            return np.nan
+        if isinstance(v, (float, np.floating)) and np.isnan(v):
+            return np.nan
+        if isinstance(v, bool):
+            return float(int(v))
+        if isinstance(v, (int, np.integer)):
+            return float(int(bool(v)))
+        if isinstance(v, (float, np.floating)):
+            return float(int(bool(v)))
+        s = str(v).strip().lower()
+        if s in ("", "nan", "none"):
+            return np.nan
+        if s in ("true", "1"):
+            return 1.0
+        if s in ("false", "0"):
+            return 0.0
+        return np.nan
+
+    return series.map(_cell)
+
+
+def _with_scored_overall_pass(df: pd.DataFrame,
+                              *, drop_unscored: bool = True) -> pd.DataFrame:
+    """Coerce ``overall_pass`` to int, dropping error stubs when requested."""
+    if "overall_pass" not in df.columns:
+        return df.copy()
+    out = df.copy()
+    scored = _coerce_overall_pass(out["overall_pass"])
+    if drop_unscored:
+        out = out.loc[scored.notna()].copy()
+        scored = scored.loc[out.index]
+    out["overall_pass"] = scored.astype(int)
+    return out
 
 
 def _style_value_axis(ax, *, x: bool = True) -> None:
@@ -494,11 +539,9 @@ def planning_figure(df: pd.DataFrame) -> plt.Figure:
                   else "no planning metrics present in this run")
         return _empty_figure(f"No usable planning data.\n({reason})")
 
-    df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
+    if df.empty:
+        return _empty_figure("No scored planning rows.\n(all cells errored or unscored)")
 
     std, hard, inf = _split_planning_df_by_tier(df)
     has_hard = not hard.empty
@@ -639,10 +682,7 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
         return _empty_figure("No data for heatmap.")
 
     df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     pivot = df.pivot_table(
         index="input_id", columns="model", values="overall_pass",
@@ -792,10 +832,7 @@ def planning_heatmap_by_tier(
         return _empty_figure("No data for tier-split heatmap.")
 
     df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     pivot = df.pivot_table(
         index="input_id", columns="model", values="overall_pass",
@@ -825,7 +862,7 @@ def planning_heatmap_by_tier(
         tier = tiers.get(m, _tier_of(m))
         if tier in ("current", "preview", "frontier", "mid"):
             current_cols.append(m)
-        elif tier == "legacy":
+        elif tier in ("legacy", "deprecated"):
             legacy_cols.append(m)
         else:
             current_cols.append(m)  # fall through — don't drop unresolved
@@ -1690,10 +1727,7 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
             )
         df = avail
 
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
     if "cost_usd" in df.columns:
         df["cost_usd"] = pd.to_numeric(df["cost_usd"], errors="coerce").fillna(0.0)
     has_frac = "tools_present_fraction" in df.columns
@@ -1860,10 +1894,7 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
             "Run: make competitors (set BIOMASTER_DIR / AUTOBA_DIR / BIOMNI_DIR as needed)."
         )
 
-    sub["overall_pass"] = sub["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    sub = _with_scored_overall_pass(sub)
 
     # Classify each row. ``error`` in the merged CSV is NaN for successful
     # rows and sometimes the literal string "None" — both must be treated
@@ -2053,10 +2084,9 @@ def competitors_perprompt_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         df = df[df["error"].isna() | (df["error"].astype(str) == "")]
         if df.empty:
             return None
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
+    if df.empty:
+        return None
 
     pivot = df.pivot_table(index="input_id", columns="competitor",
                            values="overall_pass", aggfunc="mean")
@@ -2222,10 +2252,7 @@ def _per_model_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     df = df.copy()
     for c in ("prompt_tokens", "completion_tokens", "cost_usd"):
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     g = (df.groupby("model")
             .agg(n=("overall_pass", "count"),
@@ -2377,11 +2404,9 @@ def cost_vs_quality_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     if "overall_pass" not in df.columns or df.empty:
         return None
 
-    df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
+    if df.empty:
+        return None
 
     # Prefer cost on the x-axis if available and non-zero
     use_cost = (
@@ -2494,10 +2519,7 @@ def _latency_aggregate(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     if df.empty:
         return None
     if "overall_pass" in df.columns:
-        df["overall_pass"] = df["overall_pass"].map(
-            lambda v: v if isinstance(v, (bool, int, float))
-            else str(v).strip().lower() == "true"
-        ).astype(int)
+        df = _with_scored_overall_pass(df)
     g = (df.groupby("model")["wall_seconds"]
            .agg(median="median",
                 q1=lambda s: float(np.percentile(s, 25)),
@@ -3058,10 +3080,7 @@ def consistency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         return None
 
     df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     grp = df.groupby(["model", "input_id"])["overall_pass"]
     stats = grp.agg(["nunique", "count"]).reset_index()
@@ -3327,10 +3346,7 @@ def token_usage_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     for c in ("prompt_tokens", "completion_tokens", "llm_calls"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     g = (df.groupby("model")
             .agg(in_mean=("prompt_tokens", "mean"),
@@ -3629,8 +3645,10 @@ def main() -> None:
             if df.empty:
                 print(f"[skip] empty dataframe for {bench_name}")
                 continue
+            if bench_name == "planning" and "model" in df.columns:
+                df = _remap_registry_model_ids(df)
 
-        fig = fn(df)
+            fig = fn(df)
         _save(fig, fig_dir / bench_name, svg=args.svg)
         plt.close(fig)
         print(f"[ok]   {bench_name} → {fig_dir/bench_name}.pdf")
@@ -3823,6 +3841,9 @@ def main() -> None:
                     _save(f, fig_dir / label, svg=args.svg)
                     plt.close(f)
                     print(f"[ok]   {label} → {fig_dir/label}.pdf")
+
+    from harness.paired_figure_report import render_paired_ablation_figures
+    render_paired_ablation_figures(root, fig_dir)
 
 
 if __name__ == "__main__":

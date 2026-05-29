@@ -262,7 +262,7 @@ notes, sizes, and license caveats. CI / no-R-install runs:
 ### Models
 
 `config/models.yaml` defines **40 models** across four tiers; the default
-``make plan-all`` sweep runs **30** (skips ``tier: deprecated`` only).
+``make plan-all`` sweep runs **28** (skips ``tier: deprecated`` only).
 Legacy-tier entries include **generational baselines** — GPT-3.5 era,
 Claude 3.x, and Gemini 1.5 — that still plot in the legacy heatmap panel.
 Alias rows in ``supp_table_models.py`` map retired IDs to current successors
@@ -270,10 +270,10 @@ for longitudinal figures:
 
 | Tier | OpenAI | Anthropic | Google |
 |---|---|---|---|
-| current | `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.5-mini`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.4-pro`, `gpt-4.1`, `gpt-4.1-mini`, `o3` | `claude-opus-4-5/6/7`, `claude-sonnet-4-5/6`, `claude-haiku-4-5` | `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| current | `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.4-pro`, `gpt-4.1`, `gpt-4.1-mini`, `o3` | `claude-opus-4-5/6/7`, `claude-sonnet-4-5/6`, `claude-haiku-4-5` | `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
 | preview | — | — | `gemini-3.1-pro-preview` |
-| legacy | `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo` | `claude-opus-4-1`, `claude-3-5-sonnet-20241022`, `claude-3-haiku-20240307` | `gemini-1.5-pro`, `gemini-1.5-flash` |
-| deprecated | `gpt-4-turbo`, `gpt-4.1-nano`, `o1`, `o3-mini`, `o4-mini` | `claude-opus-4`, `claude-sonnet-4`, `claude-haiku-3-5` | `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview` |
+| legacy | `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo` | `claude-opus-4-1`, `claude-3-5-sonnet-20241022`, `claude-3-haiku-20240307` | — |
+| deprecated | `gpt-4-turbo`, `gpt-4.1-nano`, `gpt-5.5-mini` (API stand-in: `gpt-5.4-mini`), `o1`, `o3-mini`, `o4-mini` | `claude-opus-4`, `claude-sonnet-4`, `claude-haiku-3-5` | `gemini-1.5-pro`, `gemini-1.5-flash`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview` |
 
 Add or remove a model by editing `config/models.yaml` — the harness,
 scoring, and plot code pick up new IDs automatically (so long as the
@@ -1524,7 +1524,7 @@ Output:
 
 ```bash
 make all         # single MODEL (default gpt-4.1): plan + recovery + gen + exec + report
-make all-sweep   # full 30-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report
+make all-sweep   # full 28-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report
 ```
 
 Use `make all` for a quick end-to-end smoke of one model (fast, cheap). Use
@@ -1794,13 +1794,13 @@ make report
 
 ## Cost + wall-clock estimates
 
-Rough guide at current (May 2026) rates across the default 30-model plan-all sweep
+Rough guide at current (May 2026) rates across the default 28-model plan-all sweep
 (40 in the registry; deprecated IDs excluded):
 
 | Target | Models | Wall time | API cost |
 |---|---|---|---|
 | `make plan` | 1 | ~5–15 min | ~$0.05–$2 (depends on model tier) |
-| `make plan-all` | 30 | ~45–90 min (concurrent) | ~$20–40 |
+| `make plan-all` | 28 | ~45–90 min (concurrent) | ~$20–40 |
 | `make recovery` | 1 | ~35–45 min (28 faults × 5 seeds) | ~$2–3 |
 | `make gen` | — | <1 min | $0 |
 | `make exec` | — | <1 min | $0 |
