@@ -14,20 +14,25 @@ FlowAgent is a multi-agent framework for automating bioinformatics workflows. It
 4. [Configuration](#configuration)
 5. [LLM providers](#llm-providers)
 6. [Command-line interface](#command-line-interface)
-7. [Pipeline formats: shell, Nextflow, Snakemake](#pipeline-formats-shell-nextflow-snakemake)
-8. [Execution backends](#execution-backends)
-9. [Web interface (Chainlit)](#web-interface-chainlit)
-10. [Workflow presets](#workflow-presets)
-11. [Analysis reports](#analysis-reports)
-12. [Notebook output](#notebook-output)
-13. [Checkpoints and resume](#checkpoints-and-resume)
-14. [Custom scripts](#custom-scripts)
-15. [HPC and cluster notes](#hpc-and-cluster-notes)
-16. [Architecture](#architecture)
-17. [Development](#development)
-18. [Benchmarking](#benchmarking)
-19. [Documentation (MkDocs)](#documentation-mkdocs)
-20. [Contributing and license](#contributing-and-license)
+7. [Python Session API](#python-session-api)
+8. [Samplesheets](#samplesheets)
+9. [Building on FlowAgent](#building-on-flowagent)
+10. [Pipeline formats: shell, Nextflow, Snakemake](#pipeline-formats-shell-nextflow-snakemake)
+11. [Execution backends](#execution-backends)
+12. [Web interface](#web-interface)
+13. [MCP server (editor integration)](#mcp-server-editor-integration)
+14. [Workflow presets](#workflow-presets)
+15. [Analysis reports](#analysis-reports)
+16. [Validate outputs and interpret results](#validate-outputs-and-interpret-results)
+17. [Notebook output](#notebook-output)
+18. [Checkpoints and resume](#checkpoints-and-resume)
+19. [Custom scripts](#custom-scripts)
+20. [HPC and cluster notes](#hpc-and-cluster-notes)
+21. [Architecture](#architecture)
+22. [Development](#development)
+23. [Benchmarking](#benchmarking)
+24. [Documentation (MkDocs)](#documentation-mkdocs)
+25. [Contributing and license](#contributing-and-license)
 
 ---
 
@@ -35,13 +40,19 @@ FlowAgent is a multi-agent framework for automating bioinformatics workflows. It
 
 - **Natural-language workflows** — Describe RNA-seq, ChIP-seq, ATAC-seq, Hi-C, single-cell, and other analyses; the LLM proposes structured steps (commands, dependencies, resources).
 - **Multiple LLM backends** — OpenAI, Anthropic Claude, Google Gemini, and local models via **Ollama** (OpenAI-compatible API), selected with `LLM_PROVIDER` and related env vars.
-- **Tool-calling agent loop** — Optional interactive mode (Chainlit `/Agent`) where the model can list files, check binaries, run commands, and read/write files before finalizing a plan.
+- **Plan artifacts** — `flowagent plan` writes a reviewable `workflow.json` + `workflow.md`; `flowagent run` executes a frozen plan without re-prompting the LLM. Plans carry full provenance metadata (model, prompt, timestamp).
+- **Inspectable CLI** — `flowagent init`, `plan`, `run`, `status`, `logs`, `diff`, `validate-output`, `interpret` — feels like `samtools` or `nextflow`, not a chat demo.
+- **Python Session API** — `from flowagent import Session`; structured `PlanResult` / `RunResult` return types; sync wrapper for Jupyter; event hooks for widgets.
+- **Samplesheet-native** — Pass `--samplesheet samplesheet.csv` (nf-core format) and preset commands are auto-expanded to per-sample loops.
+- **Tool-calling agent loop** — The model can list files, check binaries, run commands, and read/write files before finalizing a plan.
 - **Portable pipelines** — Generate **Nextflow** DSL2 (`main.nf` + `nextflow.config`) or **Snakemake** (`Snakefile` + `config.yaml`) from the same workflow plan, with optional validation and execution.
 - **Flexible execution** — Local subprocess execution, **SLURM** via raw `sbatch`, **cgat-core** cluster submission, **DRMAA** (SGE/TORQUE), **Kubernetes** jobs, or delegated **Nextflow** / **Snakemake** runs.
 - **DAG-aware scheduling** — Workflow steps are organized as a DAG; independent steps can run in parallel where the executor supports it.
 - **Smart resume** — Skip steps that already completed based on outputs and logs.
-- **Reports** — JSON/HTML execution reports plus LLM-assisted narrative analysis (FastQC, MultiQC, Kallisto, logs).
-- **Presets** — Curated shell-style workflow templates (e.g. Kallisto RNA-seq, STAR, ChIP-seq, ATAC-seq) under `flowagent/presets/` for reproducible plans without an LLM call.
+- **Assay-agnostic reports** — Auto-detects RNA-seq, ChIP/ATAC, and variant-calling outputs and generates assay-appropriate QC summaries (mapping rate, peak counts, Ti/Tv).
+- **Output fidelity scoring** — `flowagent validate-output` scores your results against published reference tables using Benchmark F (Spearman ρ, Jaccard, F1).
+- **MCP server** — `flowagent mcp serve` exposes all 18 FlowAgent tools as a Model Context Protocol server for Cursor, VS Code, and other editors.
+- **Presets** — Curated workflow templates (Kallisto RNA-seq, STAR, ChIP-seq, ATAC-seq) under `flowagent/presets/` for reproducible plans without an LLM call.
 - **Custom scripts** — Drop R/Python/Bash tools into `flowagent/custom_scripts/` with `metadata.json` for discovery.
 
 ---
@@ -138,48 +149,278 @@ Workflow planning and analysis still expect **JSON-shaped** answers from the mod
 
 ## Command-line interface
 
-The entry point is **`flowagent`**. Most work goes through the **`prompt`** subcommand.
+The entry point is **`flowagent`**. All subcommands are listed below.
 
-```bash
-flowagent prompt "<natural language>" [options]
-flowagent serve [--host HOST] [--port PORT]
+```
+flowagent {init,plan,run,status,logs,diff,validate-output,interpret,prompt,serve,mcp} ...
 ```
 
-### `prompt` options
+### Project setup
+
+```bash
+# Scaffold a new project (creates data/, reference/, results/, workflow_state/, .env, samplesheet.csv)
+flowagent init my_rnaseq
+flowagent init my_rnaseq --preset rnaseq-kallisto   # also writes workflow.json + workflow.md
+```
+
+### Plan → review → run (recommended)
+
+```bash
+# 1. Generate a plan — writes workflow.json + workflow.md, no execution
+flowagent plan "RNA-seq with kallisto on data/*.fastq.gz"
+flowagent plan "ChIP-seq hg38" --preset chipseq --out chipseq_plan/
+flowagent plan "RNA-seq" --samplesheet samplesheet.csv   # per-sample expansion
+
+# 2. Review the plan
+cat workflow.md
+
+# 3. Execute the frozen plan (no LLM call)
+flowagent run workflow.json
+flowagent run workflow.json --executor hpc --hpc-system slurm
+flowagent run workflow.json --checkpoint-dir workflow_state --resume
+```
+
+### Monitor a run
+
+```bash
+flowagent status                                  # reads workflow_state/
+flowagent status --checkpoint-dir my_state/
+
+flowagent logs                                    # list available step logs
+flowagent logs kallisto_quant                     # full log
+flowagent logs kallisto_quant --tail 50           # last 50 lines
+```
+
+### Diff two plans
+
+```bash
+flowagent diff workflow_v1.json workflow_v2.json
+```
+
+### Score and interpret outputs
+
+```bash
+# Score outputs against a published fidelity reference (Benchmark F)
+flowagent validate-output results/ --case gse52778_dex_de
+
+# LLM interpretation report on any results directory
+flowagent interpret results/
+flowagent interpret results/ --model gpt-4.1 --no-save
+```
+
+### Freeform prompt (smart routing)
+
+```bash
+# Smart routing: LLM decides whether to use workflow or agent mode
+flowagent prompt "Run RNA-seq analysis on FASTQ files in data/"
+flowagent prompt "What bioinformatics tools are installed?" --agent
+flowagent prompt "Run kallisto" --workflow --preset rnaseq-kallisto
+
+# Nextflow / Snakemake export
+flowagent prompt "RNA-seq QC and quantification" --pipeline-format nextflow --profile docker
+flowagent prompt "variant calling outline" --pipeline-format snakemake --no-execute
+
+# Resume
+flowagent prompt "same analysis" --checkpoint-dir workflow_state --resume
+```
+
+### `prompt` options reference
 
 | Option | Description |
 |--------|-------------|
 | `--checkpoint-dir DIR` | Store / load checkpoints for resume. |
-| `--resume` | Resume from checkpoint in `DIR`. |
+| `--resume` | Resume from checkpoint. |
 | `--force-resume` | Run all steps even if some appear complete. |
 | `--analysis-dir DIR` | Analyze existing results instead of running a new workflow. |
-| `--pipeline-format {shell,nextflow,snakemake}` | Generate shell steps (default path), or emit Nextflow/Snakemake under `flowagent_pipeline_output/`. |
-| `--profile NAME` | Nextflow profile (e.g. `local`, `docker`, `singularity`, `slurm`). |
-| `--no-execute` | With Nextflow/Snakemake: write files only, do not run the engine. |
-| `--executor {local,cgat,hpc,kubernetes,nextflow,snakemake}` | Override `EXECUTOR_TYPE` for this process (shell path uses internal executor wiring). |
-| `--hpc-system {slurm,sge,torque}` | Intended for HPC configuration (see settings). |
+| `--pipeline-format {nextflow,snakemake}` | Emit Nextflow/Snakemake under `flowagent_pipeline_output/`. |
+| `--profile NAME` | Nextflow profile (e.g. `local`, `docker`, `slurm`). |
+| `--no-execute` | With Nextflow/Snakemake: write files only. |
+| `--executor {local,cgat,hpc,kubernetes,nextflow,snakemake}` | Override `EXECUTOR_TYPE` for this process. |
+| `--hpc-system {slurm,sge,torque}` | HPC scheduler. |
+| `--preset ID` | Use a preset workflow (e.g. `rnaseq-kallisto`). |
+| `--samplesheet PATH` | nf-core-style CSV; expands preset to per-sample commands. |
+| `--model MODEL` | LLM model override (e.g. `gpt-4.1`, `claude-sonnet-4-6`). |
+| `--non-interactive` | Skip interactive questions; use defaults. |
+| `--no-dag` | DAG-blind planner ablation (Benchmark H). |
+| `--validate-output CASE` | After run, score outputs against a fidelity reference. |
+| `--interpret` | After run, run LLM interpretation on outputs. |
 
-### Examples
+### Web interface and MCP server
 
 ```bash
-# Shell workflow (default): plan and run via existing workflow stack
-flowagent prompt "Analyze RNA-seq with Kallisto; FASTQs in . ; reference transcriptome at ref.fa" \
-  --checkpoint-dir workflow_state
-
-# Resume
-flowagent prompt "same analysis" --checkpoint-dir workflow_state --resume
-
-# Analyze outputs on disk
-flowagent prompt "summarize QC and quantification" --analysis-dir results/
-
-# Nextflow: generate + validate + run (requires `nextflow` on PATH)
-flowagent prompt "RNA-seq QC and quantification" --pipeline-format nextflow --profile docker
-
-# Snakemake: generate only
-flowagent prompt "variant calling outline" --pipeline-format snakemake --no-execute
+flowagent serve --host 0.0.0.0 --port 8000    # FastAPI + SSE web UI
+flowagent mcp serve                            # MCP tool server (HTTP, port 8765)
+flowagent mcp serve --stdio                   # stdio transport for Cursor / VS Code
 ```
 
-**Note:** The subcommand is required: use `flowagent prompt "..."`, not `flowagent "..."` alone.
+---
+
+## Python Session API
+
+`from flowagent import Session` provides a first-class async API with structured return objects — no stdout parsing required.
+
+```python
+from flowagent import Session
+
+async with Session(model="gpt-4.1", data_dir=".", executor="local") as fa:
+    ctx  = await fa.inspect()                        # discovers files, organism, pairing
+    plan = await fa.plan("RNA-seq → DESeq2", context=ctx)  # PlanResult
+    plan = await fa.validate(plan)                   # completeness check
+    run  = await fa.run(plan, checkpoint="workflow_state/") # RunResult
+    print(run.succeeded, run.output_dir)
+    report = await fa.interpret(run.output_dir)      # LLM analysis report
+```
+
+**Sync wrapper** for Jupyter notebooks and scripts:
+
+```python
+from flowagent import Session
+
+run = Session.run_sync("RNA-seq with kallisto", executor="local")
+print(run.output_dir)
+```
+
+**Return types:**
+
+| Object | Key attributes |
+|--------|----------------|
+| `PlanResult` | `.plan` (dict), `.steps` (list), `.plan_path`, `.markdown_path` |
+| `RunResult`  | `.status`, `.succeeded`, `.output_dir`, `.steps`, `.raw` |
+
+**Event hooks** (for Jupyter widgets or CI logging):
+
+```python
+Session(
+    model="gpt-4.1",
+    on_step_start=lambda name: print(f"▶ {name}"),
+    on_recovery=lambda name, err: print(f"⚠ recovering {name}: {err}"),
+    on_token=lambda tok: print(tok, end="", flush=True),
+)
+```
+
+**Save plan to disk** from the API:
+
+```python
+plan = await fa.plan("ChIP-seq", save_to="chipseq_plan/")
+# writes chipseq_plan/workflow.json + chipseq_plan/workflow.md
+```
+
+**Export to Nextflow / Snakemake:**
+
+```python
+nf_path = fa.to_nextflow(plan, output_dir="pipeline/")
+sm_path = fa.to_snakemake(plan, output_dir="pipeline/")
+```
+
+The legacy `FlowAgent` class is still available as a backwards-compatible alias.
+
+---
+
+## Samplesheets
+
+FlowAgent accepts **nf-core-style samplesheet CSVs**:
+
+```csv
+sample,fastq_1,fastq_2,condition
+SRR1234,data/SRR1234_R1.fastq.gz,data/SRR1234_R2.fastq.gz,treated
+SRR5678,data/SRR5678_R1.fastq.gz,data/SRR5678_R2.fastq.gz,untreated
+```
+
+Pass it to any command with `--samplesheet`:
+
+```bash
+flowagent plan "RNA-seq with kallisto" --samplesheet samplesheet.csv
+flowagent prompt "run RNA-seq" --preset rnaseq-kallisto --samplesheet samplesheet.csv
+```
+
+When a samplesheet is provided:
+- Input files and paired-end detection come from the sheet rather than filesystem globbing.
+- Preset commands that contain glob patterns (`data/*.fastq.gz`) are rewritten to per-sample commands or loops automatically.
+- The planner prompt includes a summary of samples and conditions so the LLM doesn't have to guess contrasts.
+
+Single-end samples (empty `fastq_2` column) and tab-delimited files are both handled. Extra columns beyond `sample`, `fastq_1`, `fastq_2`, `condition` are stored and available for downstream use.
+
+**From Python:**
+
+```python
+from flowagent.core.samplesheet import load_samplesheet, expand_preset_for_samples
+from flowagent.presets.catalog import get_preset
+
+sheet = load_samplesheet("samplesheet.csv")
+print(sheet.summary())         # "4 samples (paired-end), conditions: treated, untreated"
+plan  = get_preset("rnaseq-kallisto")
+plan  = expand_preset_for_samples(plan, sheet)  # per-sample commands
+```
+
+---
+
+## Building on FlowAgent
+
+FlowAgent exposes three integration surfaces, so it's straightforward to embed in your own tools, pipelines, or lab infrastructure without coupling to the CLI.
+
+### 1. Python library (`pip install flowagent`)
+
+The cleanest option for Python projects — import directly, no subprocess or HTTP required:
+
+```python
+from flowagent import Session
+
+async with Session(model="gpt-4.1") as fa:
+    plan = await fa.plan("RNA-seq with kallisto")
+    run  = await fa.run(plan)
+```
+
+Works in Jupyter, CI scripts, Snakemake `run:` blocks, Nextflow `script:` blocks, Django/Flask views, or any async Python context. The sync wrapper `Session.run_sync(...)` requires no `async`/`await` at all.
+
+### 2. MCP protocol (any MCP-compatible client)
+
+`flowagent mcp serve` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server that any MCP client can call. This includes:
+
+- **Cursor / VS Code** — add to `.cursor/mcp.json` and the agent inside the editor gains bioinformatics planning and execution tools
+- **Claude Desktop** — add to `claude_desktop_config.json`
+- **Custom clients** — send JSON-RPC 2.0 `tools/call` requests over HTTP
+
+```bash
+flowagent mcp serve               # HTTP at http://127.0.0.1:8765/mcp
+flowagent mcp serve --stdio       # stdio for native MCP editor wiring
+```
+
+The tool list (`GET /mcp/tools`) and a browser-friendly landing page are served at the same port.
+
+### 3. HTTP REST (`POST /mcp`)
+
+The MCP server's HTTP transport is plain JSON-RPC 2.0 — callable from any language without an MCP library:
+
+```bash
+# List tools
+curl http://127.0.0.1:8765/mcp/tools
+
+# Call a tool
+curl -X POST http://127.0.0.1:8765/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"plan_workflow","arguments":{"prompt":"RNA-seq with kallisto"}}}'
+```
+
+```python
+import httpx, json
+
+r = httpx.post("http://127.0.0.1:8765/mcp", json={
+    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+    "params": {"name": "check_tool", "arguments": {"name": "kallisto"}},
+})
+print(r.json()["result"]["content"][0]["text"])
+```
+
+The FastAPI web interface (`flowagent serve`) also auto-generates interactive API docs at `http://127.0.0.1:8000/docs` (Swagger UI) and `http://127.0.0.1:8000/redoc`.
+
+### Comparison
+
+| Surface | Language | Protocol | When to use |
+|---------|----------|----------|-------------|
+| `Session` Python API | Python only | direct import | Jupyter, CI, Python pipelines |
+| MCP server (stdio) | Any MCP client | MCP / JSON-RPC | Cursor, VS Code, Claude Desktop |
+| MCP server (HTTP) | Any | plain HTTP + JSON | R scripts, Nextflow, bash, web apps |
+| FastAPI web UI | Browser / HTTP | REST + SSE | Interactive sessions, job monitor |
 
 ---
 
@@ -210,20 +451,62 @@ Shell step-by-step execution in `WorkflowManager` still uses the **legacy `Execu
 
 ---
 
-## Web interface (Chainlit)
+## Web interface
 
 ```bash
-export USER_EXECUTION_DIR="$(pwd)"   # required: working directory for the chat session
+export USER_EXECUTION_DIR="$(pwd)"   # required: working directory for the web session
 flowagent serve --host 0.0.0.0 --port 8000
 ```
 
-Open the URL shown in the terminal (typically `http://127.0.0.1:8000` or `http://0.0.0.0:8000` — use the **same port** you passed to `--port`).
-
-Commands exposed in the UI:
+Opens a **FastAPI + Server-Sent Events** web UI. Use the same port you passed to `--port` (default 8000). Commands exposed in the UI:
 
 - **`/Run`** — Parse intent, then run `run_workflow` (checkpoint/resume aware).
 - **`/Analyse`** — Point at a results directory; runs `analyze_workflow`.
 - **`/Agent`** — Interactive loop with **tool calling** (list files, check tools, run commands, read/write files) before answering.
+
+Requires the `web` optional dependency group:
+
+```bash
+pip install -e ".[web]"   # fastapi, uvicorn, sse-starlette
+```
+
+---
+
+## MCP server (editor integration)
+
+FlowAgent can act as a **Model Context Protocol tool server** so editors like Cursor and VS Code can call it directly — no separate app or chat window required.
+
+```bash
+# HTTP transport (default) — browse to http://127.0.0.1:8765 to see the tool list
+flowagent mcp serve
+
+# Custom port
+flowagent mcp serve --port 9000
+
+# stdio transport (for native MCP editor integration)
+flowagent mcp serve --stdio
+```
+
+The server at startup prints the `.cursor/mcp.json` snippet to paste:
+
+```json
+{
+  "mcpServers": {
+    "flowagent": {
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  }
+}
+```
+
+**Exposed tools (18 total):**
+
+| Category | Tools |
+|----------|-------|
+| Workflow | `plan_workflow`, `run_workflow`, `export_pipeline`, `analyze_results`, `load_preset`, `check_workflow_status` |
+| Agent | `list_files`, `check_tool`, `install_dependency`, `execute_command`, `read_file`, `write_file`, `search_literature`, `download_data`, `plan_workflow` (agent variant), `run_workflow`, `search_files`, `get_file_info` |
+
+Requires the `web` optional dependency group: `pip install -e ".[web]"`.
 
 ---
 
@@ -244,13 +527,42 @@ You can pass `plan` into your own runner or feed it to the Nextflow/Snakemake ge
 
 ## Analysis reports
 
-Point the CLI at an output directory:
+FlowAgent auto-detects the assay type from output files and generates an appropriate report:
+
+| Assay detected | Key metrics reported |
+|----------------|---------------------|
+| **RNA-seq** | n samples, mean mapping rate, expressed transcripts per sample |
+| **ChIP/ATAC** | peak file count, total peaks, FRiP proxy from flagstat |
+| **Variant calling** | VCF count, variant count, Ti/Tv ratio |
+| **Generic** | file inventory by extension |
 
 ```bash
-flowagent prompt "analyze workflow results" --analysis-dir /path/to/results
+flowagent interpret results/                          # dedicated command
+flowagent interpret results/ --model gpt-4.1
+flowagent prompt "analyze" --analysis-dir results/   # via prompt
 ```
 
-The tool searches for FastQC, MultiQC, Kallisto outputs, logs, and similar artifacts, then combines rule-based extraction with an LLM narrative. In the **Chainlit** flow, whether the report is saved to disk is controlled via the parsed prompt (`save_report`), not a separate CLI flag.
+Assay-specific recommendations are included (e.g. low mapping rate warning, Ti/Tv out-of-range alert, low peak count warning). Reports are saved to `analysis_report.md` and `agentic_analysis.md` in the results directory unless `--no-save` is passed.
+
+---
+
+## Validate outputs and interpret results
+
+```bash
+# Benchmark F: score outputs against a published reference
+flowagent validate-output results/ --case gse52778_dex_de
+
+# Benchmark G: LLM interpretation of outputs
+flowagent interpret results/
+flowagent interpret results/ --model gpt-4.1 --no-save
+```
+
+`validate-output` delegates to `benchmarks/bench_fidelity.py` and requires:
+1. A finished FlowAgent run with outputs in `results/`.
+2. Reference files under `benchmarks/references/` (see `make references` in `benchmarks/`).
+3. A case ID from `benchmarks/config/fidelity_cases.yaml`.
+
+`interpret` runs `AgenticAnalysisSystem` and prints an LLM-generated narrative alongside rule-based QC metrics.
 
 ---
 
@@ -412,20 +724,36 @@ flowagent/custom_scripts/
 
 ## Architecture
 
-At a high level:
+```
+flowagent/
+├── __init__.py               Session + FlowAgent API (PlanResult, RunResult)
+├── cli.py                    init / plan / run / status / logs / diff /
+│                             validate-output / interpret / prompt / serve / mcp
+├── mcp_server.py             JSON-RPC 2.0 MCP server (HTTP + stdio)
+├── workflow.py               run_workflow / analyze_workflow helpers
+├── core/
+│   ├── llm.py                Domain prompts, workflow-type heuristics
+│   ├── workflow_manager.py   DAG scheduling, execution, recovery, reports
+│   ├── plan_store.py         Save/load/diff plan artifacts (workflow.json)
+│   ├── samplesheet.py        nf-core CSV parser + per-sample preset expansion
+│   ├── pipeline_planner.py   gather_pipeline_context (files, organism, refs)
+│   ├── pipeline_generator/   Nextflow DSL2 + Snakemake codegen
+│   ├── completeness.py       Structural plan validator
+│   ├── agent_loop.py         Tool-calling agent loop
+│   ├── tool_definitions.py   18 agent tools (AGENT_TOOLS + WORKFLOW_TOOLS)
+│   ├── executor.py           Local / SLURM subprocess execution
+│   ├── executors.py          LocalExecutor, CGATExecutor, HPCExecutor, K8s
+│   ├── executor_factory.py   Backend selection from EXECUTOR_TYPE / CLI
+│   ├── providers/            OpenAI / Anthropic / Google / Ollama adapters
+│   └── schemas.py            Pydantic models for all LLM I/O contracts
+├── agents/agentic/
+│   ├── analysis_system.py    AgenticAnalysisSystem (assay-aware reports)
+│   └── assay_detector.py     Auto-detect rna_seq / chip_atac / variant / generic
+├── presets/catalog.py        Preset plans + apply_context + samplesheet expansion
+└── web.py                    FastAPI + SSE web UI
+```
 
-- **`flowagent/core/llm.py`** — Domain prompts, workflow-type heuristics, resource hints; calls the pluggable **`flowagent/core/providers/`** layer for chat completions.
-- **`flowagent/core/workflow_manager.py`** — Plans dependencies, runs steps, reports, DAG images.
-- **`flowagent/core/executor.py`** — Per-step local/SLURM subprocess execution used by the main shell path.
-- **`flowagent/core/executors.py`** — `LocalExecutor`, `CGATExecutor`, `HPCExecutor`, `KubernetesExecutor` for DAG/cluster-style submission.
-- **`flowagent/core/executor_factory.py`** — Selects the backend from `EXECUTOR_TYPE` / CLI.
-- **`flowagent/core/pipeline_generator/`** — Nextflow and Snakemake codegen.
-- **`flowagent/core/agent_loop.py`** + **`tool_definitions.py`** — Tool-calling agent for `/Agent`.
-- **`flowagent/workflow.py`** — CLI-oriented `run_workflow` / `analyze_workflow` helpers.
-- **`flowagent/web.py`** — Chainlit app.
-
-The shipped package is focused on **CLI + Chainlit**. Any broader “API layer” in docs may refer to future or external integrations; check the codebase for FastAPI/GraphQL if you need HTTP APIs.
-
+FlowAgent is designed as a **decomposable workflow operating system**: each agentic layer (DAG planning, completeness reflection, command validation, CoVe verification, execution, recovery, interpretation) is independently toggleable and benchmarked (Benchmarks A–L), and exposes the same capabilities through CLI plan artifacts, a Python `Session` API, and optional MCP integration for editor-native use.
 ---
 
 ## Development

@@ -252,6 +252,23 @@ def get_preset(preset_id: str) -> Optional[Dict[str, Any]]:
     return PRESET_CATALOG.get(preset_id)
 
 
+def expand_with_samplesheet(
+    preset: Dict[str, Any],
+    samplesheet_path: str,
+) -> Dict[str, Any]:
+    """Rewrite preset commands to run per-sample using the given samplesheet."""
+    from flowagent.core.samplesheet import load_samplesheet, expand_preset_for_samples
+    try:
+        sheet = load_samplesheet(samplesheet_path)
+        return expand_preset_for_samples(preset, sheet)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Samplesheet expansion failed: %s", exc
+        )
+        return preset
+
+
 def apply_context_to_preset(
     preset: Dict[str, Any],
     ctx: PipelineContext,

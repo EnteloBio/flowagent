@@ -167,6 +167,7 @@ async def gather_pipeline_context(
     interactive: bool = True,
     ask_fn: Optional[Callable[[str, str], str]] = None,
     answers: Optional[Dict[str, str]] = None,
+    samplesheet: Optional[str] = None,
 ) -> PipelineContext:
     """Scan the filesystem and (optionally) ask the user to fill gaps.
 
@@ -184,6 +185,9 @@ async def gather_pipeline_context(
         Pre-supplied answers keyed by field name (``organism``,
         ``genome_build``, ``reference_source``).  Skips asking for
         any key already present.
+    samplesheet
+        Optional path to a samplesheet CSV. When provided, input files and
+        pairing are derived from the sheet rather than filesystem globbing.
     """
     answers = dict(answers or {})
     if ask_fn is None and interactive and sys.stdin.isatty():
@@ -191,8 +195,26 @@ async def gather_pipeline_context(
     # If not interactive and no ask_fn, we'll just use defaults.
 
     # ── 1. Discover input files ───────────────────────────────
-    input_files = _scan_files(_INPUT_GLOBS)
-    paired_end = _detect_pairing(input_files) if input_files else True
+    if samplesheet:
+        from .samplesheet import load_samplesheet as _load_ss
+        try:
+            sheet = _load_ss(samplesheet)
+            input_files = [
+                f for s in sheet.samples
+                for f in (([s.fastq_1, s.fastq_2] if s.paired_end else [s.fastq_1]))
+                if f
+            ]
+            paired_end = sheet.paired_end
+            # Inject samplesheet summary into extra_params for LLM context
+            answers.setdefault("_samplesheet_summary", sheet.to_planner_text())
+            logger.info("Loaded samplesheet: %s", sheet.summary())
+        except Exception as exc:
+            logger.warning("Could not parse samplesheet %s: %s", samplesheet, exc)
+            input_files = _scan_files(_INPUT_GLOBS)
+            paired_end = _detect_pairing(input_files) if input_files else True
+    else:
+        input_files = _scan_files(_INPUT_GLOBS)
+        paired_end = _detect_pairing(input_files) if input_files else True
 
     # ── 2. Detect workflow type ───────────────────────────────
     workflow_type = _detect_workflow_type_from_prompt(prompt)

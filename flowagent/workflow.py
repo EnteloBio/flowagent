@@ -17,17 +17,26 @@ logger = logging.getLogger(__name__)
 def format_agentic_results(results: Dict[str, Any]) -> str:
     """Format agentic analysis results in a human-readable format."""
     output = []
-    
+
     # Header
-    output.append(f"Agentic Analysis Report")
+    output.append("Agentic Analysis Report")
     output.append(f"Generated: {results['timestamp']}")
     output.append(f"Analyzing: {results['directory']}")
     output.append("")
-    
+
+    # Assay summary (new — assay-agnostic)
+    assay_summary = results.get("assay_summary")
+    if assay_summary:
+        output.append(f"Assay: {assay_summary}")
+        output.append("")
+
     # Workflow Info
     output.append("1. Workflow Information")
-    output.append(f"Type: {results['workflow_info']['type']}")
-    output.append(f"Tools: {', '.join(results['workflow_info']['tools_used'])}")
+    wf = results.get("workflow_info", {})
+    output.append(f"Type: {wf.get('type', results.get('assay', 'unknown'))}")
+    tools = wf.get("tools_used", [])
+    if tools:
+        output.append(f"Tools: {', '.join(tools)}")
     output.append("")
     
     # Quality Analysis
