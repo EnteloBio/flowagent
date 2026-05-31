@@ -195,6 +195,16 @@ datasets:
           MultiQC log (e.g. flagged samples). Penalise: fabricated
           caveats not supported by the inputs, or over-confident
           extrapolation to disease/clinical outcomes.
+        reference_answer: >-
+          The design has only four biological replicates per condition
+          (matched donors), so effect estimates are noisy and
+          significance depends on the padj threshold and independent
+          filtering choices visible in the table. The analysis is
+          restricted to a single primary cell type (airway smooth
+          muscle), so the signature may not transfer to other tissues,
+          and the experiment provides no time-course or dose-response
+          dimension to separate acute from sustained glucocorticoid
+          effects.
 
       - id: gse52778_q08_followup
         type: open_ended
@@ -213,6 +223,12 @@ datasets:
           require new data the user does not have (CRISPR validation,
           ChIP-seq, single-cell). Penalise the latter unless explicitly
           framed as "would require new data".
+        reference_answer: >-
+          Run gene-set enrichment on the DEX-upregulated genes using a
+          curated glucocorticoid-receptor target set (or compare the
+          ranked list to other published airway glucocorticoid
+          signatures), leveraging the existing donor-matched four-pair
+          design rather than proposing new wet-lab validation.
 
   # ── GSE60450: mouse mammary basal vs luminal RNA-seq ─────────────
   - id: gse60450_mammary_de
@@ -331,6 +347,13 @@ datasets:
           referring to direction in a way consistent with the
           ``luminal=ref`` framing. Penalise mention of stromal
           contamination unless explicitly hedged as inferred.
+        reference_answer: >-
+          The contrast separates basal from luminal mammary epithelial
+          cells (luminal is the reference), with basal markers such as
+          Krt14/Krt5 elevated in basal cells and luminal markers such
+          as Krt8/Krt18 higher in the luminal population in the
+          supplied table — a canonical lineage split rather than a
+          stromal contamination signal.
 
   # ── GSE152418: COVID-19 vs healthy whole blood ───────────────────
   - id: gse152418_covid_blood_de
@@ -437,6 +460,14 @@ datasets:
           (iv) dependence of padj on independent filtering choices;
           (v) limited ability to distinguish direct viral effects
           from secondary inflammatory programmes from RNA-seq alone.
+        reference_answer: >-
+          Bulk whole-blood RNA-seq conflates cell-composition shifts
+          (e.g. lymphopenia and neutrophilia in COVID-19) with
+          within-cell expression changes, so many DE genes may reflect
+          mixture rather than intrinsic regulation. Significance calls
+          also depend on the padj filtering visible in the table, and
+          the cohort spans heterogeneous disease timing/severity that
+          is not resolved in a single contrast.
 
   # ── ENCODE SUZ12 H1-hESC ChIP-seq peaks ─────────────────────────
   - id: encsr000euq_suz12_h1
@@ -555,6 +586,12 @@ datasets:
           motif content, downstream gene targets, bivalent
           chromatin, or pluripotency biology — none of which is
           derivable from the bare BED file.
+        reference_answer: >-
+          The file contains on the order of four thousand IDR peaks
+          (≈4,300 rows) with a median width near 270 bp. Peaks are
+          distributed across the autosomes and chrX (with no chrY
+          peaks, as expected in H1 hESCs), without a single chromosome
+          dominating the entire set.
 
   # ── GSE32222: ER-α ChIP-seq in MCF7 ─────────────────────────────
   - id: gse32222_er_chip
@@ -675,6 +712,13 @@ datasets:
           unless explicitly hedged as "would expect from the
           published biology" — those are NOT derivable from the
           supplied peak file.
+        reference_answer: >-
+          The supplied BED lists on the order of 67,000 ER-α peaks
+          with a typical width in the mid-hundreds of base pairs
+          (median ≈650 bp). Peak counts are highest on the large
+          autosomes (e.g. chr1–chr2 carry the most rows), consistent
+          with a genome-wide binding profile readable directly from the
+          file columns.
 
   # ── GSE74912: ATAC-seq atlas of sorted human immune subsets ─────
   - id: gse74912_atac_immune
@@ -798,6 +842,13 @@ datasets:
           claims about specific lineage TF binding, GWAS
           interpretation, or differentiation trajectories that
           go beyond the supplied evidence.
+        reference_answer: >-
+          The consensus BED contains on the order of 590,000 peaks
+          with a typical width near 500 bp (median). Peaks are
+          spread across autosomes and chrX, with the largest
+          chromosomes (chr1, chr2) carrying the most intervals; the
+          consensus file shows essentially no chrM/MT rows, consistent
+          with mitochondrial reads having been filtered upstream.
 
   # ── GIAB NA12878 chr20 truth-set variant calling ────────────────
   - id: giab_na12878_chr20
@@ -920,3 +971,9 @@ datasets:
           regions, technology integration, or v4.2.1 release
           history unless explicitly hedged as "from background
           knowledge, not the supplied file".
+        reference_answer: >-
+          The supplied truth VCF contains on the order of 86,000
+          variant records, all on chr20. Roughly 15% of records are
+          indels by length (|REF|>1 or |ALT|>1), with the remainder
+          SNPs — composition statistics readable directly from the
+          file without invoking external GIAB documentation.

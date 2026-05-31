@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -4088,6 +4089,34 @@ def main() -> None:
 
     from harness.paired_figure_report import render_paired_ablation_figures
     render_paired_ablation_figures(root, fig_dir)
+
+    _render_judge_calibration_figure(root, fig_dir, svg=args.svg)
+
+
+def _render_judge_calibration_figure(root: Path, fig_dir: Path, *,
+                                     svg: bool = False) -> None:
+    """Render inter-judge calibration figure when a run exists."""
+    cal_latest = _latest(root / "judge_calibration")
+    if cal_latest is None:
+        print("[skip] no results for judge_calibration")
+        return
+    csv = cal_latest / "judge_calibration.csv"
+    if not csv.exists() or csv.stat().st_size == 0:
+        print("[skip] empty judge_calibration.csv")
+        return
+    bench_root = Path(__file__).resolve().parent.parent
+    if str(bench_root) not in sys.path:
+        sys.path.insert(0, str(bench_root))
+    from make_judge_calibration_figure import build_figure, load_run  # noqa: E402
+    try:
+        df, summary = load_run(cal_latest)
+        fig = build_figure(df, summary)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"[skip] judge_calibration figure: {exc}")
+        return
+    _save(fig, fig_dir / "judge_calibration", svg=svg)
+    plt.close(fig)
+    print(f"[ok]   judge_calibration → {fig_dir/'judge_calibration'}.pdf")
 
 
 if __name__ == "__main__":

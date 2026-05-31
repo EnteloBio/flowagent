@@ -42,7 +42,7 @@ ifeq ($(shell $(PY) -c "import openai" 2>/dev/null && echo ok),)
 $(error $(PY) is missing the openai package. Run: conda activate flowagent  OR  pip install -e ..)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation rescore rescore-all merge prune-models report test clean help refresh-tools
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation judge-calibration-figure rescore rescore-all merge prune-models report test clean help refresh-tools
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -372,6 +372,18 @@ install-r-deps:
 # Benchmark G — biological-interpretation quality
 interpretation:
 	$(PY) bench_interpretation.py --model=$(MODEL) --judge=$(JUDGE) $(EXTRA)
+
+# Render judge_calibration.pdf from the latest judge_calibration.py run.
+CAL_DIR ?= $(shell ls -td $(RESULTS_DIR)/judge_calibration/*/ 2>/dev/null | head -1)
+judge-calibration-figure:
+	@if [ -z "$(CAL_DIR)" ]; then \
+	    echo "No judge_calibration runs found under $(RESULTS_DIR)/judge_calibration."; \
+	    echo "Run judge_calibration.py first or pass CAL_DIR=...."; \
+	    exit 1; \
+	fi
+	$(PY) make_judge_calibration_figure.py \
+	    --calibration=$(CAL_DIR) \
+	    --out=$(RESULTS_DIR)/figures/judge_calibration
 
 test:
 	$(PY) -m pytest tests -v
