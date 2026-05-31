@@ -33,7 +33,7 @@ LLM_BASE_URL=http://localhost:11434/v1
 | Provider | Recommended | Notes |
 |----------|------------|-------|
 | OpenAI | `gpt-5.4-mini`, `gpt-4.1` | `gpt-5.5` / `gpt-5.4` for flagship; `gpt-5.4-nano` for lightweight |
-| Anthropic | `claude-sonnet-4-6` | `claude-opus-4-7` for complex analysis |
+| Anthropic | `claude-sonnet-4-6` | `claude-opus-4-8` for complex analysis |
 | Google | `gemini-2.5-flash`, `gemini-3.5-flash` | `gemini-2.5-pro` / `gemini-3.1-pro-preview` for longer reasoning |
 | Ollama | `llama4`, `qwen`, `deepseek` | Runs locally, no API key |
 

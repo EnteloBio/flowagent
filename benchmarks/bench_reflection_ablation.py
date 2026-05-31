@@ -51,7 +51,7 @@ sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parent))
 
 from harness.runner import (  # noqa: E402
-    load_yaml, set_provider, sweep, timestamped_dir, write_manifest,
+    load_yaml, parse_models_filter, set_provider, sweep, timestamped_dir, write_manifest,
 )
 from bench_planning import run_one as _planning_run_one  # noqa: E402
 
@@ -138,7 +138,7 @@ def main():
                     help="Path to an existing results/reflection/<ts>/ dir.")
     args = ap.parse_args()
 
-    only = args.models.split(",") if args.models else []
+    only = parse_models_filter(args.models)
     models = _load_models(Path(args.config), only)
     inputs = load_yaml(Path(args.prompts))["prompts"]
     if args.limit:
@@ -167,28 +167,33 @@ def main():
 
     arms_results: Dict[str, List[Dict[str, Any]]] = {}
     try:
-        for arm in arms_to_run:
-            arm_dir = out_dir / arm
-            arm_dir.mkdir(parents=True, exist_ok=True)
-            reflect = (arm == "reflect_on")
-            print(f"\n=== Arm: {arm} (LLM_COMPLETENESS_REFLECT={'true' if reflect else 'false'}) ===")
+        async def _run_all_arms() -> Dict[str, List[Dict[str, Any]]]:
+            results: Dict[str, List[Dict[str, Any]]] = {}
+            for arm in arms_to_run:
+                arm_dir = out_dir / arm
+                arm_dir.mkdir(parents=True, exist_ok=True)
+                reflect = (arm == "reflect_on")
+                print(f"\n=== Arm: {arm} (LLM_COMPLETENESS_REFLECT={'true' if reflect else 'false'}) ===")
 
-            runner = _make_runner(reflect=reflect, mock=args.mock)
+                runner = _make_runner(reflect=reflect, mock=args.mock)
 
-            async def _wrapped(m, e, r, _runner=runner, _mock=args.mock):
-                if not _mock:
-                    set_provider(m)
-                return await _runner(m, e, r)
+                async def _wrapped(m, e, r, _runner=runner, _mock=args.mock):
+                    if not _mock:
+                        set_provider(m)
+                    return await _runner(m, e, r)
 
-            sweep_result = asyncio.run(sweep(
-                _wrapped,
-                models=models, inputs=inputs,
-                replicates=args.replicates,
-                out_dir=arm_dir,
-                benchmark_name=f"reflection:{arm}",
-            ))
-            print(f"[ok] arm={arm} wrote {len(sweep_result.results)} rows -> {arm_dir}")
-            arms_results[arm] = sweep_result.results
+                sweep_result = await sweep(
+                    _wrapped,
+                    models=models, inputs=inputs,
+                    replicates=args.replicates,
+                    out_dir=arm_dir,
+                    benchmark_name=f"reflection:{arm}",
+                )
+                print(f"[ok] arm={arm} wrote {len(sweep_result.results)} rows -> {arm_dir}")
+                results[arm] = sweep_result.results
+            return results
+
+        arms_results = asyncio.run(_run_all_arms())
     finally:
         # Restore env.
         for var, prev in (

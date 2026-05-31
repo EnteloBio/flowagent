@@ -9,7 +9,7 @@ variables — no code changes required.
 | Provider | Set `LLM_PROVIDER=` | Auth env var | Examples of `LLM_MODEL` |
 |---|---|---|---|
 | OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-5.5`, `gpt-5.4-mini`, `gpt-4.1`, `o3` |
-| Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6`, `claude-opus-4-7` |
+| Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6`, `claude-opus-4-8` |
 | Google Gemini | `google` | `GOOGLE_API_KEY` | `gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-2.5-pro` |
 | Ollama (local) | `ollama` | none | `llama3.1:70b`, `qwen2.5:32b`, `mistral` |
 

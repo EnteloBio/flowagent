@@ -178,6 +178,44 @@ class TestCliFlagPropagation:
                 f"present={want_flag}, got argv={argv}")
 
 
+class TestResolveClaudeBin:
+    def test_invalid_env_falls_back_to_path(self, monkeypatch, tmp_path):
+        fake = tmp_path / "claude"
+        fake.write_text("#!/bin/sh\n")
+        fake.chmod(0o755)
+        monkeypatch.setenv("CLAUDE_CODE_BIN", "/no/such/binary/exists")
+        monkeypatch.setattr(
+            claude_code_shim.shutil, "which",
+            lambda name: str(fake) if name == "claude" else None,
+        )
+        assert claude_code_shim._resolve_claude_bin() == str(fake)
+
+
+class TestInvokeClaudeEnv:
+    def test_strips_anthropic_api_key_by_default(self, monkeypatch, tmp_path):
+        captured: dict = {}
+
+        class _Proc:
+            returncode = 0
+            stdout = b'{"result": "{\\"workflow_type\\": \\"custom\\", \\"steps\\": []}", "usage": {}}'
+            stderr = b""
+
+        def _fake_run(*_a, **kwargs):
+            captured["env"] = kwargs.get("env")
+            return _Proc()
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-should-be-stripped")
+        monkeypatch.setattr(claude_code_shim.subprocess, "run", _fake_run)
+        claude_code_shim._invoke_claude(
+            "plan something",
+            binary=str(tmp_path / "claude"),
+            model=None,
+            timeout=30.0,
+            cwd=tmp_path,
+        )
+        assert "ANTHROPIC_API_KEY" not in captured["env"]
+
+
 class TestShimMainParsesFlag:
     """Smoke-test ``main()`` directly: assert the runtime default is
     DAG-blind, and that ``--with-dag-instruction`` flips to DAG-aware.
@@ -191,6 +229,7 @@ class TestShimMainParsesFlag:
         """No flag passed: envelope must show ``dag_aware=false``.
         This is THE invariant for fair head-to-head comparisons."""
         monkeypatch.setenv("CLAUDE_CODE_BIN", "/no/such/binary/exists")
+        monkeypatch.setattr(claude_code_shim.shutil, "which", lambda _name: None)
         rc = claude_code_shim.main([
             "--prompt", "rna-seq",
             "--files", "[]",
@@ -205,6 +244,7 @@ class TestShimMainParsesFlag:
         """``--with-dag-instruction`` switches to the DAG-aware template
         (Benchmark J's opt-in arm)."""
         monkeypatch.setenv("CLAUDE_CODE_BIN", "/no/such/binary/exists")
+        monkeypatch.setattr(claude_code_shim.shutil, "which", lambda _name: None)
         rc = claude_code_shim.main([
             "--prompt", "rna-seq",
             "--files", "[]",

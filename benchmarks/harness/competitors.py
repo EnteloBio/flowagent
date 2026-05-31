@@ -693,6 +693,9 @@ class ClaudeCodeCompetitor(Competitor):
         # ``dag_aware`` arm).
         if self.with_dag:
             argv += ["--with-dag-instruction"]
+        claude_bin = self._binary()
+        if claude_bin:
+            argv += ["--claude-bin", claude_bin]
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
@@ -1087,7 +1090,7 @@ class RawLLMCompetitor(Competitor):
 # expensive premium-reasoning tier.
 DEFAULT_RAW_FRONTIER_MODELS = (
     "gpt-5.4",
-    "claude-opus-4-7",
+    "claude-opus-4-8",
     "gemini-2.5-pro",
 )
 

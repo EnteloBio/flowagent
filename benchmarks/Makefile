@@ -4,10 +4,28 @@
 # Override defaults with make variables, e.g.
 #     make plan MODEL=claude-sonnet-4-6 REPLICATES=5
 
-# Prefer `python` if it exists, else fall back to `python3`. Override by
-# setting PY on the command line, e.g. `make plan PY=/path/to/venv/bin/python`.
-PY          ?= $(shell command -v python 2>/dev/null || command -v python3)
+# Prefer `python` if it has FlowAgent deps; else try the `flowagent` conda env;
+# else fall back to `python3`. Override with PY=/path/to/python.
+_detect_py := $(shell \
+	PY=$$(command -v python 2>/dev/null || command -v python3); \
+	if $$PY -c "import openai" 2>/dev/null; then echo $$PY; \
+	else \
+	  for CAND in \
+	    "$$CONDA_PREFIX/bin/python" \
+	    "$$HOME/miniconda3/envs/flowagent/bin/python" \
+	    "$$HOME/anaconda3/envs/flowagent/bin/python" \
+	    "/opt/homebrew/Caskroom/miniconda/base/envs/flowagent/bin/python"; do \
+	    if test -n "$$CAND" && test -x "$$CAND" && "$$CAND" -c "import openai" 2>/dev/null; then \
+	      echo "$$CAND"; exit 0; \
+	    fi; \
+	  done; \
+	  echo $$PY; \
+	fi)
+PY          ?= $(_detect_py)
 MODEL       ?= gpt-4.1
+# ``make ablation MODEL=$MODEL`` with an unset shell $MODEL overrides MODEL ?=
+# above with an empty value → bench_*.py runs every model in models.yaml.
+EFFECTIVE_MODELS := $(if $(MODELS),$(MODELS),$(if $(strip $(MODEL)),$(MODEL),gpt-4.1))
 JUDGE       ?= gpt-5.4
 REPLICATES  ?= 3
 TIMEOUT     ?=
@@ -16,6 +34,12 @@ RESULTS_DIR ?= results
 
 ifeq ($(strip $(PY)),)
 $(error No python interpreter found on PATH. Set PY=/path/to/python)
+endif
+
+# Fail fast when the chosen interpreter cannot import openai (common when
+# running from conda ``base`` instead of ``conda activate flowagent``).
+ifeq ($(shell $(PY) -c "import openai" 2>/dev/null && echo ok),)
+$(error $(PY) is missing the openai package. Run: conda activate flowagent  OR  pip install -e ..)
 endif
 
 .PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation rescore rescore-all merge prune-models report test clean help refresh-tools
@@ -30,6 +54,10 @@ help:
 	@echo "  make exec         - Benchmark D: executor coverage (no API key)"
 	@echo "  make competitors  - Benchmark E: head-to-head vs BioMaster / AutoBA / Biomni / Claude Code / Edison / raw-LLM"
 	@echo "  make competitors-all - Benchmark E: full 4-way comparison (FlowAgent / Claude Code / Biomni / Edison)"
+	@echo "  make references   - Materialise gold-standard outputs for Benchmarks F/G (run once; see references/README.md)"
+	@echo "  make fidelity-run - Benchmark F: run FlowAgent on fidelity cases + score vs references (slow; hours per cell)"
+	@echo "  make fidelity     - Benchmark F: score-only over $(RESULTS_DIR)/fidelity_runs (no LLM calls)"
+	@echo "  make interpretation - Benchmark G: biological-interpretation quality (MODEL + JUDGE=$(JUDGE); needs references)"
 	@echo "  make ablation     - Benchmark H: DAG-aware vs DAG-blind planner ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make ablation-pilot - Benchmark H smoke: 5 prompts × 1 replicate × 2 arms (validates the ablation pipeline)"
 	@echo "  make ablation-figure ABLATION_DIR=results/ablation/<ts> - render figure_ablation.pdf + stats_ablation.tsv"
@@ -46,12 +74,13 @@ help:
 	@echo "  make cove-ablation-pilot - T4 smoke: 5 prompts × 1 replicate × 2 arms"
 	@echo "  make cove-figure COVE_DIR=results/cove_ablation/<ts> - render figure_cove.pdf + stats + signal table"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
+	@echo "  make rescore-all  - Re-evaluate every planning run in $(RESULTS_DIR)/planning/"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
 	@echo "  make prune-models - Drop MODELS=... from all planning run artifacts (see prune_planning_models.py)"
 	@echo "  make test         - run the benchmark test suite (pytest)"
 	@echo "  make all          - single MODEL end-to-end: plan + recovery + gen + exec + report"
 	@echo "  make all-sweep    - full multi-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report"
-	@echo "  make report       - regenerate figures (uses _merged if present)"
+	@echo "  make report       - Regenerate all figures under $(RESULTS_DIR)/figures/ (planning, ablations, interpretation, …)"
 	@echo "  make clean        - delete results/"
 	@echo "  make refresh-tools - regenerate data/known_tools.yaml from Bioconda/Bioconductor (maintainer-only)"
 
@@ -84,6 +113,10 @@ prune-models:
 recovery:
 	$(PY) bench_recovery.py --model=$(MODEL) --seeds=$(SEEDS) --out=$(RESULTS_DIR)
 
+# Re-aggregate all recovery runs into results/recovery/_taxonomy/<ts>/.
+recovery-taxonomy:
+	$(PY) recovery_taxonomy.py
+
 gen:
 	$(PY) bench_generation.py --out=$(RESULTS_DIR)
 
@@ -103,7 +136,7 @@ exec:
 #
 # The opt-in lane ``edison`` is excluded from the default sweep; name it
 # explicitly via COMPETITORS=...,edison or use ``make competitors-all``.
-RAW_MODELS ?= gpt-5.4,claude-opus-4-7,gemini-2.5-pro
+RAW_MODELS ?= gpt-5.4,claude-opus-4-8,gemini-2.5-pro
 COMPETITORS_FLAG := $(if $(COMPETITORS),--competitors=$(COMPETITORS),)
 competitors:
 	$(PY) bench_competitors.py --model=$(MODEL) --replicates=$(REPLICATES) \
@@ -129,7 +162,7 @@ competitors-all:
 # pass MODELS=a,b,c to sweep multiple models.
 ablation:
 	$(PY) bench_ablation.py \
-	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
+	    --models=$(EFFECTIVE_MODELS) \
 	    --replicates=$(REPLICATES) \
 	    --out=$(RESULTS_DIR)
 
@@ -162,7 +195,7 @@ ablation-figure:
 # columns from harness/metrics.py).
 reflection:
 	$(PY) bench_reflection_ablation.py \
-	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
+	    --models=$(EFFECTIVE_MODELS) \
 	    --replicates=$(REPLICATES) \
 	    $(if $(MAX_RETRIES),--max-retries=$(MAX_RETRIES),) \
 	    --out=$(RESULTS_DIR)
@@ -243,7 +276,7 @@ competitor-dag-figure:
 # rationale + recovery-taxonomy framing.
 validator-ablation:
 	$(PY) bench_validator_ablation.py \
-	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
+	    --models=$(EFFECTIVE_MODELS) \
 	    --replicates=$(REPLICATES) \
 	    --out=$(RESULTS_DIR)
 
@@ -278,7 +311,7 @@ validator-figure:
 # Both arms keep LLM_DAG_AWARE=true and FLOWAGENT_VALIDATOR_ENABLED=true.
 cove-ablation:
 	$(PY) bench_cove_ablation.py \
-	    --models=$(if $(MODELS),$(MODELS),$(MODEL)) \
+	    --models=$(EFFECTIVE_MODELS) \
 	    --replicates=$(REPLICATES) \
 	    --out=$(RESULTS_DIR)
 

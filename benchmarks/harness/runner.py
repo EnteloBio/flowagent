@@ -104,6 +104,18 @@ def load_yaml(path: Path) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def parse_models_filter(models_arg: Optional[str]) -> List[str]:
+    """Parse ``--models``; reject empty string (e.g. ``make target MODEL=$MODEL``)."""
+    if models_arg is None:
+        return []
+    if not str(models_arg).strip():
+        raise SystemExit(
+            "Empty --models value. Pass e.g. --models=gpt-5.4-mini "
+            "(shell `make target MODEL=$MODEL` leaves $MODEL unset)."
+        )
+    return [m.strip() for m in models_arg.split(",") if m.strip()]
+
+
 # ── Manifest ──────────────────────────────────────────────────────
 
 def _git_sha() -> str:
@@ -265,11 +277,14 @@ async def sweep(
             status = "err" if result.get("error") else "ok"
             cost = float(result.get("cost_usd") or 0.0)
             wall = float(result.get("wall_seconds") or 0.0)
+            err_hint = ""
+            if result.get("error"):
+                err_hint = f" — {result['error'][:100]}"
             print(
                 f"[{idx:>4}/{total_cells}] "
                 f"{model_cfg['id']:<32s} "
                 f"{str(entry.get('id', '?')):<28s} "
-                f"rep={rep} {status} "
+                f"rep={rep} {status}{err_hint} "
                 f"${cost:6.4f} {wall:6.1f}s",
                 flush=True,
             )

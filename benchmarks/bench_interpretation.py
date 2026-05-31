@@ -44,11 +44,35 @@ from harness.runner import (  # noqa: E402
 
 # ── Prompt assembly ──────────────────────────────────────────────
 
-_SYSTEM_RESPONDENT = (
+_SYSTEM_DATA = (
     "You are a careful computational-biology research assistant. "
-    "Answer using only the supplied analysis outputs; if those outputs "
-    "do not contain the evidence needed to answer, say so explicitly."
+    "Answer using only the supplied analysis outputs and any dataset "
+    "metadata block prepended to them. If those outputs do not contain "
+    "the evidence needed to answer, pick the refusal option or say so "
+    "explicitly."
 )
+
+_SYSTEM_PRIORS = (
+    "You are a careful computational-biology research assistant. "
+    "You may use established biological knowledge together with any "
+    "supplied analysis outputs. Answer the question directly; do not "
+    "refuse merely because the supplied files lack detail when textbook "
+    "biology suffices."
+)
+
+_SYSTEM_REFUSAL = (
+    "You are a careful computational-biology research assistant. "
+    "Answer using only the supplied analysis outputs. If the supplied "
+    "data genuinely cannot answer the question, pick the refusal option."
+)
+
+
+def _system_prompt(evidence_class: str) -> str:
+    if evidence_class == "internal_knowledge":
+        return _SYSTEM_PRIORS
+    if evidence_class == "calibrated_refusal":
+        return _SYSTEM_REFUSAL
+    return _SYSTEM_DATA
 
 # ── Judge calibration ────────────────────────────────────────────
 #
@@ -95,34 +119,110 @@ _SYSTEM_JUDGE = (
 )
 
 
-def _bundle_inputs(input_paths: Dict[str, Path], char_budget: int = 24_000) -> str:
+def _read_text_path(path: Path) -> str:
+    """Read a text or gzip-compressed text file."""
+    if path.name.endswith(".gz") or path.suffix == ".gz":
+        import gzip
+        with gzip.open(path, "rt", errors="replace") as fh:
+            return fh.read()
+    return path.read_text(errors="replace")
+
+
+def _summarize_bed_like(text: str) -> str:
+    """Return a one-line summary for BED / narrowPeak content."""
+    rows = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
+    if not rows:
+        return "peak rows: 0"
+    widths = []
+    chroms: Dict[str, int] = {}
+    for ln in rows:
+        parts = ln.split("\t")
+        if len(parts) < 3:
+            continue
+        chrom = parts[0]
+        chroms[chrom] = chroms.get(chrom, 0) + 1
+        try:
+            widths.append(int(parts[2]) - int(parts[1]))
+        except ValueError:
+            pass
+    med_w = sorted(widths)[len(widths) // 2] if widths else 0
+    top_chr = max(chroms, key=chroms.get) if chroms else "?"
+    return (
+        f"peak rows: {len(rows)}; median width: {med_w} bp; "
+        f"most peaks on: {top_chr} ({chroms.get(top_chr, 0)} rows)"
+    )
+
+
+def _summarize_vcf(text: str) -> str:
+    """Return a one-line summary for VCF variant records."""
+    n = indel = 0
+    chroms: set = set()
+    for ln in text.splitlines():
+        if not ln or ln.startswith("#"):
+            continue
+        parts = ln.split("\t")
+        if len(parts) < 5:
+            continue
+        n += 1
+        chroms.add(parts[0])
+        ref, alt = parts[3], parts[4].split(",")[0]
+        if len(ref) > 1 or len(alt) > 1:
+            indel += 1
+    if n == 0:
+        return "variant records: 0"
+    frac = indel / n
+    return (
+        f"variant records: {n}; chromosomes present: {sorted(chroms)}; "
+        f"indel fraction (|REF|>1 or |ALT|>1): {frac:.1%}"
+    )
+
+
+def _bundle_inputs(
+    input_paths: Dict[str, Path],
+    char_budget: int = 24_000,
+    *,
+    dataset_context: str = "",
+) -> str:
     """Concatenate the named input files into a single context block.
 
     Each input is preceded by a header line ``=== <name> (path=<rel>) ===``
-    and is truncated to fit a per-input share of ``char_budget``.
+    and is truncated to fit a per-input share of ``char_budget``.  Gzip
+    files are decompressed.  Large BED/VCF inputs get a computed summary
+    line so row-count / composition questions remain answerable even when
+    the excerpt is truncated.
     """
-    if not input_paths:
-        return ""
-    share = max(2_000, char_budget // max(1, len(input_paths)))
     chunks: List[str] = []
+    if dataset_context.strip():
+        chunks.append(f"=== dataset metadata ===\n{dataset_context.strip()}\n")
+    if not input_paths:
+        return "".join(chunks)
+    share = max(2_000, char_budget // max(1, len(input_paths)))
     for name, path in input_paths.items():
         header = f"\n=== {name} ({path}) ===\n"
         try:
-            text = path.read_text(errors="replace")
+            text = _read_text_path(path)
         except FileNotFoundError:
             chunks.append(header + f"[file not found: {path}]\n")
             continue
-        if len(text) > share:
-            text = text[:share] + f"\n... [truncated; {len(text)-share} chars omitted]\n"
-        chunks.append(header + text)
+        summary = ""
+        low = name.lower()
+        if low.endswith("vcf") or path.name.endswith(".vcf.gz"):
+            summary = _summarize_vcf(text) + "\n"
+        elif "peak" in low or path.suffix.lower() in (".bed", ".narrowpeak"):
+            summary = _summarize_bed_like(text) + "\n"
+        body = summary + text
+        if len(body) > share:
+            body = body[:share] + f"\n... [truncated; {len(text)-share} chars omitted]\n"
+        chunks.append(header + body)
     return "".join(chunks)
 
 
 def _mcq_prompt(question: Dict[str, Any], context: str) -> str:
     choices = "\n".join(f"  {k}) {v}" for k, v in question["choices"].items())
     valid = "/".join(question["choices"].keys())
+    system = _system_prompt(question.get("evidence_class", ""))
     return (
-        f"{_SYSTEM_RESPONDENT}\n\n"
+        f"{system}\n\n"
         f"Analysis outputs:\n{context}\n\n"
         f"Question: {question['question']}\n\n"
         f"Choices:\n{choices}\n\n"
@@ -136,8 +236,9 @@ def _mcq_prompt(question: Dict[str, Any], context: str) -> str:
 
 
 def _open_prompt(question: Dict[str, Any], context: str) -> str:
+    system = _system_prompt(question.get("evidence_class", "data_required"))
     return (
-        f"{_SYSTEM_RESPONDENT}\n\n"
+        f"{system}\n\n"
         f"Analysis outputs:\n{context}\n\n"
         f"Question: {question['question']}\n\n"
         f"Answer concisely and stay grounded in the supplied evidence."
@@ -412,7 +513,10 @@ async def _run_sweep(datasets: List[Dict[str, Any]],
     for ds in datasets:
         input_paths = {k: inputs_base / v
                        for k, v in (ds.get("inputs") or {}).items()}
-        context = _bundle_inputs(input_paths)
+        context = _bundle_inputs(
+            input_paths,
+            dataset_context=ds.get("analysis_context", ""),
+        )
         for q in ds["questions"]:
             t0 = time.perf_counter()
             try:

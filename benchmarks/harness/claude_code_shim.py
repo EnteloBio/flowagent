@@ -56,6 +56,9 @@ Configuration knobs (env vars):
 
 * ``CLAUDE_CODE_BIN``     : explicit path to the ``claude`` binary
                             (default: resolved via ``shutil.which``).
+* ``CLAUDE_CODE_USE_API_KEY`` : when ``true``, pass ``ANTHROPIC_API_KEY``
+                            through to the CLI (default: unset it so
+                            ``claude /login`` OAuth is used).
 * ``CLAUDE_CODE_TIMEOUT`` : per-prompt wall-clock cap, seconds (default 300).
 * ``CLAUDE_CODE_MODEL``   : model id passed via ``--model`` (default: CLI default).
 
@@ -233,12 +236,9 @@ def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
 def _resolve_claude_bin() -> Optional[str]:
     """Find the ``claude`` binary, honouring ``CLAUDE_CODE_BIN`` first."""
     explicit = os.environ.get("CLAUDE_CODE_BIN")
-    if explicit:
-        if Path(explicit).exists() and os.access(explicit, os.X_OK):
-            return explicit
-        return None
-    found = shutil.which("claude")
-    return found
+    if explicit and Path(explicit).exists() and os.access(explicit, os.X_OK):
+        return explicit
+    return shutil.which("claude")
 
 
 def _invoke_claude(
@@ -260,6 +260,17 @@ def _invoke_claude(
         argv += ["--model", model]
     argv += ["-p", prompt_text]
 
+    # FlowAgent's ``.env`` often sets ``ANTHROPIC_API_KEY`` for the Anthropic
+    # provider. Claude Code CLI prefers that env var over the interactive
+    # ``claude /login`` OAuth session, which yields fast rc=1 auth failures
+    # during ``make competitors`` even when the shim works in a bare shell.
+    # Drop the key unless the caller explicitly opts in.
+    env = os.environ.copy()
+    if os.environ.get("CLAUDE_CODE_USE_API_KEY", "").lower() not in (
+        "1", "true", "yes",
+    ):
+        env.pop("ANTHROPIC_API_KEY", None)
+
     proc = subprocess.run(
         argv,
         capture_output=True,
@@ -267,6 +278,7 @@ def _invoke_claude(
         cwd=str(cwd),
         timeout=timeout,
         check=False,
+        env=env,
     )
     out = proc.stdout.decode(errors="replace")
     err = proc.stderr.decode(errors="replace")
@@ -324,6 +336,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="JSON-encoded list of 'name: description' strings")
     ap.add_argument("--model", default=None,
                     help="Override model id (CLAUDE_CODE_MODEL also honoured)")
+    ap.add_argument(
+        "--claude-bin", default=None,
+        help="Explicit path to the claude binary (overrides CLAUDE_CODE_BIN / PATH)",
+    )
     # Ablation arm switch for Benchmark J. The default is DAG-blind so
     # head-to-head Benchmark E doesn't quietly hand Claude Code the same
     # DAG instruction FlowAgent's planner uses; pass --with-dag-instruction
@@ -340,7 +356,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     dag_aware = args.with_dag_instruction
 
-    binary = _resolve_claude_bin()
+    binary = args.claude_bin or _resolve_claude_bin()
     if not binary:
         print(json.dumps(_envelope(
             _empty_plan(),
@@ -464,7 +480,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     err_msg: Optional[str] = None
     if rc != 0:
         err_msg = f"claude exited rc={rc}"
-        if stderr.strip():
+        if isinstance(cli_json, dict):
+            cli_err = (
+                cli_json.get("result")
+                or cli_json.get("error")
+                or cli_json.get("message")
+            )
+            if cli_err:
+                err_msg += f": {str(cli_err).strip()[:500]}"
+        elif stderr.strip():
             err_msg += f": {stderr.strip()[:500]}"
     elif isinstance(cli_json, dict) and cli_json.get("is_error"):
         err_msg = str(cli_json.get("error") or cli_json.get("message") or "Claude Code reported is_error=true")

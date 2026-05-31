@@ -98,6 +98,7 @@ models:
     reasoning: true
     reasoning_default: high
     pricing: {input_per_1k: 0.0300, output_per_1k: 0.1800}
+    notes: "Responses API only (not chat/completions); premium tier — use gpt-5.4 for most sweeps"
 
   # ── GPT-5.5 family (flagship successor, OpenAI deprecations page) ─
   - id: gpt-5.5
@@ -120,7 +121,7 @@ models:
     reasoning: true
     reasoning_default: high
     pricing: {input_per_1k: 0.03500, output_per_1k: 0.21000}
-    notes: "Replacement for o1-pro"
+    notes: "Replacement for o1-pro; Responses API only (not chat/completions)"
 
   - id: gpt-5.5-mini
     provider: openai
@@ -279,6 +280,17 @@ models:
   # ═════════════════════════════════════════════════════════════
 
   # ── Claude Opus 4.x ────────────────────────────────────────
+  - id: claude-opus-4-8
+    provider: anthropic
+    env_var: ANTHROPIC_API_KEY
+    family: claude-opus-4
+    tier: current
+    context_k: 1000
+    reasoning: true
+    reasoning_default: medium
+    pricing: {input_per_1k: 0.00500, output_per_1k: 0.02500}
+    notes: "Released 2026-05-28; API id claude-opus-4-8; drop-in successor to claude-opus-4-7"
+
   - id: claude-opus-4-7
     provider: anthropic
     env_var: ANTHROPIC_API_KEY
@@ -328,7 +340,7 @@ models:
     reasoning: false
     reasoning_default: none
     pricing: {input_per_1k: 0.01500, output_per_1k: 0.07500}
-    notes: "claude-opus-4-20250514 retires 2026-06-15; use claude-opus-4-7"
+    notes: "claude-opus-4-20250514 retires 2026-06-15; use claude-opus-4-8"
 
   # ── Claude Sonnet 4.x ──────────────────────────────────────
   - id: claude-sonnet-4-6

@@ -335,28 +335,34 @@ def main() -> None:
                   f"{'available' if ok else 'NOT AVAILABLE: ' + why.splitlines()[0]}")
 
         arm_results: Dict[str, List[Dict[str, Any]]] = {}
-        for arm in arms_to_run:
-            arm_dir = comp_dir / arm
-            arm_dir.mkdir(parents=True, exist_ok=True)
-            comp = arm_competitors[arm]
-            print(f"\n=== Arm: {comp_id}/{arm} (with_dag={arm == 'dag_aware'}) ===")
 
-            runner = _make_runner(
-                comp, mock=args.mock, timeout=args.timeout,
-                model_cfg=model_cfg, arm=arm,
-                competitor_logical_id=comp_id,
-            )
-            sweep_result = asyncio.run(sweep(
-                runner,
-                models=models_for_sweep,
-                inputs=prompts,
-                replicates=args.replicates,
-                out_dir=arm_dir,
-                benchmark_name=f"competitor_dag_ablation:{comp_id}/{arm}",
-                concurrency=args.concurrency,
-            ))
-            arm_results[arm] = sweep_result.results
-            print(f"[ok] arm={arm} wrote {len(sweep_result.results)} rows -> {arm_dir}")
+        async def _run_competitor_arms() -> Dict[str, List[Dict[str, Any]]]:
+            results: Dict[str, List[Dict[str, Any]]] = {}
+            for arm in arms_to_run:
+                arm_dir = comp_dir / arm
+                arm_dir.mkdir(parents=True, exist_ok=True)
+                comp = arm_competitors[arm]
+                print(f"\n=== Arm: {comp_id}/{arm} (with_dag={arm == 'dag_aware'}) ===")
+
+                runner = _make_runner(
+                    comp, mock=args.mock, timeout=args.timeout,
+                    model_cfg=model_cfg, arm=arm,
+                    competitor_logical_id=comp_id,
+                )
+                sweep_result = await sweep(
+                    runner,
+                    models=models_for_sweep,
+                    inputs=prompts,
+                    replicates=args.replicates,
+                    out_dir=arm_dir,
+                    benchmark_name=f"competitor_dag_ablation:{comp_id}/{arm}",
+                    concurrency=args.concurrency,
+                )
+                results[arm] = sweep_result.results
+                print(f"[ok] arm={arm} wrote {len(sweep_result.results)} rows -> {arm_dir}")
+            return results
+
+        arm_results = asyncio.run(_run_competitor_arms())
 
         # Per-competitor paired CSV for the figure.
         if len(arm_results) >= 2:

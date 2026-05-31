@@ -15,12 +15,22 @@ _DEFAULT_REASONING_EFFORT = "low"
 _DEFAULT_MAX_COMPLETION_TOKENS = 8000
 
 # LangChain >=0.3 may pass kwargs the installed openai SDK does not accept.
-_UNSUPPORTED_CHAT_KWARGS = frozenset({"use_responses_api"})
+_UNSUPPORTED_CHAT_KWARGS = frozenset({"use_responses_api", "output_version"})
 
 
 def is_reasoning_model(model: str) -> bool:
     m = (model or "").lower()
     return any(m.startswith(p) for p in _REASONING_MODEL_PREFIXES)
+
+
+def _uses_function_tools(kwargs: Dict[str, Any]) -> bool:
+    """True when the request binds OpenAI function / tool definitions."""
+    tools = kwargs.get("tools")
+    if not tools:
+        return False
+    if isinstance(tools, (list, tuple)):
+        return len(tools) > 0
+    return True
 
 
 def normalize_openai_chat_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
@@ -34,7 +44,13 @@ def normalize_openai_chat_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     elif "max_completion_tokens" not in out:
         out["max_completion_tokens"] = _DEFAULT_MAX_COMPLETION_TOKENS
     out.pop("temperature", None)
-    out.setdefault("reasoning_effort", _DEFAULT_REASONING_EFFORT)
+    # Tool-calling agents (Biomni, AutoBA, BioMaster via LangChain) hit
+    # /v1/chat/completions. GPT-5.x rejects reasoning_effort there when
+    # ``tools`` is set — use max_completion_tokens only for those calls.
+    if _uses_function_tools(out):
+        out.pop("reasoning_effort", None)
+    else:
+        out.setdefault("reasoning_effort", _DEFAULT_REASONING_EFFORT)
     return out
 
 

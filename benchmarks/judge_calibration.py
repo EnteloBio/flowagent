@@ -209,7 +209,7 @@ def main() -> None:
     ap.add_argument("--judge-a",     default="gpt-5.4",
                     help="Original judge model id (used as label only; "
                          "scores come from the metrics CSV)")
-    ap.add_argument("--judge-b",     default="claude-opus-4-7",
+    ap.add_argument("--judge-b",     default="claude-opus-4-8",
                     help="Second judge to run for re-scoring")
     ap.add_argument("--n",           type=int, default=30,
                     help="Number of open-ended responses to sample")

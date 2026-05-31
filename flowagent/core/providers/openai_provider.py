@@ -7,9 +7,19 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from openai import AsyncOpenAI, RateLimitError
 
 from .base import LLMProvider, ProviderResponse
-from .openai_models import resolve_openai_model
+from .openai_models import requires_responses_api, resolve_openai_model
 
 logger = logging.getLogger(__name__)
+
+
+def _is_not_chat_model_error(exc: Exception) -> bool:
+    """True when OpenAI rejects a model on v1/chat/completions."""
+    msg = str(exc).lower()
+    return (
+        "not a chat model" in msg
+        or "v1/completions" in msg
+        or "v1/responses" in msg
+    )
 
 
 class OpenAIProvider(LLMProvider):
@@ -49,6 +59,75 @@ class OpenAIProvider(LLMProvider):
         m = (model or "").lower()
         return any(m.startswith(p) for p in cls._REASONING_MODEL_PREFIXES)
 
+    @staticmethod
+    def _reasoning_effort(model: str, override: Optional[str]) -> str:
+        """Pick reasoning effort; Pro-tier models require ``high``."""
+        if override:
+            return override
+        m = (model or "").lower()
+        if m.endswith("-pro") and m.startswith("gpt-5"):
+            return "high"
+        return OpenAIProvider._DEFAULT_REASONING_EFFORT
+
+    @staticmethod
+    def _messages_for_responses_api(
+        messages: List[Dict[str, str]],
+    ) -> tuple[Optional[str], Any]:
+        """Split chat messages into Responses API ``instructions`` + ``input``."""
+        system_parts: List[str] = []
+        input_items: List[Dict[str, str]] = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content") or ""
+            if role == "system":
+                system_parts.append(content)
+            else:
+                input_items.append({"role": role, "content": content})
+        instructions = "\n\n".join(system_parts) if system_parts else None
+        if not input_items:
+            return instructions, ""
+        if len(input_items) == 1 and input_items[0]["role"] == "user":
+            return instructions, input_items[0]["content"]
+        return instructions, input_items
+
+    async def _chat_via_responses(
+        self,
+        messages: List[Dict[str, str]],
+        *,
+        model: str,
+        max_tokens: Optional[int] = None,
+        reasoning_effort: Optional[str] = None,
+    ) -> ProviderResponse:
+        """Route through ``v1/responses`` for Pro-tier models."""
+        instructions, input_payload = self._messages_for_responses_api(messages)
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "input": input_payload,
+        }
+        if instructions:
+            kwargs["instructions"] = instructions
+        kwargs["max_output_tokens"] = (
+            max_tokens if max_tokens is not None else self._DEFAULT_MAX_COMPLETION_TOKENS
+        )
+        if self._is_reasoning_model(model):
+            kwargs["reasoning"] = {
+                "effort": self._reasoning_effort(model, reasoning_effort),
+            }
+        response = await self._call_responses_with_retry(**kwargs)
+        usage: Dict[str, Any] = {}
+        if getattr(response, "usage", None):
+            usage = (
+                response.usage.model_dump()
+                if hasattr(response.usage, "model_dump")
+                else dict(response.usage)
+            )
+        return ProviderResponse(
+            content=response.output_text or "",
+            model=getattr(response, "model", model) or model,
+            usage=usage,
+            raw=response,
+        )
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -59,6 +138,13 @@ class OpenAIProvider(LLMProvider):
         reasoning_effort: Optional[str] = None,
     ) -> ProviderResponse:
         effective_model = self._model(model)
+        if requires_responses_api(effective_model):
+            return await self._chat_via_responses(
+                messages,
+                model=effective_model,
+                max_tokens=max_tokens,
+                reasoning_effort=reasoning_effort,
+            )
         kwargs: Dict[str, Any] = {
             "model": effective_model,
             "messages": messages,
@@ -69,13 +155,25 @@ class OpenAIProvider(LLMProvider):
             kwargs["max_completion_tokens"] = (
                 max_tokens if max_tokens is not None else self._DEFAULT_MAX_COMPLETION_TOKENS
             )
-            kwargs["reasoning_effort"] = reasoning_effort or self._DEFAULT_REASONING_EFFORT
+            kwargs["reasoning_effort"] = self._reasoning_effort(
+                effective_model, reasoning_effort,
+            )
         else:
             kwargs["temperature"] = temperature
             if max_tokens is not None:
                 kwargs["max_tokens"] = max_tokens
 
-        completion = await self._call_with_retry(**kwargs)
+        try:
+            completion = await self._call_with_retry(**kwargs)
+        except Exception as exc:
+            if _is_not_chat_model_error(exc):
+                return await self._chat_via_responses(
+                    messages,
+                    model=effective_model,
+                    max_tokens=max_tokens,
+                    reasoning_effort=reasoning_effort,
+                )
+            raise
         if not completion.choices:
             return ProviderResponse(content="", model=completion.model, raw=completion)
         choice = completion.choices[0]
@@ -175,6 +273,20 @@ class OpenAIProvider(LLMProvider):
                 yield delta.content
 
     # -- retry helper ---------------------------------------------------
+
+    async def _call_responses_with_retry(self, **kwargs) -> Any:
+        import asyncio
+        attempts = max(self._max_retries, 1)
+        last_err: Optional[Exception] = None
+        for attempt in range(attempts):
+            try:
+                return await self.client.responses.create(**kwargs)
+            except RateLimitError as exc:
+                last_err = exc
+                wait = 2 ** attempt
+                logger.warning("OpenAI rate-limited (responses), retrying in %ss…", wait)
+                await asyncio.sleep(wait)
+        raise last_err  # type: ignore[misc]
 
     async def _call_with_retry(self, **kwargs) -> Any:
         import asyncio

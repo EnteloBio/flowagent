@@ -48,6 +48,12 @@ datasets:
     description: >-
       Himes et al. 2014 dexamethasone-treated airway smooth muscle RNA-seq.
       Reporting agent input: deseq2_results.csv (DE table) + multiqc summary.
+    analysis_context: |-
+      DESeq2 differential expression: dexamethasone-treated (trt) vs
+      untreated (untrt). Reference level: untreated. Positive log2FoldChange
+      = higher expression in dexamethasone-treated samples.
+      DE table columns: gene_id (Ensembl), gene_symbol (HGNC), log2FoldChange,
+      padj. Use gene_symbol to look up named genes in MCQ choices.
     inputs:
       de_table:    references/gse52778_himes_DE.tsv
       multiqc_log: references/gse52778_multiqc_general_stats.txt
@@ -68,12 +74,13 @@ datasets:
           B: CRISPLD2
           C: KLF15
           D: I cannot determine this from the supplied data.
-        answer: B
+        answer: C
         refusal_acceptable: false
         reference_explanation: >-
-          CRISPLD2 is one of the canonical, large-effect glucocorticoid-
-          induced genes in airway smooth muscle and consistently appears
-          at the top of DEX-vs-untreated DE rankings in this dataset.
+          Among the listed options, KLF15 carries the largest positive
+          log2 fold-change at padj < 0.05 in the dex-vs-untreated
+          contrast (canonical glucocorticoid target with one of the
+          strongest induced effects in this table).
 
       - id: gse52778_q02_direction
         type: mcq
@@ -213,6 +220,11 @@ datasets:
     description: >-
       Fu et al. 2015 mouse mammary RNA-seq across luminal, basal and
       stromal cell populations through pregnancy / lactation.
+    analysis_context: |-
+      edgeR/limma-voom basal vs luminal contrast (luminal = reference).
+      Positive log2FoldChange = higher in basal cells; negative = higher
+      in luminal cells. DE table columns: gene_id (Ensembl mouse),
+      gene_symbol (MGI symbol), log2FoldChange, padj.
     inputs:
       de_table: references/gse60450_fu_DE.tsv
     questions:
@@ -280,9 +292,9 @@ datasets:
           log2 fold-change observed for any gene with padj < 0.05 in
           the supplied table?
         choices:
-          A: |log2FC| < 2 (less than four-fold)
-          B: |log2FC| ≈ 2 – 5
-          C: |log2FC| > 8 (more than 256-fold)
+          A: "|log2FC| < 2 (less than four-fold)"
+          B: "|log2FC| ≈ 2 – 5"
+          C: "|log2FC| > 8 (more than 256-fold)"
           D: I cannot determine this from the supplied data.
         # Lineage markers (Krt14 etc.) routinely exceed log2FC = 8 in
         # this contrast — far beyond the range an LLM would guess from
@@ -326,6 +338,11 @@ datasets:
     description: >-
       Arunachalam et al. 2020 — whole-blood RNA-seq from 16 COVID-19
       patients vs 17 age- and sex-matched healthy controls.
+    analysis_context: |-
+      DESeq2: COVID-19 vs Healthy whole blood (Healthy = reference).
+      Positive log2FoldChange = higher in COVID-19 samples.
+      DE table columns: gene_id (Ensembl), gene_symbol (HGNC),
+      log2FoldChange, padj.
     inputs:
       de_table: references/gse152418_covid_blood_DE.tsv
     questions:
@@ -426,6 +443,11 @@ datasets:
     accession: ENCSR000EUQ
     description: >-
       ENCODE SUZ12 ChIP-seq in H1 human embryonic stem cells.
+    analysis_context: |-
+      IDR-thresholded narrowPeak file (BED-like). Columns: chrom, start,
+      end, name, score, strand, signalValue, pValue, qValue, peak summit.
+      Peak width = end − start (bp). Count data lines (non-# rows) for
+      peak-count questions.
     inputs:
       peaks: references/encsr000euq_suz12_idr_peaks.narrowPeak
     questions:
@@ -540,8 +562,12 @@ datasets:
     description: >-
       Ross-Innes et al. 2012 — ER-α ChIP-seq across responsive and
       tamoxifen-resistant MCF7-derived lines.
+    analysis_context: |-
+      Consensus ER-α peak BED (chrom, start, end). Peak width = col3 − col2.
+      Count rows per chromosome from column 1. This file is a merged
+      consensus atlas — it does not contain per-condition statistics.
     inputs:
-      peaks: references/gse32222_er_consensus.bed
+      peaks: references/gse32222_er_canonical.bed
     questions:
       - id: gse32222_q01_target
         type: mcq
@@ -656,6 +682,10 @@ datasets:
     description: >-
       Corces et al. 2016 ATAC-seq across HSC, MPP, CMP, GMP, MEP,
       CD4 T, CD8 T, B, NK and monocyte populations.
+    analysis_context: |-
+      Consensus ATAC-seq peak BED (chrom, start, end) merged across sorted
+      immune populations. Peak width = col3 − col2. chrM / MT rows indicate
+      mitochondrial peaks. Count total data lines for peak-count questions.
     inputs:
       peaks: references/gse74912_corces_consensus.bed
     questions:
@@ -776,6 +806,12 @@ datasets:
       Genome in a Bottle NA12878 chr20 truth set, NIST v4.2.1.
       Used to score the F1 of a candidate variant call set against
       a published gold standard.
+    analysis_context: |-
+      GIAB HG002/NA24385 v4.2.1 high-confidence benchmark VCF restricted
+      to chr20. Standard VCF columns: CHROM, POS, ID, REF, ALT, QUAL,
+      FILTER, INFO, …  Count non-# lines for record totals. Indels have
+      REF or ALT length > 1. Ti/Tv and indel:SNP ratios for chr20 are
+      textbook benchmarks when not derivable from a truncated excerpt.
     inputs:
       truth_vcf: references/giab_na12878_chr20_truth.vcf.gz
     questions:

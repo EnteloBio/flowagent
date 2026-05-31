@@ -87,6 +87,12 @@ class LLMInterface:
             base_url=settings.OPENAI_BASE_URL,
         )
 
+    async def aclose(self) -> None:
+        """Release httpx pools backing the provider and legacy client."""
+        from .providers.provider_cleanup import aclose_client, aclose_provider
+        await aclose_provider(self.provider)
+        await aclose_client(self.client)
+
     WORKFLOW_TYPES = {
         "rna_seq_kallisto": {
             "keywords": [

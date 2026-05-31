@@ -383,7 +383,7 @@ def main() -> None:
                          "``--competitors=edison`` for an Edison-only sweep, "
                          "or use ``make competitors-all``.")
     ap.add_argument("--raw-models",
-                    default="gpt-5.4,claude-opus-4-7,gemini-2.5-pro",
+                    default="gpt-5.4,claude-opus-4-8,gemini-2.5-pro",
                     help="Comma-separated model IDs to run as zero-shot "
                          "raw-LLM baselines (one provider call, no "
                          "scaffolding). Each becomes a ``raw_<model_id>`` "

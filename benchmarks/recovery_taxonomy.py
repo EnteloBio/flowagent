@@ -269,10 +269,19 @@ def _read_run(run_dir: Path) -> List[Dict[str, Any]]:
     try:
         with (run_dir / "manifest.json").open() as f:
             manifest = json.load(f)
+        if manifest.get("mock"):
+            print(f"  skip {run_dir.name}: mock run", file=sys.stderr)
+            return []
         models = [m.get("id", "") for m in (manifest.get("models") or [])]
-        model = models[0] if models else "unknown"
+        model = models[0] if models else (
+            (manifest.get("env_snapshot") or {}).get("LLM_MODEL") or "unknown"
+        )
     except Exception:
         model = "unknown"
+    if model == "unknown":
+        print(f"  skip {run_dir.name}: model not recorded in manifest",
+              file=sys.stderr)
+        return []
     for r in rows:
         r.setdefault("_source_run", run_dir.name)
         r.setdefault("_model", r.get("model") or model)
@@ -410,6 +419,15 @@ def main() -> None:
     if not all_rows:
         print(f"No rows match --tier={args.tier}", file=sys.stderr)
         sys.exit(1)
+
+    # When the same model was re-run, keep the newest cell (by run dir name).
+    deduped: Dict[Tuple[str, str, Any], Dict[str, Any]] = {}
+    for r in all_rows:
+        key = (r["_model"], r["fault"], r.get("seed"))
+        prev = deduped.get(key)
+        if prev is None or r.get("_source_run", "") > prev.get("_source_run", ""):
+            deduped[key] = r
+    all_rows = list(deduped.values())
 
     # Classify each row, attach category + signal back onto the row
     # dict so downstream reports can use them.

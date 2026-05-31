@@ -53,9 +53,9 @@ _ID_ALIASES = {
     "claude-sonnet-4":                 "claude-sonnet-4-6",
     "claude-sonnet-4-0":               "claude-sonnet-4-6",
     "claude-sonnet-4-20250514":        "claude-sonnet-4-6",
-    "claude-opus-4":                   "claude-opus-4-7",
-    "claude-opus-4-0":                 "claude-opus-4-7",
-    "claude-opus-4-20250514":          "claude-opus-4-7",
+    "claude-opus-4":                   "claude-opus-4-8",
+    "claude-opus-4-0":                 "claude-opus-4-8",
+    "claude-opus-4-20250514":          "claude-opus-4-8",
     "claude-haiku-3-5":                "claude-haiku-4-5",
     # OpenAI — Oct-2026 shutdown list → successors (gpt-3.5-turbo kept
     # as tier:legacy baseline in models.yaml, not aliased away)

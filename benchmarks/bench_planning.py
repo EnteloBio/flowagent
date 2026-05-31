@@ -81,13 +81,16 @@ async def _real_plan(prompt_entry: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict
     llm = LLMInterface()
     tracker = _TokenTracker(llm.provider)
     llm.provider = tracker
-    plan = await llm.generate_workflow_plan(prompt_entry["prompt"], context=ctx)
-    usage = {
-        "prompt_tokens":     tracker.prompt_tokens,
-        "completion_tokens": tracker.completion_tokens,
-        "llm_calls":         tracker.call_count,
-    }
-    return plan, usage
+    try:
+        plan = await llm.generate_workflow_plan(prompt_entry["prompt"], context=ctx)
+        usage = {
+            "prompt_tokens":     tracker.prompt_tokens,
+            "completion_tokens": tracker.completion_tokens,
+            "llm_calls":         tracker.call_count,
+        }
+        return plan, usage
+    finally:
+        await llm.aclose()
 
 
 # ── Mock LLM response ────────────────────────────────────────────

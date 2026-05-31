@@ -169,6 +169,7 @@ def _short_name(model: str) -> str:
     """Shorten model names for axis labels."""
     replacements = [
         # ── Anthropic (current) ────────────────────────────
+        ("claude-opus-4-8",            "Opus 4.8"),
         ("claude-opus-4-7",            "Opus 4.7"),
         ("claude-opus-4-6",            "Opus 4.6"),
         ("claude-opus-4-5",            "Opus 4.5"),
@@ -1699,6 +1700,35 @@ _COMPETITOR_COLOURS = {
     "other":                 "#6b7280",
 }
 
+def _competitor_row_has_error(err) -> bool:
+    """True when a competitor cell recorded an upstream crash / adapter error."""
+    if err is None:
+        return False
+    if isinstance(err, float) and pd.isna(err):
+        return False
+    s = str(err).strip()
+    return bool(s) and s.lower() not in ("none", "nan", "null")
+
+
+# Scaffolded agentic systems shown in ``competitors_agentic`` (excludes
+# raw-LLM lanes and opt-in competitors like Edison unless present).
+_AGENTIC_COMPETITORS = (
+    "flowagent", "claude_code", "autoba", "biomaster", "biomni",
+)
+_AGENTIC_DISPLAY = {
+    "flowagent":   "FlowAgent",
+    "claude_code": "Claude Code",
+    "autoba":      "AutoBA",
+    "biomaster":   "BioMaster",
+    "biomni":      "Biomni",
+}
+
+
+def _agentic_xticklabels(ax, x, labels: List[str]) -> None:
+    """Rotate competitor names so AutoBA / BioMaster / Claude Code don't collide."""
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=9, rotation=35, ha="right")
+
 
 def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     """Head-to-head bar chart with two co-primary outcomes + cost.
@@ -1870,8 +1900,8 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     """Three-panel head-to-head of the agentic systems alone.
 
-    Filters to flowagent / biomaster / autoba / biomni (excludes raw-LLM lanes) and
-    renders:
+    Filters to flowagent / claude_code / biomaster / autoba / biomni
+    (excludes raw-LLM lanes) and renders:
       (a) Binary pass rate + Wilson 95% CI
       (b) Mean tool-completeness score — a partial-credit view where each
           cell contributes ``tools_present_fraction`` instead of 0/1.
@@ -1886,12 +1916,12 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     if "competitor" not in df.columns or df.empty:
         return None
 
-    AGENTIC = {"flowagent", "biomaster", "autoba", "biomni"}
-    sub = df[df["competitor"].isin(AGENTIC)].copy()
+    sub = df[df["competitor"].isin(_AGENTIC_COMPETITORS)].copy()
     if sub.empty:
         return _empty_figure(
-            "No flowagent/biomaster/autoba/biomni rows in the competitors sweep.\n"
-            "Run: make competitors (set BIOMASTER_DIR / AUTOBA_DIR / BIOMNI_DIR as needed)."
+            "No agentic competitor rows in the competitors sweep.\n"
+            "Run: make competitors (set BIOMASTER_DIR / AUTOBA_DIR / "
+            "BIOMNI_DIR / CLAUDE_CODE_BIN as needed)."
         )
 
     sub = _with_scored_overall_pass(sub)
@@ -1900,39 +1930,17 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     # rows and sometimes the literal string "None" — both must be treated
     # as "no error". The naive ``if r.get("error"):`` check was truthy for
     # NaN and mis-labelled every cell as an upstream crash.
-    def _has_error(err) -> bool:
-        if err is None:
-            return False
-        if isinstance(err, float) and pd.isna(err):
-            return False
-        s = str(err).strip()
-        return bool(s) and s.lower() not in ("none", "nan", "null")
-
     def _label(r):
-        if _has_error(r.get("error")):
+        if _competitor_row_has_error(r.get("error")):
             return "error"
         if r["overall_pass"]:
             return "pass"
         return "plan_fail"
     sub["outcome"] = sub.apply(_label, axis=1)
 
-    # Pretty names + consistent ordering
-    NAME_MAP = {
-        "flowagent": "FlowAgent",
-        "biomaster": "BioMaster",
-        "autoba": "AutoBA",
-        "biomni": "Biomni",
-    }
-    COLOURS = {
-        "flowagent": "#0072B2",
-        "biomaster": "#E69F00",
-        "autoba": "#009E73",
-        "biomni": "#CC79A7",
-    }
-    order = [
-        c for c in ("flowagent", "autoba", "biomaster", "biomni")
-        if c in sub["competitor"].unique()
-    ]
+    order = [c for c in _AGENTIC_COMPETITORS if c in sub["competitor"].unique()]
+    labels = [_AGENTIC_DISPLAY.get(c, c) for c in order]
+    bar_colours = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"]) for c in order]
 
     # ── Panel A: pass rate + Wilson CI ─────────────────────────────
     agg = (sub.groupby("competitor")
@@ -1966,9 +1974,10 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
     # ── Layout ─────────────────────────────────────────────────────
     n_panels = 3 if has_frac else 2
-    fig_w = 10.5 if has_frac else 7.5
-    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 4.0),
-                             gridspec_kw={"wspace": 0.38})
+    n_bars = len(order)
+    fig_w = max(11.0, 2.0 * n_bars + 5.5) if has_frac else max(8.5, 1.8 * n_bars + 4.0)
+    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 4.2),
+                             gridspec_kw={"wspace": 0.42})
     if n_panels == 2:
         ax_pr, ax_stack = axes
         ax_tpf = None
@@ -1976,8 +1985,6 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         ax_pr, ax_tpf, ax_stack = axes
 
     x = np.arange(len(order))
-    bar_colours = [COLOURS[c] for c in order]
-    labels = [NAME_MAP[c] for c in order]
 
     # Panel A
     ax_pr.bar(x, agg["pass_rate"].values, color=bar_colours,
@@ -1990,8 +1997,7 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     for xi, (pr, n, p) in enumerate(zip(agg["pass_rate"], agg["n"], agg["passes"])):
         ax_pr.text(xi, pr + 0.035, f"{pr:.0%}\n({int(p)}/{int(n)})",
                    ha="center", va="bottom", fontsize=9, fontweight="semibold")
-    ax_pr.set_xticks(x)
-    ax_pr.set_xticklabels(labels, fontsize=10)
+    _agentic_xticklabels(ax_pr, x, labels)
     ax_pr.set_ylim(0, 1.12)
     ax_pr.set_ylabel("Pass rate (binary)", fontsize=10)
     ax_pr.set_title("a  Plan correctness (binary pass/fail)",
@@ -2010,8 +2016,7 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
                 continue
             ax_tpf.text(xi, v + 0.035, f"{v:.0%}",
                         ha="center", va="bottom", fontsize=9, fontweight="semibold")
-        ax_tpf.set_xticks(x)
-        ax_tpf.set_xticklabels(labels, fontsize=10)
+        _agentic_xticklabels(ax_tpf, x, labels)
         ax_tpf.set_ylim(0, 1.12)
         ax_tpf.set_ylabel("Mean tool-completeness", fontsize=10)
         ax_tpf.set_title("b  Partial credit (mean expected-tool recovery)",
@@ -2052,8 +2057,7 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
                     color=("#111827" if out_key == "plan_fail" else "white"),
                 )
         bottom += vals
-    ax_stack.set_xticks(x)
-    ax_stack.set_xticklabels(labels, fontsize=10)
+    _agentic_xticklabels(ax_stack, x, labels)
     ax_stack.set_ylim(0, 1.0)
     ax_stack.set_ylabel("Fraction of cells", fontsize=10)
     panel_letter = "c" if has_frac else "b"
@@ -2068,10 +2072,10 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
     fig.suptitle(
         "Head-to-head across agentic bioinformatics systems  —  "
-        "FlowAgent vs. AutoBA vs. BioMaster vs. Biomni",
+        + " vs. ".join(labels),
         fontsize=11.5, fontweight="bold", x=0.02, ha="left",
     )
-    fig.subplots_adjust(bottom=0.22, top=0.86)
+    fig.subplots_adjust(bottom=0.28, top=0.86)
     return fig
 
 
@@ -2126,6 +2130,214 @@ def competitors_perprompt_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     for spine in ("top", "right", "bottom", "left"):
         ax.spines[spine].set_visible(False)
     ax.set_title("Per-prompt pass rate by competitor", loc="left")
+    return fig
+
+
+# Rubric-level failure reasons for Benchmark E (first failing gate wins).
+_COMPETITOR_FAILURE_ORDER: Tuple[str, ...] = (
+    "pass",
+    "upstream_error",
+    "invalid_structure",
+    "invalid_dag",
+    "wrong_workflow_type",
+    "missing_tools",
+    "forbidden_tool",
+    "too_few_steps",
+    "malformed_commands",
+    "other_fail",
+)
+_COMPETITOR_FAILURE_LABELS: Dict[str, str] = {
+    "pass":                 "Pass",
+    "upstream_error":       "Upstream crash",
+    "invalid_structure":    "Invalid plan structure",
+    "invalid_dag":          "Invalid DAG",
+    "wrong_workflow_type":  "Wrong workflow type",
+    "missing_tools":        "Missing expected tools",
+    "forbidden_tool":       "Forbidden tool used",
+    "too_few_steps":        "Too few steps",
+    "malformed_commands":   "Malformed commands",
+    "other_fail":           "Other rubric failure",
+}
+_COMPETITOR_FAILURE_COLOURS: Dict[str, str] = {
+    "pass":                 "#15803d",
+    "upstream_error":       "#b91c1c",
+    "invalid_structure":    "#7f1d1d",
+    "invalid_dag":          "#dc2626",
+    "wrong_workflow_type":  "#ea580c",
+    "missing_tools":        "#E69F00",
+    "forbidden_tool":       "#9333ea",
+    "too_few_steps":        "#2563eb",
+    "malformed_commands":   "#0891b2",
+    "other_fail":           "#6b7280",
+}
+
+
+def _coerce_metric_bool(val, *, default: bool = False) -> bool:
+    """Parse bool-ish metric cells from CSV / JSONL."""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (float, np.floating)):
+        if np.isnan(val):
+            return default
+        return bool(val)
+    if isinstance(val, (int, np.integer)):
+        return bool(val)
+    s = str(val).strip().lower()
+    if s in ("", "nan", "none", "null"):
+        return default
+    if s in ("true", "1", "yes"):
+        return True
+    if s in ("false", "0", "no"):
+        return False
+    return default
+
+
+def _tools_coverage_ok(row: pd.Series) -> bool:
+    """True when expected tools are fully present (tier-aware)."""
+    tier = str(row.get("tier") or "transcription").strip().lower()
+    if tier == "inference":
+        return _coerce_metric_bool(row.get("any_tool_set_matched"))
+    frac = row.get("tools_present_fraction")
+    if frac is None or (isinstance(frac, float) and np.isnan(frac)):
+        return False
+    try:
+        return float(frac) >= 1.0 - 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
+def classify_competitor_failure_reason(row: pd.Series) -> str:
+    """Assign each competitor cell to one rubric-level outcome bucket.
+
+    Uses the same gate ordering as ``score_plan`` / ``score_plan_inference``:
+    the first failing check is the reported reason so stacked bars sum to
+    100% without double-counting multi-gate failures.
+    """
+    if _competitor_row_has_error(row.get("error")):
+        return "upstream_error"
+    if _coerce_metric_bool(row.get("overall_pass")):
+        return "pass"
+
+    tier = str(row.get("tier") or "transcription").strip().lower()
+
+    if not _coerce_metric_bool(row.get("plan_valid"), default=True):
+        return "invalid_structure"
+    if not _coerce_metric_bool(row.get("dag_valid"), default=True):
+        return "invalid_dag"
+
+    if tier == "inference":
+        if not _tools_coverage_ok(row):
+            return "missing_tools"
+    else:
+        if not _coerce_metric_bool(row.get("type_correct")):
+            return "wrong_workflow_type"
+        if not _tools_coverage_ok(row):
+            return "missing_tools"
+
+    if not _coerce_metric_bool(row.get("no_forbidden_tools"), default=True):
+        return "forbidden_tool"
+    if not _coerce_metric_bool(row.get("step_count_ok"), default=True):
+        return "too_few_steps"
+
+    cmd_frac = row.get("commands_well_formed_fraction")
+    if tier == "inference" and cmd_frac is not None:
+        try:
+            if float(cmd_frac) < 1.0 - 1e-9:
+                return "malformed_commands"
+        except (TypeError, ValueError):
+            pass
+
+    return "other_fail"
+
+
+def competitors_failure_breakdown_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """100% stacked bars: why each competitor failed the planning rubric.
+
+    One bar per competitor (including raw-LLM lanes). Each cell is assigned
+    exactly one primary failure reason — the first rubric gate that failed,
+    matching ``overall_pass`` semantics in ``harness.metrics.score_plan``.
+    """
+    if "competitor" not in df.columns or df.empty:
+        return None
+
+    sub = df.copy()
+    if "competitor_name" not in sub.columns:
+        sub["competitor_name"] = sub["competitor"]
+
+    sub["failure_reason"] = sub.apply(classify_competitor_failure_reason, axis=1)
+
+    # Competitor order: highest pass rate at top.
+    pass_rates = (
+        sub.groupby("competitor")["failure_reason"]
+        .apply(lambda s: (s == "pass").mean())
+        .sort_values(ascending=False)
+    )
+    order = list(pass_rates.index)
+    labels = [
+        sub.loc[sub["competitor"] == c, "competitor_name"].iloc[0]
+        for c in order
+    ]
+
+    counts = (
+        sub.groupby(["competitor", "failure_reason"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(order)
+    )
+    present_reasons = [
+        r for r in _COMPETITOR_FAILURE_ORDER
+        if r in counts.columns and counts[r].sum() > 0
+    ]
+    counts = counts.reindex(columns=present_reasons, fill_value=0)
+    if counts.empty or not present_reasons:
+        return None
+
+    frac = counts.div(counts.sum(axis=1), axis=0)
+
+    n_bars = len(order)
+    fig_h = max(3.8, 0.55 * n_bars + 1.6)
+    fig, ax = plt.subplots(figsize=(9.2, fig_h))
+    y = np.arange(n_bars)
+
+    left = np.zeros(n_bars)
+    for reason in present_reasons:
+        vals = frac[reason].values
+        bar = ax.barh(
+            y, vals, left=left,
+            color=_COMPETITOR_FAILURE_COLOURS.get(reason, "#6b7280"),
+            edgecolor="white", linewidth=0.6, height=0.72,
+            label=_COMPETITOR_FAILURE_LABELS.get(reason, reason),
+        )
+        for yi, (v, n) in enumerate(zip(vals, counts[reason].values)):
+            if v > 0.035:
+                ax.text(
+                    left[yi] + v / 2, yi, str(int(n)),
+                    ha="center", va="center", fontsize=8,
+                    fontweight="semibold",
+                    color=("white" if reason not in ("pass",) else "#111827"),
+                )
+        left += vals
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xlim(0, 1.0)
+    ax.set_xlabel("Fraction of benchmark cells")
+    ax.xaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    ax.set_title(
+        "Why each competitor failed  —  primary rubric gate (first failure wins)",
+        loc="left", fontsize=11, fontweight="bold",
+    )
+    ax.invert_yaxis()
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.grid(axis="x", linestyle=":", color="#d1d5db", alpha=0.6)
+    ax.set_axisbelow(True)
+    ax.legend(
+        loc="lower center", bbox_to_anchor=(0.5, -0.28),
+        ncol=min(5, len(present_reasons)), fontsize=8, frameon=False,
+    )
     return fig
 
 
@@ -3476,6 +3688,32 @@ def _latest_taxonomy_per_cell(results_root: Path) -> Optional[Path]:
     return max(subs, key=lambda p: p.stat().st_mtime) / "per_cell.csv"
 
 
+def _recovery_taxonomy_is_stale(results_root: Path) -> bool:
+    """True when any recovery run is newer than the cached taxonomy CSV."""
+    tax_csv = _latest_taxonomy_per_cell(results_root)
+    if tax_csv is None or not tax_csv.exists():
+        return True
+    rec_dir = results_root / "recovery"
+    if not rec_dir.exists():
+        return False
+    run_dirs = [
+        p for p in rec_dir.iterdir()
+        if p.is_dir() and not p.name.startswith("_")
+        and (p / "results.json").exists()
+    ]
+    if not run_dirs:
+        return False
+    newest_run = max(p.stat().st_mtime for p in run_dirs)
+    return newest_run > tax_csv.stat().st_mtime
+
+
+def _ensure_recovery_taxonomy_csv(results_root: Path) -> Optional[Path]:
+    """Return ``per_cell.csv``, regenerating when recovery runs are newer."""
+    if _recovery_taxonomy_is_stale(results_root):
+        return _regen_recovery_taxonomy(results_root)
+    return _latest_taxonomy_per_cell(results_root)
+
+
 def _regen_recovery_taxonomy(results_root: Path) -> Optional[Path]:
     """Run ``recovery_taxonomy.py`` against every recovery run in-tree.
 
@@ -3715,11 +3953,9 @@ def main() -> None:
                       f"(+ recovery_tier_<model>.pdf)")
 
             # Unrecoverable-tier taxonomy (correct / misdiagnosed /
-            # unsafe / silent). Uses per_cell.csv from the latest
-            # recovery_taxonomy.py run; regenerates if absent.
-            tax_csv = _latest_taxonomy_per_cell(root)
-            if tax_csv is None or not tax_csv.exists():
-                tax_csv = _regen_recovery_taxonomy(root)
+            # unsafe / silent). Regenerates when any recovery run is
+            # newer than the cached ``_taxonomy/`` snapshot.
+            tax_csv = _ensure_recovery_taxonomy_csv(root)
             if tax_csv is not None and tax_csv.exists():
                 tax_df = pd.read_csv(tax_csv)
                 taxfig = recovery_taxonomy_figure(tax_df)
@@ -3754,6 +3990,14 @@ def main() -> None:
                 plt.close(agentic)
                 print(f"[ok]   competitors_agentic → "
                       f"{fig_dir/'competitors_agentic'}.pdf")
+
+            fail_breakdown = competitors_failure_breakdown_figure(df)
+            if fail_breakdown is not None:
+                _save(fail_breakdown, fig_dir / "competitors_failure_breakdown",
+                      svg=args.svg)
+                plt.close(fail_breakdown)
+                print(f"[ok]   competitors_failure_breakdown → "
+                      f"{fig_dir/'competitors_failure_breakdown'}.pdf")
 
         # Planning bonus figures
         if bench_name == "planning":

@@ -122,7 +122,7 @@ Set `LLM_PROVIDER` to one of: `openai`, `anthropic`, `google`, `ollama`.
 | Provider | Typical `LLM_MODEL` | API key / notes |
 |----------|---------------------|-----------------|
 | **openai** | `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `o3`, `o4-mini` | `OPENAI_API_KEY`; optional `OPENAI_BASE_URL` for proxies. |
-| **anthropic** | `claude-sonnet-4-6`, `claude-opus-4-7` | `ANTHROPIC_API_KEY`; install `anthropic`. |
+| **anthropic** | `claude-sonnet-4-6`, `claude-opus-4-8` | `ANTHROPIC_API_KEY`; install `anthropic`. |
 | **google** | `gemini-2.5-flash`, `gemini-2.5-pro` | `GOOGLE_API_KEY`; install `google-genai`. |
 | **ollama** | `llama4`, `mistral`, `qwen`, `deepseek` | Usually `LLM_BASE_URL=http://localhost:11434/v1`; key can be a placeholder. |
 
