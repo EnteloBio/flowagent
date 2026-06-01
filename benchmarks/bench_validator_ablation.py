@@ -1,24 +1,21 @@
-"""Benchmark — validator-on-vs-off ablation for FlowAgent's planner.
+"""Benchmark — validator-retry-on-vs-off ablation for FlowAgent's planner.
 
-Mirrors :mod:`bench_ablation` (DAG-awareness ablation) but flips
-``FLOWAGENT_VALIDATOR_ENABLED`` instead of ``LLM_DAG_AWARE``. Answers todo
-T0 from the FlowAgent architecture review: how much of the recent
-robustness gain comes from the post-generation validator + auto-fix
-layer (``flowagent.core.llm.LLMInterface._autofix_generated_steps`` and
-``_validate_generated_steps``) versus the underlying LLM?
+Mirrors :mod:`bench_ablation` but flips ``FLOWAGENT_VALIDATOR_RETRY``
+while leaving ``FLOWAGENT_VALIDATOR_AUTOFIX`` at its default (on).
+Answers todo T0: does the LLM retry loop triggered by command-level
+validation improve plan quality, given that deterministic autofix stays on?
 
 Arms
 ----
-* ``validator_on``  — default planner. Validator + autofix + retry-on-fail
-  active (``FLOWAGENT_VALIDATOR_ENABLED=true``).
-* ``validator_off`` — ablation. Both call sites are skipped and the LLM's
-  first emission ships unchanged. The retry path is also skipped so the
-  off arm doesn't lose to the on arm on extra inference rounds rather than
-  on validator quality.
+* ``validator_on``  — ``FLOWAGENT_VALIDATOR_RETRY=true`` (autofix on).
+* ``validator_off`` — ``FLOWAGENT_VALIDATOR_RETRY=false`` (autofix on;
+  production default).
+
+Set ``FLOWAGENT_VALIDATOR_ENABLED=false`` manually to disable both
+autofix and retry (legacy monolithic off).
 
 Both arms reuse :func:`bench_planning.run_one` so token / cost accounting
-and scoring are identical to the existing planning benchmark; the only
-difference is the env-var flip performed per cell by the runner.
+and scoring are identical to the existing planning benchmark.
 
 Output
 ------
@@ -58,26 +55,27 @@ from harness.runner import (  # noqa: E402
 from bench_planning import run_one as _planning_run_one  # noqa: E402
 
 
-# ── Per-cell runner that flips FLOWAGENT_VALIDATOR_ENABLED before delegating ─
+# ── Per-cell runner that flips FLOWAGENT_VALIDATOR_RETRY before delegating ─
 
-def _make_runner(*, validator_enabled: bool, mock: bool):
+def _make_runner(*, validator_retry: bool, mock: bool):
     """Return a coroutine ``runner(model_cfg, entry, replicate)`` that runs
-    ``bench_planning.run_one`` with ``FLOWAGENT_VALIDATOR_ENABLED`` set to
-    the requested value before each cell.
+    ``bench_planning.run_one`` with granular validator flags set per cell.
 
-    The env-var write is done inside the runner (not once at startup)
-    because the harness sweeps cells; setting it per-cell makes the runner
-    safe regardless of concurrency or run ordering.
+    Clears the legacy ``FLOWAGENT_VALIDATOR_ENABLED`` so autofix/retry
+    split defaults apply. Autofix stays on for both arms.
     """
-    arm_label = "validator_on" if validator_enabled else "validator_off"
+    arm_label = "validator_on" if validator_retry else "validator_off"
 
     async def _runner(model_cfg: Dict[str, Any], entry: Dict[str, Any], rep: int):
-        os.environ["FLOWAGENT_VALIDATOR_ENABLED"] = (
-            "true" if validator_enabled else "false"
+        os.environ.pop("FLOWAGENT_VALIDATOR_ENABLED", None)
+        os.environ["FLOWAGENT_VALIDATOR_AUTOFIX"] = "true"
+        os.environ["FLOWAGENT_VALIDATOR_RETRY"] = (
+            "true" if validator_retry else "false"
         )
         result = await _planning_run_one(model_cfg, entry, rep, mock=mock)
         result["arm"] = arm_label
-        result["validator_enabled"] = validator_enabled
+        result["validator_retry"] = validator_retry
+        result["validator_autofix"] = True
         return result
 
     return _runner
@@ -124,7 +122,7 @@ def _load_models(cfg_path: Path, only: List[str]) -> List[Dict[str, Any]]:
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Validator-on-vs-off ablation (todo T0).")
+        description="Validator-retry-on-vs-off ablation (todo T0).")
     ap.add_argument("--models", default=None,
                     help="Comma-separated model IDs to run (default: all in config).")
     ap.add_argument("--replicates", type=int, default=3,
@@ -164,9 +162,9 @@ def main():
     else:
         out_dir = timestamped_dir(Path(args.out), "validator_ablation")
 
-    # Snapshot the pre-run env so we can restore the flag on exit and not
-    # leak the toggle into a follow-up benchmark run in the same shell.
-    prev_flag = os.environ.get("FLOWAGENT_VALIDATOR_ENABLED")
+    prev_legacy = os.environ.get("FLOWAGENT_VALIDATOR_ENABLED")
+    prev_autofix = os.environ.get("FLOWAGENT_VALIDATOR_AUTOFIX")
+    prev_retry = os.environ.get("FLOWAGENT_VALIDATOR_RETRY")
 
     arms_results: Dict[str, List[Dict[str, Any]]] = {}
     try:
@@ -175,15 +173,16 @@ def main():
             for arm in arms_to_run:
                 arm_dir = out_dir / arm
                 arm_dir.mkdir(parents=True, exist_ok=True)
-                validator_enabled = (arm == "validator_on")
+                validator_retry = (arm == "validator_on")
                 print(
                     f"\n=== Arm: {arm} "
-                    f"(FLOWAGENT_VALIDATOR_ENABLED="
-                    f"{'true' if validator_enabled else 'false'}) ==="
+                    f"(FLOWAGENT_VALIDATOR_AUTOFIX=true, "
+                    f"FLOWAGENT_VALIDATOR_RETRY="
+                    f"{'true' if validator_retry else 'false'}) ==="
                 )
 
                 runner = _make_runner(
-                    validator_enabled=validator_enabled, mock=args.mock,
+                    validator_retry=validator_retry, mock=args.mock,
                 )
 
                 async def _wrapped(m, e, r, _runner=runner, _mock=args.mock):
@@ -204,10 +203,15 @@ def main():
 
         arms_results = asyncio.run(_run_all_arms())
     finally:
-        if prev_flag is None:
-            os.environ.pop("FLOWAGENT_VALIDATOR_ENABLED", None)
-        else:
-            os.environ["FLOWAGENT_VALIDATOR_ENABLED"] = prev_flag
+        for key, prev in (
+            ("FLOWAGENT_VALIDATOR_ENABLED", prev_legacy),
+            ("FLOWAGENT_VALIDATOR_AUTOFIX", prev_autofix),
+            ("FLOWAGENT_VALIDATOR_RETRY", prev_retry),
+        ):
+            if prev is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = prev
 
     if len(arms_results) >= 2:
         paired = _write_paired_csv(out_dir, arms_results)
@@ -218,6 +222,8 @@ def main():
         "num_inputs": len(inputs),
         "replicates": args.replicates,
         "rows_per_arm": {k: len(v) for k, v in arms_results.items()},
+        "validator_autofix": "true (both arms)",
+        "validator_retry": {"validator_on": "true", "validator_off": "false"},
     })
 
 

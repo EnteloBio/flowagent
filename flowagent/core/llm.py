@@ -1634,42 +1634,29 @@ Resource Management Rules:
                 fill_missing_kinds(workflow_plan)
 
                 # ── Command-level validator + autofix (todo T0).
-                # Runs the same rule set the GEO / inferred-download
-                # paths use, so the primary path benefits from the
-                # archive-nesting rewriter, role-name-glob rejection,
-                # placeholder-path detection, etc. Gated by
-                # FLOWAGENT_VALIDATOR_ENABLED so the validator-on/off
-                # ablation has signal on the planning benchmark.
-                # Structural completeness (validate_workflow_completeness
-                # below) is intentionally NOT gated — it's a separate
-                # validator and the ablation scope is just the
-                # command-level layer.
+                # Autofix (deterministic rewrites) and validator retry
+                # (LLM feedback loop) are gated independently — see
+                # ``flowagent.core.validator_flags``. Structural
+                # completeness (below) is a separate validator.
                 validator_failures: List[str] = []
-                if self._validator_enabled():
-                    plan_steps = workflow_plan.get("steps", []) or []
-                    if plan_steps:
-                        for note in self._autofix_generated_steps(plan_steps):
-                            self.logger.info("Auto-fix: %s", note)
-                        validator_failures = self._validate_generated_steps(
-                            plan_steps, srr_list_path=None,
-                        )
-                else:
-                    self.logger.info(
-                        "Validator disabled via FLOWAGENT_VALIDATOR_ENABLED"
-                        "=false; skipping autofix + command-level validation"
-                        " on primary plan",
+                plan_steps = workflow_plan.get("steps", []) or []
+                if plan_steps:
+                    validator_failures = self._run_command_validator_on_steps(
+                        plan_steps, srr_list_path=None, context="primary plan",
                     )
 
                 # ── Validate completeness; reflect if failing.
                 ok, completeness_failures = validate_workflow_completeness(
                     workflow_plan,
                 )
-                # Merge both failure sources into a single retry signal so
-                # the LLM gets one actionable message per attempt rather
-                # than ping-ponging between layers.
-                failures = list(completeness_failures) + list(validator_failures)
+                # Validator failures trigger reflection only when retry is
+                # enabled — otherwise they would burn the completeness retry
+                # budget on unreliable command-string fixes (Benchmark K).
+                failures = list(completeness_failures)
+                if self._validator_retry_enabled():
+                    failures = failures + list(validator_failures)
+                    ok = ok and not validator_failures
                 last_failures = failures
-                ok = ok and not validator_failures
 
                 if ok or not do_reflect or attempt >= max_retries:
                     break
@@ -1743,16 +1730,14 @@ Resource Management Rules:
             }
             # Separate envelope for the command-level validator so the T0
             # ablation can read its outcome without conflating it with the
-            # structural-completeness signal. ``enabled`` reflects the
-            # FLOWAGENT_VALIDATOR_ENABLED flag at the time the plan was
-            # generated; ``failures`` is the *final* validator outcome
-            # (after all retries), so a plan that converged inside the
-            # retry budget has ``pass=True`` even if earlier attempts
-            # failed.
+            # structural-completeness signal. ``autofix_enabled`` /
+            # ``retry_enabled`` reflect ``validator_flags`` at plan time.
             workflow_plan["_validator"] = {
                 "pass": not validator_failures,
                 "failures": list(validator_failures),
-                "enabled": self._validator_enabled(),
+                "enabled": self._validator_any_enabled(),
+                "autofix_enabled": self._validator_autofix_enabled(),
+                "retry_enabled": self._validator_retry_enabled(),
             }
 
             # ── CoVe independent verifier (todo T4).
@@ -2586,18 +2571,11 @@ If you are being asked to generate a title, set "success" to false.
         # First, deterministically auto-fix the archive-nesting
         # antipattern (LLM gets stuck looping on this even with
         # explicit fix-suggestion in the validator message).
-        # Validator gating: FLOWAGENT_VALIDATOR_ENABLED ablation (todo T0).
-        if self._validator_enabled():
-            for note in self._autofix_generated_steps(valid_steps):
-                self.logger.info("Auto-fix: %s", note)
-            errors = self._validate_generated_steps(valid_steps, srr_list_path=None)
-        else:
-            self.logger.info(
-                "Validator disabled via FLOWAGENT_VALIDATOR_ENABLED=false; "
-                "skipping autofix + validation on inferred-download plan",
-            )
-            errors = []
-        if errors:
+        # Validator: autofix when enabled; LLM retry only when retry flag on.
+        errors = self._run_command_validator_on_steps(
+            valid_steps, srr_list_path=None, context="inferred-download plan",
+        )
+        if errors and self._validator_retry_enabled():
             self.logger.warning(
                 "Inferred-download plan validation failed (attempt 1): "
                 "%s — retrying", "; ".join(errors[:5]),
@@ -2626,10 +2604,9 @@ If you are being asked to generate a title, set "success" to false.
                 return None
             # Auto-fix on retry too — the LLM might emit the same
             # antipattern a second time.
-            for note in self._autofix_generated_steps(valid_steps):
-                self.logger.info("Auto-fix (retry): %s", note)
-            errors2 = self._validate_generated_steps(
+            errors2 = self._run_command_validator_on_steps(
                 valid_steps, srr_list_path=None,
+                context="inferred-download plan (retry)",
             )
             if errors2:
                 self.logger.warning(
@@ -3661,23 +3638,23 @@ If you are being asked to generate a title, set "success" to false.
         ]
         # First attempt
         steps = await self._llm_steps_attempt(messages)
-        # Validator gating: FLOWAGENT_VALIDATOR_ENABLED ablation (todo T0).
-        # When disabled, ship the LLM's first emission unchanged — no autofix,
-        # no retry — so the off arm doesn't lose to the on arm on extra
-        # inference rounds rather than on validator quality.
-        if not self._validator_enabled():
+        if not self._validator_any_enabled():
             self.logger.info(
-                "Validator disabled via FLOWAGENT_VALIDATOR_ENABLED=false; "
-                "skipping autofix + validation on analysis-steps plan",
+                "Command validator disabled; skipping autofix + validation "
+                "on analysis-steps plan",
             )
             return steps
-        # Auto-fix deterministic patterns (archive-nesting) before
-        # validation, so the LLM doesn't keep getting rejected on
-        # things we already know how to correct ourselves.
         for note in self._autofix_generated_steps(steps):
             self.logger.info("Auto-fix: %s", note)
         errors = self._validate_generated_steps(steps, srr_list_path)
         if not errors:
+            return steps
+        if not self._validator_retry_enabled():
+            self.logger.info(
+                "Analysis-steps validation found %d issue(s) but retry is "
+                "disabled — shipping autofixed plan",
+                len(errors),
+            )
             return steps
 
         # Single retry, feeding the specific violations back to the LLM.
@@ -3744,29 +3721,54 @@ If you are being asked to generate a title, set "success" to false.
         return valid
 
     @staticmethod
+    def _validator_autofix_enabled() -> bool:
+        from .validator_flags import validator_autofix_enabled
+        return validator_autofix_enabled()
+
+    @staticmethod
+    def _validator_retry_enabled() -> bool:
+        from .validator_flags import validator_retry_enabled
+        return validator_retry_enabled()
+
+    @staticmethod
+    def _validator_any_enabled() -> bool:
+        from .validator_flags import validator_any_enabled
+        return validator_any_enabled()
+
+    def _run_command_validator_on_steps(
+        self,
+        steps: List[Dict[str, Any]],
+        *,
+        srr_list_path=None,
+        context: str = "plan",
+    ) -> List[str]:
+        """Autofix (optional) then validate. Returns command-level failures."""
+        if not self._validator_any_enabled():
+            self.logger.info(
+                "Command validator disabled (%s); skipping autofix + validation",
+                context,
+            )
+            return []
+        if self._validator_autofix_enabled():
+            for note in self._autofix_generated_steps(steps):
+                self.logger.info("Auto-fix (%s): %s", context, note)
+        failures = self._validate_generated_steps(steps, srr_list_path=srr_list_path)
+        if failures and not self._validator_retry_enabled():
+            self.logger.info(
+                "Command validator found %d issue(s) on %s but retry is "
+                "disabled — not feeding back to LLM",
+                len(failures), context,
+            )
+        return failures
+
+    @staticmethod
     def _validator_enabled() -> bool:
-        """Whether the post-generation validator + auto-fix layer should run.
+        """Legacy monolithic gate — True when autofix OR retry is enabled.
 
-        Read fresh from ``FLOWAGENT_VALIDATOR_ENABLED`` on every call so the
-        benchmark harness can flip it per-cell (same pattern ``LLM_DAG_AWARE``
-        uses for the DAG-awareness ablation). Defaults to ``True`` so
-        production behaviour is unchanged when the flag is unset.
-
-        The flag gates the planner's post-generation defenses (todo T0 in the
-        FlowAgent architecture review):
-
-        * deterministic auto-fix transforms (``_autofix_generated_steps``)
-        * validator rules + retry loop (``_validate_generated_steps`` and the
-          single retry it triggers)
-
-        With the flag off, the LLM's first emission ships unchanged. The
-        ablation arm should not include the retry path either, since under a
-        fixed inference budget the off-arm would otherwise lose to the on-arm
-        on retry chances rather than on validator quality.
+        Prefer ``_validator_autofix_enabled`` / ``_validator_retry_enabled``.
         """
-        return os.environ.get("FLOWAGENT_VALIDATOR_ENABLED", "true").strip().lower() not in {
-            "0", "false", "no", "off",
-        }
+        from .validator_flags import validator_any_enabled
+        return validator_any_enabled()
 
     def _autofix_generated_steps(
         self, steps: List[Dict[str, Any]],

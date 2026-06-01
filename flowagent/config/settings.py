@@ -73,6 +73,24 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Command-level plan validator (todo T0). Runtime reads these via
+    # flowagent.core.validator_flags (fresh on every call). Legacy
+    # FLOWAGENT_VALIDATOR_ENABLED overrides both when set explicitly.
+    FLOWAGENT_VALIDATOR_AUTOFIX: bool = Field(
+        True,
+        description=(
+            "Deterministic in-place command fixes (tool typos, archive "
+            "nesting, literal \\\\n escapes) before validation. Default on."
+        ),
+    )
+    FLOWAGENT_VALIDATOR_RETRY: bool = Field(
+        False,
+        description=(
+            "When True, command-validator failures feed back to the LLM "
+            "for another plan attempt. Default off (Benchmark K)."
+        ),
+    )
+
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API Key")
     ANTHROPIC_API_KEY: Optional[str] = Field(None, description="Anthropic API Key")
     GOOGLE_API_KEY: Optional[str] = Field(None, description="Google Gemini API Key")

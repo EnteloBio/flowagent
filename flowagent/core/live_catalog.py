@@ -53,8 +53,8 @@ def is_enabled() -> bool:
     """Read FLOWAGENT_LIVE_CATALOG fresh on every call.
 
     Mirrors the per-call freshness pattern other ablation flags use
-    (LLM_DAG_AWARE, FLOWAGENT_VALIDATOR_ENABLED) so the benchmark harness
-    can flip it per-cell without restarting the process.
+    (LLM_DAG_AWARE, FLOWAGENT_VALIDATOR_AUTOFIX / _RETRY) so the benchmark
+    harness can flip it per-cell without restarting the process.
     """
     return os.environ.get("FLOWAGENT_LIVE_CATALOG", "true").strip().lower() not in {
         "0", "false", "no", "off",

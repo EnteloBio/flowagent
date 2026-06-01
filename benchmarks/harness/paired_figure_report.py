@@ -135,9 +135,29 @@ def _render_competitor_dag(paired_csv: Path, fig_dir: Path) -> None:
         print(f"[ok]   competitor_dag → {fig_dir}/competitor_dag__*.pdf")
 
 
+def _render_ablation_summary(results_root: Path, out_base: Path) -> None:
+    _ensure_bench_on_path()
+    from make_ablation_summary_figure import collect_stats, _plot, _write_stats_tsv
+
+    stats = collect_stats(results_root)
+    if not stats:
+        print("[skip] ablation_summary: no paired results for H/I/K/L")
+        return
+    pdf_path = _plot(stats, out_base=out_base)
+    _write_stats_tsv(stats, Path(str(out_base) + "__stats.tsv"))
+    print(f"[ok]   ablation_summary → {pdf_path}")
+
+
 def render_paired_ablation_figures(results_root: Path, fig_dir: Path) -> None:
     """Find latest paired ablation runs and write figures under ``fig_dir``."""
     fig_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        _render_ablation_summary(results_root, fig_dir / "ablation_summary")
+    except SystemExit as exc:
+        print(f"[skip] ablation_summary: {exc}")
+    except Exception as exc:
+        print(f"[skip] ablation_summary: {exc}")
 
     simple: list[tuple[str, str, str, Callable[[Path, Path], None]]] = [
         ("ablation", "ablation", "ablation", _render_ablation),

@@ -42,7 +42,7 @@ ifeq ($(shell $(PY) -c "import openai" 2>/dev/null && echo ok),)
 $(error $(PY) is missing the openai package. Run: conda activate flowagent  OR  pip install -e ..)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation judge-calibration-figure rescore rescore-all merge prune-models report test clean help refresh-tools
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure ablation-summary-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation judge-calibration-figure rescore rescore-all merge prune-models report test clean help refresh-tools
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -61,6 +61,7 @@ help:
 	@echo "  make ablation     - Benchmark H: DAG-aware vs DAG-blind planner ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make ablation-pilot - Benchmark H smoke: 5 prompts × 1 replicate × 2 arms (validates the ablation pipeline)"
 	@echo "  make ablation-figure ABLATION_DIR=results/ablation/<ts> - render figure_ablation.pdf + stats_ablation.tsv"
+	@echo "  make ablation-summary-figure - combined H/I/K/L pass-rate figure (excludes Benchmark J)"
 	@echo "  make reflection   - Benchmark I: completeness-reflection ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make reflection-pilot - Benchmark I smoke: 8 prompts × 1 replicate × 2 arms"
 	@echo "  make reflection-figure REFLECTION_DIR=results/reflection/<ts> - render figure_reflection.pdf + stats_reflection.tsv"
@@ -187,6 +188,12 @@ ablation-figure:
 	    --paired=$(ABLATION_DIR)/paired_metrics.csv \
 	    --out=figure_ablation
 
+# Combined planning-stack summary (Benchmarks H, I, K, L — not J).
+ablation-summary-figure:
+	$(PY) make_ablation_summary_figure.py \
+	    --results-base=$(RESULTS_DIR) \
+	    --out=$(RESULTS_DIR)/figures/ablation_summary
+
 # Benchmark I -- completeness-reflection ablation.
 # Both arms keep LLM_DAG_AWARE=true; only LLM_COMPLETENESS_REFLECT is
 # toggled. Tests whether the DAG-Plan-style completeness validator + LLM
@@ -267,8 +274,8 @@ competitor-dag-figure:
 	    --out=figure_competitor_dag
 
 # Todo T0 -- command-level validator on/off ablation.
-# Toggles FLOWAGENT_VALIDATOR_ENABLED; both arms keep LLM_DAG_AWARE=true and
-# LLM_COMPLETENESS_REFLECT=true. The on-arm runs _autofix_generated_steps +
+# Toggles FLOWAGENT_VALIDATOR_RETRY (autofix stays on); both arms keep
+# LLM_DAG_AWARE=true and LLM_COMPLETENESS_REFLECT=true. The on-arm runs _autofix_generated_steps +
 # _validate_generated_steps in the primary planning loop and triggers a retry
 # on any command-level violation; the off-arm bypasses both. Structural
 # completeness reflection stays on in both arms — we're ablating the
@@ -308,7 +315,8 @@ validator-figure:
 # plan still ships. This is a SIGNAL-MEASUREMENT run, not a behaviour-change
 # run: a follow-up with FLOWAGENT_COVE_ABSTAIN=true measures the abstention
 # behaviour change once the signal is shown to be useful.
-# Both arms keep LLM_DAG_AWARE=true and FLOWAGENT_VALIDATOR_ENABLED=true.
+# Both arms keep LLM_DAG_AWARE=true, FLOWAGENT_VALIDATOR_AUTOFIX=true, and
+# FLOWAGENT_VALIDATOR_RETRY=true (verifier on arm only).
 cove-ablation:
 	$(PY) bench_cove_ablation.py \
 	    --models=$(EFFECTIVE_MODELS) \

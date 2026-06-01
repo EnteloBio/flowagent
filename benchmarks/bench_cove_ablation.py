@@ -27,8 +27,8 @@ Arms
   ``FLOWAGENT_COVE_VERIFY=true``, ``FLOWAGENT_COVE_ABSTAIN=false``.
   Adds one structured LLM call per plan attempt.
 
-Both arms share ``LLM_DAG_AWARE=true`` and ``FLOWAGENT_VALIDATOR_ENABLED
-=true`` (T0's recommended default). Per-cell env-var writes mirror
+Both arms share ``LLM_DAG_AWARE=true`` and production validator defaults
+(autofix on, retry off unless overridden). Per-cell env-var writes mirror
 ``bench_validator_ablation.py``.
 
 Output
