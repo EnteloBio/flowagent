@@ -516,7 +516,7 @@ def _add_provider_legend(fig: plt.Figure, providers_present: List[str],
 
 
 def _split_planning_df_by_tier(df: pd.DataFrame):
-    """Partition planning metrics into transcription standard / hard / inference."""
+    """Partition planning metrics into explicit-tool std/hard and tool-inference."""
     ids = df["input_id"].astype(str)
     std = df[~ids.str.startswith(("hard_", "inf_"))]
     hard = df[ids.str.startswith("hard_")]
@@ -525,12 +525,12 @@ def _split_planning_df_by_tier(df: pd.DataFrame):
 
 
 def planning_figure(df: pd.DataFrame) -> plt.Figure:
-    """Three-panel bar chart: transcription standard / hard / inference.
+    """Three-panel bar chart: explicit-tool (standard / hard) and tool-inference.
 
     Pass rate per model with 95% Wilson confidence intervals, bars coloured
     by provider.  Rows with a non-null ``error`` column are filtered out so
     they don't collapse the aggregate.  Falls back to a single panel when
-    the run contains only the legacy transcription corpus (no ``hard_`` or
+    the run contains only the legacy explicit-tool corpus (no ``hard_`` or
     ``inf_`` prompts).
     """
     if "error" in df.columns:
@@ -556,11 +556,11 @@ def planning_figure(df: pd.DataFrame) -> plt.Figure:
         fig, (ax1, ax2, ax3) = plt.subplots(
             1, 3, figsize=(10.8, panel_height), sharey=False,
         )
-        _pass_rate_panel(ax1, std, "a  Transcription (standard)",
+        _pass_rate_panel(ax1, std, f"a  {_TIER_LABEL_EXPLICIT_TOOL} (standard)",
                          show_xlabel=False)
-        _pass_rate_panel(ax2, hard, "b  Transcription (hard)",
+        _pass_rate_panel(ax2, hard, f"b  {_TIER_LABEL_EXPLICIT_TOOL} (hard)",
                          show_xlabel=False)
-        _pass_rate_panel(ax3, inf, "c  Inference")
+        _pass_rate_panel(ax3, inf, f"c  {_TIER_LABEL_TOOL_INFERENCE}")
     else:
         fig, ax = plt.subplots(figsize=(5.2, panel_height))
         _pass_rate_panel(ax, df, "All prompts")
@@ -592,35 +592,82 @@ def _style_xtick_labels_by_provider(ax, columns) -> None:
             tick.set_fontweight("bold")
 
 
-# Prompt-tier classification is *corpus-based*: prompts in the hard
-# benchmark tier carry a ``hard_`` prefix in ``corpus/prompts.yaml``.
-# These are a-priori designated as the stress-test subset, regardless
-# of whether any given model happens to solve them at runtime. Row
-# labels on the heatmaps colour-code that corpus tier — so a reviewer
-# can see which rows belong to the hard-benchmark subset at a glance.
+# Prompt-tier classification is *corpus-based* (see ``corpus/prompts.yaml``).
+# User-facing names: **explicit-tool** (YAML ``tier: transcription``) vs
+# **tool-inference** (YAML ``tier: inference``). Internal ids unchanged.
+#   ``hard_*``  — hard explicit-tool subset (tools still named in prompt)
+#   ``inf_*``   — tool-inference (goal + data only)
+#   otherwise   — standard explicit-tool prompts
+# Row labels on the heatmaps colour-code that corpus tier regardless of
+# empirical pass rate, so reviewers can separate corpus design from failure.
+_TIER_LABEL_EXPLICIT_TOOL = "Explicit-tool"
+_TIER_LABEL_TOOL_INFERENCE = "Tool-inference"
+_CORPUS_TIER_ORDER = ("hard", "inference", "standard")
 _CORPUS_TIER_COLOURS = {
-    "hard":     "#b91c1c",   # deep red — corpus-designated hard prompts
-    "standard": "#111827",   # dark grey/black — standard benchmark tier
+    "hard":      "#b91c1c",   # deep red — corpus-designated hard prompts
+    "inference": "#1d4ed8",   # blue — inference prompts (``inf_`` prefix)
+    "standard":  "#111827",   # dark grey/black — standard explicit-tool
 }
 
 
 def _classify_corpus_tier(input_id: str) -> str:
-    """Return ``hard`` or ``standard`` based on the prompt's corpus tier."""
-    return "hard" if str(input_id).startswith("hard_") else "standard"
+    """Return ``hard``, ``inference``, or ``standard`` from the prompt id."""
+    s = str(input_id)
+    if s.startswith("hard_"):
+        return "hard"
+    if s.startswith("inf_"):
+        return "inference"
+    return "standard"
+
+
+def _prompt_display_name(input_id: str) -> str:
+    """Human-readable row label; strip corpus tier prefixes."""
+    s = str(input_id)
+    for prefix in ("hard_", "inf_"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    return s.replace("_", " ").title()
+
+
+def _order_rows_by_corpus_tier(index, row_means) -> list:
+    """Hard → inference → standard; within each tier, hardest first."""
+    buckets = {t: [] for t in _CORPUS_TIER_ORDER}
+    for i in index:
+        buckets[_classify_corpus_tier(i)].append(i)
+    ordered = []
+    for tier in _CORPUS_TIER_ORDER:
+        ordered.extend(sorted(buckets[tier], key=lambda i: row_means[i]))
+    return ordered
+
+
+def _draw_corpus_tier_separators(ax, prompt_ids) -> None:
+    """Horizontal rules between hard / inference / standard blocks."""
+    block_sizes = [
+        sum(1 for pid in prompt_ids if _classify_corpus_tier(pid) == t)
+        for t in _CORPUS_TIER_ORDER
+        if any(_classify_corpus_tier(pid) == t for pid in prompt_ids)
+    ]
+    if len(block_sizes) < 2:
+        return
+    offset = 0
+    for n in block_sizes[:-1]:
+        offset += n
+        ax.axhline(offset - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
 
 
 def _style_ytick_labels_by_corpus(ax, prompt_ids) -> None:
     """Colour y-tick labels by corpus tier.
 
     ``prompt_ids`` is an iterable of ``input_id`` values in the same
-    order as the tick positions on the y-axis. Hard-tier rows are
-    bolded + coloured red; standard-tier rows use the default text style.
+    order as the tick positions on the y-axis. Hard- and inference-tier
+    rows are bolded + coloured; standard-tier rows use default weight.
     """
     ticks = ax.get_yticklabels()
     for tick_label, prompt_id in zip(ticks, prompt_ids):
         tier = _classify_corpus_tier(prompt_id)
         tick_label.set_color(_CORPUS_TIER_COLOURS[tier])
-        if tier == "hard":
+        if tier in ("hard", "inference"):
             tick_label.set_fontweight("bold")
 
 
@@ -647,8 +694,9 @@ def _add_provider_reasoning_legend(fig, providers_present=None,
     # Row-axis annotations: corpus tier
     if show_difficulty:
         corpus_labels = [
-            ("hard",     "Hard-corpus prompt (row)"),
-            ("standard", "Standard-corpus prompt (row)"),
+            ("hard",      f"{_TIER_LABEL_EXPLICIT_TOOL}, hard (row)"),
+            ("inference", f"{_TIER_LABEL_TOOL_INFERENCE} (row)"),
+            ("standard",  f"{_TIER_LABEL_EXPLICIT_TOOL}, standard (row)"),
         ]
         for key, lbl in corpus_labels:
             handles.append(Line2D(
@@ -658,7 +706,7 @@ def _add_provider_reasoning_legend(fig, providers_present=None,
             ))
     fig.legend(
         handles=handles, loc="lower center",
-        ncol=min(len(handles), 4), frameon=False, fontsize=8,
+        ncol=min(len(handles), 6), frameon=False, fontsize=8,
         bbox_to_anchor=(0.5, -0.02),
     )
 
@@ -666,13 +714,11 @@ def _add_provider_reasoning_legend(fig, providers_present=None,
 def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
     """Per-prompt × per-model pass-rate heatmap across the full corpus.
 
-    Shows all 41 prompts. Row labels are colour-coded by corpus tier —
-    **red bold** for prompts in the hard-benchmark subset (``hard_``
-    prefix in ``corpus/prompts.yaml``), default weight for standard
-    prompts. Within each corpus tier rows are ordered with lowest
-    cross-model mean pass rate on top, so empirical difficulty is still
-    visible through row ordering even though the tier labelling is
-    corpus-defined.
+    Row labels are colour-coded by corpus tier — **red bold** for
+    ``hard_*`` stress prompts, **blue bold** for ``inf_*`` inference
+    prompts, default style for standard explicit-tool. Rows are ordered
+    hard → tool-inference → standard; within each tier, lowest mean pass
+    rate is on top.
 
     Columns are grouped by provider (OpenAI → Anthropic → Google) and
     ranked by pass rate within each provider; reasoning models are
@@ -691,16 +737,8 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
         aggfunc="mean",
     )
 
-    # Row order: hard-corpus prompts on top (sorted by empirical
-    # difficulty — hardest-to-plan first), then standard-corpus prompts
-    # below (same ordering within tier). A single horizontal separator
-    # between the two tiers anchors the visual split.
     row_means = pivot.mean(axis=1)
-    hard_ids = [i for i in pivot.index if _classify_corpus_tier(i) == "hard"]
-    std_ids  = [i for i in pivot.index if _classify_corpus_tier(i) == "standard"]
-    hard_ids = sorted(hard_ids, key=lambda i: row_means[i])
-    std_ids  = sorted(std_ids,  key=lambda i: row_means[i])
-    pivot = pivot.loc[hard_ids + std_ids]
+    pivot = pivot.loc[_order_rows_by_corpus_tier(pivot.index, row_means)]
 
     # Column order: provider → reasoning-flag → descending pass rate.
     def _col_sort_key(m: str):
@@ -725,20 +763,12 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
                        rotation=35, ha="right", fontsize=8)
     _style_xtick_labels_by_provider(ax, pivot.columns)
 
-    display_names = [
-        n.removeprefix("hard_").replace("_", " ").title()
-        for n in pivot.index
-    ]
     ax.set_yticks(range(len(pivot.index)))
-    ax.set_yticklabels(display_names, fontsize=8.5)
-
-    # Corpus-tier colouring: red bold for hard-tier prompts, default for standard.
+    ax.set_yticklabels(
+        [_prompt_display_name(n) for n in pivot.index], fontsize=8.5,
+    )
     _style_ytick_labels_by_corpus(ax, pivot.index)
-
-    # Horizontal separator between the two corpus tiers.
-    n_hard = sum(1 for i in pivot.index if _classify_corpus_tier(i) == "hard")
-    if 0 < n_hard < pivot.shape[0]:
-        ax.axhline(n_hard - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
+    _draw_corpus_tier_separators(ax, pivot.index)
 
     # Thin white separators
     ax.set_xticks(np.arange(-.5, pivot.shape[1], 1), minor=True)
@@ -762,7 +792,7 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
 
     ax.set_title(
         "Per-prompt pass rate across the full corpus  —  "
-        "red bold labels: hard-benchmark subset (corpus tier)",
+        "red: explicit-tool (hard); blue: tool-inference; black: explicit-tool (standard)",
         loc="left", fontsize=10.5, fontweight="bold",
     )
 
@@ -817,10 +847,10 @@ def planning_heatmap_by_tier(
 ) -> plt.Figure:
     """Two-panel per-prompt × per-model heatmap split into current / legacy tiers.
 
-    Hard prompts only. Rows are colour-coded by cross-model difficulty:
-    **red** (mean pass < 50%), **amber** (50–90%), **green** (≥90%) — so
-    reviewers can see at a glance which prompts stress the system
-    regardless of model tier, and which are saturated across the corpus.
+    Row labels are corpus-tier coded: **red bold** ``hard_*``,
+    **blue bold** ``inf_*`` tool-inference, **black** standard explicit-tool.
+    Rows are ordered hard → tool-inference → standard (hardest first
+    within each block). Cell colour is empirical pass rate (green–red scale).
 
     Columns within each panel are sorted by descending mean pass rate.
     ``preview`` tier models (e.g. ``gemini-3.1-flash-lite-preview``) are
@@ -843,19 +873,8 @@ def planning_heatmap_by_tier(
     if pivot.empty:
         return _empty_figure("No prompt data for tier split.")
 
-    # Row order: hard-corpus prompts on top, standard below. Within each
-    # tier, sort by empirical mean (hardest first) so the gradient stays
-    # legible even though the hard/standard split is corpus-defined.
     row_means = pivot.mean(axis=1)
-    hard_ids = sorted(
-        (i for i in pivot.index if _classify_corpus_tier(i) == "hard"),
-        key=lambda i: row_means[i],
-    )
-    std_ids = sorted(
-        (i for i in pivot.index if _classify_corpus_tier(i) == "standard"),
-        key=lambda i: row_means[i],
-    )
-    pivot = pivot.loc[hard_ids + std_ids]
+    pivot = pivot.loc[_order_rows_by_corpus_tier(pivot.index, row_means)]
 
     # Column grouping by tier.
     tiers = _load_model_tiers(models_yaml)
@@ -919,32 +938,14 @@ def planning_heatmap_by_tier(
 
         ax.set_yticks(range(data.shape[0]))
         if show_ylabels:
-            display_names = [
-                n.removeprefix("hard_").replace("_", " ").title()
-                for n in data.index
-            ]
-            ax.set_yticklabels(display_names, fontsize=8.5)
-            # Corpus-tier colouring: red bold for hard-benchmark
-            # prompts (``hard_`` prefix in the corpus YAML), default
-            # weight for standard prompts.
-            _style_ytick_labels_by_corpus(ax, data.index)
-            # Horizontal separator between the hard and standard tier blocks.
-            n_hard = sum(
-                1 for i in data.index if _classify_corpus_tier(i) == "hard"
+            ax.set_yticklabels(
+                [_prompt_display_name(n) for n in data.index], fontsize=8.5,
             )
-            if 0 < n_hard < data.shape[0]:
-                ax.axhline(n_hard - 0.5, color="#111827",
-                           linewidth=1.2, alpha=0.6)
+            _style_ytick_labels_by_corpus(ax, data.index)
+            _draw_corpus_tier_separators(ax, data.index)
         else:
             ax.set_yticklabels([])
-            # Still draw the separator on the right panel so rows
-            # visually align across panels.
-            n_hard = sum(
-                1 for i in data.index if _classify_corpus_tier(i) == "hard"
-            )
-            if 0 < n_hard < data.shape[0]:
-                ax.axhline(n_hard - 0.5, color="#111827",
-                           linewidth=1.2, alpha=0.6)
+            _draw_corpus_tier_separators(ax, data.index)
         ax.set_xticks(np.arange(-.5, data.shape[1], 1), minor=True)
         ax.set_yticks(np.arange(-.5, data.shape[0], 1), minor=True)
         ax.grid(which="minor", color="white", linewidth=0.8)
@@ -990,8 +991,8 @@ def planning_heatmap_by_tier(
 
     fig.suptitle(
         "Per-prompt pass rate by model tier  —  "
-        "red bold labels: corpus-designated hard benchmarks; "
-        "normal labels: standard benchmarks",
+        "red bold: explicit-tool (hard); blue bold: tool-inference; "
+        "black: explicit-tool (standard)",
         fontsize=10.5, fontweight="bold", x=0.02, ha="left",
     )
 
@@ -2485,12 +2486,43 @@ def _per_model_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
         axis=1,
     )
     g["cost_per_100_plans"] = g["mean_cost"] * 100
+    g = _add_relative_cost_columns(g)
     g = g.sort_values("cost_per_pass").reset_index(drop=True)
     return g
 
 
+def _add_relative_cost_columns(table: pd.DataFrame) -> pd.DataFrame:
+    """Fold-change vs the cheapest model on each cost metric (journal-friendly).
+
+    Relative costs avoid quoting USD in the manuscript while preserving the
+    same ranking as the absolute panels. Each metric uses its own baseline
+    (the row with the minimum finite value for that column).
+    """
+    g = table.copy()
+    for col, rel_col in (
+        ("cost_per_100_plans", "rel_cost_per_100_plans"),
+        ("cost_per_pass", "rel_cost_per_pass"),
+    ):
+        finite = g[col].dropna()
+        if finite.empty:
+            g[rel_col] = np.nan
+            continue
+        baseline = float(finite.min())
+        g[rel_col] = g[col] / baseline if baseline > 0 else np.nan
+    return g
+
+
+def _format_relative_cost_label(v: float) -> str:
+    if v >= 100:
+        return f"{v:.0f}×"
+    if v >= 10:
+        return f"{v:.1f}×"
+    return f"{v:.2f}×"
+
+
 def _cost_bar_panel(table: pd.DataFrame, col: str, *, title: str,
-                    xlabel: str, ax: plt.Axes) -> None:
+                    xlabel: str, ax: plt.Axes,
+                    relative: bool = False) -> None:
     """Render one cost bar-chart panel onto a given axis.
 
     Used by both the legacy two-panel ``cost_summary_figure`` and the
@@ -2512,8 +2544,11 @@ def _cost_bar_panel(table: pd.DataFrame, col: str, *, title: str,
                     fontsize=7.5, color="#9ca3af",
                     transform=ax.get_yaxis_transform())
             continue
-        label = (f"${v:,.3f}" if v < 1 else
-                 f"${v:,.2f}" if v < 100 else f"${v:,.0f}")
+        if relative:
+            label = _format_relative_cost_label(v)
+        else:
+            label = (f"${v:,.3f}" if v < 1 else
+                     f"${v:,.2f}" if v < 100 else f"${v:,.0f}")
         ax.text(v, i, f" {label}", va="center", ha="left",
                 fontsize=7.5, color="#1f2937")
     ax.set_xlabel(xlabel)
@@ -2603,6 +2638,70 @@ def cost_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     )
     _cost_provider_legend(fig, table)
     fig.suptitle("Per-model cost benchmark", fontsize=11,
+                 fontweight="bold", y=1.06)
+    return fig
+
+
+def cost_per_100_plans_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: cost per 100 plans relative to the cheapest model."""
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _cost_bar_panel(
+        table, "rel_cost_per_100_plans",
+        title="Cost per 100 plans (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax,
+        relative=True,
+    )
+    _cost_provider_legend(fig, table)
+    return fig
+
+
+def cost_per_pass_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: cost per successful plan relative to the cheapest model."""
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _cost_bar_panel(
+        table, "rel_cost_per_pass",
+        title="Cost per successful plan (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax,
+        relative=True,
+    )
+    _cost_provider_legend(fig, table)
+    return fig
+
+
+def cost_summary_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Two-panel relative cost view (no USD) for journal manuscripts."""
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    n_models = len(table)
+    panel_h = max(3.2, 0.28 * n_models + 1.2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, panel_h), sharey=True)
+    _cost_bar_panel(
+        table, "rel_cost_per_100_plans",
+        title="a  Cost per 100 plans (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax1,
+        relative=True,
+    )
+    _cost_bar_panel(
+        table, "rel_cost_per_pass",
+        title="b  Cost per successful plan (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax2,
+        relative=True,
+    )
+    _cost_provider_legend(fig, table)
+    fig.suptitle("Per-model cost benchmark (relative)", fontsize=11,
                  fontweight="bold", y=1.06)
     return fig
 
@@ -4068,6 +4167,31 @@ def main() -> None:
                     plt.close(fig4b)
                     print(f"[ok]   planning_cost_per_pass → "
                           f"{fig_dir/'planning_cost_per_pass'}.pdf")
+
+                fig4_rel = cost_summary_relative_figure(df)
+                if fig4_rel is not None:
+                    _save(fig4_rel, fig_dir / "planning_cost_summary_relative",
+                          svg=args.svg)
+                    plt.close(fig4_rel)
+                    print(f"[ok]   planning_cost_summary_relative → "
+                          f"{fig_dir/'planning_cost_summary_relative'}.pdf")
+
+                fig4a_rel = cost_per_100_plans_relative_figure(df)
+                if fig4a_rel is not None:
+                    _save(fig4a_rel,
+                          fig_dir / "planning_cost_per_100_plans_relative",
+                          svg=args.svg)
+                    plt.close(fig4a_rel)
+                    print(f"[ok]   planning_cost_per_100_plans_relative → "
+                          f"{fig_dir/'planning_cost_per_100_plans_relative'}.pdf")
+
+                fig4b_rel = cost_per_pass_relative_figure(df)
+                if fig4b_rel is not None:
+                    _save(fig4b_rel, fig_dir / "planning_cost_per_pass_relative",
+                          svg=args.svg)
+                    plt.close(fig4b_rel)
+                    print(f"[ok]   planning_cost_per_pass_relative → "
+                          f"{fig_dir/'planning_cost_per_pass_relative'}.pdf")
 
                 table = _per_model_cost_table(df)
                 if table is not None:

@@ -113,6 +113,21 @@ def _render_cove(paired_csv: Path, out_base: Path) -> None:
     print(f"[ok]   cove_ablation → {pdf_path}")
 
 
+def _render_tool_hint(paired_csv: Path, out_base: Path) -> None:
+    _ensure_bench_on_path()
+    from make_tool_hint_figure import _build_stats_table, _pair_arms, _plot
+
+    df = pd.read_csv(paired_csv)
+    on, off = _pair_arms(df)
+    if on.empty:
+        print("[skip] tool_hint_ablation: no paired rows after joining arms")
+        return
+    pdf_path = _plot(df, out_base=out_base)
+    _write_stats(_build_stats_table(on, off),
+                 Path(str(out_base) + "__stats.tsv"))
+    print(f"[ok]   tool_hint_ablation → {pdf_path}")
+
+
 def _render_competitor_dag(paired_csv: Path, fig_dir: Path) -> None:
     _ensure_bench_on_path()
     from make_competitor_dag_figure import _render_for_competitor
@@ -141,7 +156,7 @@ def _render_ablation_summary(results_root: Path, out_base: Path) -> None:
 
     stats = collect_stats(results_root)
     if not stats:
-        print("[skip] ablation_summary: no paired results for H/I/K/L")
+        print("[skip] ablation_summary: no paired results for H/I/K/L/M")
         return
     pdf_path = _plot(stats, out_base=out_base)
     _write_stats_tsv(stats, Path(str(out_base) + "__stats.tsv"))
@@ -165,6 +180,8 @@ def render_paired_ablation_figures(results_root: Path, fig_dir: Path) -> None:
         ("validator_ablation", "validator_ablation", "validator_ablation",
          _render_validator),
         ("cove_ablation", "cove_ablation", "cove_ablation", _render_cove),
+        ("tool_hint_ablation", "tool_hint_ablation", "tool_hint_ablation",
+         _render_tool_hint),
     ]
     for label, subdir, out_name, render_fn in simple:
         paired = _latest_paired_csv(results_root, subdir)

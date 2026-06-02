@@ -22,7 +22,7 @@ benchmarks/
 │   ├── fidelity_cases.yaml             # Output-fidelity cases (Benchmark F)
 │   └── interpretation_questions.yaml   # MCQ + open-ended questions (Benchmark G)
 ├── corpus/
-│   └── prompts.yaml                    # 66 prompts (23 standard + 18 hard transcription + 25 inference)
+│   └── prompts.yaml                    # 66 prompts (23 explicit-tool + 18 hard explicit-tool + 25 tool-inference)
 ├── references/                         # Materialised gold-standard outputs (gitignored)
 │   ├── download_references.py          # Orchestrator — fetches each Benchmark F reference
 │   ├── install_r_deps.R                # Installs Bioconductor packages used by R recipes
@@ -86,24 +86,23 @@ benchmarks/
 
 `corpus/prompts.yaml` contains **66 prompts** across two scoring tiers:
 
-- **41 transcription prompts** (`tier: transcription`, the default) —
-  the historical corpus. Each prompt names the canonical tools to use,
-  so the score measures whether the LLM faithfully turns a tool list
-  into a structured plan with valid commands, dependencies, and forbidden-tool
-  exclusions. 23 are "standard" everyday workflows; the remaining 18
-  (`hard_*`) stress niche domains (bisulfite, metagenomics, Hi-C),
-  long chains, modern tool selection, and R-package wrappers.
-- **25 inference prompts** (`tier: inference`, IDs prefixed `inf_`) —
-  the new tier, scored by [`score_plan_inference`](harness/metrics.py).
-  Each prompt describes the *goal* and *input data only*, never tool
-  names ("Quantify transcript abundance from paired-end RNA-seq for
-  downstream DESeq2"). Each prompt declares an
-  `acceptable_tool_sets` list (e.g. `[[salmon, multiqc],
-  [kallisto, multiqc], [star, featurecounts, multiqc]]`); the plan
-  passes only if **at least one** of those sets is fully covered using
-  *strict* tool matching (the prose fallback is disabled). Hallucinated
-  tools, malformed commands (per
-  [`harness/command_validator.py`](harness/command_validator.py)) and
+- **41 explicit-tool prompts** (YAML `tier: transcription`, the default) —
+  each prompt names the canonical tools to use, so the score measures
+  whether the LLM faithfully turns that tool list into a structured plan
+  with valid commands, dependencies, and forbidden-tool exclusions.
+  23 are "standard" everyday workflows; the remaining 18 (`hard_*`)
+  stress niche domains (bisulfite, metagenomics, Hi-C), long chains,
+  modern tool selection, and R-package wrappers.
+- **25 tool-inference prompts** (YAML `tier: inference`, IDs prefixed `inf_`) —
+  scored by [`score_plan_inference`](harness/metrics.py). Each prompt
+  describes the *goal* and *input data only*, never tool names
+  ("Quantify transcript abundance from paired-end RNA-seq for downstream
+  DESeq2"). Each prompt declares an `acceptable_tool_sets` list (e.g.
+  `[[salmon, multiqc], [kallisto, multiqc], [star, featurecounts, multiqc]]`);
+  the plan passes only if **at least one** set is fully covered using
+  *strict* tool matching (prose fallback disabled). Hallucinated tools,
+  malformed commands (per
+  [`harness/command_validator.py`](harness/command_validator.py)), and
   forbidden tools all gate `overall_pass`.
 
 **What this benchmark does NOT test.** Whether the LLM picks the
@@ -1700,11 +1699,17 @@ Two publication-ready cost figures are emitted by `make report`:
 - **`planning_cost_summary.pdf`** — two-panel bar chart: cost per 100 plans
   and cost per **successful** plan (the latter penalises cheap-but-flaky
   models).
+- **`planning_cost_summary_relative.pdf`** (and split
+  `planning_cost_per_100_plans_relative.pdf` /
+  `planning_cost_per_pass_relative.pdf`) — same layout in **fold-change vs
+  the cheapest model** (no USD on axes; suitable for journals that discourage
+  dollar amounts in the main text). Caption can name the reference model once.
 - **`planning_cost_quality.pdf`** — scatter of pass-rate vs. cost on a log
   x-axis, with Pareto-frontier models annotated.
 - **`planning_cost_summary.tsv`** — a plaintext per-model table
-  (`model`, `mean_cost`, `cost_per_pass`, `cost_per_100_plans`, `pass_rate`,
-  mean input/output tokens) for dropping straight into a manuscript.
+  (`model`, `mean_cost`, `cost_per_pass`, `cost_per_100_plans`,
+  `rel_cost_per_pass`, `rel_cost_per_100_plans`, `pass_rate`, mean
+  input/output tokens) for dropping straight into a manuscript.
 
 **Updating pricing** — if a provider lowers their rates, edit `models.yaml`
 and run `make rescore && make merge && make report`. No re-bench needed.
@@ -1719,10 +1724,11 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 
 | File | Content |
 |---|---|
-| `planning.pdf` | Pass rate by model, split into transcription (standard / hard) and inference panels |
+| `planning.pdf` | Pass rate by model: explicit-tool (standard / hard) and tool-inference panels |
 | `planning_heatmap.pdf` | Per-prompt × per-model pass-rate heatmap |
-| `planning_heatmap_by_tier.pdf` | Heatmap split into current vs legacy model panels |
-| `planning_cost_summary.pdf` | Per-model cost bar chart (two panels) |
+| `planning_heatmap_by_tier.pdf` | Heatmap split into current vs legacy model panels; row labels: red = `hard_*` explicit-tool, blue = `inf_*` tool-inference, black = standard explicit-tool |
+| `planning_cost_summary.pdf` | Per-model cost bar chart (two panels, USD) |
+| `planning_cost_summary_relative.pdf` | Same, relative to cheapest model (no USD) |
 | `planning_cost_quality.pdf` | Pass-rate vs cost scatter (log x-axis), Pareto frontier |
 | `planning_latency.pdf` | Per-model wall-clock + speed-vs-quality trade-off |
 | `planning_turns.pdf` | Mean LLM calls per plan (turns to completion) |

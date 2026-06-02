@@ -42,7 +42,7 @@ ifeq ($(shell $(PY) -c "import openai" 2>/dev/null && echo ok),)
 $(error $(PY) is missing the openai package. Run: conda activate flowagent  OR  pip install -e ..)
 endif
 
-.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure ablation-summary-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure fidelity fidelity-run references install-r-deps interpretation judge-calibration-figure rescore rescore-all merge prune-models report test clean help refresh-tools
+.PHONY: all all-sweep smoke plan plan-all recovery gen exec competitors competitors-all ablation ablation-pilot ablation-figure ablation-summary-figure reflection reflection-pilot reflection-figure competitor-dag-ablation competitor-dag-ablation-pilot competitor-dag-figure validator-ablation validator-ablation-pilot validator-figure cove-ablation cove-ablation-pilot cove-figure tool-hint-ablation tool-hint-ablation-pilot tool-hint-figure fidelity fidelity-run references install-r-deps interpretation judge-calibration-figure rescore rescore-all merge prune-models report test clean help refresh-tools
 
 help:
 	@echo "FlowAgent benchmark targets:"
@@ -61,7 +61,7 @@ help:
 	@echo "  make ablation     - Benchmark H: DAG-aware vs DAG-blind planner ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make ablation-pilot - Benchmark H smoke: 5 prompts × 1 replicate × 2 arms (validates the ablation pipeline)"
 	@echo "  make ablation-figure ABLATION_DIR=results/ablation/<ts> - render figure_ablation.pdf + stats_ablation.tsv"
-	@echo "  make ablation-summary-figure - combined H/I/K/L pass-rate figure (excludes Benchmark J)"
+	@echo "  make ablation-summary-figure - combined H/I/K/L/M pass-rate figure (excludes Benchmark J)"
 	@echo "  make reflection   - Benchmark I: completeness-reflection ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make reflection-pilot - Benchmark I smoke: 8 prompts × 1 replicate × 2 arms"
 	@echo "  make reflection-figure REFLECTION_DIR=results/reflection/<ts> - render figure_reflection.pdf + stats_reflection.tsv"
@@ -74,6 +74,9 @@ help:
 	@echo "  make cove-ablation - T4: CoVe verifier on/off ablation, annotation-only mode (66 prompts × replicates × 2 arms)"
 	@echo "  make cove-ablation-pilot - T4 smoke: 5 prompts × 1 replicate × 2 arms"
 	@echo "  make cove-figure COVE_DIR=results/cove_ablation/<ts> - render figure_cove.pdf + stats + signal table"
+	@echo "  make tool-hint-ablation - Benchmark M: workflow tool-hint on/off ablation (66 prompts × replicates × 2 arms)"
+	@echo "  make tool-hint-ablation-pilot - Benchmark M smoke: 5 prompts × 1 replicate × 2 arms"
+	@echo "  make tool-hint-figure TOOL_HINT_DIR=results/tool_hint_ablation/<ts> - render figure_tool_hint.pdf + stats"
 	@echo "  make rescore      - Re-evaluate the latest planning run with current scoring"
 	@echo "  make rescore-all  - Re-evaluate every planning run in $(RESULTS_DIR)/planning/"
 	@echo "  make merge        - Combine all planning runs into one CSV under _merged/"
@@ -346,6 +349,31 @@ cove-figure:
 	$(PY) make_cove_figure.py \
 	    --paired=$(COVE_DIR)/paired_metrics.csv \
 	    --out=figure_cove
+
+# Benchmark M -- per-workflow tool allowlist in the planner prompt.
+tool-hint-ablation:
+	$(PY) bench_tool_hint_ablation.py \
+	    --models=$(EFFECTIVE_MODELS) \
+	    --replicates=$(REPLICATES) \
+	    --out=$(RESULTS_DIR)
+
+tool-hint-ablation-pilot:
+	$(PY) bench_tool_hint_ablation.py \
+	    --models=$(MODEL) \
+	    --replicates=1 \
+	    --limit=5 \
+	    --out=$(RESULTS_DIR)
+
+TOOL_HINT_DIR ?= $(shell ls -td $(RESULTS_DIR)/tool_hint_ablation/*/ 2>/dev/null | head -1)
+tool-hint-figure:
+	@if [ -z "$(TOOL_HINT_DIR)" ]; then \
+	    echo "No tool_hint_ablation runs found under $(RESULTS_DIR)/tool_hint_ablation."; \
+	    echo "Run \`make tool-hint-ablation\` first or pass TOOL_HINT_DIR=...."; \
+	    exit 1; \
+	fi
+	$(PY) make_tool_hint_figure.py \
+	    --paired=$(TOOL_HINT_DIR)/paired_metrics.csv \
+	    --out=figure_tool_hint
 
 # Benchmark F — output fidelity (pure scoring; no LLM calls).
 # Use this when the candidate dirs already exist on disk.

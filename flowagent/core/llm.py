@@ -1378,12 +1378,17 @@ Important:
             # Restrict the planner to tools that actually belong in this
             # workflow type so the LLM can't drift into a forbidden tool
             # family (the empirical chip_seq → kraken2 failure mode).
-            _tool_hint_list = self._tool_hint_for_workflow_type(workflow_type)
-            _tool_hint_block = (
-                "Valid tool names for this workflow (pick from this list; do "
-                "NOT invent tool names or substitute siblings):\n"
-                f"  {', '.join(_tool_hint_list)}"
-            )
+            from .tool_hint_flags import tool_hint_enabled
+
+            if tool_hint_enabled():
+                _tool_hint_list = self._tool_hint_for_workflow_type(workflow_type)
+                _tool_hint_block = (
+                    "Valid tool names for this workflow (pick from this list; do "
+                    "NOT invent tool names or substitute siblings):\n"
+                    f"  {', '.join(_tool_hint_list)}"
+                )
+            else:
+                _tool_hint_block = ""
 
             # GEO metadata block (todo T5). When the prompt names a GSE
             # accession and the live-catalog resolver fetched its NCBI

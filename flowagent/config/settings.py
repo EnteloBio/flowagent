@@ -90,6 +90,15 @@ class Settings(BaseSettings):
             "for another plan attempt. Default off (Benchmark K)."
         ),
     )
+    FLOWAGENT_TOOL_HINT: bool = Field(
+        True,
+        description=(
+            "When True (default), the planner prompt includes a "
+            "workflow-type-restricted tool allowlist "
+            "(todo T3). Set False for the tool-hint ablation "
+            "(benchmarks/bench_tool_hint_ablation.py)."
+        ),
+    )
 
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API Key")
     ANTHROPIC_API_KEY: Optional[str] = Field(None, description="Anthropic API Key")

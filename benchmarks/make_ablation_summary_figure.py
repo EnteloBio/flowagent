@@ -1,9 +1,10 @@
-"""Combined FlowAgent planning-stack ablation summary (Benchmarks H, I, K, L).
+"""Combined FlowAgent planning-stack ablation summary (Benchmarks H, I, K, L, M).
 
 Reads the newest ``paired_metrics.csv`` from each ablation run tree and
 emits a single two-panel figure comparing **component ON vs OFF** pass
 rates across the four toggles that isolate FlowAgent architecture layers
-(DAG schema, completeness reflection, command validator, CoVe verifier).
+(DAG schema, completeness reflection, command validator, CoVe verifier,
+tool-hint allowlist).
 
 Benchmark J (competitor DAG-prompt ablation) is intentionally excluded —
 that tests an external framework, not a FlowAgent component.
@@ -43,6 +44,7 @@ _COMPONENTS: List[Tuple[str, str, str, str]] = [
     ("reflection", "reflect_on", "reflect_off", "Completeness\nreflection (I)"),
     ("validator_ablation", "validator_on", "validator_off", "Command\nvalidator (K)"),
     ("cove_ablation", "verifier_on", "verifier_off", "CoVe verifier\n(L)"),
+    ("tool_hint_ablation", "hint_on", "hint_off", "Tool hint\n(M)"),
 ]
 
 _METRICS: List[Tuple[str, str]] = [

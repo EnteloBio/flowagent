@@ -1,9 +1,10 @@
 # Benchmark A prompt corpus.
 #
 # Two scoring tiers (both live in this file under ``prompts:``; the absence
-# of an explicit ``tier:`` field is shorthand for ``tier: transcription``):
+# of an explicit ``tier:`` field is shorthand for ``tier: transcription``,
+# a.k.a. **explicit-tool** in figures and the manuscript):
 #
-#   tier: transcription (default — original 41 prompts)
+#   tier: transcription  →  explicit-tool (default — original 41 prompts)
 #     Naming the rubric tools in the prompt is allowed and common.
 #     Scored against:
 #       expected_workflow_type - must match plan["workflow_type"]
@@ -15,7 +16,7 @@
 #     This tier mostly checks that the LLM emits valid JSON reflecting a
 #     toolchain that the prompt itself names.
 #
-#   tier: inference (new — added to test planning under-specification)
+#   tier: inference  →  tool-inference (goal + data only; tools not named)
 #     Prompts state goal + input data only, never naming tools.
 #     Scored against:
 #       acceptable_tool_sets   - list of valid toolchains; the plan passes if
@@ -495,7 +496,7 @@ prompts:
     expected_min_steps: 6
     forbidden_tools: [wget, kallisto, star, gatk]
 
-  # ── Inference tier (25) ───────────────────────────────────────
+  # ── Tool-inference tier (25; YAML tier: inference) ─────────────
   # Prompts that describe goal + input data only — never name a tool.
   # The plan passes if it uses any toolchain in ``acceptable_tool_sets``
   # (a list of valid alternatives), with strict first-token matching.

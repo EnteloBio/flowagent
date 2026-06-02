@@ -1,4 +1,4 @@
-"""Tests for the combined ablation summary figure (H/I/K/L)."""
+"""Tests for the combined ablation summary figure (H/I/K/L/M)."""
 
 from __future__ import annotations
 
@@ -80,6 +80,7 @@ def test_collect_and_main(tmp_path: Path) -> None:
         ("reflection", "reflect_on", "reflect_off"),
         ("validator_ablation", "validator_on", "validator_off"),
         ("cove_ablation", "verifier_on", "verifier_off"),
+        ("tool_hint_ablation", "hint_on", "hint_off"),
     ]:
         run = tmp_path / subdir / "2026-01-01T00-00-00"
         _write_paired(
@@ -91,7 +92,7 @@ def test_collect_and_main(tmp_path: Path) -> None:
         )
 
     stats = collect_stats(tmp_path)
-    assert len(stats) == 8  # 4 components × 2 metrics
+    assert len(stats) == 10  # 5 components × 2 metrics
 
     out = tmp_path / "fig" / "ablation_summary"
     assert main(["--results-base", str(tmp_path), "--out", str(out)]) == 0
