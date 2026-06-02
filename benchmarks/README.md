@@ -522,7 +522,11 @@ Where:
   than silently dragging down the pass rate.
 
 Both headline metrics also appear as side-by-side panels in
-`results/figures/competitors.pdf`.
+`results/figures/competitors.pdf` (and `competitors.png`). When cost data
+is present the figure includes USD cost per successful plan and a
+fold-change vs. the cheapest system. A standalone
+`competitors_cost_per_pass_relative.pdf` is also emitted for manuscript
+layouts that need a wider single panel.
 
 **Subsetting:**
 
@@ -1743,7 +1747,8 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 | `recovery_per_model/recovery_<model>.pdf` | Per-model breakdown across all faults |
 | `generation.pdf` | Benchmark C generator-fidelity heatmap |
 | `executors.pdf` | Benchmark D executor-coverage matrix |
-| `competitors.pdf` | Benchmark E pass / fail / crash per competitor |
+| `competitors.pdf` / `competitors.png` | Benchmark E pass, tool recovery, USD cost, and relative cost per competitor |
+| `competitors_cost_per_pass_relative.pdf` | Benchmark E cost per successful plan (× lowest-cost system) |
 | `competitors_perprompt.pdf` | Competitor × prompt outcome heatmap |
 | `competitors_agentic.pdf` | FlowAgent vs BioMaster vs AutoBA vs Biomni focused comparison |
 | `interpretation.pdf` | Benchmark G three-panel: MCQ accuracy + heatmap + open-ended judge mean |

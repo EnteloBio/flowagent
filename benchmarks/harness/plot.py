@@ -1732,13 +1732,80 @@ def _agentic_xticklabels(ax, x, labels: List[str]) -> None:
     ax.set_xticklabels(labels, fontsize=9, rotation=35, ha="right")
 
 
+def _per_competitor_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Per-competitor cost-per-successful-plan for Benchmark E cost figures."""
+    if "competitor" not in df.columns or df.empty or "cost_usd" not in df.columns:
+        return None
+
+    sub = df.copy()
+    if "error" in sub.columns:
+        avail = sub[sub["error"].isna() | (sub["error"].astype(str) == "")]
+        if avail.empty:
+            return None
+        sub = avail
+
+    sub = _with_scored_overall_pass(sub)
+    sub["cost_usd"] = pd.to_numeric(sub["cost_usd"], errors="coerce").fillna(0.0)
+
+    g = (sub.groupby(["competitor", "competitor_name"])
+             .agg(n=("overall_pass", "count"),
+                  passes=("overall_pass", "sum"),
+                  total_cost=("cost_usd", "sum"))
+             .reset_index())
+    if g.empty or g["total_cost"].sum() == 0:
+        return None
+
+    g["cost_per_pass"] = g.apply(
+        lambda r: (r["total_cost"] / r["passes"]) if r["passes"] > 0 else float("nan"),
+        axis=1,
+    )
+    if g["cost_per_pass"].dropna().empty:
+        return None
+    g = _add_relative_cost_columns(g)
+    return g.sort_values("cost_per_pass").reset_index(drop=True)
+
+
+def _competitor_cost_bar_panel(table: pd.DataFrame, col: str, *, title: str,
+                               xlabel: str, ax: plt.Axes,
+                               relative: bool = False) -> None:
+    """Render one Benchmark E cost bar-chart panel onto a given axis."""
+    t = table.sort_values(col).reset_index(drop=True)
+    y = np.arange(len(t))
+    cols = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"])
+            for c in t["competitor"]]
+    ax.barh(y, t[col], color=cols, edgecolor="white",
+            linewidth=0.6, height=0.68)
+    ax.set_yticks(y)
+    ax.set_yticklabels([r["competitor_name"] for _, r in t.iterrows()])
+    for i, v in enumerate(t[col]):
+        if pd.isna(v):
+            ax.text(0.005, i, "n/a", va="center", ha="left",
+                    fontsize=8, color="#9ca3af",
+                    transform=ax.get_yaxis_transform())
+            continue
+        if relative:
+            label = _format_relative_cost_label(v)
+        else:
+            label = (f"${v:,.4f}" if v < 0.01 else
+                     f"${v:,.3f}" if v < 1 else
+                     f"${v:,.2f}")
+        ax.text(v, i, f"  {label}", va="center", ha="left",
+                fontsize=8, color="#1f2937")
+    ax.set_xlabel(xlabel)
+    ax.set_title(title, loc="left")
+    vmax = t[col].dropna().max() if t[col].dropna().size else 1
+    ax.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
+    _style_value_axis(ax, x=True)
+
+
 def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
-    """Head-to-head bar chart with two co-primary outcomes + cost.
+    """Head-to-head bar chart with two co-primary outcomes + cost panels.
 
     Reports the strict ``overall_pass`` rate and the partial-credit
     ``tool_recovery`` (mean ``tools_present_fraction``) side-by-side
     so a 5-of-6 plan no longer scores identically to a 0-of-6 plan.
-    Cost-per-successful-plan is reported as a separate panel.
+    Cost-per-successful-plan is shown in USD and as a fold-change vs.
+    the cheapest system when ``cost_usd`` is present.
 
     Expects columns: competitor, competitor_name, input_id, overall_pass,
     tools_present_fraction (optional), cost_usd (optional).
@@ -1799,16 +1866,25 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     g[["ci_lo", "ci_hi"]] = g.apply(_ci, axis=1)
 
     has_cost = "cost_per_pass" in g.columns and g["cost_per_pass"].dropna().size
+    if has_cost:
+        g = _add_relative_cost_columns(g)
+    has_cost_rel = (
+        has_cost
+        and "rel_cost_per_pass" in g.columns
+        and g["rel_cost_per_pass"].dropna().size
+    )
 
     # Layout: pass rate is always shown; tool-recovery and cost panels are
-    # added when their columns are present. Up to three panels total.
+    # added when their columns are present (up to four panels total).
     panels: List[str] = ["pass"]
     if has_frac:
         panels.append("recovery")
     if has_cost:
         panels.append("cost")
+    if has_cost_rel:
+        panels.append("cost_rel")
     n_panels = len(panels)
-    fig_w = {1: 5.4, 2: 7.8, 3: 11.2}[n_panels]
+    fig_w = {1: 5.4, 2: 7.8, 3: 11.2, 4: 15.0}[n_panels]
     fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 3.6))
     if n_panels == 1:
         axes = [axes]
@@ -1866,36 +1942,51 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
                       loc="left")
         _style_value_axis(axr, x=True)
 
-    # Panel — cost per successful plan
+    # Panel — cost per successful plan (USD)
     if "cost" in panel_axes:
-        ax2 = panel_axes["cost"]
-        t = g.sort_values("cost_per_pass").reset_index(drop=True)
-        yb = np.arange(len(t))
-        cols2 = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"])
-                 for c in t["competitor"]]
-        ax2.barh(yb, t["cost_per_pass"], color=cols2, edgecolor="white",
-                 linewidth=0.6, height=0.68)
-        for i, v in enumerate(t["cost_per_pass"]):
-            if pd.isna(v):
-                ax2.text(0.005, i, "n/a", va="center", ha="left",
-                         fontsize=8, color="#9ca3af",
-                         transform=ax2.get_yaxis_transform())
-                continue
-            label = (f"${v:,.4f}" if v < 0.01 else
-                     f"${v:,.3f}" if v < 1 else
-                     f"${v:,.2f}")
-            ax2.text(v, i, f"  {label}", va="center", ha="left",
-                     fontsize=8, color="#1f2937")
-        ax2.set_yticks(yb)
-        ax2.set_yticklabels([r["competitor_name"] for _, r in t.iterrows()])
-        vmax = t["cost_per_pass"].dropna().max() if t["cost_per_pass"].dropna().size else 1
-        ax2.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
-        ax2.set_xlabel("USD per successful plan")
-        ax2.set_title(f"{_letter('cost')}Cost efficiency", loc="left")
-        _style_value_axis(ax2, x=True)
+        _competitor_cost_bar_panel(
+            g, "cost_per_pass",
+            title=f"{_letter('cost')}Cost efficiency",
+            xlabel="USD per successful plan",
+            ax=panel_axes["cost"],
+        )
+
+    # Panel — cost per successful plan (relative to cheapest)
+    if "cost_rel" in panel_axes:
+        _competitor_cost_bar_panel(
+            g, "rel_cost_per_pass",
+            title=f"{_letter('cost_rel')}Cost efficiency (relative)",
+            xlabel="Relative cost (× lowest-cost system)",
+            ax=panel_axes["cost_rel"],
+            relative=True,
+        )
 
     fig.suptitle("Head-to-head: FlowAgent vs. alternative agentic systems",
                  fontsize=11, fontweight="bold", y=1.03)
+    return fig
+
+
+def competitors_cost_per_pass_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: Benchmark E cost per successful plan vs. cheapest system.
+
+    Fold-change view for manuscripts that prefer not to quote USD in the
+    cost-effectiveness section. Baseline is the competitor with the lowest
+    finite ``cost_per_pass`` (total spend / strict passes).
+    """
+    table = _per_competitor_cost_table(df)
+    if table is None or table.empty or "rel_cost_per_pass" not in table.columns:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _competitor_cost_bar_panel(
+        table, "rel_cost_per_pass",
+        title="Cost per successful plan (relative)",
+        xlabel="Relative cost (× lowest-cost system)",
+        ax=ax,
+        relative=True,
+    )
+    fig.suptitle("Head-to-head: cost vs. lowest-cost successful plan",
+                 fontsize=11, fontweight="bold", y=1.02)
     return fig
 
 
@@ -2503,6 +2594,8 @@ def _add_relative_cost_columns(table: pd.DataFrame) -> pd.DataFrame:
         ("cost_per_100_plans", "rel_cost_per_100_plans"),
         ("cost_per_pass", "rel_cost_per_pass"),
     ):
+        if col not in g.columns:
+            continue
         finite = g[col].dropna()
         if finite.empty:
             g[rel_col] = np.nan
@@ -4098,6 +4191,14 @@ def main() -> None:
                 plt.close(fail_breakdown)
                 print(f"[ok]   competitors_failure_breakdown → "
                       f"{fig_dir/'competitors_failure_breakdown'}.pdf")
+
+            cost_rel = competitors_cost_per_pass_relative_figure(df)
+            if cost_rel is not None:
+                _save(cost_rel, fig_dir / "competitors_cost_per_pass_relative",
+                      svg=args.svg)
+                plt.close(cost_rel)
+                print(f"[ok]   competitors_cost_per_pass_relative → "
+                      f"{fig_dir/'competitors_cost_per_pass_relative'}.pdf")
 
         # Planning bonus figures
         if bench_name == "planning":
