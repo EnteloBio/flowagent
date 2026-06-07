@@ -2454,18 +2454,18 @@
 <tbody>
 <tr>
 <td>OpenAI</td>
-<td><code>gpt-4.1</code>, <code>gpt-4.1-mini</code></td>
-<td><code>gpt-4.1-nano</code> for lightweight tasks</td>
+<td><code>gpt-5.4-mini</code>, <code>gpt-4.1</code></td>
+<td><code>gpt-5.5</code> / <code>gpt-5.4</code> for flagship; <code>gpt-5.4-nano</code> for lightweight</td>
 </tr>
 <tr>
 <td>Anthropic</td>
-<td><code>claude-sonnet-4-20250514</code></td>
-<td><code>claude-opus-4-20250514</code> for complex analysis</td>
+<td><code>claude-sonnet-4-6</code></td>
+<td><code>claude-opus-4-8</code> for complex analysis</td>
 </tr>
 <tr>
 <td>Google</td>
-<td><code>gemini-2.5-flash</code></td>
-<td><code>gemini-2.5-pro</code> for longer reasoning</td>
+<td><code>gemini-2.5-flash</code>, <code>gemini-3.5-flash</code></td>
+<td><code>gemini-2.5-pro</code> / <code>gemini-3.1-pro-preview</code> for longer reasoning</td>
 </tr>
 <tr>
 <td>Ollama</td>
@@ -2486,7 +2486,7 @@ flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">
 <li>
 <p>Report generation (Anthropic):
    <div class="highlight"><pre><span></span><code><span class="nv">LLM_PROVIDER</span><span class="o">=</span>anthropic
-<span class="nv">LLM_MODEL</span><span class="o">=</span>claude-sonnet-4-20250514
+<span class="nv">LLM_MODEL</span><span class="o">=</span>claude-sonnet-4-6
 flowagent<span class="w"> </span>prompt<span class="w"> </span><span class="s2">&quot;analyze workflow results&quot;</span><span class="w"> </span>--analysis-dir<span class="o">=</span>results
 </code></pre></div></p>
 </li>

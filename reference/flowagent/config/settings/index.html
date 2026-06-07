@@ -2565,7 +2565,79 @@
 <span class="normal">123</span>
 <span class="normal">124</span>
 <span class="normal">125</span>
-<span class="normal">126</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">Settings</span><span class="p">(</span><span class="n">BaseSettings</span><span class="p">):</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">Settings</span><span class="p">(</span><span class="n">BaseSettings</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Settings class for FlowAgent.&quot;&quot;&quot;</span>
 
     <span class="n">model_config</span> <span class="o">=</span> <span class="n">SettingsConfigDict</span><span class="p">(</span>
@@ -2578,6 +2650,70 @@
     <span class="n">LLM_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;gpt-5.4-mini&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Primary model&quot;</span><span class="p">)</span>
     <span class="n">LLM_FALLBACK_MODEL</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="s2">&quot;gpt-4.1-mini&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Fallback model if primary unavailable&quot;</span><span class="p">)</span>
     <span class="n">LLM_BASE_URL</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Custom endpoint URL (for Ollama/vLLM)&quot;</span><span class="p">)</span>
+    <span class="n">LLM_DAG_AWARE</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="kc">True</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;When True (default), the planner prompt instructs the LLM that &quot;</span>
+            <span class="s2">&quot;step dependencies must form a valid DAG and emits a &#39;dependencies&#39; &quot;</span>
+            <span class="s2">&quot;field in the structured-output schema. Set to False for the &quot;</span>
+            <span class="s2">&quot;DAG-blind ablation: the planner asks for a flat ordered list of &quot;</span>
+            <span class="s2">&quot;steps and does not mention dependencies. Used by benchmarks/bench_ablation.py.&quot;</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">LLM_COMPLETENESS_REFLECT</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="kc">True</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;When True (default), after the LLM emits a workflow plan the &quot;</span>
+            <span class="s2">&quot;planner runs domain-specific structural checks &quot;</span>
+            <span class="s2">&quot;(flowagent.core.completeness.validate_workflow_completeness): &quot;</span>
+            <span class="s2">&quot;every align needs an index/download ancestor; every download &quot;</span>
+            <span class="s2">&quot;must be consumed; analysis steps must feed a report or be &quot;</span>
+            <span class="s2">&quot;DAG sinks; the graph must be weakly connected with at least &quot;</span>
+            <span class="s2">&quot;one terminal sink. If checks fail, the planner reflects the &quot;</span>
+            <span class="s2">&quot;LLM with the failure list and accepts the next draft (up to &quot;</span>
+            <span class="s2">&quot;LLM_COMPLETENESS_MAX_RETRIES). Inspired by DAG-Plan &quot;</span>
+            <span class="s2">&quot;(arXiv:2406.09953). Disable to measure the contribution of &quot;</span>
+            <span class="s2">&quot;reflection in the ablation matrix.&quot;</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">LLM_COMPLETENESS_MAX_RETRIES</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="mi">2</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;Maximum number of completeness-reflection retries before &quot;</span>
+            <span class="s2">&quot;accepting the most recent plan as-is. The first attempt does &quot;</span>
+            <span class="s2">&quot;not count as a retry; with the default of 2 the planner &quot;</span>
+            <span class="s2">&quot;performs at most 3 LLM calls per plan (initial + 2 retries). &quot;</span>
+            <span class="s2">&quot;Set to 0 to disable retries while keeping the validation &quot;</span>
+            <span class="s2">&quot;metric in the score CSV.&quot;</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Command-level plan validator (todo T0). Runtime reads these via</span>
+    <span class="c1"># flowagent.core.validator_flags (fresh on every call). Legacy</span>
+    <span class="c1"># FLOWAGENT_VALIDATOR_ENABLED overrides both when set explicitly.</span>
+    <span class="n">FLOWAGENT_VALIDATOR_AUTOFIX</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="kc">True</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;Deterministic in-place command fixes (tool typos, archive &quot;</span>
+            <span class="s2">&quot;nesting, literal </span><span class="se">\\\\</span><span class="s2">n escapes) before validation. Default on.&quot;</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">FLOWAGENT_VALIDATOR_RETRY</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="kc">False</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;When True, command-validator failures feed back to the LLM &quot;</span>
+            <span class="s2">&quot;for another plan attempt. Default off (Benchmark K).&quot;</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">FLOWAGENT_TOOL_HINT</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="kc">True</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;When True (default), the planner prompt includes a &quot;</span>
+            <span class="s2">&quot;workflow-type-restricted tool allowlist &quot;</span>
+            <span class="s2">&quot;(todo T3). Set False for the tool-hint ablation &quot;</span>
+            <span class="s2">&quot;(benchmarks/bench_tool_hint_ablation.py).&quot;</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
 
     <span class="n">OPENAI_API_KEY</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;OpenAI API Key&quot;</span><span class="p">)</span>
     <span class="n">ANTHROPIC_API_KEY</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Anthropic API Key&quot;</span><span class="p">)</span>
@@ -2602,6 +2738,14 @@
     <span class="n">MAX_RETRIES</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span>
     <span class="n">RETRY_DELAY</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.0</span>
     <span class="n">TIMEOUT</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">60.0</span>
+    <span class="n">LLM_TIMEOUT_SECONDS</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="mi">300</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;Per-call LLM API timeout in seconds. Reasoning / preview models &quot;</span>
+            <span class="s2">&quot;(Gemini 3.1 Pro, o3, Opus) often need 300–600. Override in .env &quot;</span>
+            <span class="s2">&quot;or per-model via benchmarks/config/models.yaml timeout_seconds.&quot;</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
 
     <span class="c1"># ── Workflow ─────────────────────────────────────────────</span>
     <span class="n">MAX_CONCURRENT_WORKFLOWS</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span>
@@ -2703,7 +2847,7 @@
 </div>
 
 
-<h5 id="flowagent.config.settings.Settings-functions">Functions<a href="#flowagent.config.settings.Settings-functions" class="headerlink" title="Permanent link">&para;</a></h5>
+<h5 id="flowagent.config.settings.Settings-functions">Methods:<a href="#flowagent.config.settings.Settings-functions" class="headerlink" title="Permanent link">&para;</a></h5>
 
 <div class="doc doc-object doc-function">
 
@@ -2721,9 +2865,9 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>flowagent/config/settings.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">124</span>
-<span class="normal">125</span>
-<span class="normal">126</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_workflow_param</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">param_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_workflow_param</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">param_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Get default workflow parameter.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_WORKFLOW_PARAMS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">param_name</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>

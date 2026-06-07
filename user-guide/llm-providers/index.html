@@ -2578,19 +2578,19 @@ variables — no code changes required.</p>
 <td>OpenAI</td>
 <td><code>openai</code></td>
 <td><code>OPENAI_API_KEY</code></td>
-<td><code>gpt-4.1</code>, <code>gpt-4o</code>, <code>o3-mini</code></td>
+<td><code>gpt-5.5</code>, <code>gpt-5.4-mini</code>, <code>gpt-4.1</code>, <code>o3</code></td>
 </tr>
 <tr>
 <td>Anthropic Claude</td>
 <td><code>anthropic</code></td>
 <td><code>ANTHROPIC_API_KEY</code></td>
-<td><code>claude-sonnet-4-20250514</code>, <code>claude-opus-4</code></td>
+<td><code>claude-sonnet-4-6</code>, <code>claude-opus-4-8</code></td>
 </tr>
 <tr>
 <td>Google Gemini</td>
 <td><code>google</code></td>
 <td><code>GOOGLE_API_KEY</code></td>
-<td><code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code></td>
+<td><code>gemini-3.5-flash</code>, <code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code></td>
 </tr>
 <tr>
 <td>Ollama (local)</td>
@@ -2614,7 +2614,7 @@ recommended.</p>
 </code></pre></div>
 <h3 id="anthropic">Anthropic<a class="headerlink" href="#anthropic" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LLM_PROVIDER</span><span class="o">=</span>anthropic
-<span class="nb">export</span><span class="w"> </span><span class="nv">LLM_MODEL</span><span class="o">=</span>claude-sonnet-4-20250514
+<span class="nb">export</span><span class="w"> </span><span class="nv">LLM_MODEL</span><span class="o">=</span>claude-sonnet-4-6
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-ant-...
 </code></pre></div>
 <h3 id="google-gemini">Google Gemini<a class="headerlink" href="#google-gemini" title="Permanent link">&para;</a></h3>
@@ -2689,6 +2689,12 @@ falling back to plain chat + repair logic for Ollama.</p>
 <code>WorkflowPlanSchema</code> is automatically converted by
 <code>flowagent.core.schemas.to_json_schema()</code>. Failures fall back through
 plain chat with prompt repair.</p>
+<p><strong>Model strings:</strong> some registry ids are logical labels for stable CSV
+keys and differ from the API slug (e.g. <code>gpt-5.5-mini</code> is not released
+on the API as of May 2026 — the benchmark maps it to <code>gpt-5.4-mini</code> via
+<code>api_id</code> in <code>benchmarks/config/models.yaml</code> and
+<code>flowagent.core.providers.openai_models</code>). Prefer <code>gpt-5.4-mini</code> for new
+mini-tier sweeps. Unknown models fail loudly (no silent fallback).</p>
 <h3 id="anthropic-tool-use">Anthropic tool use<a class="headerlink" href="#anthropic-tool-use" title="Permanent link">&para;</a></h3>
 <p>Uses Anthropic's tool-call API for both planning and the agent loop.
 Retries on <code>rate_limit_error</code> with exponential back-off.</p>
@@ -2696,6 +2702,15 @@ Retries on <code>rate_limit_error</code> with exponential back-off.</p>
 <p>Uses Gemini's <code>responseSchema</code> for JSON output. Pricing is roughly an
 order of magnitude cheaper than GPT-4.1, with measurable quality
 trade-offs on adversarial prompts (see <a href="../../benchmarking/">Benchmarking</a>).</p>
+<p><strong>Model strings:</strong> the Generative Language API rejects retired models
+(notably the entire <strong>Gemini 1.5</strong> family — 404 even with version
+suffixes as of May 2026). Use current GA names (<code>gemini-2.5-flash</code>,
+<code>gemini-3.5-flash</code>). Historical 1.5 benchmark rows live in merged CSVs
+from earlier sweeps. The benchmark registry maps API ids via <code>api_id</code> in
+<code>benchmarks/config/models.yaml</code>. To list models your key can access:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;https://generativelanguage.googleapis.com/v1beta/models?key=</span><span class="nv">$GOOGLE_API_KEY</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="p">|</span><span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>json.tool<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s1">&#39;&quot;name&quot;&#39;</span>
+</code></pre></div>
 <h3 id="ollama">Ollama<a class="headerlink" href="#ollama" title="Permanent link">&para;</a></h3>
 <p>Treats the local model as OpenAI-compatible. Works best with capable
 instruction-tuned models (<code>llama3.1:70b</code>, <code>qwen2.5:32b</code>); smaller models
