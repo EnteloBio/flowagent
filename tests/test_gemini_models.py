@@ -22,6 +22,7 @@ def test_set_provider_uses_api_id(monkeypatch):
     from benchmarks.harness.runner import set_provider
 
     monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     set_provider({
         "id": "gemini-1.5-pro",
         "provider": "google",
