@@ -152,15 +152,29 @@ def _render_competitor_dag(paired_csv: Path, fig_dir: Path) -> None:
 
 def _render_ablation_summary(results_root: Path, out_base: Path) -> None:
     _ensure_bench_on_path()
-    from make_ablation_summary_figure import collect_stats, _plot, _write_stats_tsv
+    from make_ablation_summary_figure import (
+        collect_all_summaries,
+        collect_stats,
+        _plot,
+        _plot_secondary,
+        _write_metrics_tsv,
+        _write_metrics_wide_tsv,
+        _write_stats_tsv,
+    )
 
-    stats = collect_stats(results_root)
-    if not stats:
+    all_stats = collect_all_summaries(results_root)
+    headline_stats = collect_stats(results_root)
+    if not headline_stats:
         print("[skip] ablation_summary: no paired results for H/I/K/L/M")
         return
-    pdf_path = _plot(stats, out_base=out_base)
-    _write_stats_tsv(stats, Path(str(out_base) + "__stats.tsv"))
+    pdf_path = _plot(headline_stats, out_base=out_base)
+    sec_path = _plot_secondary(all_stats, out_base=out_base)
+    _write_stats_tsv(headline_stats, Path(str(out_base) + "__stats.tsv"))
+    _write_metrics_tsv(all_stats, Path(str(out_base) + "__metrics.tsv"))
+    _write_metrics_wide_tsv(all_stats, Path(str(out_base) + "__metrics_wide.tsv"))
     print(f"[ok]   ablation_summary → {pdf_path}")
+    if sec_path is not None:
+        print(f"[ok]   ablation_summary_secondary → {sec_path}")
 
 
 def render_paired_ablation_figures(results_root: Path, fig_dir: Path) -> None:

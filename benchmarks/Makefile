@@ -61,7 +61,7 @@ help:
 	@echo "  make ablation     - Benchmark H: DAG-aware vs DAG-blind planner ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make ablation-pilot - Benchmark H smoke: 5 prompts × 1 replicate × 2 arms (validates the ablation pipeline)"
 	@echo "  make ablation-figure ABLATION_DIR=results/ablation/<ts> - render figure_ablation.pdf + stats_ablation.tsv"
-	@echo "  make ablation-summary-figure - combined H/I/K/L/M pass-rate figure (excludes Benchmark J)"
+	@echo "  make ablation-summary-figure - combined H/I/K/L/M figure + metrics TSVs (excludes Benchmark J)"
 	@echo "  make reflection   - Benchmark I: completeness-reflection ablation (66 prompts × replicates × 2 arms)"
 	@echo "  make reflection-pilot - Benchmark I smoke: 8 prompts × 1 replicate × 2 arms"
 	@echo "  make reflection-figure REFLECTION_DIR=results/reflection/<ts> - render figure_reflection.pdf + stats_reflection.tsv"

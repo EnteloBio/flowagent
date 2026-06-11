@@ -51,6 +51,13 @@
 defaults:
   timeout_seconds: 300
   max_retries: 3
+  # Date the per-model ``pricing`` blocks below were captured from the
+  # providers' public price lists (provider docs as of May 2026). Cost
+  # figures are only reproducible against the rates in effect on this
+  # date — see Supplementary Table 4 (``make_supp_table4.py``). Bump this
+  # whenever pricing is re-checked; override per model with a
+  # ``pricing_as_of:`` field if a single model's rate is updated alone.
+  pricing_snapshot: "2026-05"
 
 models:
 

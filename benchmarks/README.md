@@ -61,6 +61,9 @@ benchmarks/
 ├── recovery_taxonomy.py                # Classify Benchmark B responses
 ├── merge_runs.py                       # Combine runs across models/sessions
 ├── supp_table_models.py                # Supplementary Table 2 (model registry × empirical stats)
+├── make_supp_tables.py                 # Supplementary Tables 1 (prompts) + 2 (models)
+├── make_supp_table3.py                 # Supplementary Table 3 (software environment versions)
+├── make_supp_table4.py                 # Supplementary Table 4 (pricing snapshot for cost reproducibility)
 ├── Makefile                            # Convenience orchestration
 └── results/                            # Gitignored outputs (CSV, JSON, PDF)
 ```
@@ -81,6 +84,7 @@ benchmarks/
 | **J** | Telling a *competitor* framework (Claude Code) about the DAG via prompt-only intervention improves its plan quality | yes (Claude Code CLI auth) | Claude Code CLI installed | `make competitor-dag-ablation` / `make competitor-dag-ablation-pilot` |
 | **K** | The post-generation command-level validator + auto-fix layer improves plan quality on top of the LLM (todo T0 in the architecture review) | yes | no | `make validator-ablation` / `make validator-ablation-pilot` |
 | **L** | An independently-prompted CoVe verifier (todo T4) produces a useful signal for predicting plan failure, suitable for a future abstention gate | yes | no | `make cove-ablation` / `make cove-ablation-pilot` |
+| **M** | Injecting the per-workflow tool allowlist into the planning prompt improves tool selection / plan quality | yes | no | `make tool-hint-ablation` / `make tool-hint-ablation-pilot` |
 
 ### Prompt corpus
 
@@ -339,7 +343,7 @@ make plan-all REPLICATES=3
 ```
 
 Sweeps every model in `config/models.yaml` **concurrently (4 at a time)**.
-With 20 models × 41 prompts × 3 replicates this is **2 460 cells**, roughly
+With 28 models × 66 prompts × 3 replicates this is **5 544 cells**, roughly
 30–60 min wall clock depending on API latency. See the cost table below.
 
 ### Benchmark B — error recovery
@@ -1046,13 +1050,29 @@ Output:
   McNemar (`overall_pass`) per metric (default basename `<out>__stats.tsv`,
   override with `--stats-out`).
 
-**Pilot results (3 prompts, Claude Haiku 4.5, single replicate)
-already in the repo** confirm the ablation is working end-to-end:
-`dag_edge_density` 1.33 vs 0.0 and `parallel_width` 3.7 vs 1.0 between
-the two arms; an early `hallucination_rate` signal (0.0 vs 0.21) hints
-that DAG awareness keeps the LLM more disciplined, but a full 66-prompt
-sweep is needed to call statistical significance. See
-[`figures/figure_ablation_pilot.pdf`](../figures/figure_ablation_pilot.pdf).
+**Combined ablation summary (Benchmarks H / I / K / L / M).** After
+running the individual ablations, ``make ablation-summary-figure``
+(or ``python make_ablation_summary_figure.py``) reads the newest
+``paired_metrics.csv`` from each run tree and emits:
+
+| Output | Contents |
+|---|---|
+| `ablation_summary.pdf` | Headline pass rates: `overall_pass` + `completeness_pass` |
+| `ablation_summary_secondary.pdf` | Tool coverage, hallucination rate, DAG edge density, stage efficiency |
+| `ablation_summary__stats.tsv` | Headline pass-rate table (McNemar, bootstrap CIs) |
+| `ablation_summary__metrics.tsv` | Long-format paired stats for every metric present (Wilcoxon / McNemar) |
+| `ablation_summary__metrics_wide.tsv` | One row per component; `<metric>_on_mean` / `_off_mean` / `_delta` / `_p` columns for manuscript tables |
+
+**Manuscript run (66 prompts × 3 replicates = 198 paired cells,
+gpt-5.4-mini, $6.84 total, 0 errors)**: the DAG-aware arm wins the
+headline gate and dominates every structural metric. `overall_pass`
+80.3% vs 75.8% (+4.5 pp, McNemar p = 0.022) and `completeness_pass`
+100% vs 0% (p ≈ 0); `dag_edge_density` 1.40 vs 0.0, `parallel_width`
+3.03 vs 1.0, `stage_efficiency` 1.51 vs 1.0. DAG-aware plans are
+slightly longer (11.6 vs 10.3 steps) and carry a small hallucination
+cost (`hallucination_rate` 0.023 vs 0.0, p = 1.6e-6). See
+[`figures/ablation.pdf`](../figures/ablation.pdf) and
+[`figures/ablation__stats.tsv`](../figures/ablation__stats.tsv).
 
 ### Benchmark I — completeness-reflection ablation
 
@@ -1134,15 +1154,18 @@ Output (mirrors Benchmark H's layout):
   `mean_diff`, `p_value`, `test`, and `(b_only, c_only)` discordant
   counts for the McNemar tests.
 
-**Pilot results (8 RNA-seq prompts, Claude Haiku 4.5, single
-replicate)** in `results/reflection/2026-05-06T22-09-17/`:
-`completeness_pass` rises from 0.75 to 1.00 (`c_only=2, b_only=0` —
-2 plans recovered by reflection, none degraded). The two recovered
-plans were `rnaseq_kallisto_basic` and `rnaseq_geo`, both with
-`download_*` steps that lacked a downstream consumer in the first
-draft. Cost overhead is concentrated on the cells that actually
-retry: per-cell mean cost rose from $0.013 to $0.018 (~40%) but only
-2/8 cells issued retries.
+**Manuscript run (66 prompts × 3 replicates = 198 paired cells,
+gpt-5.4-mini, $3.90 total, 0 errors)** in
+`results/reflection/2026-06-02T17-49-32/`: `completeness_pass` rises
+from 69.7% (`reflect_off`) to 100% (`reflect_on`) — a +30.3 pp gain
+(McNemar p = 1.7e-18; 60 plans recovered by reflection, 0 degraded).
+The headline `overall_pass` gate is unchanged (79.8% on both arms,
+p = 1.0): reflection repairs structural completeness without moving
+the explicit-tool gate. Cost overhead is concentrated on the cells
+that actually retry — per-cell mean cost rose from $0.0085 to $0.0112
+(~33%) and mean LLM calls from 2.0 to 2.8 (mean `completeness_attempts`
+1.0 → 1.28). See [`figures/reflection.pdf`](../figures/reflection.pdf)
+and [`figures/reflection__stats.tsv`](../figures/reflection__stats.tsv).
 
 Use the new `MAX_RETRIES` knob to study cost/benefit:
 
@@ -1358,17 +1381,18 @@ Same set as Benchmark H plus completeness columns. The McNemar test on
 (LLM call count per plan) and `cost_usd` quantify the retry-loop
 overhead the on-arm pays.
 
-#### What the manuscript run on Claude Haiku 4.5 found
+#### What the manuscript run on gpt-5.4-mini found
 
-198 paired cells (66 × 3 reps), 0 errors, $8.32 total. Headline
-`overall_pass`: 77.8% on, 78.8% off (McNemar p=0.73). No continuous
-metric significantly favoured the on-arm; `stage_efficiency` slightly
-favoured the off-arm (p=0.017). The on-arm triggered 4× more retries
-(81 vs 21 cells) without converting them into measurable plan-quality
-gains — and `completeness_pass` actually regressed (88% on vs 100%
-off), because the retry budget that structural reflection wants to use
-was exhausted on command-level fixes that the LLM didn't reliably
-produce.
+198 paired cells (66 × 3 reps), 0 errors, $5.33 total. Headline
+`overall_pass`: 80.3% on, 79.8% off (McNemar p ≈ 1.0, n.s.). No
+continuous metric significantly favoured the on-arm; `stage_efficiency`
+was a wash (1.509 on vs 1.505 off, p = 0.97). The on-arm paid for
+~0.9 extra LLM call per plan (3.33 vs 2.39 mean calls; mean
+`completeness_attempts` 1.76 vs 1.30) without converting it into
+measurable plan-quality gains — and `completeness_pass` actually
+regressed (76.3% on vs 100% off, p = 1.4e-14), because the retry
+budget that structural reflection wants to use was exhausted on
+command-level fixes that the LLM didn't reliably produce.
 
 This null result is consistent with the recovery-taxonomy benchmark
 (Benchmark B): LLMs are reliably bad at correction-on-feedback in the
@@ -1522,6 +1546,67 @@ Output:
 * `figure_cove__signal.tsv` — verifier-as-failure-predictor
   contingency table (built from the `_verifier` envelopes in the
   `verifier_on` JSONL).
+
+#### What the manuscript run on gpt-5.4-mini found
+
+198 paired cells (66 × 3 reps), 0 errors, $5.32 total. As
+annotation-only, `overall_pass` is unchanged between arms (78.3% on
+vs 78.8% off, McNemar p ≈ 1.0). The verifier signal is **sensitive but
+not specific**: recall 0.95 (41/43 failing plans flagged, only 2 false
+negatives) but precision 0.25 (120 of 161 flagged plans actually
+passed), for an 81% abstention rate. By the decision rule above this
+lands in the "≤ 40% precision" band — the verifier is useful as
+instrumentation / a failure tripwire, but flags too many good plans to
+ship as an abstention gate without retuning the question set or
+threshold. See [`figures/cove_ablation__signal.tsv`](../figures/cove_ablation__signal.tsv).
+
+### Benchmark M — workflow tool-hint ablation
+
+```bash
+# 5-prompt smoke (~$0.10 on Claude Haiku 4.5)
+make tool-hint-ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep
+make tool-hint-ablation MODEL=gpt-5.4-mini REPLICATES=3
+
+# Render figure_tool_hint.pdf + figure_tool_hint__stats.tsv (uses the most recent run)
+make tool-hint-figure
+# Or point at a specific run
+make tool-hint-figure TOOL_HINT_DIR=results/tool_hint_ablation/2026-06-02T19-01-43
+```
+
+Tests whether the per-workflow tool allowlist injected into the
+planning prompt (`LLMInterface._tool_hint_for_workflow_type`, "Valid
+tool names for this workflow…") improves plan quality. Both arms keep
+`LLM_DAG_AWARE=true` and the rest of the default planner stack so this
+isolates the tool-hint layer.
+
+| Arm | `FLOWAGENT_TOOL_HINT` | Behaviour |
+|---|---|---|
+| `hint_on` | `true` (default) | The planning prompt lists the valid tool catalogue for the detected workflow type. |
+| `hint_off` | `false` | No tool catalogue in the prompt; the LLM chooses tools from training data alone. |
+
+#### What the manuscript run on gpt-5.4-mini found
+
+198 paired cells (66 × 3 reps), 0 errors, $4.59 total. The tool hint
+gives a small, non-significant lift on the headline gate
+(`overall_pass` 79.3% on vs 75.8% off, +3.5 pp, McNemar p = 0.065) and
+a significant lift in tool coverage (`tools_present_fraction` 0.904 vs
+0.892, p = 0.020). The trade-off: the hint slightly *raises*
+hallucination (`hallucination_rate` 0.024 vs 0.014, p = 0.028;
+`num_hallucinated_tools` 0.17 vs 0.10, p = 0.016) — naming a catalogue
+nudges the LLM to reach for adjacent tools it doesn't always invoke
+correctly. Net: a modest tool-selection aid, not a robustness fix.
+
+Output mirrors the other ablations:
+
+* `results/tool_hint_ablation/<ts>/hint_on/results.jsonl` + `metrics.csv`
+* `results/tool_hint_ablation/<ts>/hint_off/results.jsonl` + `metrics.csv`
+* `results/tool_hint_ablation/<ts>/paired_metrics.csv` — joined by
+  `(model, input_id, replicate)`.
+* `figure_tool_hint.pdf` / `.png` — per-metric arm means with bootstrap
+  95% CIs.
+* `figure_tool_hint__stats.tsv` — paired Wilcoxon + McNemar per metric.
 
 ### Everything at once
 
@@ -1717,6 +1802,12 @@ Two publication-ready cost figures are emitted by `make report`:
 
 **Updating pricing** — if a provider lowers their rates, edit `models.yaml`
 and run `make rescore && make merge && make report`. No re-bench needed.
+When you re-check prices, also bump `defaults.pricing_snapshot` in
+`models.yaml` (or set a per-model `pricing_as_of:` if only one rate
+changed) and regenerate `python make_supp_table4.py`. Supplementary
+Table 4 records the exact unit prices and the snapshot date behind every
+dollar figure, so absolute costs stay reproducible even as provider list
+prices drift.
 
 ## Figures
 
@@ -1752,8 +1843,19 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 | `competitors_perprompt.pdf` | Competitor × prompt outcome heatmap |
 | `competitors_agentic.pdf` | FlowAgent vs BioMaster vs AutoBA vs Biomni focused comparison |
 | `interpretation.pdf` | Benchmark G three-panel: MCQ accuracy + heatmap + open-ended judge mean |
+| `ablation_summary.pdf` | Combined H/I/K/L/M pass rates (`overall_pass`, `completeness_pass`) |
+| `ablation_summary_secondary.pdf` | Combined ablation: tool coverage, hallucination, DAG density, stage efficiency |
+| `ablation.pdf` / `ablation__stats.tsv` | Benchmark H: DAG-aware vs DAG-blind, per-metric |
+| `reflection.pdf` / `reflection__stats.tsv` | Benchmark I: completeness-reflection on vs off |
+| `validator_ablation.pdf` / `validator_ablation__stats.tsv` | Benchmark K: command-validator on vs off |
+| `cove_ablation.pdf` / `cove_ablation__stats.tsv` / `cove_ablation__signal.tsv` | Benchmark L: CoVe verifier signal + contingency table |
+| `tool_hint_ablation.pdf` / `tool_hint_ablation__stats.tsv` | Benchmark M: tool-hint on vs off |
+| `competitor_dag__claude_code.pdf` / `competitor_dag__claude_code__stats.tsv` | Benchmark J: Claude Code DAG-prompt ablation |
+| `ablation_summary__metrics.tsv` | Long-format paired ablation stats (all metrics; Wilcoxon / McNemar) |
+| `ablation_summary__metrics_wide.tsv` | Wide manuscript table: one row per component, prefixed metric columns |
 | `planning_cost_summary.tsv` | Per-model cost / pass-rate / token table for the manuscript |
 | `supp_table2_models.tsv` | Supplementary Table 2: model registry × empirical token / cost / latency stats |
+| `supp_table4_pricing.tsv` / `.md` | Supplementary Table 4: per-model unit prices + pricing snapshot date used for all cost figures (`python make_supp_table4.py`) |
 
 Pass `--svg` to also emit editable SVGs for Illustrator / Inkscape:
 
@@ -1827,7 +1929,7 @@ Rough guide at current (May 2026) rates across the default 28-model plan-all swe
 | `make ablation-pilot` | 1 | ~3–5 min (5 prompts × 2 arms) | ~$0.05 on Claude Haiku |
 | `make ablation` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1–4 on Claude Haiku, ~$10+ on flagship |
 | `make reflection-pilot` | 1 | ~3–5 min (8 prompts × 2 arms) | ~$0.20 on Claude Haiku |
-| `make reflection` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1.5–6 on Claude Haiku, ~$15+ on flagship (~40% overhead vs Benchmark H from retries) |
+| `make reflection` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1.5–6 on Claude Haiku, ~$15+ on flagship (~33% per-cell overhead vs Benchmark H from retries) |
 | `make competitor-dag-ablation-pilot` | Claude Code (1) | ~2–4 min (3 prompts × 2 arms) | ~$0.10–$0.50 on Claude Haiku 4.5 |
 | `make competitor-dag-ablation` | Claude Code (1) | ~30–60 min (66 prompts × 3 reps × 2 arms, conc=2) | ~$5–15 on Claude Haiku 4.5; multiply by ~3-5× for Sonnet |
 | `make ablation-figure` / `make reflection-figure` / `make competitor-dag-figure` | — | ~10–20 s | $0 |

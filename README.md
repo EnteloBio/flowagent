@@ -753,7 +753,7 @@ flowagent/
 └── web.py                    FastAPI + SSE web UI
 ```
 
-FlowAgent is designed as a **decomposable workflow operating system**: each agentic layer (DAG planning, completeness reflection, command validation, CoVe verification, execution, recovery, interpretation) is independently toggleable and benchmarked (Benchmarks A–L), and exposes the same capabilities through CLI plan artifacts, a Python `Session` API, and optional MCP integration for editor-native use.
+FlowAgent is designed as a **decomposable workflow operating system**: each agentic layer (DAG planning, completeness reflection, command validation, CoVe verification, execution, recovery, interpretation) is independently toggleable and benchmarked (Benchmarks A–M), and exposes the same capabilities through CLI plan artifacts, a Python `Session` API, and optional MCP integration for editor-native use.
 ---
 
 ## Development
