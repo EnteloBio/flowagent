@@ -23,6 +23,7 @@ from .executor import Executor
 from .executor_factory import ExecutorFactory
 from .agent_types import WorkflowStep, Workflow
 from .workflow_dag import WorkflowDAG
+from .executors import normalize_step_status, step_status_failed, step_status_succeeded
 from .smart_resume import detect_completed_steps, filter_workflow_steps
 from ..agents.agentic.analysis_system import AgenticAnalysisSystem
 
@@ -158,8 +159,18 @@ class WorkflowManager:
         return list(dict.fromkeys(executables))  # dedupe, preserve order
 
     @staticmethod
+    def _resolve_output_path(out_path: str, output_dir: Optional[str]) -> Path:
+        """Resolve a declared output path against the workflow output directory."""
+        p = Path(out_path)
+        if p.is_absolute() or not output_dir:
+            return p
+        return Path(output_dir) / p
+
+    @staticmethod
     def _verify_recovery_outputs(
         step: Dict[str, Any],
+        *,
+        output_dir: Optional[str] = None,
     ) -> Optional[str]:
         """Check whether a step's declared outputs actually exist after recovery.
 
@@ -193,10 +204,13 @@ class WorkflowManager:
         for out in declared:
             out_path = str(out)
             if any(ch in out_path for ch in "*?[]"):
-                if not _glob.glob(out_path):
+                glob_target = str(
+                    WorkflowManager._resolve_output_path(out_path, output_dir)
+                )
+                if not _glob.glob(glob_target):
                     problems.append(f"glob ``{out_path}`` matched no files")
                 continue
-            p = Path(out_path)
+            p = WorkflowManager._resolve_output_path(out_path, output_dir)
             if not p.exists():
                 problems.append(f"``{out_path}`` does not exist")
             elif p.is_file() and p.stat().st_size == 0:
@@ -214,7 +228,8 @@ class WorkflowManager:
         return None
 
     @staticmethod
-    def _is_recovery_antipattern(fixed_command: str) -> Optional[str]:
+    def _is_recovery_antipattern(fixed_command: str,
+                                 *, original_command: Optional[str] = None) -> Optional[str]:
         """Detect obvious "give up and lie" recovery commands before
         we run them.
 
@@ -225,8 +240,14 @@ class WorkflowManager:
 
           - ``rm -f X && echo 'please redownload'`` (PBMC tarball case)
           - bare ``echo 'FAIL: ...'`` with no real work elsewhere
+          - bare ``true`` / ``:`` / ``exit 0`` / ``test 0`` (no-op pass)
           - ``cmd || true`` / ``|| continue`` swallowing the real
             failure as the trailing operator on the whole pipeline
+          - ``set +e`` followed by trivial work (silently suppress
+            errors so any failure becomes a 0-exit "success")
+          - replacement with a different unrelated tool family from
+            the original (e.g. original was ``samtools sort`` and the
+            fix is ``echo done`` — wrong family)
 
         Conservative — only rejects shapes that are clearly
         "messaging-only" or "unconditionally suppress failure". Real
@@ -236,6 +257,56 @@ class WorkflowManager:
         cmd = (fixed_command or "").strip()
         if not cmd:
             return "recovery command is empty"
+
+        # ── Bare no-op commands (the "exit 0 forever" cheat). ──────
+        # Strict matches against the entire string (after trim) so any
+        # real work appended to one of these still passes through.
+        bare_noop = re.compile(
+            r"""^\s*
+                (?:
+                    true            |
+                    :               |       # bash null command
+                    exit\s+0        |
+                    test\s+0        |
+                    /bin/true       |
+                    /usr/bin/true
+                )
+                \s*$""",
+            re.VERBOSE,
+        )
+        if bare_noop.match(cmd):
+            return (
+                "recovery is a bare no-op command (true/:/exit 0); "
+                "would silently succeed without doing any work"
+            )
+
+        # ── Trailing failure-suppression operator. ─────────────────
+        # ``... || true`` / ``... || continue`` / ``... || :`` at the
+        # END of the pipeline unconditionally turns any failure into a
+        # 0-exit success. This is the textbook way to game an
+        # exit-code-only success check.
+        suppress_trailing = re.compile(
+            r"""\|\|\s*
+                (?:true|continue|:|exit\s+0)
+                \s*$""",
+            re.VERBOSE,
+        )
+        if suppress_trailing.search(cmd):
+            return (
+                "recovery suppresses failure with a trailing "
+                "``|| true`` / ``|| continue`` / ``|| :`` — any genuine "
+                "failure of the inner command would be hidden"
+            )
+
+        # ── ``set +e`` as the leading directive. ───────────────────
+        # ``set +e`` disables exit-on-error; combined with a single
+        # tool invocation it is functionally identical to
+        # ``cmd || true`` and just as cheaty.
+        if re.match(r"^\s*set\s+\+e\b", cmd):
+            return (
+                "recovery starts with ``set +e``, which suppresses "
+                "errors from anything that follows"
+            )
 
         # Pure ``rm`` + ``echo`` (with optional `please <do something>`):
         # this is "delete the broken file and ask the human to fix it"
@@ -268,6 +339,27 @@ class WorkflowManager:
             return (
                 "recovery is just an echo statement (not a real fix)"
             )
+
+        # ── Tool-family check. ─────────────────────────────────────
+        # When the original command invoked a real tool, the fix should
+        # invoke the same tool family or a documented substitute (e.g.
+        # ``wget`` → ``curl``, ``gzip`` → ``pigz``). A fix whose first
+        # tokens are entirely shell builtins like ``echo``/``mkdir``
+        # without any real tool elsewhere is almost always a cheat.
+        if original_command:
+            orig_tools = WorkflowManager._extract_executables(original_command)
+            new_tools = WorkflowManager._extract_executables(cmd)
+            real = [t for t in new_tools if t not in {
+                "echo", "printf", "mkdir", "cd", "rm", "mv", "cp", "ln",
+                "touch", "test", "true", "false", "exit", "set", "export",
+                "source", "tar", "gzip", "gunzip", "zcat", "head", "tail",
+                "cat", "tee", "sleep",
+            }]
+            if orig_tools and not real:
+                return (
+                    "recovery does not invoke any real tool — only shell "
+                    f"builtins remain (original tools: {orig_tools})"
+                )
         return None
 
     async def _attempt_error_recovery(
@@ -330,9 +422,22 @@ class WorkflowManager:
             "attempt": attempt,
         }
 
+        # ── Two-phase recovery prompt. ─────────────────────────────
+        # The reviewer of FlowAgent's recovery benchmark observed that
+        # the original prompt framed the task as "produce a fixed
+        # command", with all the patching guidance front-loaded. That
+        # biases the LLM towards proposing a patch even when the
+        # correct response is to refuse (data corruption, paired/single
+        # mismatch, etc.) or to escalate to a pipeline-level edit.
+        # The new prompt separates **diagnose** from **respond** so the
+        # LLM commits to a category first.
         prompt = (
             "A bioinformatics pipeline step failed during execution. "
-            "Diagnose the error and return a fixed shell command.\n\n"
+            "Decide first what KIND of fault this is, then choose how "
+            "to respond. Bias toward ``refuse`` whenever the evidence "
+            "for a recoverable cause is weak — it is far better to "
+            "surface an unrepairable failure than to silently invent a "
+            "patch.\n\n"
             f"Step name: {error_context['step_name']}\n"
             f"Step description: {error_context['step_description']}\n"
             f"Original command:\n  {error_context['original_command']}\n"
@@ -342,7 +447,51 @@ class WorkflowManager:
             f"Platform: {error_context['platform']}\n"
             f"Tool availability: {json.dumps(error_context['tool_availability'])}\n"
             f"Recovery attempt: {attempt}/{max_attempts}\n\n"
-            "Common fixes by error class:\n"
+            "PHASE 1 — DIAGNOSE.\n"
+            "Pick exactly one ``failure_class`` from this enumeration:\n"
+            "  - ``command``      a typo / wrong flag / missing arg in the\n"
+            "                     failing command itself; a single shell-level\n"
+            "                     edit on the SAME step fixes it.\n"
+            "  - ``environment``  the environment is wrong: tool missing,\n"
+            "                     wrong version, OOM, permissions, missing\n"
+            "                     output dir. A shell-level edit usually\n"
+            "                     fixes this too (mkdir, raise -Xmx,\n"
+            "                     substitute curl for wget, etc.).\n"
+            "  - ``pipeline``     the failing command is correct, but it\n"
+            "                     needs another step run BEFORE it (e.g.\n"
+            "                     ``samtools sort`` ahead of ``samtools\n"
+            "                     index``, ``bwa index`` ahead of ``bwa\n"
+            "                     mem``, ``CreateSequenceDictionary`` ahead\n"
+            "                     of GATK). A single-command rewrite cannot\n"
+            "                     recover this; a pipeline-level patch can.\n"
+            "  - ``data``         the input data itself is broken (truncated\n"
+            "                     gzip, empty file, paired/single shape\n"
+            "                     mismatch, binary masquerading as FASTQ).\n"
+            "                     No shell edit recovers this.\n"
+            "  - ``source_bug``   a bug inside imported library code\n"
+            "                     (Python SyntaxError, ImportError, R\n"
+            "                     parse error in an installed package).\n"
+            "                     No CLI flag fixes a source-code bug.\n\n"
+            "PHASE 2 — RESPOND.\n"
+            "Pick exactly one ``response`` action consistent with the class:\n"
+            "  - ``patch_command``  for ``command``/``environment``: return\n"
+            "                       a corrected ``fixed_command`` for the\n"
+            "                       SAME step. The fix must invoke at least\n"
+            "                       one real tool (no bare ``true``/``:``/\n"
+            "                       ``exit 0``, no trailing ``|| true``,\n"
+            "                       no ``set +e``).\n"
+            "  - ``patch_pipeline`` for ``pipeline``: return a structured\n"
+            "                       ``plan_patch`` object — see the schema\n"
+            "                       below — instead of (or in addition to) a\n"
+            "                       fixed_command. Use ``insert_before``\n"
+            "                       (most common), ``insert_after``,\n"
+            "                       ``replace_step``, or ``remove_step``.\n"
+            "  - ``refuse``         for ``data`` or ``source_bug``: return\n"
+            "                       ``fixed_command: null`` with a clear\n"
+            "                       diagnosis. Do NOT invent CLI flags or\n"
+            "                       suppress the error — a refusal here is\n"
+            "                       the correct outcome.\n\n"
+            "Common fixes for the ``command``/``environment`` class:\n"
             "- Exit code 127 (command not found): substitute an equivalent tool "
             "(e.g. curl -fSL -o <file> <url> instead of wget, pigz instead of gzip).\n"
             "- 'No such file or directory': add mkdir -p for missing directories.\n"
@@ -362,22 +511,26 @@ class WorkflowManager:
             "- When rewriting R one-liners, preserve the existing Rscript -e '...' shape and "
             "all input/output paths from the original command — only change the R logic.\n"
             "- In R regex within Rscript -e, prefer a character class over backslash escapes: "
-            "use '[.].*$' instead of '\\\\..*$' to match a literal dot. Modern R (4.4+) errors "
-            "on '\\.' as an unrecognised escape at parse time, and JSON payloads lose one "
-            "backslash layer on the wire — character classes sidestep both.\n"
-            "- In the JSON response, the ``fixed_command`` string MUST be valid JSON: every "
-            "backslash must be escaped as \\\\, and every double-quote as \\\". If you're "
-            "unsure about escaping, rewrite the regex with a character class instead.\n"
-            "- CRITICAL: if the error is a bug inside imported source code (Python "
-            "SyntaxError / ImportError from an imported module, NameError in library "
-            "code, R parse error in an installed package, etc.), NO shell-level edit "
-            "can fix it. DO NOT invent CLI flags (--template, --no-fstring, etc.) that "
-            "aren't documented in the original command. Return null as the "
-            "``fixed_command`` with a diagnosis explaining the source-code bug.\n\n"
+            "use '[.].*$' instead of '\\\\..*$' to match a literal dot.\n"
+            "- In the JSON response, the ``fixed_command`` string MUST be valid JSON.\n\n"
+            "``plan_patch`` schema (only when ``response`` == ``patch_pipeline``):\n"
+            "{\n"
+            '  "action": "insert_before" | "insert_after" | "replace_step" | "remove_step",\n'
+            '  "target": "<name of the failing step>",\n'
+            '  "new_step": {\n'
+            '     "name": "...", "command": "...", "outputs": [...],\n'
+            '     "description": "..."\n'
+            "  },\n"
+            '  "deps": ["optional list of additional dependency step names"]\n'
+            "}\n\n"
             "Return ONLY a JSON object with this structure:\n"
-            '{"diagnosis": "short explanation", '
-            '"fixed_command": "the corrected shell command or null if unrecoverable", '
-            '"explanation": "what you changed and why"}'
+            '{"failure_class": "command|environment|pipeline|data|source_bug",\n'
+            ' "response":      "patch_command|patch_pipeline|refuse",\n'
+            ' "diagnosis":     "short explanation of the root cause",\n'
+            ' "fixed_command": "the corrected shell command, or null when '
+            'response is patch_pipeline or refuse",\n'
+            ' "plan_patch":    {plan_patch object as above, or null},\n'
+            ' "explanation":   "what you changed and why"}'
         )
 
         try:
@@ -398,6 +551,37 @@ class WorkflowManager:
             fixed_command = fix.get("fixed_command")
             diagnosis = fix.get("diagnosis", "")
             explanation = fix.get("explanation", "")
+            failure_class = fix.get("failure_class", "")
+            response_action = fix.get("response", "")
+            plan_patch = fix.get("plan_patch")
+
+            # ── Pipeline-level patch: surface to the DAG executor ──
+            # When the LLM determines that a single-command rewrite
+            # cannot recover the failure (e.g. needs ``samtools sort``
+            # inserted ahead of ``samtools index``), it returns a
+            # structured ``plan_patch``. We bubble that up via the
+            # recovery_result so ``WorkflowDAG.execute_parallel`` can
+            # apply it. ``status="patch_pending"`` ensures the legacy
+            # success/rejected codepaths don't misinterpret the result.
+            if response_action == "patch_pipeline" and isinstance(plan_patch, dict):
+                self.logger.info(
+                    "LLM proposed pipeline-level patch for '%s': %s on %r",
+                    step.get("name"),
+                    plan_patch.get("action"),
+                    plan_patch.get("target"),
+                )
+                return {
+                    "status": "patch_pending",
+                    "recovery_attempt": attempt,
+                    "recovery_diagnosis": diagnosis,
+                    "failure_class": failure_class,
+                    "response_action": response_action,
+                    "plan_patch": plan_patch,
+                    "fixed_command": None,
+                    "explanation": explanation,
+                    "original_command": step.get("command"),
+                    "step_name": step.get("name", "unknown"),
+                }
 
             if not fixed_command:
                 self.logger.warning(
@@ -413,6 +597,8 @@ class WorkflowManager:
                     "status": "rejected",
                     "recovery_attempt": attempt,
                     "recovery_diagnosis": diagnosis,
+                    "failure_class": failure_class,
+                    "response_action": response_action or "refuse",
                     "rejection_reason": explanation or (
                         "LLM determined the step is unrecoverable"
                     ),
@@ -432,7 +618,9 @@ class WorkflowManager:
             # Catch the obvious "give up and lie" commands BEFORE we
             # run them — saves an executor round-trip and prevents
             # a confusing "rc=0 but verification failed" log.
-            anti = self._is_recovery_antipattern(fixed_command)
+            anti = self._is_recovery_antipattern(
+                fixed_command, original_command=step.get("command"),
+            )
             if anti is not None:
                 self.logger.warning(
                     "Recovery attempt %d for '%s' rejected as "
@@ -470,8 +658,10 @@ class WorkflowManager:
             new_result["recovery_diagnosis"] = diagnosis
             new_result["original_command"] = step.get("command")
             new_result["fixed_command"] = fixed_command
+            new_result["failure_class"] = failure_class
+            new_result["response_action"] = response_action or "patch_command"
 
-            if new_result.get("status") in ("error", "failed"):
+            if step_status_failed(new_result.get("status")):
                 # Recurse with the fixed step so subsequent attempts build on each fix
                 return await self._attempt_error_recovery(
                     fixed_step, new_result, output_dir,
@@ -485,7 +675,9 @@ class WorkflowManager:
             # ``[ -e $f ] || continue`` skips, ``while read fq; do if
             # [ -f $fq ]; …; fi; done`` over not-yet-downloaded inputs);
             # (b) commands that wrote to a different path than declared.
-            verify_problem = self._verify_recovery_outputs(fixed_step)
+            verify_problem = self._verify_recovery_outputs(
+                fixed_step, output_dir=output_dir,
+            )
             if verify_problem is not None:
                 self.logger.warning(
                     "Recovery attempt %d for '%s' exit-coded 0 but "
@@ -522,6 +714,7 @@ class WorkflowManager:
                 "(outputs verified)",
                 step.get("name"), attempt,
             )
+            new_result["status"] = normalize_step_status(new_result.get("status"))
             return new_result
 
         except asyncio.TimeoutError:
@@ -671,6 +864,12 @@ class WorkflowManager:
                         self._step_executor.execute_step,
                         recovery_fn=_dag_recovery,
                     )
+
+                    if isinstance(dag_results, dict) and dag_results.get("status") == "failed":
+                        raise RuntimeError(
+                            dag_results.get("error") or "DAG-parallel execution failed"
+                        )
+
                     # ``dag_executed`` flips True the moment the DAG returns —
                     # BEFORE any bookkeeping below runs. A formatting/
                     # normalisation bug in post-processing must NOT trigger a
@@ -678,7 +877,16 @@ class WorkflowManager:
                     # (previously this re-downloaded FASTQs on deseq2 failure).
                     dag_executed = True
 
-                    raw_results = list(dag_results.values()) if isinstance(dag_results, dict) else (dag_results or [])
+                    if isinstance(dag_results, dict):
+                        step_results = dag_results.get("results")
+                        if isinstance(step_results, dict):
+                            raw_results = list(step_results.values())
+                        elif isinstance(step_results, list):
+                            raw_results = step_results
+                        else:
+                            raw_results = []
+                    else:
+                        raw_results = dag_results or []
 
                     # Normalise every entry to a dict; anything that isn't
                     # (strings from partial failures, None, etc.) becomes a
@@ -687,11 +895,14 @@ class WorkflowManager:
                     for r in raw_results:
                         if isinstance(r, dict):
                             if "step_name" not in r:
-                                r["step_name"] = r.get("step_id", r.get("name", "unknown"))
+                                r["step_name"] = r.get(
+                                    "step_id", r.get("name", "unknown"),
+                                )
+                            r["status"] = normalize_step_status(r.get("status"))
                             results.append(r)
                         else:
                             results.append({
-                                "status": "error",
+                                "status": "failed",
                                 "step_name": "unknown",
                                 "error": f"Non-dict result from DAG: {type(r).__name__}",
                                 "raw": str(r)[:500],
@@ -700,7 +911,7 @@ class WorkflowManager:
                     completed = [
                         r.get("step_name", "")
                         for r in results
-                        if isinstance(r, dict) and r.get("status") not in ("error", "failed")
+                        if isinstance(r, dict) and step_status_succeeded(r.get("status"))
                     ]
                     ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
                     try:
@@ -770,13 +981,16 @@ class WorkflowManager:
                 results.append(step_result)
 
                 # Write checkpoint after every step
-                completed = [r["step_name"] for r in results if r.get("status") not in ("error", "failed")]
+                completed = [
+                    r["step_name"] for r in results
+                    if step_status_succeeded(r.get("status"))
+                ]
                 ckpt_dir = getattr(prompt_or_workflow, "checkpoint_dir", None) or os.path.join(output_dir, ".checkpoint")
                 self._write_checkpoint(ckpt_dir, workflow_plan, output_dir, completed, prompt)
                 
-                # Check if step failed (accept both legacy "error" and canonical "failed")
+                # Check if step failed (accept legacy "error" and canonical "failed")
                 step_status = step_result.get("status", "")
-                if step_status in ("error", "failed"):
+                if step_status_failed(step_status):
                     error_msg = step_result.get('error', '')
                     stderr = step_result.get('stderr', '')
 
@@ -793,7 +1007,9 @@ class WorkflowManager:
                     # The helper returns status="rejected" for unrecoverable cases,
                     # which previously slipped through a negative check and got
                     # logged as "recovered successfully".
-                    if recovery_result and recovery_result.get("status") in ("completed", "success"):
+                    if recovery_result and step_status_succeeded(
+                        recovery_result.get("status"),
+                    ):
                         self.logger.info(f"Step '{step_name}' recovered successfully")
                         results[-1] = recovery_result  # replace failed result
                     elif step.get("critical", False):

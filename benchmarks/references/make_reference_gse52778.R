@@ -29,6 +29,8 @@ out_path <- args[[1L]]
 suppressPackageStartupMessages({
   library(airway)
   library(DESeq2)
+  library(org.Hs.eg.db)
+  library(AnnotationDbi)
 })
 
 data("airway")
@@ -38,12 +40,21 @@ dds <- DESeqDataSet(airway, design = ~ cell + dex)
 dds <- DESeq(dds)
 res <- results(dds, contrast = c("dex", "trt", "untrt"))
 
+ens_ids <- sub("\\..*$", "", rownames(res))
+sym <- mapIds(org.Hs.eg.db,
+              keys      = ens_ids,
+              column    = "SYMBOL",
+              keytype   = "ENSEMBL",
+              multiVals = "first")
+
 de <- data.frame(
   gene_id        = rownames(res),
+  gene_symbol    = unname(sym),
   log2FoldChange = res$log2FoldChange,
   padj           = res$padj,
   stringsAsFactors = FALSE
 )
+de$gene_symbol[is.na(de$gene_symbol)] <- ""
 de <- de[!is.na(de$log2FoldChange), ]
 
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)

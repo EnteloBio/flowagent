@@ -16,7 +16,14 @@ from openai import AsyncOpenAI
 from ..config.settings import Settings
 from ..utils.logging import get_logger
 from .providers import create_provider, LLMProvider
-from .schemas import PipelineContext, WorkflowPlanSchema, to_json_schema
+from .schemas import (
+    FilePatternResponse,
+    PipelineContext,
+    StepKind,
+    WorkflowPlanSchema,
+    WorkflowPlanSchemaNoDAG,
+    to_json_schema,
+)
 
 # Initialize settings
 settings = Settings()
@@ -79,6 +86,12 @@ class LLMInterface:
             api_key=settings.OPENAI_API_KEY or "unused",
             base_url=settings.OPENAI_BASE_URL,
         )
+
+    async def aclose(self) -> None:
+        """Release httpx pools backing the provider and legacy client."""
+        from .providers.provider_cleanup import aclose_client, aclose_provider
+        await aclose_provider(self.provider)
+        await aclose_client(self.client)
 
     WORKFLOW_TYPES = {
         "rna_seq_kallisto": {
@@ -530,6 +543,16 @@ Use the exact sample name '{sample_name}' for output directories.""",
         "kb-python", "fastp",
     }
 
+    # Universal support tools that show up in almost every bioinformatics
+    # pipeline regardless of workflow type. Always appended to the workflow-
+    # specific allowlist so per-workflow hint lists don't have to enumerate
+    # every glue command.
+    _UNIVERSAL_SUPPORT_TOOLS = (
+        "samtools", "bedtools", "picard", "bcftools",
+        "fastqc", "multiqc", "trim_galore", "cutadapt", "fastp",
+        "wget", "curl", "tar", "gzip", "gunzip", "tabix", "bgzip",
+    )
+
     # Mapping of search patterns to canonical names (handles "trim galore" vs
     # "trim_galore", "bwa-mem" vs "bwa", etc.)
     _TOOL_ALIASES = {
@@ -539,6 +562,24 @@ Use the exact sample name '{sample_name}' for output directories.""",
         "haplotypecaller": "gatk",
         "kb-python": "kb",
         "htseq": "htseq-count",
+    }
+
+    # Tool-equivalence groups: tools that share a CLI / output format and are
+    # therefore interchangeable for workflow-type matching, even if a workflow
+    # canonicalises on one specific name. Used by ``_detect_workflow_type``'s
+    # tool-compatibility guard to avoid spurious fallbacks to ``custom`` when
+    # a user prompt names a sibling tool.
+    #
+    # Keep canonical names in each workflow's ``tools`` list intact; this
+    # mapping is consulted *only* by the guard. Add a new group when a real
+    # benchmark prompt (or user report) demonstrates a misclassification.
+    _TOOL_EQUIVALENCE = {
+        # macs2 and macs3 share the same CLI and narrowPeak output. FlowAgent
+        # prefers macs3 in plans because the bioconda macs2 wheel crashes on
+        # glibc≥2.31 (see chip_seq workflow comment), but a prompt asking for
+        # macs2 should still match chip_seq.
+        "macs2": "macs",
+        "macs3": "macs",
     }
 
     def _detect_mentioned_tools(self, prompt: str) -> Set[str]:
@@ -555,6 +596,39 @@ Use the exact sample name '{sample_name}' for output directories.""",
                 found.add(tool)
         return found
 
+    def _tool_hint_for_workflow_type(self, workflow_type: str) -> List[str]:
+        """Return a workflow-type-restricted tool allowlist for the planner prompt.
+
+        Drives the "valid tool list" hint injected into ``enhanced_prompt``
+        (todo T3 in the FlowAgent architecture review). Restricting the hint
+        per-workflow rather than dumping every Bioconda entry keeps the prompt
+        small and focused: the LLM is told exactly which tools belong in this
+        workflow, not the full 16k-entry catalog.
+
+        For known workflow types: the workflow's own ``tools`` list +
+        universal support tools (samtools, multiqc, wget, …).
+
+        For ``custom`` (and unknown types): falls back to ``_PRIMARY_TOOLS``
+        + universal support, so the hint is still meaningful but covers the
+        broader space of valid bioinformatics tools.
+        """
+        wf_cfg = self.WORKFLOW_TYPES.get(workflow_type, {})
+        wf_tools: List[str] = list(wf_cfg.get("tools") or [])
+        if not wf_tools:
+            wf_tools = sorted(self._PRIMARY_TOOLS)
+        # Stable de-dup that preserves first-seen order so workflow-specific
+        # tools appear before generic glue (helps the LLM pick the canonical
+        # tool over an interchangeable support util).
+        seen: Set[str] = set()
+        ordered: List[str] = []
+        for t in list(wf_tools) + list(self._UNIVERSAL_SUPPORT_TOOLS):
+            tl = t.lower()
+            if tl in seen:
+                continue
+            seen.add(tl)
+            ordered.append(t)
+        return ordered
+
     def _detect_reference_genome(self, prompt: str) -> Optional[Dict[str, str]]:
         """Return Ensembl URLs for a reference genome named in *prompt*.
 
@@ -562,6 +636,11 @@ Use the exact sample name '{sample_name}' for output directories.""",
         ``_GENOME_REFERENCES``. Returns ``None`` if no known genome is
         mentioned — callers should then fall back to placeholder paths so
         the user can supply their own reference.
+
+        URL liveness is **not** validated here — call
+        :meth:`_validate_genome_urls` after this if you want a HEAD-checked
+        result (todo T5). Keeping construction sync + validation async
+        means tests and offline callers don't need a network roundtrip.
         """
         p = prompt.lower()
         for key, (species, assembly, release) in self._GENOME_REFERENCES.items():
@@ -584,6 +663,56 @@ Use the exact sample name '{sample_name}' for output directories.""",
                     ),
                 }
         return None
+
+    async def _validate_genome_urls(
+        self, genome: Optional[Dict[str, str]],
+    ) -> Optional[Dict[str, str]]:
+        """HEAD-check the URLs returned by :meth:`_detect_reference_genome`.
+
+        Returns the input dict unchanged if every URL is reachable, ``None``
+        if any URL fails (so the caller falls back to placeholder paths
+        rather than shipping a stale-URL plan that 404s downstream).
+        Behaviour is unchanged when ``FLOWAGENT_LIVE_CATALOG=false`` —
+        the validator returns the dict without checking.
+
+        Closes the silent-stale-URL failure mode named in §B3 of the
+        architecture review (todo T5). Pre-flight prevention rather than
+        recovery-time correction; see :mod:`flowagent.core.live_catalog`.
+        """
+        if not genome:
+            return None
+        try:
+            from .live_catalog import all_urls_alive, is_enabled
+        except ImportError:
+            return genome
+        if not is_enabled():
+            return genome
+        urls_to_check = {
+            k: v for k, v in genome.items()
+            if k.endswith("_url") and isinstance(v, str)
+        }
+        if not urls_to_check:
+            return genome
+        try:
+            results = await all_urls_alive(urls_to_check)
+        except Exception as e:
+            self.logger.debug("Genome URL validation crashed: %s", e)
+            return genome
+        dead = [k for k, ok in results.items() if not ok]
+        if dead:
+            self.logger.warning(
+                "Reference genome URL(s) failed liveness check: %s "
+                "(release/path may have moved on Ensembl). Falling back "
+                "to placeholder paths so the planner doesn't ship stale "
+                "URLs.",
+                ", ".join(f"{k}={urls_to_check[k]}" for k in dead),
+            )
+            return None
+        self.logger.debug(
+            "All %d Ensembl URLs alive for %s",
+            len(urls_to_check), genome.get("assembly", "?"),
+        )
+        return genome
 
     def _custom_workflow_config(self) -> Dict[str, Any]:
         """Return the template config used for custom (free-form) workflows."""
@@ -644,6 +773,10 @@ Use the exact sample name '{sample_name}' for output directories.""",
         # misleading (e.g. prompt says "align with STAR" but keyword scoring
         # picked rna_seq_kallisto because of "RNA-seq").  Fall back to
         # "custom" so the LLM can use the tools the user actually asked for.
+        #
+        # Sibling tools that share a CLI (macs2 ↔ macs3, …) are canonicalised
+        # via ``_TOOL_EQUIVALENCE`` so the guard does not trip on a name
+        # difference that has no semantic effect on the plan.
         mentioned = self._detect_mentioned_tools(prompt)
         if mentioned:
             wf_tools = {t.lower() for t in
@@ -654,7 +787,11 @@ Use the exact sample name '{sample_name}' for output directories.""",
                         "deeptools", "trim_galore"}
             specific_mentioned = mentioned - _GENERIC
             specific_workflow = wf_tools - _GENERIC
-            if specific_mentioned and not specific_mentioned.issubset(specific_workflow):
+            canon_mentioned = {self._TOOL_EQUIVALENCE.get(t, t)
+                               for t in specific_mentioned}
+            canon_workflow = {self._TOOL_EQUIVALENCE.get(t, t)
+                              for t in specific_workflow}
+            if canon_mentioned and not canon_mentioned.issubset(canon_workflow):
                 self.logger.info(
                     "Tool-compatibility guard: prompt mentions %s but %s "
                     "only provides %s — falling back to custom",
@@ -664,9 +801,28 @@ Use the exact sample name '{sample_name}' for output directories.""",
 
         return best_match[0], self.WORKFLOW_TYPES[best_match[0]]
 
+    def _llm_timeout_seconds(self) -> float:
+        """Resolve per-call timeout; env wins (set by benchmark ``set_provider``)."""
+        raw = os.environ.get("LLM_TIMEOUT_SECONDS")
+        if raw:
+            return float(raw)
+        return float(getattr(settings, "LLM_TIMEOUT_SECONDS", 300))
+
+    async def _await_llm(self, coro):
+        """Run an LLM provider coroutine with a configurable timeout."""
+        timeout = self._llm_timeout_seconds()
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            self.logger.error(
+                "LLM API call timed out after %.0fs (provider=%s)",
+                timeout, settings.LLM_PROVIDER,
+            )
+            raise
+
     async def _call_openai(
         self, messages: List[Dict[str, str]], model: Optional[str] = None,
-        timeout: float = 120,
+        timeout: Optional[float] = None,
     ) -> str:
         """Call the configured LLM provider with retry / fallback logic.
 
@@ -675,20 +831,21 @@ Use the exact sample name '{sample_name}' for output directories.""",
 
         Parameters
         ----------
-        timeout : float
-            Maximum seconds to wait for the API response (default 120).
+        timeout : float, optional
+            Override ``LLM_TIMEOUT_SECONDS`` for this call only.
         """
+        effective = timeout if timeout is not None else self._llm_timeout_seconds()
         try:
             resp = await asyncio.wait_for(
                 self.provider.chat(messages, model=model),
-                timeout=timeout,
+                timeout=effective,
             )
             self.logger.info("LLM call succeeded (provider=%s)", settings.LLM_PROVIDER)
             return resp.content
         except asyncio.TimeoutError:
             self.logger.error(
                 "LLM API call timed out after %.0fs (provider=%s)",
-                timeout, settings.LLM_PROVIDER,
+                effective, settings.LLM_PROVIDER,
             )
             raise
         except Exception as e:
@@ -978,6 +1135,83 @@ Return a JSON object in this EXACT format:
                     "suggested_time_min": 60,
                 }
 
+    async def _fetch_plan_json(
+        self,
+        messages: List[Dict[str, str]],
+        prompt: str,
+        matched_files: List[str],
+        dag_aware: bool,
+    ) -> Dict[str, Any]:
+        """Fetch a workflow plan as JSON, with three fallback strategies.
+
+        1. Structured-output call against the appropriate schema
+           (``WorkflowPlanSchema`` for DAG-aware, ``WorkflowPlanSchemaNoDAG``
+           for the ablation arm).
+        2. Plain chat + ``_clean_llm_response`` regex repair.
+        3. Last-ditch shorter prompt asking only for the minimal field
+           set required by the runtime.
+
+        Raises the most-recent error if all three attempts fail.
+
+        Extracted from the body of ``generate_workflow_plan`` so the
+        completeness-reflection loop can call it once per retry without
+        duplicating the fallback logic.
+        """
+        workflow_plan: Optional[Dict[str, Any]] = None
+        last_err: Optional[Exception] = None
+
+        try:
+            schema_cls = (
+                WorkflowPlanSchema if dag_aware else WorkflowPlanSchemaNoDAG
+            )
+            schema = to_json_schema(schema_cls)
+            resp = await self._await_llm(
+                self.provider.chat_structured(messages, schema)
+            )
+            workflow_plan = (
+                json.loads(resp.content) if isinstance(resp.content, str) else resp.content
+            )
+        except Exception as structured_err:
+            self.logger.debug(
+                "Structured output failed (%s), trying plain chat", structured_err,
+            )
+            last_err = structured_err
+
+        if workflow_plan is None:
+            try:
+                response = await self._call_openai(messages)
+                cleaned = self._clean_llm_response(response)
+                workflow_plan = json.loads(cleaned)
+            except (json.JSONDecodeError, Exception) as parse_err:
+                self.logger.debug(
+                    "First plain-chat parse failed (%s), retrying", parse_err,
+                )
+                last_err = parse_err
+
+        if workflow_plan is None:
+            try:
+                _retry_keys = (
+                    "name, command, dependencies" if dag_aware else "name, command"
+                )
+                retry_messages = [
+                    messages[0],
+                    {"role": "user", "content": (
+                        f"Generate a workflow plan as a JSON object for: {prompt}\n"
+                        f"Input files: {matched_files}\n"
+                        "Return JSON with keys: workflow_type (string), "
+                        f"steps (array of objects with {_retry_keys}). "
+                        "Return ONLY valid JSON, no markdown."
+                    )},
+                ]
+                response = await self._call_openai(retry_messages)
+                cleaned = self._clean_llm_response(response)
+                workflow_plan = json.loads(cleaned)
+            except Exception as retry_err:
+                self.logger.error("All JSON parse attempts failed")
+                raise last_err or retry_err
+
+        return workflow_plan
+
     async def generate_workflow_plan(
         self, prompt: str, *, context: Optional[PipelineContext] = None,
     ) -> Dict[str, Any]:
@@ -1125,8 +1359,70 @@ Important:
 3. Maintain consistent sample names across all analysis steps
 4. Ensure output directories match the input sample names"""
 
-            # Add specific instructions for dependency specification
-            enhanced_prompt = f"""
+            # Add specific instructions for dependency specification.
+            #
+            # ABLATION: when ``LLM_DAG_AWARE`` is False the planner
+            # never tells the LLM about the dependency graph -- it only
+            # asks for a flat ordered list of steps. See
+            # benchmarks/bench_ablation.py for the planning-only A/B that
+            # uses this branch.
+            #
+            # Read settings freshly here so per-cell env-var mutations made
+            # by the benchmark harness (``runner.set_provider`` style) are
+            # picked up instead of the module-scoped snapshot taken at
+            # first import.
+            _live_settings = Settings()
+            _dag_aware = _live_settings.LLM_DAG_AWARE
+
+            # Tool-name allowlist hint (todo T3 in the architecture review).
+            # Restrict the planner to tools that actually belong in this
+            # workflow type so the LLM can't drift into a forbidden tool
+            # family (the empirical chip_seq → kraken2 failure mode).
+            from .tool_hint_flags import tool_hint_enabled
+
+            if tool_hint_enabled():
+                _tool_hint_list = self._tool_hint_for_workflow_type(workflow_type)
+                _tool_hint_block = (
+                    "Valid tool names for this workflow (pick from this list; do "
+                    "NOT invent tool names or substitute siblings):\n"
+                    f"  {', '.join(_tool_hint_list)}"
+                )
+            else:
+                _tool_hint_block = ""
+
+            # GEO metadata block (todo T5). When the prompt names a GSE
+            # accession and the live-catalog resolver fetched its NCBI
+            # metadata, surface organism / experiment-type / title to the
+            # planner so it doesn't have to recall those from training
+            # data. Empty string when no metadata is available so the
+            # template substitution is a no-op.
+            _geo_meta = file_info.get("geo_metadata") or {}
+            if _geo_meta:
+                _geo_block_lines = [
+                    f"GEO accession {_geo_meta.get('accession', '?')} "
+                    "(resolved from NCBI):",
+                ]
+                for label, key in (
+                    ("organism", "organism"),
+                    ("type", "type"),
+                    ("platform", "platform"),
+                    ("title", "title"),
+                ):
+                    val = _geo_meta.get(key, "")
+                    if val:
+                        # Truncate the title to keep the prompt small;
+                        # full text is in file_info['geo_metadata'] if
+                        # any caller wants it.
+                        if len(val) > 200:
+                            val = val[:197] + "..."
+                        _geo_block_lines.append(f"  {label}: {val}")
+                _geo_metadata_block = "\n".join(_geo_block_lines) + "\n"
+            else:
+                _geo_metadata_block = ""
+
+            if _dag_aware:
+                _kind_values = ", ".join(k.value for k in StepKind)
+                enhanced_prompt = f"""
 You are a bioinformatics workflow expert. Generate a workflow plan as a JSON object with the following structure:
 {{
     "workflow_type": "{workflow_type}",
@@ -1134,15 +1430,17 @@ You are a bioinformatics workflow expert. Generate a workflow plan as a JSON obj
         {{
             "name": "step_name",
             "command": "command_to_execute",
-            "parameters": {{"param1": "value1"}},
             "dependencies": ["dependent_step_name1"],
-            "outputs": ["expected_output1"]
+            "outputs": ["expected_output1"],
+            "kind": "align"
         }}
     ]
 }}
 
 Available input files: {matched_files}
 Task: {prompt}
+
+{_geo_metadata_block}{_tool_hint_block}
 
 Rules:
 1. First step MUST be directory creation with this EXACT command:
@@ -1152,6 +1450,46 @@ Rules:
 
 3. Dependencies must form a valid DAG (no cycles)
 4. Each step needs a unique name
+5. Process each file individually, no wildcards
+6. The bioinformatics tool (fastqc, kallisto, multiqc, etc.) MUST be the first token of the command. Do not prepend 'mkdir -p' or other shell prefixes; rely on the directory-creation step instead.
+7. For multiqc, always pass '-f' (force overwrite) and '-n multiqc_report' (fixed filename) so re-runs produce the same output path.
+8. Return ONLY the JSON object, no markdown formatting or other text
+9. Each step MUST carry a "kind" field labelling its structural role.
+   Valid values (pick the most specific one that fits): {_kind_values}.
+   Structural rules the planner enforces post-hoc:
+     - every alignment step ("kind": "align") needs an "index" or "download" ancestor;
+     - every "download" step must have a downstream consumer;
+     - "quantify" / "call" / "de" steps must feed a "report" descendant or be DAG sinks;
+     - the DAG must be weakly connected and have at least one terminal sink.
+   Use "other" only for setup/glue (e.g. mkdir).
+"""
+            else:
+                enhanced_prompt = f"""
+You are a bioinformatics workflow expert. Generate a workflow plan as a JSON object with the following structure:
+{{
+    "workflow_type": "{workflow_type}",
+    "steps": [
+        {{
+            "name": "step_name",
+            "command": "command_to_execute",
+            "outputs": ["expected_output1"]
+        }}
+    ]
+}}
+
+Available input files: {matched_files}
+Task: {prompt}
+
+{_geo_metadata_block}{_tool_hint_block}
+
+Rules:
+1. First step MUST be directory creation with this EXACT command:
+   "{mkdir_command}"
+
+2. {tool_instructions}
+
+3. Each step needs a unique name
+4. List steps in the order they must run (top-to-bottom). Each step is executed sequentially.
 5. Process each file individually, no wildcards
 6. The bioinformatics tool (fastqc, kallisto, multiqc, etc.) MUST be the first token of the command. Do not prepend 'mkdir -p' or other shell prefixes; rely on the directory-creation step instead.
 7. For multiqc, always pass '-f' (force overwrite) and '-n multiqc_report' (fixed filename) so re-runs produce the same output path.
@@ -1217,76 +1555,240 @@ Resource Management Rules:
                 {"role": "user", "content": enhanced_prompt},
             ]
 
-            # Try structured output first, then plain chat, repairing JSON if needed
-            workflow_plan = None
-            last_err = None
+            # Reflection loop (DAG-Plan style; arXiv:2406.09953):
+            #
+            # After the LLM emits a plan we run domain-specific structural
+            # checks (``flowagent.core.completeness``). If they fail and
+            # ``LLM_COMPLETENESS_REFLECT`` is enabled, we append the
+            # failure list to the conversation and ask the LLM to
+            # regenerate, up to ``LLM_COMPLETENESS_MAX_RETRIES`` times.
+            # The most recent plan is returned regardless; the verdict is
+            # surfaced as ``plan["_completeness"]`` so the benchmark
+            # harness can score completeness pass-rate per cell.
+            from .completeness import (
+                fill_missing_kinds,
+                normalize_plan_steps,
+                render_completeness_feedback,
+                validate_workflow_completeness,
+            )
 
-            # Attempt 1: structured output (guaranteed JSON schema)
-            try:
-                schema = to_json_schema(WorkflowPlanSchema)
-                resp = await self.provider.chat_structured(messages, schema)
-                workflow_plan = json.loads(resp.content) if isinstance(resp.content, str) else resp.content
-            except Exception as structured_err:
-                self.logger.debug("Structured output failed (%s), trying plain chat", structured_err)
-                last_err = structured_err
+            do_reflect = bool(_live_settings.LLM_COMPLETENESS_REFLECT)
+            max_retries = max(0, int(_live_settings.LLM_COMPLETENESS_MAX_RETRIES))
 
-            # Attempt 2: plain chat + clean/repair
-            if workflow_plan is None:
-                try:
-                    response = await self._call_openai(messages)
-                    cleaned = self._clean_llm_response(response)
-                    workflow_plan = json.loads(cleaned)
-                except (json.JSONDecodeError, Exception) as parse_err:
-                    self.logger.debug("First plain-chat parse failed (%s), retrying", parse_err)
-                    last_err = parse_err
+            workflow_plan: Optional[Dict[str, Any]] = None
+            last_failures: List[str] = []
+            attempts_done = 0
+            attempt_messages = list(messages)
 
-            # Attempt 3: retry with a shorter prompt asking for fewer details
-            if workflow_plan is None:
-                try:
-                    retry_messages = [
-                        messages[0],
-                        {"role": "user", "content": (
-                            f"Generate a workflow plan as a JSON object for: {prompt}\n"
-                            f"Input files: {matched_files}\n"
-                            "Return JSON with keys: workflow_type (string), "
-                            "steps (array of objects with name, command, dependencies). "
-                            "Return ONLY valid JSON, no markdown."
-                        )},
-                    ]
-                    response = await self._call_openai(retry_messages)
-                    cleaned = self._clean_llm_response(response)
-                    workflow_plan = json.loads(cleaned)
-                except Exception as retry_err:
-                    self.logger.error("All JSON parse attempts failed")
-                    raise last_err or retry_err
+            for attempt in range(max_retries + 1):
+                attempts_done = attempt + 1
 
-            # Prepend reference download steps if the context indicates
-            # that references need to be fetched.
-            if context:
-                from .pipeline_planner import build_reference_download_steps
-                dl_steps = build_reference_download_steps(context)
-                if dl_steps:
-                    dl_names = {s["name"] for s in dl_steps}
-                    existing = workflow_plan.get("steps", [])
-                    # Remove any LLM-generated steps whose name collides
-                    # with the download steps we are about to prepend.
-                    existing = [s for s in existing if s.get("name") not in dl_names]
-                    # Wire index/align steps to depend on downloads
-                    for step in existing:
-                        cmd_lower = (step.get("command") or "").lower()
-                        name_lower = (step.get("name") or "").lower()
-                        needs_ref = any(kw in cmd_lower for kw in [
-                            "index", "genome", "reference/", "transcriptome", "genes.gtf",
-                        ]) or any(kw in name_lower for kw in [
-                            "index", "genome",
-                        ])
-                        if needs_ref:
-                            deps = step.get("dependencies", [])
-                            for dl_name in dl_names:
-                                if dl_name not in deps:
-                                    deps.append(dl_name)
-                            step["dependencies"] = deps
-                    workflow_plan["steps"] = dl_steps + existing
+                # ── Fetch JSON from LLM (3-attempt fallback) ────────
+                workflow_plan = await self._fetch_plan_json(
+                    attempt_messages, prompt, matched_files, _dag_aware,
+                )
+
+                # ── Defensive normalisation: drop non-dict step entries.
+                # Opus/Gemini regex-repair fallbacks occasionally surface
+                # plans where ``steps`` is a mix of strings + dicts; left
+                # unhandled, the very next ``step.get(...)`` call
+                # (DAG-blind dep-injection, reference-download merge,
+                # fill_missing_kinds, _update_rule_resources) raises
+                # AttributeError and discards the entire plan. Salvaging
+                # the dict subset preserves 19/20 valid steps instead.
+                normalize_plan_steps(workflow_plan, logger=self.logger)
+
+                # ── DAG-blind ablation: inject empty dependency lists
+                # so downstream code (DAG construction, benchmark
+                # ``dag_valid``) sees a trivially valid DAG. The
+                # ``dag_edge_density`` metric in the benchmark harness
+                # will confirm the ablation took effect.
+                if not _dag_aware:
+                    for step in workflow_plan.get("steps", []):
+                        step["dependencies"] = []
+
+                # ── Prepend reference-download steps when context asks
+                # for them. Idempotent across reflection retries: name
+                # collisions are filtered before re-inserting.
+                if context:
+                    from .pipeline_planner import build_reference_download_steps
+                    dl_steps = build_reference_download_steps(context)
+                    if dl_steps:
+                        dl_names = {s["name"] for s in dl_steps}
+                        existing = workflow_plan.get("steps", [])
+                        existing = [s for s in existing if s.get("name") not in dl_names]
+                        for step in existing:
+                            cmd_lower = (step.get("command") or "").lower()
+                            name_lower = (step.get("name") or "").lower()
+                            needs_ref = any(kw in cmd_lower for kw in [
+                                "index", "genome", "reference/", "transcriptome", "genes.gtf",
+                            ]) or any(kw in name_lower for kw in [
+                                "index", "genome",
+                            ])
+                            if needs_ref:
+                                deps = step.get("dependencies", [])
+                                for dl_name in dl_names:
+                                    if dl_name not in deps:
+                                        deps.append(dl_name)
+                                step["dependencies"] = deps
+                        workflow_plan["steps"] = dl_steps + existing
+
+                # ── Heuristic-fill missing 'kind' values (always; the
+                # validator needs them, and the DAG-blind path never
+                # asks the LLM for them).
+                fill_missing_kinds(workflow_plan)
+
+                # ── Command-level validator + autofix (todo T0).
+                # Autofix (deterministic rewrites) and validator retry
+                # (LLM feedback loop) are gated independently — see
+                # ``flowagent.core.validator_flags``. Structural
+                # completeness (below) is a separate validator.
+                validator_failures: List[str] = []
+                plan_steps = workflow_plan.get("steps", []) or []
+                if plan_steps:
+                    validator_failures = self._run_command_validator_on_steps(
+                        plan_steps, srr_list_path=None, context="primary plan",
+                    )
+
+                # ── Validate completeness; reflect if failing.
+                ok, completeness_failures = validate_workflow_completeness(
+                    workflow_plan,
+                )
+                # Validator failures trigger reflection only when retry is
+                # enabled — otherwise they would burn the completeness retry
+                # budget on unreliable command-string fixes (Benchmark K).
+                failures = list(completeness_failures)
+                if self._validator_retry_enabled():
+                    failures = failures + list(validator_failures)
+                    ok = ok and not validator_failures
+                last_failures = failures
+
+                if ok or not do_reflect or attempt >= max_retries:
+                    break
+
+                # Build reflection message: original prompt + previous
+                # plan (so the LLM can see what it produced) + failure
+                # list with explicit guidance.
+                #
+                # Two failure sources can be present: structural-completeness
+                # rules (NetworkX-based DAG checks) and command-level
+                # validator rules (placeholder paths, archive nesting,
+                # role-name globs, …). Render a combined message that
+                # acknowledges both rather than mislabelling validator
+                # issues as "structural" — the LLM otherwise tries to
+                # rewire dependencies when the actual problem is the
+                # command string.
+                if validator_failures and not completeness_failures:
+                    feedback = (
+                        "Your previous workflow plan failed command-level "
+                        "validation. Specific violations:\n"
+                        + "\n".join(
+                            f"  {i+1}. {f}"
+                            for i, f in enumerate(validator_failures)
+                        )
+                        + "\n\nRegenerate the plan to fix every item above. "
+                        "Keep the same JSON schema; only adjust step commands "
+                        "(and outputs / dependencies if required to satisfy "
+                        "a violation)."
+                    )
+                elif validator_failures and completeness_failures:
+                    feedback = (
+                        "Your previous workflow plan failed validation. "
+                        "Specific violations:\n"
+                        + "\n".join(
+                            f"  {i+1}. {f}"
+                            for i, f in enumerate(failures)
+                        )
+                        + "\n\nRegenerate the plan to fix every item above. "
+                        "Keep the same JSON schema; adjust step commands, "
+                        "dependencies, and kinds as needed."
+                    )
+                else:
+                    feedback = render_completeness_feedback(failures)
+                self.logger.info(
+                    "Plan failed validation (attempt %d/%d): completeness=%s, "
+                    "validator=%s",
+                    attempts_done, max_retries + 1,
+                    completeness_failures, validator_failures,
+                )
+                attempt_messages = list(messages) + [
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {
+                                k: v for k, v in workflow_plan.items()
+                                if not k.startswith("_")
+                            },
+                            default=str,
+                        ),
+                    },
+                    {"role": "user", "content": feedback},
+                ]
+
+            # Surface verdict on the plan envelope so the benchmark
+            # harness records ``completeness_pass`` and the failure list.
+            workflow_plan["_completeness"] = {
+                "pass": not last_failures,
+                "failures": list(last_failures),
+                "attempts": attempts_done,
+                "reflect_enabled": do_reflect,
+            }
+            # Separate envelope for the command-level validator so the T0
+            # ablation can read its outcome without conflating it with the
+            # structural-completeness signal. ``autofix_enabled`` /
+            # ``retry_enabled`` reflect ``validator_flags`` at plan time.
+            workflow_plan["_validator"] = {
+                "pass": not validator_failures,
+                "failures": list(validator_failures),
+                "enabled": self._validator_any_enabled(),
+                "autofix_enabled": self._validator_autofix_enabled(),
+                "retry_enabled": self._validator_retry_enabled(),
+            }
+
+            # ── CoVe independent verifier (todo T4).
+            # Runs in a fresh LLM context with no generator chain-of-
+            # thought; produces concerns the planner uses as an
+            # *abstention* signal, not a retry-feedback signal (deliberate
+            # design choice given the recovery-taxonomy + T0 evidence
+            # that retry-based correction is unreliable). When
+            # FLOWAGENT_COVE_VERIFY=false (default) this is a no-op
+            # returning (True, [], 0).
+            from .verifier import (
+                get_abstention_threshold,
+                is_abstention_enabled as _cove_abstain_on,
+                is_enabled as _cove_on,
+                verify_plan_independently,
+            )
+            verifier_ok, verifier_concerns, verifier_weight = (
+                await verify_plan_independently(
+                    workflow_plan,
+                    user_prompt=prompt,
+                    provider=self.provider,
+                    input_files=list(matched_files) if matched_files else None,
+                )
+            )
+            workflow_plan["_verifier"] = {
+                "enabled": _cove_on(),
+                "pass": verifier_ok,
+                "weighted_concern_count": verifier_weight,
+                "abstention_threshold": get_abstention_threshold(),
+                "concerns": verifier_concerns,
+            }
+            if (not verifier_ok) and _cove_on() and _cove_abstain_on():
+                # Hard abstention: refuse to ship the plan. Caller can
+                # catch and decide what abstention means in their UI
+                # (return error, fall back to a default plan, ask user).
+                # The plan is still attached so the benchmark harness can
+                # see what the verifier rejected.
+                flagged = "; ".join(
+                    f"[{c.get('severity', '?')}] {c.get('answer', '')[:100]}"
+                    for c in verifier_concerns if c.get("concern")
+                )
+                raise ValueError(
+                    f"CoVe verifier abstained on plan (weighted concern "
+                    f"count {verifier_weight} >= threshold "
+                    f"{get_abstention_threshold()}): {flagged}"
+                )
 
             # Log workflow plan
             self.logger.info("Generated workflow plan:")
@@ -1681,12 +2183,37 @@ If you are being asked to generate a title, set "success" to false.
         
         # If we found a GEO accession, we can return early with minimal patterns
         if geo_accession:
-            result = {
+            # Resolve canonical NCBI GEO metadata so downstream prompts get
+            # concrete organism / experiment-type / title fields instead of
+            # asking the LLM to recall them from training data (todo T5 / B3
+            # in the architecture review). Network call gated by
+            # FLOWAGENT_LIVE_CATALOG; ``None`` on any error path so the
+            # rest of the pipeline keeps its existing behaviour.
+            geo_metadata: Optional[Dict[str, str]] = None
+            try:
+                from .live_catalog import resolve_geo
+                geo_metadata = await resolve_geo(geo_accession)
+            except Exception as e:
+                self.logger.debug(
+                    "GEO metadata resolution failed for %s: %s",
+                    geo_accession, e,
+                )
+            if geo_metadata:
+                self.logger.info(
+                    "Resolved %s: organism=%r type=%r",
+                    geo_accession,
+                    geo_metadata.get("organism", ""),
+                    geo_metadata.get("type", ""),
+                )
+
+            result: Dict[str, Any] = {
                 "patterns": ["*.fastq.gz", "*.fq.gz"],
                 "geo_accession": geo_accession,
                 "reference": reference,
-                "paired_end": paired_end
+                "paired_end": paired_end,
             }
+            if geo_metadata:
+                result["geo_metadata"] = geo_metadata
             
             # If paired-end, add relationship information
             if paired_end:
@@ -1735,32 +2262,61 @@ If you are being asked to generate a title, set "success" to false.
             },
         ]
 
-        response = await self._call_openai(messages)
-        
+        # Prefer the structured-output path (todo T1): the FilePatternResponse
+        # Pydantic schema is enforced at decode time on every supported
+        # provider so the result is a validated dict with the canonical
+        # ``patterns`` + ``relationships`` shape. If structured output isn't
+        # available (provider lacks it, schema rejection, etc.) we fall back
+        # to the original plain-chat + repair path so behaviour degrades
+        # gracefully rather than failing the whole planning pipeline.
+        result: Optional[Dict[str, Any]] = None
         try:
-            # Clean and parse the response
-            cleaned_response = self._clean_llm_response(response)
-            result = json.loads(cleaned_response)
-            
-            # Add reference if found
-            if reference:
-                result["reference"] = reference
-                
-            # Add paired_end flag based on relationships
-            if "relationships" in result and isinstance(result["relationships"], dict) and result["relationships"].get("type") == "paired":
-                result["paired_end"] = True
-            else:
-                result["paired_end"] = paired_end
-                
-            return result
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse file patterns: {str(e)}")
-            # Return default patterns if parsing fails
-            return {
-                "patterns": ["*.fastq.gz", "*.fq.gz", "*.bam", "*.sam"],
-                "reference": reference,
-                "paired_end": paired_end
-            }
+            schema = to_json_schema(FilePatternResponse)
+            resp = await self._await_llm(
+                self.provider.chat_structured(messages, schema)
+            )
+            raw = (
+                json.loads(resp.content)
+                if isinstance(resp.content, str)
+                else resp.content
+            )
+            result = FilePatternResponse.model_validate(raw).model_dump()
+        except Exception as e:
+            self.logger.debug(
+                "FilePatternResponse structured call failed (%s); "
+                "falling back to plain chat", e,
+            )
+
+        if result is None:
+            try:
+                response = await self._call_openai(messages)
+                cleaned_response = self._clean_llm_response(response)
+                result = json.loads(cleaned_response)
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse file patterns: {str(e)}")
+                return {
+                    "patterns": ["*.fastq.gz", "*.fq.gz", "*.bam", "*.sam"],
+                    "reference": reference,
+                    "paired_end": paired_end,
+                }
+
+        # Annotate with reference / paired_end derived above. Kept post-
+        # validation rather than baked into the schema because they're
+        # derived from the prompt text (regex / keyword match), not from
+        # the LLM's structured output.
+        if reference:
+            result["reference"] = reference
+
+        if (
+            "relationships" in result
+            and isinstance(result["relationships"], dict)
+            and result["relationships"].get("type") == "paired"
+        ):
+            result["paired_end"] = True
+        else:
+            result["paired_end"] = paired_end
+
+        return result
 
     async def _create_inferred_download_workflow(
         self, prompt: str, file_info: Dict[str, Any],
@@ -2020,10 +2576,11 @@ If you are being asked to generate a title, set "success" to false.
         # First, deterministically auto-fix the archive-nesting
         # antipattern (LLM gets stuck looping on this even with
         # explicit fix-suggestion in the validator message).
-        for note in self._autofix_generated_steps(valid_steps):
-            self.logger.info("Auto-fix: %s", note)
-        errors = self._validate_generated_steps(valid_steps, srr_list_path=None)
-        if errors:
+        # Validator: autofix when enabled; LLM retry only when retry flag on.
+        errors = self._run_command_validator_on_steps(
+            valid_steps, srr_list_path=None, context="inferred-download plan",
+        )
+        if errors and self._validator_retry_enabled():
             self.logger.warning(
                 "Inferred-download plan validation failed (attempt 1): "
                 "%s — retrying", "; ".join(errors[:5]),
@@ -2052,10 +2609,9 @@ If you are being asked to generate a title, set "success" to false.
                 return None
             # Auto-fix on retry too — the LLM might emit the same
             # antipattern a second time.
-            for note in self._autofix_generated_steps(valid_steps):
-                self.logger.info("Auto-fix (retry): %s", note)
-            errors2 = self._validate_generated_steps(
+            errors2 = self._run_command_validator_on_steps(
                 valid_steps, srr_list_path=None,
+                context="inferred-download plan (retry)",
             )
             if errors2:
                 self.logger.warning(
@@ -2441,7 +2997,9 @@ If you are being asked to generate a title, set "success" to false.
         
         # Add analysis steps based on workflow type
         if workflow_type == "rna_seq_kallisto":
-            genome = self._detect_reference_genome(prompt)
+            genome = await self._validate_genome_urls(
+                self._detect_reference_genome(prompt),
+            )
             if genome:
                 transcriptome = "raw_data/reference/transcriptome.fa"
                 self.logger.info(
@@ -2665,7 +3223,9 @@ If you are being asked to generate a title, set "success" to false.
                 }
             ])
         elif workflow_type == "rna_seq_star":
-            genome = self._detect_reference_genome(prompt)
+            genome = await self._validate_genome_urls(
+                self._detect_reference_genome(prompt),
+            )
             if genome:
                 ref = "raw_data/reference/genome.fa"
                 gtf = "raw_data/reference/annotation.gtf"
@@ -3083,13 +3643,23 @@ If you are being asked to generate a title, set "success" to false.
         ]
         # First attempt
         steps = await self._llm_steps_attempt(messages)
-        # Auto-fix deterministic patterns (archive-nesting) before
-        # validation, so the LLM doesn't keep getting rejected on
-        # things we already know how to correct ourselves.
+        if not self._validator_any_enabled():
+            self.logger.info(
+                "Command validator disabled; skipping autofix + validation "
+                "on analysis-steps plan",
+            )
+            return steps
         for note in self._autofix_generated_steps(steps):
             self.logger.info("Auto-fix: %s", note)
         errors = self._validate_generated_steps(steps, srr_list_path)
         if not errors:
+            return steps
+        if not self._validator_retry_enabled():
+            self.logger.info(
+                "Analysis-steps validation found %d issue(s) but retry is "
+                "disabled — shipping autofixed plan",
+                len(errors),
+            )
             return steps
 
         # Single retry, feeding the specific violations back to the LLM.
@@ -3155,6 +3725,56 @@ If you are being asked to generate a title, set "success" to false.
             valid.append(s)
         return valid
 
+    @staticmethod
+    def _validator_autofix_enabled() -> bool:
+        from .validator_flags import validator_autofix_enabled
+        return validator_autofix_enabled()
+
+    @staticmethod
+    def _validator_retry_enabled() -> bool:
+        from .validator_flags import validator_retry_enabled
+        return validator_retry_enabled()
+
+    @staticmethod
+    def _validator_any_enabled() -> bool:
+        from .validator_flags import validator_any_enabled
+        return validator_any_enabled()
+
+    def _run_command_validator_on_steps(
+        self,
+        steps: List[Dict[str, Any]],
+        *,
+        srr_list_path=None,
+        context: str = "plan",
+    ) -> List[str]:
+        """Autofix (optional) then validate. Returns command-level failures."""
+        if not self._validator_any_enabled():
+            self.logger.info(
+                "Command validator disabled (%s); skipping autofix + validation",
+                context,
+            )
+            return []
+        if self._validator_autofix_enabled():
+            for note in self._autofix_generated_steps(steps):
+                self.logger.info("Auto-fix (%s): %s", context, note)
+        failures = self._validate_generated_steps(steps, srr_list_path=srr_list_path)
+        if failures and not self._validator_retry_enabled():
+            self.logger.info(
+                "Command validator found %d issue(s) on %s but retry is "
+                "disabled — not feeding back to LLM",
+                len(failures), context,
+            )
+        return failures
+
+    @staticmethod
+    def _validator_enabled() -> bool:
+        """Legacy monolithic gate — True when autofix OR retry is enabled.
+
+        Prefer ``_validator_autofix_enabled`` / ``_validator_retry_enabled``.
+        """
+        from .validator_flags import validator_any_enabled
+        return validator_any_enabled()
+
     def _autofix_generated_steps(
         self, steps: List[Dict[str, Any]],
     ) -> List[str]:
@@ -3163,6 +3783,17 @@ If you are being asked to generate a title, set "success" to false.
         Returns a list of human-readable notes describing every
         transform applied (logged at INFO; not surfaced to the LLM as
         violations). Only transforms where we KNOW the right answer:
+
+          - First-token typo. If the first content token of a command
+            is a close (Damerau-Levenshtein ≤ 2) match to a known
+            bioinformatics tool, we rewrite it to the correction.
+            ``kalsito quant ...`` → ``kallisto quant ...``,
+            ``mac3 callpeak ...`` → ``macs3 callpeak ...``. Driven by
+            the same hallucination classifier the benchmark scorer
+            uses (see ``flowagent.tool_catalog``). Skipped for
+            shell builtins / runner tokens (``Rscript``, ``python``,
+            ``mkdir`` …) where the first token isn't the bioinfo tool
+            anyway.
 
           - Archive-nesting antipattern. ``unzip -d X/Y X.zip`` (or
             ``tar -C X/Y X.tar.gz``) where ``Y == basename(X.zip)``
@@ -3199,6 +3830,69 @@ If you are being asked to generate a title, set "success" to false.
         # the dst basename equals the archive stem.
         d_flag_re = re.compile(r"((?:^|\s)(?:-d|-C)\s+)([\w./\-]+)")
         archive_re = re.compile(r"\b[\w./\-]+\.(?:tar\.gz|tgz|zip|tar)\b")
+
+        # ── Pre-pass: first-token typo correction ──────────────────
+        # Driven by the shared hallucination classifier in
+        # flowagent.tool_catalog so the planner uses the *same* known-
+        # tools snapshot the benchmark scorer judges against. Lazy-
+        # imported because the classifier loads ~16k tool names from
+        # known_tools.yaml on first call.
+        try:
+            from ..tool_catalog import (  # type: ignore
+                _classify_unknown_token,
+                _load_known_tools,
+                _normalise_tool_name,
+                _RUNNER_TOKENS,
+                _SHELL_TOKENS,
+            )
+            _known = _load_known_tools()
+        except Exception:
+            _known = None
+
+        if _known:
+            # First content token: skip leading env-var assignments
+            # (``FOO=bar tool …``) which bash treats as variable
+            # bindings, not commands. Also skip wrapper invocations
+            # where the bioinfo tool isn't actually the first token.
+            _first_tok_re = re.compile(
+                r"^\s*(?:[A-Z_][A-Z0-9_]*=\S+\s+)*(\S+)"
+            )
+            for step in steps:
+                cmd = step.get("command", "") or ""
+                if not cmd:
+                    continue
+                m = _first_tok_re.match(cmd)
+                if not m:
+                    continue
+                first = m.group(1)
+                # Strip a trailing colon (LLMs sometimes echo labels).
+                first_clean = first.rstrip(":,")
+                normalised = _normalise_tool_name(first_clean)
+                if not normalised:
+                    continue
+                # Don't touch known tools, runners, or shell builtins.
+                if normalised in _known:
+                    continue
+                if normalised in _RUNNER_TOKENS or normalised in _SHELL_TOKENS:
+                    continue
+                # Path-like tokens are handled by the validator's
+                # placeholder rule, not here.
+                if "/" in first_clean or "$" in first_clean:
+                    continue
+                category, correction = _classify_unknown_token(first_clean, _known)
+                if category != "typo" or not correction:
+                    continue
+                # Rewrite only the first occurrence so we don't munge
+                # later mentions of the same string in flag values or
+                # paths.
+                start, end = m.start(1), m.start(1) + len(first_clean)
+                step["command"] = cmd[:start] + correction + cmd[end:]
+                notes.append(
+                    f"step '{step.get('name', '?')}': corrected typo "
+                    f"``{first_clean}`` → ``{correction}`` "
+                    f"(Damerau-Levenshtein match against known-tools "
+                    f"snapshot)"
+                )
 
         # ``\n``-literal-to-newline detection: when the command has
         # no real newlines, contains the literal two-char sequence

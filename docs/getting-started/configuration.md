@@ -32,9 +32,9 @@ LLM_BASE_URL=http://localhost:11434/v1
 
 | Provider | Recommended | Notes |
 |----------|------------|-------|
-| OpenAI | `gpt-4.1`, `gpt-4.1-mini` | `gpt-4.1-nano` for lightweight tasks |
-| Anthropic | `claude-sonnet-4-20250514` | `claude-opus-4-20250514` for complex analysis |
-| Google | `gemini-2.5-flash` | `gemini-2.5-pro` for longer reasoning |
+| OpenAI | `gpt-5.4-mini`, `gpt-4.1` | `gpt-5.5` / `gpt-5.4` for flagship; `gpt-5.4-nano` for lightweight |
+| Anthropic | `claude-sonnet-4-6` | `claude-opus-4-8` for complex analysis |
+| Google | `gemini-2.5-flash`, `gemini-3.5-flash` | `gemini-2.5-pro` / `gemini-3.1-pro-preview` for longer reasoning |
 | Ollama | `llama4`, `qwen`, `deepseek` | Runs locally, no API key |
 
 ## Example configurations
@@ -49,7 +49,7 @@ LLM_BASE_URL=http://localhost:11434/v1
 2. Report generation (Anthropic):
    ```bash
    LLM_PROVIDER=anthropic
-   LLM_MODEL=claude-sonnet-4-20250514
+   LLM_MODEL=claude-sonnet-4-6
    flowagent prompt "analyze workflow results" --analysis-dir=results
    ```
 

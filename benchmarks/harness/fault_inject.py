@@ -87,12 +87,27 @@ def _mk_fastq(path: Path, n_reads: int = 10, truncated: bool = False) -> None:
         path.write_bytes(raw[: len(raw) - 8])
 
 
-def _stub_step(name: str, command: str) -> Dict[str, Any]:
+def _stub_step(name: str, command: str,
+               outputs: Optional[list] = None) -> Dict[str, Any]:
+    """Build a fault-test step.
+
+    ``outputs`` is the list of file/dir paths the step would have
+    produced if the original (failing) command had succeeded, or that
+    a correct recovery should produce. Declaring it engages
+    ``WorkflowManager._verify_recovery_outputs``, which catches the
+    "exit 0 but did no real work" cheat the reviewer flagged. Faults
+    whose stubs cannot model the success state (``bash -c 'printf
+    stderr; exit 1'`` patterns simulating bwa/GATK/htseq error
+    signatures without those tools installed) leave ``outputs`` as
+    an empty list — for those, ``_is_recovery_antipattern`` and the
+    downstream ``recovery_taxonomy`` parser carry the cheat-detection
+    load instead.
+    """
     return {
         "name": name,
         "command": command,
         "dependencies": [],
-        "outputs": [],
+        "outputs": outputs or [],
         "description": "bench fault step",
     }
 
@@ -117,6 +132,7 @@ def _apply_missing_wget(preset, seed, workdir) -> tuple:
         "download_reference",
         "mkdir -p reference && wget -q -O reference/test.fa.gz "
         "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz",
+        outputs=["reference/test.fa.gz"],
     )
     # Simulate "wget not in PATH" by pre-pending an empty bin dir.
     empty_bin = workdir / "_empty_bin"
@@ -132,6 +148,7 @@ def _apply_tool_typo(preset, seed, workdir) -> tuple:
     step = _stub_step(
         "fastqc_typo",
         "fastq_c data/reads.fastq.gz -o results/fastqc",
+        outputs=["results/fastqc/reads_fastqc.html"],
     )
     _mk_fastq(workdir / "data" / "reads.fastq.gz")
     (workdir / "results" / "fastqc").mkdir(exist_ok=True, parents=True)
@@ -144,6 +161,7 @@ def _apply_wrong_flag(preset, seed, workdir) -> tuple:
     step = _stub_step(
         "kallisto_index_wrong_flag",
         "kallisto index -x results/index.idx reference/transcriptome.fa",
+        outputs=["results/index.idx"],
     )
     (workdir / "reference").mkdir(exist_ok=True)
     (workdir / "reference" / "transcriptome.fa").write_text(">dummy\nACGT\n")
@@ -156,6 +174,7 @@ def _apply_missing_output_dir(preset, seed, workdir) -> tuple:
     step = _stub_step(
         "fastqc_missing_outdir",
         "fastqc data/reads.fastq.gz -o results/does_not_exist/fastqc",
+        outputs=["results/does_not_exist/fastqc/reads_fastqc.html"],
     )
     _mk_fastq(workdir / "data" / "reads.fastq.gz")
     return step, ctx
@@ -172,6 +191,7 @@ def _apply_paired_single_mismatch(preset, seed, workdir) -> tuple:
         "kallisto_quant_paired_as_single",
         "kallisto quant --single -i results/index.idx -o results/quant "
         "data/r1.fastq.gz data/r2.fastq.gz",
+        outputs=["results/quant/abundance.tsv"],
     )
     return step, ctx
 
@@ -183,6 +203,7 @@ def _apply_corrupt_fastq(preset, seed, workdir) -> tuple:
     step = _stub_step(
         "fastqc_corrupt",
         "fastqc data/corrupt.fastq.gz -o results/fastqc",
+        outputs=["results/fastqc/corrupt_fastqc.html"],
     )
     return step, ctx
 
@@ -205,6 +226,7 @@ def _apply_readonly_output(preset, seed, workdir) -> tuple:
     step = _stub_step(
         "fastqc_readonly",
         f"fastqc data/reads.fastq.gz -o results/readonly",
+        outputs=["results/readonly/reads_fastqc.html"],
     )
     return step, ctx
 
@@ -214,10 +236,14 @@ def _apply_path_with_spaces(preset, seed, workdir) -> tuple:
     spaced = workdir / "dir with (spaces)"
     spaced.mkdir(parents=True, exist_ok=True)
     ctx = EnvContext(workdir=spaced, out_dir=str(spaced), cwd=str(spaced))
-    # Unquoted cd containing parens would be a bash syntax error.
+    # Unquoted cd containing parens would be a bash syntax error. The
+    # original failing form just echoed; for the recovery verifier to
+    # have something to check we now redirect to a sentinel file so a
+    # bare ``true`` "fix" can't pass.
     step = _stub_step(
         "cd_into_spaced_dir",
-        f"cd {spaced} && echo ok",  # deliberately unquoted
+        f"cd {spaced} && echo ok > results/ok.txt",  # deliberately unquoted
+        outputs=["results/ok.txt"],
     )
     return step, ctx
 
@@ -311,6 +337,7 @@ def _apply_cp_source_missing(preset, seed, workdir) -> tuple:
     step = _stub_step(
         "cp_missing_source",
         "cp data/not_present.bam results/backup.bam",
+        outputs=["results/backup.bam"],
     )
     return step, ctx
 
@@ -321,6 +348,7 @@ def _apply_deep_nonexistent_outdir(preset, seed, workdir) -> tuple:
     step = _stub_step(
         "deep_output_dir",
         "bash -c 'echo content > results/a/b/c/deep/file.txt'",
+        outputs=["results/a/b/c/deep/file.txt"],
     )
     return step, ctx
 

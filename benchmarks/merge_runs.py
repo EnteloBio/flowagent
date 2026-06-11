@@ -97,6 +97,63 @@ _DEDUP_KEYS_BY_BENCH = {
 }
 
 
+def _row_is_scored(row: Dict[str, Any], bench: str) -> bool:
+    """True when a merged row carries a real benchmark outcome (not an API stub)."""
+    if bench == "planning":
+        return row.get("overall_pass") is not None and pd.notna(row.get("overall_pass"))
+    if bench == "interpretation":
+        return row.get("correct") is not None and pd.notna(row.get("correct"))
+    if bench == "fidelity":
+        for col in ("de_gene_overlap_jaccard", "peak_overlap_jaccard",
+                    "vcf_concordance", "overall_pass"):
+            val = row.get(col)
+            if val is not None and pd.notna(val):
+                return True
+        return False
+    return not bool(row.get("error"))
+
+
+def _dedup_merged_frame(
+    merged: pd.DataFrame, bench: str, dedup_keys: tuple[str, ...],
+) -> pd.DataFrame:
+    """Keep one row per cell, preferring scored results over error stubs.
+
+    A rescored ``plan-all`` CSV can be *newer on disk* than a later
+    single-model re-run yet contain only ``overall_pass=NaN`` error rows
+    (e.g. Gemini cells that failed during the concurrent sweep).  Sorting
+    only by file mtime would silently discard the good re-run.
+    """
+    present = [k for k in dedup_keys if k in merged.columns]
+    if len(present) != len(dedup_keys):
+        return merged
+
+    out = merged.copy()
+    out["_scored"] = out.apply(lambda r: _row_is_scored(r.to_dict(), bench), axis=1)
+    out = (out.sort_values(["_scored", "_source_csv_mtime"])
+              .drop_duplicates(subset=list(dedup_keys), keep="last")
+              .drop(columns=["_scored"])
+              .reset_index(drop=True))
+    return out
+
+
+def _dedup_json_rows(
+    rows: List[Dict[str, Any]], bench: str, dedup_keys: tuple[str, ...],
+) -> List[Dict[str, Any]]:
+    """Same quality-first policy as :func:`_dedup_merged_frame` for JSON."""
+    seen: Dict[tuple, Dict[str, Any]] = {}
+    for row in rows:
+        key = tuple(row.get(k) for k in dedup_keys)
+        prev = seen.get(key)
+        if prev is None:
+            seen[key] = row
+            continue
+        row_q = (2 if _row_is_scored(row, bench) else 0)
+        prev_q = (2 if _row_is_scored(prev, bench) else 0)
+        if row_q >= prev_q:
+            seen[key] = row
+    return list(seen.values())
+
+
 def _merge_benchmark(
     base: Path, bench: str, *, runs=None, refresh: bool = False,
     prefer_rescored: bool = True,
@@ -127,7 +184,14 @@ def _merge_benchmark(
         if csv is None:
             print(f"  [skip] no metrics.csv: {run}")
             continue
-        df = pd.read_csv(csv)
+        try:
+            df = pd.read_csv(csv)
+        except pd.errors.EmptyDataError:
+            # Aborted run wrote a zero-byte CSV before any rows were
+            # flushed. Skip rather than crash the whole merge.
+            print(f"  [skip] {run.name}: empty metrics.csv "
+                  f"(aborted run — safe to delete)")
+            continue
 
         # Drop rows from runs that errored out before the schema-stable
         # row layout was in place. For the interpretation benchmark a
@@ -184,6 +248,10 @@ def _merge_benchmark(
 
     merged = pd.concat(csv_frames, ignore_index=True)
 
+    if "model" in merged.columns:
+        from harness.model_registry import remap_model_column
+        merged = remap_model_column(merged)
+
     # Deduplicate on the benchmark's identity columns.
     dedup_keys = _DEDUP_KEYS_BY_BENCH.get(
         bench, ("model", "input_id", "replicate"),
@@ -191,12 +259,11 @@ def _merge_benchmark(
     present_keys = [k for k in dedup_keys if k in merged.columns]
     if len(present_keys) == len(dedup_keys):
         before = len(merged)
-        merged = (merged.sort_values("_source_csv_mtime")
-                         .drop_duplicates(subset=list(dedup_keys), keep="last")
-                         .reset_index(drop=True))
+        merged = _dedup_merged_frame(merged, bench, dedup_keys)
         if len(merged) < before:
             print(f"  [info] {bench} dedup: {before} → {len(merged)} rows "
-                  f"(kept latest per {'/'.join(dedup_keys)})")
+                  f"(kept best per {'/'.join(dedup_keys)}; "
+                  f"scored rows beat error stubs, then latest file)")
 
     merged = merged.drop(columns=["_source_csv_mtime"], errors="ignore")
 
@@ -206,12 +273,9 @@ def _merge_benchmark(
     merged.to_csv(out_dir / "metrics.csv", index=False)
 
     if all_json_rows:
-        seen: Dict[tuple, Dict[str, Any]] = {}
-        for r in all_json_rows:
-            key = tuple(r.get(k) for k in dedup_keys)
-            seen[key] = r
+        deduped = _dedup_json_rows(all_json_rows, bench, dedup_keys)
         (out_dir / "results.json").write_text(
-            json.dumps(list(seen.values()), indent=2, default=str)
+            json.dumps(deduped, indent=2, default=str)
         )
 
     group_col = present_keys[0] if present_keys else None

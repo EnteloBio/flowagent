@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -169,6 +170,7 @@ def _short_name(model: str) -> str:
     """Shorten model names for axis labels."""
     replacements = [
         # ── Anthropic (current) ────────────────────────────
+        ("claude-opus-4-8",            "Opus 4.8"),
         ("claude-opus-4-7",            "Opus 4.7"),
         ("claude-opus-4-6",            "Opus 4.6"),
         ("claude-opus-4-5",            "Opus 4.5"),
@@ -186,14 +188,21 @@ def _short_name(model: str) -> str:
         ("claude-3-sonnet-20240229",   "Sonnet 3"),
         ("claude-sonnet-4-20250514",   "Sonnet 4"),
         # ── Google ─────────────────────────────────────────
-        ("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash-Lite"),
+        ("gemini-3.5-flash",           "Gemini 3.5 Flash"),
+        ("gemini-3.1-flash-lite",      "Gemini 3.1 Flash-Lite"),
+        ("gemini-3.1-flash-lite-preview", "Gemini 3.1 FL (prev)"),
+        ("gemini-3.1-pro-preview",     "Gemini 3.1 Pro"),
         ("gemini-3.1-pro",             "Gemini 3.1 Pro"),
+        ("gemini-3-flash-preview",     "Gemini 3 Flash (prev)"),
         ("gemini-3-flash",             "Gemini 3 Flash"),
         ("gemini-2.5-flash-lite",      "Gemini 2.5 Flash-Lite"),
         ("gemini-2.5-flash",           "Gemini 2.5 Flash"),
         ("gemini-2.5-pro",             "Gemini 2.5 Pro"),
         ("gemini-1.5-flash",           "Gemini 1.5 Flash"),
         ("gemini-1.5-pro",             "Gemini 1.5 Pro"),
+        # ── OpenAI (current — GPT-5.5) ─────────────────────
+        ("gpt-5.5-pro",                "GPT-5.5 Pro"),
+        ("gpt-5.5",                    "GPT-5.5"),
         # ── OpenAI (current — GPT-5.4) ─────────────────────
         ("gpt-5.4-nano",               "GPT-5.4 nano"),
         ("gpt-5.4-mini",               "GPT-5.4 mini"),
@@ -223,20 +232,88 @@ def _short_name(model: str) -> str:
     return model
 
 
-# Models that emit reasoning / thinking tokens (billed as output). Used
-# to annotate heatmap columns so reviewers can see at a glance which
-# models pay the hidden-thinking tax on the cost-vs-quality tradeoff.
-_REASONING_MODEL_IDS: Set[str] = {
-    # OpenAI — GPT-5.4 family and the o-series
-    "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4-pro",
-    "o1", "o1-pro", "o3", "o3-pro", "o3-mini", "o4-mini",
-    # Anthropic — Opus 4.6 / 4.7 are documented thinking models
-    "claude-opus-4-6", "claude-opus-4-7",
-    # Google — Gemini 2.5 / 3.x have thinking modes, though Flash variants
-    # run at effort=low by default. We leave them non-reasoning to keep
-    # the annotation useful (otherwise every Google model except Flash-Lite
-    # would flip to reasoning and the label loses information).
-}
+# ── Reasoning-model classification, sourced from models.yaml ─────
+#
+# The reviewer of FlowAgent's manuscript correctly observed that the
+# previous in-code ``_REASONING_MODEL_IDS`` allowlist excluded several
+# models that ARE reasoning models per their provider's documented
+# model card (Sonnet 4.5/4.6, Opus 4.5, Gemini 2.5 Pro/Flash, Gemini
+# 3.x). Treating those models as ``non-reasoning`` mis-grouped them
+# in the recovery_reasoning_split figure and biased the manuscript's
+# "OpenAI vs Anthropic reasoning" comparison.
+#
+# Truth now lives in ``benchmarks/config/models.yaml`` with explicit
+# ``reasoning: bool`` and ``reasoning_default`` fields per model. The
+# loader below reads that file once and caches the answer; figures
+# that need a quick lookup go through ``_classify_model`` as before.
+
+_REASONING_MAP_CACHE: Optional[Dict[str, bool]] = None
+_TIER_MAP_CACHE: Optional[Dict[str, str]] = None
+
+
+def _load_models_yaml() -> Tuple[Dict[str, bool], Dict[str, str]]:
+    """Read ``config/models.yaml`` and return ``(reasoning_map, tier_map)``.
+
+    Both maps are keyed by model id. Missing entries fall back to
+    ``False`` for reasoning and ``"frontier"`` for tier (the
+    conservative defaults) so the figure code never crashes on a
+    legacy CSV that names a model not in the current YAML.
+    """
+    global _REASONING_MAP_CACHE, _TIER_MAP_CACHE
+    if _REASONING_MAP_CACHE is not None and _TIER_MAP_CACHE is not None:
+        return _REASONING_MAP_CACHE, _TIER_MAP_CACHE
+    reasoning_map: Dict[str, bool] = {}
+    tier_map: Dict[str, str] = {}
+    try:
+        import yaml  # type: ignore
+        cfg_path = (Path(__file__).parent.parent
+                    / "config" / "models.yaml")
+        if cfg_path.exists():
+            data = yaml.safe_load(cfg_path.read_text())
+            for m in (data or {}).get("models", []) or []:
+                mid = m.get("id")
+                if not mid:
+                    continue
+                reasoning_map[mid] = bool(m.get("reasoning", False))
+                tier_map[mid] = str(m.get("tier", "current"))
+    except Exception:
+        # Best-effort: keep the figures rendering even if PyYAML or the
+        # config file is unavailable.
+        pass
+    _REASONING_MAP_CACHE = reasoning_map
+    _TIER_MAP_CACHE = tier_map
+    return reasoning_map, tier_map
+
+
+def _remap_registry_model_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse registry placeholder ids onto their API canonical ids."""
+    from harness.model_registry import remap_model_column
+    return remap_model_column(df)
+
+
+def _is_reasoning_model(model_id: str) -> bool:
+    reasoning_map, _ = _load_models_yaml()
+    return reasoning_map.get(model_id, False)
+
+
+def _model_tier(model_id: str) -> str:
+    """Return the YAML-declared tier for ``model_id``.
+
+    One of: ``current`` / ``preview`` / ``legacy`` / ``deprecated`` /
+    fallback ``current``.
+    """
+    _, tier_map = _load_models_yaml()
+    return tier_map.get(model_id, "current")
+
+
+# Backward-compat alias for any external code that still imports the
+# old name. The set is reconstructed lazily from the YAML.
+def _legacy_reasoning_set() -> Set[str]:
+    reasoning_map, _ = _load_models_yaml()
+    return {m for m, r in reasoning_map.items() if r}
+
+
+_REASONING_MODEL_IDS: Set[str] = _legacy_reasoning_set()
 
 
 def _classify_model(model_id: str) -> Tuple[str, bool]:
@@ -244,9 +321,10 @@ def _classify_model(model_id: str) -> Tuple[str, bool]:
 
     ``provider`` is one of ``openai`` / ``anthropic`` / ``google`` /
     ``ollama`` / ``other``. ``is_reasoning`` is True for models that
-    emit hidden-thinking tokens (billed as output).
+    emit hidden-thinking tokens (billed as output), per the
+    declaration in ``config/models.yaml``.
     """
-    return _provider_from_model(model_id), model_id in _REASONING_MODEL_IDS
+    return _provider_from_model(model_id), _is_reasoning_model(model_id)
 
 
 def _tier_of(model: str) -> str:
@@ -257,10 +335,19 @@ def _tier_of(model: str) -> str:
     plotting buckets, which map to ``_TIER_ORDER``. Pre-current-gen
     snapshots (2024 and earlier) are ``legacy``; mid-generation bridges
     (gpt-4o, Sonnet 3.5, Gemini 2.0/1.5 Pro, etc.) are ``mid``; the
-    2026 flagships (GPT-5.4 family, Claude 4.5+/Sonnet 4.5+/Haiku 4.5,
-    Gemini 2.5+/3.x, o3/o4 reasoning) are ``frontier``.
+    2026 flagships (GPT-5.5/5.4 family, Claude 4.6+/Opus 4.7+/Haiku 4.5,
+    Gemini 2.5+/3.x/3.5, o3 reasoning) are ``frontier``.
+
+    Exact-match checks avoid ``claude-sonnet-4`` matching ``claude-sonnet-4-6``.
     """
     m = model.lower()
+    # Retired bare IDs — exact match so versioned successors stay frontier.
+    if m in {
+        "claude-sonnet-4", "claude-opus-4", "claude-haiku-3-5",
+        "gemini-3.1-flash-lite-preview", "gemini-3-flash-preview",
+        "gpt-4.1-nano",
+    }:
+        return "legacy"
     # Legacy — pre-current-gen or explicitly superseded.
     legacy_markers = (
         "gpt-3.5-turbo", "gpt-4-turbo",
@@ -273,8 +360,9 @@ def _tier_of(model: str) -> str:
     mid_markers = (
         "claude-3-5-", "claude-haiku-3-5",
         "gpt-4o", "gpt-4o-mini",
-        "o1", "o1-pro",
-        "gemini-2.0-", "claude-sonnet-4-20250514", "claude-opus-4-20250514",
+        "o1", "o1-pro", "o3-mini", "o4-mini",
+        "gemini-2.0-", "gemini-3-flash-preview",
+        "claude-sonnet-4-20250514", "claude-opus-4-20250514",
     )
     if any(k in m for k in mid_markers):
         return "mid"
@@ -299,6 +387,46 @@ def _empty_figure(msg: str) -> plt.Figure:
             fontsize=9, color="#6b7280")
     ax.set_axis_off()
     return fig
+
+
+def _coerce_overall_pass(series: pd.Series) -> pd.Series:
+    """Map ``overall_pass`` to 0/1; NaN for missing or unscored rows."""
+
+    def _cell(v):
+        if v is None:
+            return np.nan
+        if isinstance(v, (float, np.floating)) and np.isnan(v):
+            return np.nan
+        if isinstance(v, bool):
+            return float(int(v))
+        if isinstance(v, (int, np.integer)):
+            return float(int(bool(v)))
+        if isinstance(v, (float, np.floating)):
+            return float(int(bool(v)))
+        s = str(v).strip().lower()
+        if s in ("", "nan", "none"):
+            return np.nan
+        if s in ("true", "1"):
+            return 1.0
+        if s in ("false", "0"):
+            return 0.0
+        return np.nan
+
+    return series.map(_cell)
+
+
+def _with_scored_overall_pass(df: pd.DataFrame,
+                              *, drop_unscored: bool = True) -> pd.DataFrame:
+    """Coerce ``overall_pass`` to int, dropping error stubs when requested."""
+    if "overall_pass" not in df.columns:
+        return df.copy()
+    out = df.copy()
+    scored = _coerce_overall_pass(out["overall_pass"])
+    if drop_unscored:
+        out = out.loc[scored.notna()].copy()
+        scored = scored.loc[out.index]
+    out["overall_pass"] = scored.astype(int)
+    return out
 
 
 def _style_value_axis(ax, *, x: bool = True) -> None:
@@ -387,12 +515,23 @@ def _add_provider_legend(fig: plt.Figure, providers_present: List[str],
                columnspacing=1.4)
 
 
+def _split_planning_df_by_tier(df: pd.DataFrame):
+    """Partition planning metrics into explicit-tool std/hard and tool-inference."""
+    ids = df["input_id"].astype(str)
+    std = df[~ids.str.startswith(("hard_", "inf_"))]
+    hard = df[ids.str.startswith("hard_")]
+    inf = df[ids.str.startswith("inf_")]
+    return std, hard, inf
+
+
 def planning_figure(df: pd.DataFrame) -> plt.Figure:
-    """Two-panel bar chart: standard prompts vs hard prompts.
+    """Three-panel bar chart: explicit-tool (standard / hard) and tool-inference.
 
     Pass rate per model with 95% Wilson confidence intervals, bars coloured
     by provider.  Rows with a non-null ``error`` column are filtered out so
-    they don't collapse the aggregate.
+    they don't collapse the aggregate.  Falls back to a single panel when
+    the run contains only the legacy explicit-tool corpus (no ``hard_`` or
+    ``inf_`` prompts).
     """
     if "error" in df.columns:
         df = df[df["error"].isna()]
@@ -402,26 +541,26 @@ def planning_figure(df: pd.DataFrame) -> plt.Figure:
                   else "no planning metrics present in this run")
         return _empty_figure(f"No usable planning data.\n({reason})")
 
-    df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
+    if df.empty:
+        return _empty_figure("No scored planning rows.\n(all cells errored or unscored)")
 
-    has_hard = df["input_id"].str.startswith("hard_").any()
+    std, hard, inf = _split_planning_df_by_tier(df)
+    has_hard = not hard.empty
+    has_inf = not inf.empty
 
     n_models = df["model"].nunique()
     panel_height = max(3.0, 0.28 * n_models + 1.2)
 
-    if has_hard:
-        orig = df[~df["input_id"].str.startswith("hard_")]
-        hard = df[ df["input_id"].str.startswith("hard_")]
-
-        fig, (ax1, ax2) = plt.subplots(
-            1, 2, figsize=(7.2, panel_height), sharey=False,
+    if has_hard or has_inf:
+        fig, (ax1, ax2, ax3) = plt.subplots(
+            1, 3, figsize=(10.8, panel_height), sharey=False,
         )
-        _pass_rate_panel(ax1, orig, "a  Standard prompts")
-        _pass_rate_panel(ax2, hard, "b  Hard prompts")
+        _pass_rate_panel(ax1, std, f"a  {_TIER_LABEL_EXPLICIT_TOOL} (standard)",
+                         show_xlabel=False)
+        _pass_rate_panel(ax2, hard, f"b  {_TIER_LABEL_EXPLICIT_TOOL} (hard)",
+                         show_xlabel=False)
+        _pass_rate_panel(ax3, inf, f"c  {_TIER_LABEL_TOOL_INFERENCE}")
     else:
         fig, ax = plt.subplots(figsize=(5.2, panel_height))
         _pass_rate_panel(ax, df, "All prompts")
@@ -453,35 +592,82 @@ def _style_xtick_labels_by_provider(ax, columns) -> None:
             tick.set_fontweight("bold")
 
 
-# Prompt-tier classification is *corpus-based*: prompts in the hard
-# benchmark tier carry a ``hard_`` prefix in ``corpus/prompts.yaml``.
-# These are a-priori designated as the stress-test subset, regardless
-# of whether any given model happens to solve them at runtime. Row
-# labels on the heatmaps colour-code that corpus tier — so a reviewer
-# can see which rows belong to the hard-benchmark subset at a glance.
+# Prompt-tier classification is *corpus-based* (see ``corpus/prompts.yaml``).
+# User-facing names: **explicit-tool** (YAML ``tier: transcription``) vs
+# **tool-inference** (YAML ``tier: inference``). Internal ids unchanged.
+#   ``hard_*``  — hard explicit-tool subset (tools still named in prompt)
+#   ``inf_*``   — tool-inference (goal + data only)
+#   otherwise   — standard explicit-tool prompts
+# Row labels on the heatmaps colour-code that corpus tier regardless of
+# empirical pass rate, so reviewers can separate corpus design from failure.
+_TIER_LABEL_EXPLICIT_TOOL = "Explicit-tool"
+_TIER_LABEL_TOOL_INFERENCE = "Tool-inference"
+_CORPUS_TIER_ORDER = ("hard", "inference", "standard")
 _CORPUS_TIER_COLOURS = {
-    "hard":     "#b91c1c",   # deep red — corpus-designated hard prompts
-    "standard": "#111827",   # dark grey/black — standard benchmark tier
+    "hard":      "#b91c1c",   # deep red — corpus-designated hard prompts
+    "inference": "#1d4ed8",   # blue — inference prompts (``inf_`` prefix)
+    "standard":  "#111827",   # dark grey/black — standard explicit-tool
 }
 
 
 def _classify_corpus_tier(input_id: str) -> str:
-    """Return ``hard`` or ``standard`` based on the prompt's corpus tier."""
-    return "hard" if str(input_id).startswith("hard_") else "standard"
+    """Return ``hard``, ``inference``, or ``standard`` from the prompt id."""
+    s = str(input_id)
+    if s.startswith("hard_"):
+        return "hard"
+    if s.startswith("inf_"):
+        return "inference"
+    return "standard"
+
+
+def _prompt_display_name(input_id: str) -> str:
+    """Human-readable row label; strip corpus tier prefixes."""
+    s = str(input_id)
+    for prefix in ("hard_", "inf_"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    return s.replace("_", " ").title()
+
+
+def _order_rows_by_corpus_tier(index, row_means) -> list:
+    """Hard → inference → standard; within each tier, hardest first."""
+    buckets = {t: [] for t in _CORPUS_TIER_ORDER}
+    for i in index:
+        buckets[_classify_corpus_tier(i)].append(i)
+    ordered = []
+    for tier in _CORPUS_TIER_ORDER:
+        ordered.extend(sorted(buckets[tier], key=lambda i: row_means[i]))
+    return ordered
+
+
+def _draw_corpus_tier_separators(ax, prompt_ids) -> None:
+    """Horizontal rules between hard / inference / standard blocks."""
+    block_sizes = [
+        sum(1 for pid in prompt_ids if _classify_corpus_tier(pid) == t)
+        for t in _CORPUS_TIER_ORDER
+        if any(_classify_corpus_tier(pid) == t for pid in prompt_ids)
+    ]
+    if len(block_sizes) < 2:
+        return
+    offset = 0
+    for n in block_sizes[:-1]:
+        offset += n
+        ax.axhline(offset - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
 
 
 def _style_ytick_labels_by_corpus(ax, prompt_ids) -> None:
     """Colour y-tick labels by corpus tier.
 
     ``prompt_ids`` is an iterable of ``input_id`` values in the same
-    order as the tick positions on the y-axis. Hard-tier rows are
-    bolded + coloured red; standard-tier rows use the default text style.
+    order as the tick positions on the y-axis. Hard- and inference-tier
+    rows are bolded + coloured; standard-tier rows use default weight.
     """
     ticks = ax.get_yticklabels()
     for tick_label, prompt_id in zip(ticks, prompt_ids):
         tier = _classify_corpus_tier(prompt_id)
         tick_label.set_color(_CORPUS_TIER_COLOURS[tier])
-        if tier == "hard":
+        if tier in ("hard", "inference"):
             tick_label.set_fontweight("bold")
 
 
@@ -508,8 +694,9 @@ def _add_provider_reasoning_legend(fig, providers_present=None,
     # Row-axis annotations: corpus tier
     if show_difficulty:
         corpus_labels = [
-            ("hard",     "Hard-corpus prompt (row)"),
-            ("standard", "Standard-corpus prompt (row)"),
+            ("hard",      f"{_TIER_LABEL_EXPLICIT_TOOL}, hard (row)"),
+            ("inference", f"{_TIER_LABEL_TOOL_INFERENCE} (row)"),
+            ("standard",  f"{_TIER_LABEL_EXPLICIT_TOOL}, standard (row)"),
         ]
         for key, lbl in corpus_labels:
             handles.append(Line2D(
@@ -519,7 +706,7 @@ def _add_provider_reasoning_legend(fig, providers_present=None,
             ))
     fig.legend(
         handles=handles, loc="lower center",
-        ncol=min(len(handles), 4), frameon=False, fontsize=8,
+        ncol=min(len(handles), 6), frameon=False, fontsize=8,
         bbox_to_anchor=(0.5, -0.02),
     )
 
@@ -527,13 +714,11 @@ def _add_provider_reasoning_legend(fig, providers_present=None,
 def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
     """Per-prompt × per-model pass-rate heatmap across the full corpus.
 
-    Shows all 41 prompts. Row labels are colour-coded by corpus tier —
-    **red bold** for prompts in the hard-benchmark subset (``hard_``
-    prefix in ``corpus/prompts.yaml``), default weight for standard
-    prompts. Within each corpus tier rows are ordered with lowest
-    cross-model mean pass rate on top, so empirical difficulty is still
-    visible through row ordering even though the tier labelling is
-    corpus-defined.
+    Row labels are colour-coded by corpus tier — **red bold** for
+    ``hard_*`` stress prompts, **blue bold** for ``inf_*`` inference
+    prompts, default style for standard explicit-tool. Rows are ordered
+    hard → tool-inference → standard; within each tier, lowest mean pass
+    rate is on top.
 
     Columns are grouped by provider (OpenAI → Anthropic → Google) and
     ranked by pass rate within each provider; reasoning models are
@@ -545,26 +730,15 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
         return _empty_figure("No data for heatmap.")
 
     df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     pivot = df.pivot_table(
         index="input_id", columns="model", values="overall_pass",
         aggfunc="mean",
     )
 
-    # Row order: hard-corpus prompts on top (sorted by empirical
-    # difficulty — hardest-to-plan first), then standard-corpus prompts
-    # below (same ordering within tier). A single horizontal separator
-    # between the two tiers anchors the visual split.
     row_means = pivot.mean(axis=1)
-    hard_ids = [i for i in pivot.index if _classify_corpus_tier(i) == "hard"]
-    std_ids  = [i for i in pivot.index if _classify_corpus_tier(i) == "standard"]
-    hard_ids = sorted(hard_ids, key=lambda i: row_means[i])
-    std_ids  = sorted(std_ids,  key=lambda i: row_means[i])
-    pivot = pivot.loc[hard_ids + std_ids]
+    pivot = pivot.loc[_order_rows_by_corpus_tier(pivot.index, row_means)]
 
     # Column order: provider → reasoning-flag → descending pass rate.
     def _col_sort_key(m: str):
@@ -589,20 +763,12 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
                        rotation=35, ha="right", fontsize=8)
     _style_xtick_labels_by_provider(ax, pivot.columns)
 
-    display_names = [
-        n.removeprefix("hard_").replace("_", " ").title()
-        for n in pivot.index
-    ]
     ax.set_yticks(range(len(pivot.index)))
-    ax.set_yticklabels(display_names, fontsize=8.5)
-
-    # Corpus-tier colouring: red bold for hard-tier prompts, default for standard.
+    ax.set_yticklabels(
+        [_prompt_display_name(n) for n in pivot.index], fontsize=8.5,
+    )
     _style_ytick_labels_by_corpus(ax, pivot.index)
-
-    # Horizontal separator between the two corpus tiers.
-    n_hard = sum(1 for i in pivot.index if _classify_corpus_tier(i) == "hard")
-    if 0 < n_hard < pivot.shape[0]:
-        ax.axhline(n_hard - 0.5, color="#111827", linewidth=1.2, alpha=0.6)
+    _draw_corpus_tier_separators(ax, pivot.index)
 
     # Thin white separators
     ax.set_xticks(np.arange(-.5, pivot.shape[1], 1), minor=True)
@@ -626,7 +792,7 @@ def planning_heatmap(df: pd.DataFrame) -> plt.Figure:
 
     ax.set_title(
         "Per-prompt pass rate across the full corpus  —  "
-        "red bold labels: hard-benchmark subset (corpus tier)",
+        "red: explicit-tool (hard); blue: tool-inference; black: explicit-tool (standard)",
         loc="left", fontsize=10.5, fontweight="bold",
     )
 
@@ -681,10 +847,10 @@ def planning_heatmap_by_tier(
 ) -> plt.Figure:
     """Two-panel per-prompt × per-model heatmap split into current / legacy tiers.
 
-    Hard prompts only. Rows are colour-coded by cross-model difficulty:
-    **red** (mean pass < 50%), **amber** (50–90%), **green** (≥90%) — so
-    reviewers can see at a glance which prompts stress the system
-    regardless of model tier, and which are saturated across the corpus.
+    Row labels are corpus-tier coded: **red bold** ``hard_*``,
+    **blue bold** ``inf_*`` tool-inference, **black** standard explicit-tool.
+    Rows are ordered hard → tool-inference → standard (hardest first
+    within each block). Cell colour is empirical pass rate (green–red scale).
 
     Columns within each panel are sorted by descending mean pass rate.
     ``preview`` tier models (e.g. ``gemini-3.1-flash-lite-preview``) are
@@ -698,10 +864,7 @@ def planning_heatmap_by_tier(
         return _empty_figure("No data for tier-split heatmap.")
 
     df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     pivot = df.pivot_table(
         index="input_id", columns="model", values="overall_pass",
@@ -710,19 +873,8 @@ def planning_heatmap_by_tier(
     if pivot.empty:
         return _empty_figure("No prompt data for tier split.")
 
-    # Row order: hard-corpus prompts on top, standard below. Within each
-    # tier, sort by empirical mean (hardest first) so the gradient stays
-    # legible even though the hard/standard split is corpus-defined.
     row_means = pivot.mean(axis=1)
-    hard_ids = sorted(
-        (i for i in pivot.index if _classify_corpus_tier(i) == "hard"),
-        key=lambda i: row_means[i],
-    )
-    std_ids = sorted(
-        (i for i in pivot.index if _classify_corpus_tier(i) == "standard"),
-        key=lambda i: row_means[i],
-    )
-    pivot = pivot.loc[hard_ids + std_ids]
+    pivot = pivot.loc[_order_rows_by_corpus_tier(pivot.index, row_means)]
 
     # Column grouping by tier.
     tiers = _load_model_tiers(models_yaml)
@@ -731,7 +883,7 @@ def planning_heatmap_by_tier(
         tier = tiers.get(m, _tier_of(m))
         if tier in ("current", "preview", "frontier", "mid"):
             current_cols.append(m)
-        elif tier == "legacy":
+        elif tier in ("legacy", "deprecated"):
             legacy_cols.append(m)
         else:
             current_cols.append(m)  # fall through — don't drop unresolved
@@ -786,32 +938,14 @@ def planning_heatmap_by_tier(
 
         ax.set_yticks(range(data.shape[0]))
         if show_ylabels:
-            display_names = [
-                n.removeprefix("hard_").replace("_", " ").title()
-                for n in data.index
-            ]
-            ax.set_yticklabels(display_names, fontsize=8.5)
-            # Corpus-tier colouring: red bold for hard-benchmark
-            # prompts (``hard_`` prefix in the corpus YAML), default
-            # weight for standard prompts.
-            _style_ytick_labels_by_corpus(ax, data.index)
-            # Horizontal separator between the hard and standard tier blocks.
-            n_hard = sum(
-                1 for i in data.index if _classify_corpus_tier(i) == "hard"
+            ax.set_yticklabels(
+                [_prompt_display_name(n) for n in data.index], fontsize=8.5,
             )
-            if 0 < n_hard < data.shape[0]:
-                ax.axhline(n_hard - 0.5, color="#111827",
-                           linewidth=1.2, alpha=0.6)
+            _style_ytick_labels_by_corpus(ax, data.index)
+            _draw_corpus_tier_separators(ax, data.index)
         else:
             ax.set_yticklabels([])
-            # Still draw the separator on the right panel so rows
-            # visually align across panels.
-            n_hard = sum(
-                1 for i in data.index if _classify_corpus_tier(i) == "hard"
-            )
-            if 0 < n_hard < data.shape[0]:
-                ax.axhline(n_hard - 0.5, color="#111827",
-                           linewidth=1.2, alpha=0.6)
+            _draw_corpus_tier_separators(ax, data.index)
         ax.set_xticks(np.arange(-.5, data.shape[1], 1), minor=True)
         ax.set_yticks(np.arange(-.5, data.shape[0], 1), minor=True)
         ax.grid(which="minor", color="white", linewidth=0.8)
@@ -857,8 +991,8 @@ def planning_heatmap_by_tier(
 
     fig.suptitle(
         "Per-prompt pass rate by model tier  —  "
-        "red bold labels: corpus-designated hard benchmarks; "
-        "normal labels: standard benchmarks",
+        "red bold: explicit-tool (hard); blue bold: tool-inference; "
+        "black: explicit-tool (standard)",
         fontsize=10.5, fontweight="bold", x=0.02, ha="left",
     )
 
@@ -1282,8 +1416,13 @@ def recovery_reasoning_split_figure(per_cell_df: pd.DataFrame) -> Optional[plt.F
     safe-refusal vs unsafe-repair rates between the two classes.
 
     Input is the ``per_cell.csv`` that ``recovery_taxonomy.py`` emits.
-    Reasoning classification uses ``_REASONING_MODEL_IDS`` defined at
-    the top of this module.
+    Reasoning classification uses the ``reasoning`` field declared per
+    model in ``benchmarks/config/models.yaml`` (loaded by
+    ``_is_reasoning_model``). Models whose YAML tier is ``legacy`` are
+    annotated separately on the per-model panel so the manuscript
+    figure makes it clear when an "OpenAI reasoning" datum (e.g.
+    ``o3``, ``o4-mini``) is from a deprecated generation rather than
+    the frontier — addressing the reviewer's "fair comparison" point.
     """
     if per_cell_df.empty or "_category" not in per_cell_df.columns:
         return None
@@ -1295,8 +1434,9 @@ def recovery_reasoning_split_figure(per_cell_df: pd.DataFrame) -> Optional[plt.F
         return None
 
     df["_reasoning"] = df["_model"].map(
-        lambda m: "reasoning" if m in _REASONING_MODEL_IDS else "non-reasoning"
+        lambda m: "reasoning" if _is_reasoning_model(m) else "non-reasoning"
     )
+    df["_yaml_tier"] = df["_model"].map(_model_tier)
 
     # ── Per-model percentages ──────────────────────────────────────
     counts = (df.groupby(["_model", "_category"])
@@ -1365,7 +1505,17 @@ def recovery_reasoning_split_figure(per_cell_df: pd.DataFrame) -> Optional[plt.F
                     fontsize=7.5, color="#444")
 
     ax_per.set_yticks(y)
-    ax_per.set_yticklabels([_short_name(m) for m in ordered_models])
+    # Annotate legacy/deprecated-tier models with a "(legacy)" suffix so
+    # the manuscript figure makes the generational gap explicit (per the
+    # reviewer's "fair comparison" point about ``o3``/``o4-mini`` being
+    # older than ``claude-opus-4-7``).
+    def _tick_label(m: str) -> str:
+        base = _short_name(m)
+        if _model_tier(m) in ("legacy", "deprecated"):
+            return f"{base}  (legacy)"
+        return base
+
+    ax_per.set_yticklabels([_tick_label(m) for m in ordered_models])
 
     # Italic-bold reasoning labels + provider colour on y-ticks, matching
     # the planning-heatmap convention so the two figures read together.
@@ -1375,6 +1525,8 @@ def recovery_reasoning_split_figure(per_cell_df: pd.DataFrame) -> Optional[plt.F
         if is_reasoning:
             tick.set_fontstyle("italic")
             tick.set_fontweight("bold")
+        if _model_tier(m) in ("legacy", "deprecated"):
+            tick.set_alpha(0.65)
 
     # Separator between reasoning block (top) and non-reasoning (below)
     if 0 < n_reas < len(ordered_models):
@@ -1530,23 +1682,140 @@ _COMPETITOR_COLOURS = {
     "flowagent":   "#0f766e",   # teal
     "biomaster":   "#a855f7",   # violet
     "autoba":      "#f97316",   # orange
+    "biomni":      "#be123c",   # rose
     "cellagent":   "#2563eb",   # blue
-    "other":       "#6b7280",
+    # Added alongside the DAG-awareness ablation (Benchmark H). Keep the
+    # same colour for the same agent across every paper figure.
+    #
+    # ``claude_code`` and ``edison`` are the *DAG-blind* defaults: that
+    # is the fair head-to-head baseline used in Benchmark E (FlowAgent
+    # is the only system that gets a DAG-aware planner; competitors
+    # don't get a free DAG instruction in their prompts). The opt-in
+    # DAG-aware variants get a separate ``_dag_aware`` slug so the two
+    # arms don't collide in paired Benchmark J figures; they're shown
+    # in the same hue family but desaturated so the relationship is
+    # read instantly.
+    "claude_code":           "#1e40af",   # indigo (Anthropic)
+    "claude_code_dag_aware": "#94a3b8",   # slate (DAG-aware opt-in)
+    "edison":                "#15803d",   # green (Edison Scientific)
+    "edison_dag_aware":      "#86efac",   # pale green (DAG-aware opt-in)
+    "other":                 "#6b7280",
+}
+
+def _competitor_row_has_error(err) -> bool:
+    """True when a competitor cell recorded an upstream crash / adapter error."""
+    if err is None:
+        return False
+    if isinstance(err, float) and pd.isna(err):
+        return False
+    s = str(err).strip()
+    return bool(s) and s.lower() not in ("none", "nan", "null")
+
+
+# Scaffolded agentic systems shown in ``competitors_agentic`` (excludes
+# raw-LLM lanes and opt-in competitors like Edison unless present).
+_AGENTIC_COMPETITORS = (
+    "flowagent", "claude_code", "autoba", "biomaster", "biomni",
+)
+_AGENTIC_DISPLAY = {
+    "flowagent":   "FlowAgent",
+    "claude_code": "Claude Code",
+    "autoba":      "AutoBA",
+    "biomaster":   "BioMaster",
+    "biomni":      "Biomni",
 }
 
 
+def _agentic_xticklabels(ax, x, labels: List[str]) -> None:
+    """Rotate competitor names so AutoBA / BioMaster / Claude Code don't collide."""
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=9, rotation=35, ha="right")
+
+
+def _per_competitor_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Per-competitor cost-per-successful-plan for Benchmark E cost figures."""
+    if "competitor" not in df.columns or df.empty or "cost_usd" not in df.columns:
+        return None
+
+    sub = df.copy()
+    if "error" in sub.columns:
+        avail = sub[sub["error"].isna() | (sub["error"].astype(str) == "")]
+        if avail.empty:
+            return None
+        sub = avail
+
+    sub = _with_scored_overall_pass(sub)
+    sub["cost_usd"] = pd.to_numeric(sub["cost_usd"], errors="coerce").fillna(0.0)
+
+    g = (sub.groupby(["competitor", "competitor_name"])
+             .agg(n=("overall_pass", "count"),
+                  passes=("overall_pass", "sum"),
+                  total_cost=("cost_usd", "sum"))
+             .reset_index())
+    if g.empty or g["total_cost"].sum() == 0:
+        return None
+
+    g["cost_per_pass"] = g.apply(
+        lambda r: (r["total_cost"] / r["passes"]) if r["passes"] > 0 else float("nan"),
+        axis=1,
+    )
+    if g["cost_per_pass"].dropna().empty:
+        return None
+    g = _add_relative_cost_columns(g)
+    return g.sort_values("cost_per_pass").reset_index(drop=True)
+
+
+def _competitor_cost_bar_panel(table: pd.DataFrame, col: str, *, title: str,
+                               xlabel: str, ax: plt.Axes,
+                               relative: bool = False) -> None:
+    """Render one Benchmark E cost bar-chart panel onto a given axis."""
+    t = table.sort_values(col).reset_index(drop=True)
+    y = np.arange(len(t))
+    cols = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"])
+            for c in t["competitor"]]
+    ax.barh(y, t[col], color=cols, edgecolor="white",
+            linewidth=0.6, height=0.68)
+    ax.set_yticks(y)
+    ax.set_yticklabels([r["competitor_name"] for _, r in t.iterrows()])
+    for i, v in enumerate(t[col]):
+        if pd.isna(v):
+            ax.text(0.005, i, "n/a", va="center", ha="left",
+                    fontsize=8, color="#9ca3af",
+                    transform=ax.get_yaxis_transform())
+            continue
+        if relative:
+            label = _format_relative_cost_label(v)
+        else:
+            label = (f"${v:,.4f}" if v < 0.01 else
+                     f"${v:,.3f}" if v < 1 else
+                     f"${v:,.2f}")
+        ax.text(v, i, f"  {label}", va="center", ha="left",
+                fontsize=8, color="#1f2937")
+    ax.set_xlabel(xlabel)
+    ax.set_title(title, loc="left")
+    vmax = t[col].dropna().max() if t[col].dropna().size else 1
+    ax.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
+    _style_value_axis(ax, x=True)
+
+
 def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
-    """Side-by-side bar chart comparing competitors on overall_pass rate
-    and cost-per-successful-plan.
+    """Head-to-head bar chart with two co-primary outcomes + cost panels.
+
+    Reports the strict ``overall_pass`` rate and the partial-credit
+    ``tool_recovery`` (mean ``tools_present_fraction``) side-by-side
+    so a 5-of-6 plan no longer scores identically to a 0-of-6 plan.
+    Cost-per-successful-plan is shown in USD and as a fold-change vs.
+    the cheapest system when ``cost_usd`` is present.
 
     Expects columns: competitor, competitor_name, input_id, overall_pass,
-    cost_usd (optional). A two-panel layout mirrors planning_cost_summary.
+    tools_present_fraction (optional), cost_usd (optional).
     """
     if "competitor" not in df.columns or df.empty:
         return None
 
     df = df.copy()
-    # Filter out unavailable-competitor rows (they have error set and no real plan)
+    # Filter out unavailable-competitor rows (they have error set and no real plan).
+    # This also excludes crashes from the tool-recovery mean, matching the rollup.
     if "error" in df.columns:
         avail = df[df["error"].isna() | (df["error"].astype(str) == "")]
         if avail.empty:
@@ -1557,27 +1826,33 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
             )
         df = avail
 
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
     if "cost_usd" in df.columns:
         df["cost_usd"] = pd.to_numeric(df["cost_usd"], errors="coerce").fillna(0.0)
+    has_frac = "tools_present_fraction" in df.columns
+    if has_frac:
+        df["tools_present_fraction"] = pd.to_numeric(
+            df["tools_present_fraction"], errors="coerce"
+        )
 
+    agg_kwargs = dict(
+        n=("overall_pass", "count"),
+        passes=("overall_pass", "sum"),
+    )
+    if "cost_usd" in df.columns:
+        agg_kwargs["total_cost"] = ("cost_usd", "sum")
+    if "wall_seconds" in df.columns:
+        agg_kwargs["mean_wall"] = ("wall_seconds", "mean")
+    if has_frac:
+        agg_kwargs["tool_recovery"] = ("tools_present_fraction", "mean")
     g = (df.groupby(["competitor", "competitor_name"])
-             .agg(n=("overall_pass", "count"),
-                  passes=("overall_pass", "sum"),
-                  total_cost=("cost_usd", "sum") if "cost_usd" in df.columns
-                             else ("overall_pass", "count"),
-                  mean_wall=("wall_seconds", "mean")
-                             if "wall_seconds" in df.columns
-                             else ("overall_pass", "mean"))
+             .agg(**agg_kwargs)
              .reset_index())
     if g.empty:
         return None
 
     g["pass_rate"] = g["passes"] / g["n"]
-    if "cost_usd" in df.columns:
+    if "total_cost" in g.columns:
         g["cost_per_pass"] = g.apply(
             lambda r: (r["total_cost"] / r["passes"]) if r["passes"] > 0 else float("nan"),
             axis=1,
@@ -1591,20 +1866,42 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     g[["ci_lo", "ci_hi"]] = g.apply(_ci, axis=1)
 
     has_cost = "cost_per_pass" in g.columns and g["cost_per_pass"].dropna().size
-
-    # Layout
     if has_cost:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, 3.6))
-    else:
-        fig, ax1 = plt.subplots(figsize=(5.4, 3.4))
-        ax2 = None
+        g = _add_relative_cost_columns(g)
+    has_cost_rel = (
+        has_cost
+        and "rel_cost_per_pass" in g.columns
+        and g["rel_cost_per_pass"].dropna().size
+    )
+
+    # Layout: pass rate is always shown; tool-recovery and cost panels are
+    # added when their columns are present (up to four panels total).
+    panels: List[str] = ["pass"]
+    if has_frac:
+        panels.append("recovery")
+    if has_cost:
+        panels.append("cost")
+    if has_cost_rel:
+        panels.append("cost_rel")
+    n_panels = len(panels)
+    fig_w = {1: 5.4, 2: 7.8, 3: 11.2, 4: 15.0}[n_panels]
+    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 3.6))
+    if n_panels == 1:
+        axes = [axes]
+    panel_axes = dict(zip(panels, axes))
 
     y = np.arange(len(g))
     cols = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"])
             for c in g["competitor"]]
     labels = [r["competitor_name"] for _, r in g.iterrows()]
 
-    # Panel a — pass rate with Wilson CIs
+    def _letter(name: str) -> str:
+        if n_panels == 1:
+            return ""
+        return f"{chr(ord('a') + panels.index(name))}  "
+
+    # Panel — strict pass rate with Wilson CIs
+    ax1 = panel_axes["pass"]
     xerr_lo = np.clip(g["pass_rate"] - g["ci_lo"], 0, None)
     xerr_hi = np.clip(g["ci_hi"] - g["pass_rate"], 0, None)
     ax1.barh(y, g["pass_rate"], color=cols, edgecolor="white",
@@ -1621,47 +1918,83 @@ def competitors_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     ax1.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
     ax1.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
     ax1.set_xlabel("Pass rate (95% Wilson CI)")
-    ax1.set_title("a  Plan correctness" if has_cost else "Plan correctness",
+    ax1.set_title(f"{_letter('pass')}Plan correctness (strict pass)",
                   loc="left")
     _style_value_axis(ax1, x=True)
 
-    # Panel b — cost per successful plan
-    if ax2 is not None:
-        t = g.sort_values("cost_per_pass").reset_index(drop=True)
-        yb = np.arange(len(t))
-        cols2 = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"])
-                 for c in t["competitor"]]
-        ax2.barh(yb, t["cost_per_pass"], color=cols2, edgecolor="white",
+    # Panel — partial-credit tool recovery
+    if "recovery" in panel_axes:
+        axr = panel_axes["recovery"]
+        tr_vals = g["tool_recovery"].fillna(0.0).values
+        axr.barh(y, tr_vals, color=cols, edgecolor="white",
                  linewidth=0.6, height=0.68)
-        for i, v in enumerate(t["cost_per_pass"]):
-            if pd.isna(v):
-                ax2.text(0.005, i, "n/a", va="center", ha="left",
-                         fontsize=8, color="#9ca3af",
-                         transform=ax2.get_yaxis_transform())
-                continue
-            label = (f"${v:,.4f}" if v < 0.01 else
-                     f"${v:,.3f}" if v < 1 else
-                     f"${v:,.2f}")
-            ax2.text(v, i, f"  {label}", va="center", ha="left",
-                     fontsize=8, color="#1f2937")
-        ax2.set_yticks(yb)
-        ax2.set_yticklabels([r["competitor_name"] for _, r in t.iterrows()])
-        vmax = t["cost_per_pass"].dropna().max() if t["cost_per_pass"].dropna().size else 1
-        ax2.set_xlim(0, vmax * 1.35 if vmax > 0 else 1)
-        ax2.set_xlabel("USD per successful plan")
-        ax2.set_title("b  Cost efficiency", loc="left")
-        _style_value_axis(ax2, x=True)
+        for i, v in enumerate(tr_vals):
+            x = min(v + 0.015, 1.14)
+            axr.text(x, i, f"{v:.0%}",
+                     va="center", ha="left", fontsize=8, color="#1f2937")
+        axr.set_yticks(y)
+        axr.set_yticklabels(labels)
+        axr.set_xlim(0, 1.18)
+        axr.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+        axr.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+        axr.set_xlabel("Mean expected-tool fraction")
+        axr.set_title(f"{_letter('recovery')}Tool recovery (partial credit)",
+                      loc="left")
+        _style_value_axis(axr, x=True)
+
+    # Panel — cost per successful plan (USD)
+    if "cost" in panel_axes:
+        _competitor_cost_bar_panel(
+            g, "cost_per_pass",
+            title=f"{_letter('cost')}Cost efficiency",
+            xlabel="USD per successful plan",
+            ax=panel_axes["cost"],
+        )
+
+    # Panel — cost per successful plan (relative to cheapest)
+    if "cost_rel" in panel_axes:
+        _competitor_cost_bar_panel(
+            g, "rel_cost_per_pass",
+            title=f"{_letter('cost_rel')}Cost efficiency (relative)",
+            xlabel="Relative cost (× lowest-cost system)",
+            ax=panel_axes["cost_rel"],
+            relative=True,
+        )
 
     fig.suptitle("Head-to-head: FlowAgent vs. alternative agentic systems",
                  fontsize=11, fontweight="bold", y=1.03)
     return fig
 
 
+def competitors_cost_per_pass_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: Benchmark E cost per successful plan vs. cheapest system.
+
+    Fold-change view for manuscripts that prefer not to quote USD in the
+    cost-effectiveness section. Baseline is the competitor with the lowest
+    finite ``cost_per_pass`` (total spend / strict passes).
+    """
+    table = _per_competitor_cost_table(df)
+    if table is None or table.empty or "rel_cost_per_pass" not in table.columns:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _competitor_cost_bar_panel(
+        table, "rel_cost_per_pass",
+        title="Cost per successful plan (relative)",
+        xlabel="Relative cost (× lowest-cost system)",
+        ax=ax,
+        relative=True,
+    )
+    fig.suptitle("Head-to-head: cost vs. lowest-cost successful plan",
+                 fontsize=11, fontweight="bold", y=1.02)
+    return fig
+
+
 def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     """Three-panel head-to-head of the agentic systems alone.
 
-    Filters to flowagent / biomaster / autoba (excludes raw-LLM lanes) and
-    renders:
+    Filters to flowagent / claude_code / biomaster / autoba / biomni
+    (excludes raw-LLM lanes) and renders:
       (a) Binary pass rate + Wilson 95% CI
       (b) Mean tool-completeness score — a partial-credit view where each
           cell contributes ``tools_present_fraction`` instead of 0/1.
@@ -1676,43 +2009,31 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     if "competitor" not in df.columns or df.empty:
         return None
 
-    AGENTIC = {"flowagent", "biomaster", "autoba"}
-    sub = df[df["competitor"].isin(AGENTIC)].copy()
+    sub = df[df["competitor"].isin(_AGENTIC_COMPETITORS)].copy()
     if sub.empty:
         return _empty_figure(
-            "No flowagent/biomaster/autoba rows in the competitors sweep.\n"
-            "Run: make competitors (with BIOMASTER_DIR / AUTOBA_DIR set)."
+            "No agentic competitor rows in the competitors sweep.\n"
+            "Run: make competitors (set BIOMASTER_DIR / AUTOBA_DIR / "
+            "BIOMNI_DIR / CLAUDE_CODE_BIN as needed)."
         )
 
-    sub["overall_pass"] = sub["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    sub = _with_scored_overall_pass(sub)
 
     # Classify each row. ``error`` in the merged CSV is NaN for successful
     # rows and sometimes the literal string "None" — both must be treated
     # as "no error". The naive ``if r.get("error"):`` check was truthy for
     # NaN and mis-labelled every cell as an upstream crash.
-    def _has_error(err) -> bool:
-        if err is None:
-            return False
-        if isinstance(err, float) and pd.isna(err):
-            return False
-        s = str(err).strip()
-        return bool(s) and s.lower() not in ("none", "nan", "null")
-
     def _label(r):
-        if _has_error(r.get("error")):
+        if _competitor_row_has_error(r.get("error")):
             return "error"
         if r["overall_pass"]:
             return "pass"
         return "plan_fail"
     sub["outcome"] = sub.apply(_label, axis=1)
 
-    # Pretty names + consistent ordering
-    NAME_MAP = {"flowagent": "FlowAgent", "biomaster": "BioMaster", "autoba": "AutoBA"}
-    COLOURS  = {"flowagent": "#0072B2", "biomaster": "#E69F00", "autoba": "#009E73"}
-    order = [c for c in ("flowagent", "autoba", "biomaster") if c in sub["competitor"].unique()]
+    order = [c for c in _AGENTIC_COMPETITORS if c in sub["competitor"].unique()]
+    labels = [_AGENTIC_DISPLAY.get(c, c) for c in order]
+    bar_colours = [_COMPETITOR_COLOURS.get(c, _COMPETITOR_COLOURS["other"]) for c in order]
 
     # ── Panel A: pass rate + Wilson CI ─────────────────────────────
     agg = (sub.groupby("competitor")
@@ -1746,9 +2067,10 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
     # ── Layout ─────────────────────────────────────────────────────
     n_panels = 3 if has_frac else 2
-    fig_w = 10.5 if has_frac else 7.5
-    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 4.0),
-                             gridspec_kw={"wspace": 0.38})
+    n_bars = len(order)
+    fig_w = max(11.0, 2.0 * n_bars + 5.5) if has_frac else max(8.5, 1.8 * n_bars + 4.0)
+    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 4.2),
+                             gridspec_kw={"wspace": 0.42})
     if n_panels == 2:
         ax_pr, ax_stack = axes
         ax_tpf = None
@@ -1756,8 +2078,6 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         ax_pr, ax_tpf, ax_stack = axes
 
     x = np.arange(len(order))
-    bar_colours = [COLOURS[c] for c in order]
-    labels = [NAME_MAP[c] for c in order]
 
     # Panel A
     ax_pr.bar(x, agg["pass_rate"].values, color=bar_colours,
@@ -1770,8 +2090,7 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     for xi, (pr, n, p) in enumerate(zip(agg["pass_rate"], agg["n"], agg["passes"])):
         ax_pr.text(xi, pr + 0.035, f"{pr:.0%}\n({int(p)}/{int(n)})",
                    ha="center", va="bottom", fontsize=9, fontweight="semibold")
-    ax_pr.set_xticks(x)
-    ax_pr.set_xticklabels(labels, fontsize=10)
+    _agentic_xticklabels(ax_pr, x, labels)
     ax_pr.set_ylim(0, 1.12)
     ax_pr.set_ylabel("Pass rate (binary)", fontsize=10)
     ax_pr.set_title("a  Plan correctness (binary pass/fail)",
@@ -1790,8 +2109,7 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
                 continue
             ax_tpf.text(xi, v + 0.035, f"{v:.0%}",
                         ha="center", va="bottom", fontsize=9, fontweight="semibold")
-        ax_tpf.set_xticks(x)
-        ax_tpf.set_xticklabels(labels, fontsize=10)
+        _agentic_xticklabels(ax_tpf, x, labels)
         ax_tpf.set_ylim(0, 1.12)
         ax_tpf.set_ylabel("Mean tool-completeness", fontsize=10)
         ax_tpf.set_title("b  Partial credit (mean expected-tool recovery)",
@@ -1832,8 +2150,7 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
                     color=("#111827" if out_key == "plan_fail" else "white"),
                 )
         bottom += vals
-    ax_stack.set_xticks(x)
-    ax_stack.set_xticklabels(labels, fontsize=10)
+    _agentic_xticklabels(ax_stack, x, labels)
     ax_stack.set_ylim(0, 1.0)
     ax_stack.set_ylabel("Fraction of cells", fontsize=10)
     panel_letter = "c" if has_frac else "b"
@@ -1848,10 +2165,10 @@ def competitors_agentic_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
     fig.suptitle(
         "Head-to-head across agentic bioinformatics systems  —  "
-        "FlowAgent vs. AutoBA vs. BioMaster",
+        + " vs. ".join(labels),
         fontsize=11.5, fontweight="bold", x=0.02, ha="left",
     )
-    fig.subplots_adjust(bottom=0.22, top=0.86)
+    fig.subplots_adjust(bottom=0.28, top=0.86)
     return fig
 
 
@@ -1864,10 +2181,9 @@ def competitors_perprompt_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         df = df[df["error"].isna() | (df["error"].astype(str) == "")]
         if df.empty:
             return None
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
+    if df.empty:
+        return None
 
     pivot = df.pivot_table(index="input_id", columns="competitor",
                            values="overall_pass", aggfunc="mean")
@@ -1907,6 +2223,214 @@ def competitors_perprompt_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     for spine in ("top", "right", "bottom", "left"):
         ax.spines[spine].set_visible(False)
     ax.set_title("Per-prompt pass rate by competitor", loc="left")
+    return fig
+
+
+# Rubric-level failure reasons for Benchmark E (first failing gate wins).
+_COMPETITOR_FAILURE_ORDER: Tuple[str, ...] = (
+    "pass",
+    "upstream_error",
+    "invalid_structure",
+    "invalid_dag",
+    "wrong_workflow_type",
+    "missing_tools",
+    "forbidden_tool",
+    "too_few_steps",
+    "malformed_commands",
+    "other_fail",
+)
+_COMPETITOR_FAILURE_LABELS: Dict[str, str] = {
+    "pass":                 "Pass",
+    "upstream_error":       "Upstream crash",
+    "invalid_structure":    "Invalid plan structure",
+    "invalid_dag":          "Invalid DAG",
+    "wrong_workflow_type":  "Wrong workflow type",
+    "missing_tools":        "Missing expected tools",
+    "forbidden_tool":       "Forbidden tool used",
+    "too_few_steps":        "Too few steps",
+    "malformed_commands":   "Malformed commands",
+    "other_fail":           "Other rubric failure",
+}
+_COMPETITOR_FAILURE_COLOURS: Dict[str, str] = {
+    "pass":                 "#15803d",
+    "upstream_error":       "#b91c1c",
+    "invalid_structure":    "#7f1d1d",
+    "invalid_dag":          "#dc2626",
+    "wrong_workflow_type":  "#ea580c",
+    "missing_tools":        "#E69F00",
+    "forbidden_tool":       "#9333ea",
+    "too_few_steps":        "#2563eb",
+    "malformed_commands":   "#0891b2",
+    "other_fail":           "#6b7280",
+}
+
+
+def _coerce_metric_bool(val, *, default: bool = False) -> bool:
+    """Parse bool-ish metric cells from CSV / JSONL."""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (float, np.floating)):
+        if np.isnan(val):
+            return default
+        return bool(val)
+    if isinstance(val, (int, np.integer)):
+        return bool(val)
+    s = str(val).strip().lower()
+    if s in ("", "nan", "none", "null"):
+        return default
+    if s in ("true", "1", "yes"):
+        return True
+    if s in ("false", "0", "no"):
+        return False
+    return default
+
+
+def _tools_coverage_ok(row: pd.Series) -> bool:
+    """True when expected tools are fully present (tier-aware)."""
+    tier = str(row.get("tier") or "transcription").strip().lower()
+    if tier == "inference":
+        return _coerce_metric_bool(row.get("any_tool_set_matched"))
+    frac = row.get("tools_present_fraction")
+    if frac is None or (isinstance(frac, float) and np.isnan(frac)):
+        return False
+    try:
+        return float(frac) >= 1.0 - 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
+def classify_competitor_failure_reason(row: pd.Series) -> str:
+    """Assign each competitor cell to one rubric-level outcome bucket.
+
+    Uses the same gate ordering as ``score_plan`` / ``score_plan_inference``:
+    the first failing check is the reported reason so stacked bars sum to
+    100% without double-counting multi-gate failures.
+    """
+    if _competitor_row_has_error(row.get("error")):
+        return "upstream_error"
+    if _coerce_metric_bool(row.get("overall_pass")):
+        return "pass"
+
+    tier = str(row.get("tier") or "transcription").strip().lower()
+
+    if not _coerce_metric_bool(row.get("plan_valid"), default=True):
+        return "invalid_structure"
+    if not _coerce_metric_bool(row.get("dag_valid"), default=True):
+        return "invalid_dag"
+
+    if tier == "inference":
+        if not _tools_coverage_ok(row):
+            return "missing_tools"
+    else:
+        if not _coerce_metric_bool(row.get("type_correct")):
+            return "wrong_workflow_type"
+        if not _tools_coverage_ok(row):
+            return "missing_tools"
+
+    if not _coerce_metric_bool(row.get("no_forbidden_tools"), default=True):
+        return "forbidden_tool"
+    if not _coerce_metric_bool(row.get("step_count_ok"), default=True):
+        return "too_few_steps"
+
+    cmd_frac = row.get("commands_well_formed_fraction")
+    if tier == "inference" and cmd_frac is not None:
+        try:
+            if float(cmd_frac) < 1.0 - 1e-9:
+                return "malformed_commands"
+        except (TypeError, ValueError):
+            pass
+
+    return "other_fail"
+
+
+def competitors_failure_breakdown_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """100% stacked bars: why each competitor failed the planning rubric.
+
+    One bar per competitor (including raw-LLM lanes). Each cell is assigned
+    exactly one primary failure reason — the first rubric gate that failed,
+    matching ``overall_pass`` semantics in ``harness.metrics.score_plan``.
+    """
+    if "competitor" not in df.columns or df.empty:
+        return None
+
+    sub = df.copy()
+    if "competitor_name" not in sub.columns:
+        sub["competitor_name"] = sub["competitor"]
+
+    sub["failure_reason"] = sub.apply(classify_competitor_failure_reason, axis=1)
+
+    # Competitor order: highest pass rate at top.
+    pass_rates = (
+        sub.groupby("competitor")["failure_reason"]
+        .apply(lambda s: (s == "pass").mean())
+        .sort_values(ascending=False)
+    )
+    order = list(pass_rates.index)
+    labels = [
+        sub.loc[sub["competitor"] == c, "competitor_name"].iloc[0]
+        for c in order
+    ]
+
+    counts = (
+        sub.groupby(["competitor", "failure_reason"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(order)
+    )
+    present_reasons = [
+        r for r in _COMPETITOR_FAILURE_ORDER
+        if r in counts.columns and counts[r].sum() > 0
+    ]
+    counts = counts.reindex(columns=present_reasons, fill_value=0)
+    if counts.empty or not present_reasons:
+        return None
+
+    frac = counts.div(counts.sum(axis=1), axis=0)
+
+    n_bars = len(order)
+    fig_h = max(3.8, 0.55 * n_bars + 1.6)
+    fig, ax = plt.subplots(figsize=(9.2, fig_h))
+    y = np.arange(n_bars)
+
+    left = np.zeros(n_bars)
+    for reason in present_reasons:
+        vals = frac[reason].values
+        bar = ax.barh(
+            y, vals, left=left,
+            color=_COMPETITOR_FAILURE_COLOURS.get(reason, "#6b7280"),
+            edgecolor="white", linewidth=0.6, height=0.72,
+            label=_COMPETITOR_FAILURE_LABELS.get(reason, reason),
+        )
+        for yi, (v, n) in enumerate(zip(vals, counts[reason].values)):
+            if v > 0.035:
+                ax.text(
+                    left[yi] + v / 2, yi, str(int(n)),
+                    ha="center", va="center", fontsize=8,
+                    fontweight="semibold",
+                    color=("white" if reason not in ("pass",) else "#111827"),
+                )
+        left += vals
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xlim(0, 1.0)
+    ax.set_xlabel("Fraction of benchmark cells")
+    ax.xaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    ax.set_title(
+        "Why each competitor failed  —  primary rubric gate (first failure wins)",
+        loc="left", fontsize=11, fontweight="bold",
+    )
+    ax.invert_yaxis()
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.grid(axis="x", linestyle=":", color="#d1d5db", alpha=0.6)
+    ax.set_axisbelow(True)
+    ax.legend(
+        loc="lower center", bbox_to_anchor=(0.5, -0.28),
+        ncol=min(5, len(present_reasons)), fontsize=8, frameon=False,
+    )
     return fig
 
 
@@ -2033,10 +2557,7 @@ def _per_model_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     df = df.copy()
     for c in ("prompt_tokens", "completion_tokens", "cost_usd"):
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     g = (df.groupby("model")
             .agg(n=("overall_pass", "count"),
@@ -2056,12 +2577,45 @@ def _per_model_cost_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
         axis=1,
     )
     g["cost_per_100_plans"] = g["mean_cost"] * 100
+    g = _add_relative_cost_columns(g)
     g = g.sort_values("cost_per_pass").reset_index(drop=True)
     return g
 
 
+def _add_relative_cost_columns(table: pd.DataFrame) -> pd.DataFrame:
+    """Fold-change vs the cheapest model on each cost metric (journal-friendly).
+
+    Relative costs avoid quoting USD in the manuscript while preserving the
+    same ranking as the absolute panels. Each metric uses its own baseline
+    (the row with the minimum finite value for that column).
+    """
+    g = table.copy()
+    for col, rel_col in (
+        ("cost_per_100_plans", "rel_cost_per_100_plans"),
+        ("cost_per_pass", "rel_cost_per_pass"),
+    ):
+        if col not in g.columns:
+            continue
+        finite = g[col].dropna()
+        if finite.empty:
+            g[rel_col] = np.nan
+            continue
+        baseline = float(finite.min())
+        g[rel_col] = g[col] / baseline if baseline > 0 else np.nan
+    return g
+
+
+def _format_relative_cost_label(v: float) -> str:
+    if v >= 100:
+        return f"{v:.0f}×"
+    if v >= 10:
+        return f"{v:.1f}×"
+    return f"{v:.2f}×"
+
+
 def _cost_bar_panel(table: pd.DataFrame, col: str, *, title: str,
-                    xlabel: str, ax: plt.Axes) -> None:
+                    xlabel: str, ax: plt.Axes,
+                    relative: bool = False) -> None:
     """Render one cost bar-chart panel onto a given axis.
 
     Used by both the legacy two-panel ``cost_summary_figure`` and the
@@ -2083,8 +2637,11 @@ def _cost_bar_panel(table: pd.DataFrame, col: str, *, title: str,
                     fontsize=7.5, color="#9ca3af",
                     transform=ax.get_yaxis_transform())
             continue
-        label = (f"${v:,.3f}" if v < 1 else
-                 f"${v:,.2f}" if v < 100 else f"${v:,.0f}")
+        if relative:
+            label = _format_relative_cost_label(v)
+        else:
+            label = (f"${v:,.3f}" if v < 1 else
+                     f"${v:,.2f}" if v < 100 else f"${v:,.0f}")
         ax.text(v, i, f" {label}", va="center", ha="left",
                 fontsize=7.5, color="#1f2937")
     ax.set_xlabel(xlabel)
@@ -2178,6 +2735,70 @@ def cost_summary_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     return fig
 
 
+def cost_per_100_plans_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: cost per 100 plans relative to the cheapest model."""
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _cost_bar_panel(
+        table, "rel_cost_per_100_plans",
+        title="Cost per 100 plans (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax,
+        relative=True,
+    )
+    _cost_provider_legend(fig, table)
+    return fig
+
+
+def cost_per_pass_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Single-panel: cost per successful plan relative to the cheapest model."""
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    panel_h = max(3.4, 0.28 * len(table) + 1.4)
+    fig, ax = plt.subplots(figsize=(7.5, panel_h))
+    _cost_bar_panel(
+        table, "rel_cost_per_pass",
+        title="Cost per successful plan (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax,
+        relative=True,
+    )
+    _cost_provider_legend(fig, table)
+    return fig
+
+
+def cost_summary_relative_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+    """Two-panel relative cost view (no USD) for journal manuscripts."""
+    table = _per_model_cost_table(df)
+    if table is None or table.empty:
+        return None
+    n_models = len(table)
+    panel_h = max(3.2, 0.28 * n_models + 1.2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, panel_h), sharey=True)
+    _cost_bar_panel(
+        table, "rel_cost_per_100_plans",
+        title="a  Cost per 100 plans (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax1,
+        relative=True,
+    )
+    _cost_bar_panel(
+        table, "rel_cost_per_pass",
+        title="b  Cost per successful plan (relative)",
+        xlabel="Relative cost (× lowest-cost model)",
+        ax=ax2,
+        relative=True,
+    )
+    _cost_provider_legend(fig, table)
+    fig.suptitle("Per-model cost benchmark (relative)", fontsize=11,
+                 fontweight="bold", y=1.06)
+    return fig
+
+
 def cost_vs_quality_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     """Scatter of pass-rate vs. either mean wall time or mean cost.
 
@@ -2188,11 +2809,9 @@ def cost_vs_quality_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     if "overall_pass" not in df.columns or df.empty:
         return None
 
-    df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
+    if df.empty:
+        return None
 
     # Prefer cost on the x-axis if available and non-zero
     use_cost = (
@@ -2305,10 +2924,7 @@ def _latency_aggregate(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     if df.empty:
         return None
     if "overall_pass" in df.columns:
-        df["overall_pass"] = df["overall_pass"].map(
-            lambda v: v if isinstance(v, (bool, int, float))
-            else str(v).strip().lower() == "true"
-        ).astype(int)
+        df = _with_scored_overall_pass(df)
     g = (df.groupby("model")["wall_seconds"]
            .agg(median="median",
                 q1=lambda s: float(np.percentile(s, 25)),
@@ -2694,6 +3310,117 @@ def interpretation_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     return fig
 
 
+def interpretation_evidence_class_figure(
+    df: pd.DataFrame,
+) -> Optional[plt.Figure]:
+    """Per-model MCQ accuracy stratified by ``evidence_class``.
+
+    The reviewer's central critique of Benchmark G was that most MCQs
+    were answerable from internal knowledge, which makes a "near
+    chance" overall number meaningless. After the fix, every MCQ is
+    tagged ``data_required``, ``internal_knowledge``, or
+    ``calibrated_refusal``. This figure renders accuracy in each band
+    with Wilson 95% CIs so the manuscript can no longer collapse them.
+    """
+    required = {"model", "question_type", "correct", "evidence_class"}
+    if df.empty or not required.issubset(df.columns):
+        return None
+
+    df = df.copy()
+
+    def _coerce_correct(v):
+        if v is None:
+            return 0
+        if isinstance(v, float) and np.isnan(v):
+            return 0
+        if isinstance(v, (bool, int)):
+            return int(bool(v))
+        return int(str(v).strip().lower() in ("true", "1", "yes"))
+
+    df["correct"] = df["correct"].map(_coerce_correct).astype(int)
+    mcq = df[(df["question_type"] == "mcq")
+             & (df["evidence_class"].astype(str).str.strip() != "")]
+    if mcq.empty:
+        return None
+
+    classes = ["data_required", "internal_knowledge", "calibrated_refusal"]
+    classes = [c for c in classes if c in set(mcq["evidence_class"])]
+    if not classes:
+        return None
+
+    g = (mcq.groupby(["model", "evidence_class"])
+            .agg(k=("correct", "sum"), n=("correct", "count"))
+            .reset_index())
+    g["acc"] = g["k"] / g["n"]
+    g[["mean", "lo", "hi"]] = g.apply(
+        lambda r: pd.Series(_wilson_ci(int(r["k"]), int(r["n"]))),
+        axis=1,
+    )
+
+    overall_order = (g.groupby("model")
+                       .apply(lambda d: (d["k"].sum() / d["n"].sum())
+                              if d["n"].sum() else 0.0)
+                       .sort_values(ascending=True))
+    models = list(overall_order.index)
+
+    n_models = len(models)
+    fig_h = max(3.6, 0.30 * n_models + 1.2)
+    fig, axes = plt.subplots(
+        1, len(classes),
+        figsize=(3.6 * len(classes), fig_h),
+        sharey=True,
+        gridspec_kw={"wspace": 0.25},
+    )
+    if len(classes) == 1:
+        axes = [axes]
+
+    for ax, cls in zip(axes, classes):
+        sub = g[g["evidence_class"] == cls].set_index("model")
+        sub = sub.reindex(models)
+        y = np.arange(n_models)
+        means = sub["mean"].fillna(0).to_numpy()
+        ns = sub["n"].fillna(0).astype(int).to_numpy()
+        lo_err = (sub["mean"] - sub["lo"]).fillna(0).clip(lower=0).to_numpy()
+        hi_err = (sub["hi"] - sub["mean"]).fillna(0).clip(lower=0).to_numpy()
+        cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
+                for m in models]
+        ax.barh(y, means, xerr=[lo_err, hi_err],
+                color=cols, edgecolor="white", linewidth=0.5, height=0.7,
+                capsize=2, error_kw={"elinewidth": 0.7, "capthick": 0.7,
+                                     "color": "#1f2937"})
+        ax.axvline(0.25, color="#94a3b8", linestyle=":", linewidth=0.8,
+                   zorder=0)
+        for i, (m, n) in enumerate(zip(means, ns)):
+            label = "n=0" if n == 0 else f"{m:.0%} (n={int(n)})"
+            ax.text(min(float(m) + 0.025, 0.98), i, label,
+                    va="center", ha="left", fontsize=7.0,
+                    color="#1f2937" if n else "#94a3b8")
+        ax.set_xlim(0, 1.04)
+        ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+        ax.set_xticklabels(["0", "25", "50", "75", "100"])
+        ax.set_xlabel("MCQ accuracy (%)")
+        title_label = cls.replace("_", " ")
+        n_total = int(sub["n"].fillna(0).sum())
+        ax.set_title(f"{title_label}  (n={n_total})",
+                     loc="left", fontweight="bold")
+        _style_value_axis(ax, x=True)
+
+    axes[0].set_yticks(np.arange(n_models))
+    axes[0].set_yticklabels([_short_name(m) for m in models], fontsize=7.5)
+
+    providers = sorted(
+        {_provider_from_model(m) for m in models},
+        key=lambda p: list(_PROVIDER_COLOURS).index(p)
+        if p in _PROVIDER_COLOURS else 99,
+    )
+    _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle(
+        "MCQ accuracy by evidence class (Benchmark G) — chance = 25%",
+        fontsize=11, fontweight="bold", y=1.06,
+    )
+    return fig
+
+
 # ── Turns-to-completion ──────────────────────────────────────────
 
 def turns_to_completion_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
@@ -2758,10 +3485,7 @@ def consistency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         return None
 
     df = df.copy()
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     grp = df.groupby(["model", "input_id"])["overall_pass"]
     stats = grp.agg(["nunique", "count"]).reset_index()
@@ -2807,14 +3531,65 @@ def consistency_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
 
 # ── Hallucination rate ───────────────────────────────────────────
 
-def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
+def _parse_hallucinated_tools_column(series: "pd.Series") -> "pd.DataFrame":
+    """Parse the ``hallucinated_tools`` column into per-row category counts.
+
+    Supports two schema versions:
+
+    * **v1** (legacy): ``"name;name;..."``  — all tokens classified as
+      ``unknown`` for rendering purposes (no category info present).
+    * **v2** (current): ``"name:category[:correction];..."``
+
+    Returns a DataFrame with columns ``typo``, ``filename``,
+    ``runtime_glue``, ``r_code``, ``unknown`` (int counts per row).
+    """
+    import math
+    import pandas as pd
+
+    cats = ["typo", "filename", "runtime_glue", "r_code", "unknown"]
+    rows = []
+    for cell in series:
+        counts = dict.fromkeys(cats, 0)
+        if cell is None or (isinstance(cell, float) and math.isnan(cell)):
+            rows.append(counts)
+            continue
+        cell = str(cell).strip()
+        if not cell or cell.lower() in ("nan", "none", "null"):
+            rows.append(counts)
+            continue
+        for entry in cell.split(";"):
+            entry = entry.strip()
+            if not entry:
+                continue
+            parts = entry.split(":")
+            if len(parts) >= 2:
+                cat = parts[1]
+            else:
+                # v1 schema — no category; treat as unknown
+                cat = "unknown"
+            if cat in counts:
+                counts[cat] += 1
+            else:
+                counts["unknown"] += 1
+        rows.append(counts)
+    return pd.DataFrame(rows)
+
+
+def hallucination_figure(df: "pd.DataFrame") -> "Optional[plt.Figure]":
     """Per-model hallucinated-tool fraction.
 
-    Two panels:
-      (a) fraction of plans with ≥1 hallucinated tool
-      (b) mean hallucination rate per plan (hallucinated / total tools)
+    **3-panel layout** (when the v2 ``hallucinated_tools`` column is present):
+      (a) Fraction of plans with ≥1 typo/unknown token (true hallucination)
+      (b) Mean hallucination rate per plan (typo + unknown only)
+      (c) Per-category breakdown — stacked bars showing the share of
+          ``typo`` / ``unknown`` / ``r_code`` / ``filename`` /
+          ``runtime_glue`` tokens across all flagged tokens for that model
 
-    Returns ``None`` if the hallucination metric is absent.
+    Falls back to the original 2-panel layout when the ``hallucinated_tools``
+    column is absent or contains only v1-style entries (no ``:category``
+    marker), so archived run CSVs still produce valid figures.
+
+    Returns ``None`` if hallucination metrics are entirely absent.
     """
     if "hallucination_rate" not in df.columns and "num_hallucinated_tools" not in df.columns:
         return None
@@ -2830,45 +3605,122 @@ def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         df["hallucination_rate"] = pd.to_numeric(
             df["hallucination_rate"], errors="coerce").fillna(0)
     else:
-        df["hallucination_rate"] = 0
+        df["hallucination_rate"] = 0.0
 
     g = (df.groupby("model")
             .agg(frac_plans=("any_hallucination", "mean"),
                  mean_rate=("hallucination_rate", "mean"))
-            .reset_index())
+            .reset_index()
+            .sort_values("frac_plans")
+            .reset_index(drop=True))
+
     if g.empty or (g["frac_plans"].sum() == 0 and g["mean_rate"].sum() == 0):
         return None
 
-    g = g.sort_values("frac_plans").reset_index(drop=True)
+    # ── Detect v2 category data ──────────────────────────────────────────────
+    # Panel (c) shows the mix among *scored* hallucinations only (typo vs
+    # unknown).  R-code / filename / runtime-glue artifacts are excluded
+    # from panels (a–b) and would dominate the colour scale misleadingly.
+    _CAT_COLS = ["typo", "filename", "runtime_glue", "r_code", "unknown"]
+    _CAT_COLS_PANEL_C = ["typo", "unknown"]
+    _CAT_COLOURS = {
+        "typo":         "#f59e0b",   # amber
+        "unknown":      "#ef4444",   # red — true hallucination candidate
+        "r_code":         "#a855f7",   # purple — inline R misparsed as CLI
+        "filename":     "#6366f1",   # indigo
+        "runtime_glue": "#10b981",   # emerald
+    }
 
-    fig_h = max(3.2, 0.26 * len(g) + 1.2)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.4, fig_h), sharey=True)
+    has_category = False
+    cat_by_model: "Optional[pd.DataFrame]" = None
+    if "hallucinated_tools" in df.columns:
+        sample = df["hallucinated_tools"].dropna().str.strip()
+        sample = sample[sample != ""]
+        # v2 entries contain ":" — check at least one row has it
+        if sample.str.contains(":").any():
+            has_category = True
+            cat_df = _parse_hallucinated_tools_column(df["hallucinated_tools"])
+            cat_df["model"] = df["model"].values
+            cat_by_model = (cat_df.groupby("model")[_CAT_COLS]
+                            .sum()
+                            .reindex(g["model"])
+                            .reset_index())
+            # Normalise typo/unknown to shares *within each model* (panel c).
+            for col in _CAT_COLS_PANEL_C:
+                totals = cat_by_model[_CAT_COLS_PANEL_C].sum(axis=1).replace(0, 1)
+                cat_by_model[col] = cat_by_model[col] / totals
 
-    y = np.arange(len(g))
+    # ── Layout ───────────────────────────────────────────────────────────────
+    n_models = len(g)
+    fig_h = max(3.2, 0.26 * n_models + 1.2)
+    n_panels = 3 if has_category else 2
+    fig_w = 11.0 if has_category else 7.4
+    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, fig_h),
+                             sharey=True)
+    ax1, ax2 = axes[0], axes[1]
+    ax3 = axes[2] if n_panels == 3 else None
+
+    y = np.arange(n_models)
     cols = [_PROVIDER_COLOURS.get(_provider_from_model(m), "#6b7280")
             for m in g["model"]]
 
+    # Panel (a) — any hallucination
     ax1.barh(y, g["frac_plans"], color=cols, edgecolor="white",
              linewidth=0.6, height=0.72)
     for i, v in enumerate(g["frac_plans"]):
-        ax1.text(v + 0.005, i, f"{v:.0%}", va="center", ha="left",
+        label = "0%  (clean)" if v == 0 else f"{v:.0%}"
+        x = max(v + 0.005, 0.012)
+        ax1.text(x, i, label, va="center", ha="left",
                  fontsize=7.5, color="#1f2937")
     ax1.set_yticks(y)
     ax1.set_yticklabels([_short_name(m) for m in g["model"]])
     ax1.set_xlim(0, max(g["frac_plans"].max() * 1.35, 0.05))
-    ax1.set_xlabel("Fraction of plans with a hallucinated tool")
-    ax1.set_title("a  Any hallucination", loc="left")
+    ax1.set_xlabel("Fraction of plans with typo or unknown tool token")
+    ax1.set_title("a  True hallucination", loc="left")
     _style_value_axis(ax1, x=True)
 
+    # Panel (b) — mean rate
     ax2.barh(y, g["mean_rate"], color=cols, edgecolor="white",
              linewidth=0.6, height=0.72)
     for i, v in enumerate(g["mean_rate"]):
-        ax2.text(v + 0.002, i, f"{v:.1%}", va="center", ha="left",
+        label = "0.0%  (clean)" if v == 0 else f"{v:.1%}"
+        x = max(v + 0.002, 0.004)
+        ax2.text(x, i, label, va="center", ha="left",
                  fontsize=7.5, color="#1f2937")
     ax2.set_xlim(0, max(g["mean_rate"].max() * 1.35, 0.02))
-    ax2.set_xlabel("Mean hallucinated-tool fraction per plan")
+    ax2.set_xlabel("Mean typo+unknown fraction per plan")
     ax2.set_title("b  Mean rate per plan", loc="left")
     _style_value_axis(ax2, x=True)
+
+    # Panel (c) — typo vs unknown mix among scored hallucinations only
+    if ax3 is not None and cat_by_model is not None:
+        lefts = np.zeros(n_models)
+        has_breakdown = False
+        for cat in _CAT_COLS_PANEL_C:
+            vals = cat_by_model[cat].fillna(0).values
+            if vals.sum() > 0:
+                has_breakdown = True
+            ax3.barh(y, vals, left=lefts, height=0.72,
+                     color=_CAT_COLOURS[cat], edgecolor="white",
+                     linewidth=0.4, label=cat.replace("_", " "))
+            lefts += vals
+        # Per-model label when a model has no scored hallucination tokens.
+        for i, model in enumerate(g["model"]):
+            row = cat_by_model.loc[cat_by_model["model"] == model,
+                                   _CAT_COLS_PANEL_C]
+            if row.empty or row.sum(axis=1).iloc[0] == 0:
+                ax3.text(0.5, y[i], "0 flagged tokens",
+                         ha="center", va="center",
+                         fontsize=8, color="#15803d", fontweight="bold")
+        if not has_breakdown:
+            ax3.text(0.5, 0.5, "No flagged tokens", ha="center", va="center",
+                     transform=ax3.transAxes, color="#6b7280")
+        ax3.set_xlim(0, 1.0)
+        ax3.set_xlabel("Share of typo + unknown tokens (per model)")
+        ax3.set_title("c  Typo vs unknown mix", loc="left")
+        _style_value_axis(ax3, x=True)
+        ax3.legend(loc="lower right", fontsize=7,
+                   framealpha=0.85, edgecolor="#e5e7eb")
 
     providers = sorted(
         {_provider_from_model(m) for m in g["model"]},
@@ -2876,8 +3728,8 @@ def hallucination_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
         if p in _PROVIDER_COLOURS else 99,
     )
     _add_provider_legend(fig, providers, bbox_to_anchor=(0.5, 1.015))
-    fig.suptitle("Tool hallucination benchmark", fontsize=11,
-                 fontweight="bold", y=1.06)
+    fig.suptitle("Tool hallucination benchmark  —  0% = no typo/unknown CLI tokens detected",
+                 fontsize=10.5, fontweight="bold", y=1.06)
     return fig
 
 
@@ -2899,10 +3751,7 @@ def token_usage_figure(df: pd.DataFrame) -> Optional[plt.Figure]:
     for c in ("prompt_tokens", "completion_tokens", "llm_calls"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-    df["overall_pass"] = df["overall_pass"].map(
-        lambda v: v if isinstance(v, (bool, int, float))
-        else str(v).strip().lower() == "true"
-    ).astype(int)
+    df = _with_scored_overall_pass(df)
 
     g = (df.groupby("model")
             .agg(in_mean=("prompt_tokens", "mean"),
@@ -3030,6 +3879,32 @@ def _latest_taxonomy_per_cell(results_root: Path) -> Optional[Path]:
     if not subs:
         return None
     return max(subs, key=lambda p: p.stat().st_mtime) / "per_cell.csv"
+
+
+def _recovery_taxonomy_is_stale(results_root: Path) -> bool:
+    """True when any recovery run is newer than the cached taxonomy CSV."""
+    tax_csv = _latest_taxonomy_per_cell(results_root)
+    if tax_csv is None or not tax_csv.exists():
+        return True
+    rec_dir = results_root / "recovery"
+    if not rec_dir.exists():
+        return False
+    run_dirs = [
+        p for p in rec_dir.iterdir()
+        if p.is_dir() and not p.name.startswith("_")
+        and (p / "results.json").exists()
+    ]
+    if not run_dirs:
+        return False
+    newest_run = max(p.stat().st_mtime for p in run_dirs)
+    return newest_run > tax_csv.stat().st_mtime
+
+
+def _ensure_recovery_taxonomy_csv(results_root: Path) -> Optional[Path]:
+    """Return ``per_cell.csv``, regenerating when recovery runs are newer."""
+    if _recovery_taxonomy_is_stale(results_root):
+        return _regen_recovery_taxonomy(results_root)
+    return _latest_taxonomy_per_cell(results_root)
 
 
 def _regen_recovery_taxonomy(results_root: Path) -> Optional[Path]:
@@ -3201,11 +4076,22 @@ def main() -> None:
             if df.empty:
                 print(f"[skip] empty dataframe for {bench_name}")
                 continue
+            if bench_name == "planning" and "model" in df.columns:
+                df = _remap_registry_model_ids(df)
 
-        fig = fn(df)
+            fig = fn(df)
         _save(fig, fig_dir / bench_name, svg=args.svg)
         plt.close(fig)
         print(f"[ok]   {bench_name} → {fig_dir/bench_name}.pdf")
+
+        if bench_name == "interpretation":
+            ev = interpretation_evidence_class_figure(df)
+            if ev is not None:
+                _save(ev, fig_dir / "interpretation_evidence_class",
+                      svg=args.svg)
+                plt.close(ev)
+                print(f"[ok]   interpretation_evidence_class → "
+                      f"{fig_dir/'interpretation_evidence_class'}.pdf")
 
         # Bonus tier-summary alongside the per-fault bar chart
         if bench_name == "recovery":
@@ -3260,11 +4146,9 @@ def main() -> None:
                       f"(+ recovery_tier_<model>.pdf)")
 
             # Unrecoverable-tier taxonomy (correct / misdiagnosed /
-            # unsafe / silent). Uses per_cell.csv from the latest
-            # recovery_taxonomy.py run; regenerates if absent.
-            tax_csv = _latest_taxonomy_per_cell(root)
-            if tax_csv is None or not tax_csv.exists():
-                tax_csv = _regen_recovery_taxonomy(root)
+            # unsafe / silent). Regenerates when any recovery run is
+            # newer than the cached ``_taxonomy/`` snapshot.
+            tax_csv = _ensure_recovery_taxonomy_csv(root)
             if tax_csv is not None and tax_csv.exists():
                 tax_df = pd.read_csv(tax_csv)
                 taxfig = recovery_taxonomy_figure(tax_df)
@@ -3292,13 +4176,29 @@ def main() -> None:
                 print(f"[ok]   competitors_perprompt → "
                       f"{fig_dir/'competitors_perprompt'}.pdf")
 
-            # Focused agentic-only head-to-head (FlowAgent / BioMaster / AutoBA)
+            # Focused agentic-only head-to-head (FlowAgent / BioMaster / AutoBA / Biomni)
             agentic = competitors_agentic_figure(df)
             if agentic is not None:
                 _save(agentic, fig_dir / "competitors_agentic", svg=args.svg)
                 plt.close(agentic)
                 print(f"[ok]   competitors_agentic → "
                       f"{fig_dir/'competitors_agentic'}.pdf")
+
+            fail_breakdown = competitors_failure_breakdown_figure(df)
+            if fail_breakdown is not None:
+                _save(fail_breakdown, fig_dir / "competitors_failure_breakdown",
+                      svg=args.svg)
+                plt.close(fail_breakdown)
+                print(f"[ok]   competitors_failure_breakdown → "
+                      f"{fig_dir/'competitors_failure_breakdown'}.pdf")
+
+            cost_rel = competitors_cost_per_pass_relative_figure(df)
+            if cost_rel is not None:
+                _save(cost_rel, fig_dir / "competitors_cost_per_pass_relative",
+                      svg=args.svg)
+                plt.close(cost_rel)
+                print(f"[ok]   competitors_cost_per_pass_relative → "
+                      f"{fig_dir/'competitors_cost_per_pass_relative'}.pdf")
 
         # Planning bonus figures
         if bench_name == "planning":
@@ -3369,6 +4269,31 @@ def main() -> None:
                     print(f"[ok]   planning_cost_per_pass → "
                           f"{fig_dir/'planning_cost_per_pass'}.pdf")
 
+                fig4_rel = cost_summary_relative_figure(df)
+                if fig4_rel is not None:
+                    _save(fig4_rel, fig_dir / "planning_cost_summary_relative",
+                          svg=args.svg)
+                    plt.close(fig4_rel)
+                    print(f"[ok]   planning_cost_summary_relative → "
+                          f"{fig_dir/'planning_cost_summary_relative'}.pdf")
+
+                fig4a_rel = cost_per_100_plans_relative_figure(df)
+                if fig4a_rel is not None:
+                    _save(fig4a_rel,
+                          fig_dir / "planning_cost_per_100_plans_relative",
+                          svg=args.svg)
+                    plt.close(fig4a_rel)
+                    print(f"[ok]   planning_cost_per_100_plans_relative → "
+                          f"{fig_dir/'planning_cost_per_100_plans_relative'}.pdf")
+
+                fig4b_rel = cost_per_pass_relative_figure(df)
+                if fig4b_rel is not None:
+                    _save(fig4b_rel, fig_dir / "planning_cost_per_pass_relative",
+                          svg=args.svg)
+                    plt.close(fig4b_rel)
+                    print(f"[ok]   planning_cost_per_pass_relative → "
+                          f"{fig_dir/'planning_cost_per_pass_relative'}.pdf")
+
                 table = _per_model_cost_table(df)
                 if table is not None:
                     out_tsv = fig_dir / "planning_cost_summary.tsv"
@@ -3386,6 +4311,37 @@ def main() -> None:
                     _save(f, fig_dir / label, svg=args.svg)
                     plt.close(f)
                     print(f"[ok]   {label} → {fig_dir/label}.pdf")
+
+    from harness.paired_figure_report import render_paired_ablation_figures
+    render_paired_ablation_figures(root, fig_dir)
+
+    _render_judge_calibration_figure(root, fig_dir, svg=args.svg)
+
+
+def _render_judge_calibration_figure(root: Path, fig_dir: Path, *,
+                                     svg: bool = False) -> None:
+    """Render inter-judge calibration figure when a run exists."""
+    cal_latest = _latest(root / "judge_calibration")
+    if cal_latest is None:
+        print("[skip] no results for judge_calibration")
+        return
+    csv = cal_latest / "judge_calibration.csv"
+    if not csv.exists() or csv.stat().st_size == 0:
+        print("[skip] empty judge_calibration.csv")
+        return
+    bench_root = Path(__file__).resolve().parent.parent
+    if str(bench_root) not in sys.path:
+        sys.path.insert(0, str(bench_root))
+    from make_judge_calibration_figure import build_figure, load_run  # noqa: E402
+    try:
+        df, summary = load_run(cal_latest)
+        fig = build_figure(df, summary)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"[skip] judge_calibration figure: {exc}")
+        return
+    _save(fig, fig_dir / "judge_calibration", svg=svg)
+    plt.close(fig)
+    print(f"[ok]   judge_calibration → {fig_dir/'judge_calibration'}.pdf")
 
 
 if __name__ == "__main__":

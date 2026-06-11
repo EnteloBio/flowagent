@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Allow ``python bench_planning.py`` to find both the harness package
 # and the flowagent package installed as a sibling of benchmarks/.
@@ -81,13 +81,16 @@ async def _real_plan(prompt_entry: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict
     llm = LLMInterface()
     tracker = _TokenTracker(llm.provider)
     llm.provider = tracker
-    plan = await llm.generate_workflow_plan(prompt_entry["prompt"], context=ctx)
-    usage = {
-        "prompt_tokens":     tracker.prompt_tokens,
-        "completion_tokens": tracker.completion_tokens,
-        "llm_calls":         tracker.call_count,
-    }
-    return plan, usage
+    try:
+        plan = await llm.generate_workflow_plan(prompt_entry["prompt"], context=ctx)
+        usage = {
+            "prompt_tokens":     tracker.prompt_tokens,
+            "completion_tokens": tracker.completion_tokens,
+            "llm_calls":         tracker.call_count,
+        }
+        return plan, usage
+    finally:
+        await llm.aclose()
 
 
 # ── Mock LLM response ────────────────────────────────────────────
@@ -108,10 +111,11 @@ def _mock_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
 # ── Per-cell runner ──────────────────────────────────────────────
 
 async def run_one(model_cfg: Dict[str, Any], entry: Dict[str, Any],
-                  replicate: int, *, mock: bool = False) -> Dict[str, Any]:
+                  replicate: int, *, mock: bool = False,
+                  defaults: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "llm_calls": 0}
     if not mock:
-        set_provider(model_cfg)
+        set_provider(model_cfg, defaults=defaults)
         plan, usage = await _real_plan(entry)
     else:
         plan = _mock_plan(entry)
@@ -143,6 +147,9 @@ def _load_models(cfg_path: Path, only: List[str]) -> List[Dict[str, Any]]:
         models = [m for m in models if m["id"] in wanted]
         if not models:
             raise SystemExit(f"No models in {cfg_path} match: {only}")
+    else:
+        # Default ``make plan-all`` sweep: skip retired / scheduled models.
+        models = [m for m in models if m.get("tier") != "deprecated"]
     return models
 
 
@@ -157,6 +164,11 @@ def main():
     ap.add_argument("--config", default=str(HERE / "config" / "models.yaml"))
     ap.add_argument("--out", default="results")
     ap.add_argument(
+        "--timeout", type=int, default=None,
+        help="Per-call LLM timeout in seconds (sets LLM_TIMEOUT_SECONDS; "
+             "default: models.yaml defaults.timeout_seconds or 300)",
+    )
+    ap.add_argument(
         "--resume", default=None,
         help="Path to an existing results/planning/<ts>/ dir. Skips cells "
              "already present in its results.jsonl; appends new cells to the "
@@ -165,8 +177,16 @@ def main():
     args = ap.parse_args()
 
     only = args.models.split(",") if args.models else []
-    models = _load_models(Path(args.config), only)
+    cfg_path = Path(args.config)
+    cfg = load_yaml(cfg_path)
+    defaults = cfg.get("defaults") or {}
+    models = _load_models(cfg_path, only)
     inputs = load_yaml(Path(args.prompts))["prompts"]
+
+    if args.timeout is not None:
+        os.environ["LLM_TIMEOUT_SECONDS"] = str(args.timeout)
+    elif "LLM_TIMEOUT_SECONDS" not in os.environ and defaults.get("timeout_seconds"):
+        os.environ["LLM_TIMEOUT_SECONDS"] = str(int(defaults["timeout_seconds"]))
 
     if args.resume:
         out_dir = Path(args.resume)
@@ -177,7 +197,7 @@ def main():
         out_dir = timestamped_dir(Path(args.out), "planning")
 
     async def _runner(m, e, r):
-        return await run_one(m, e, r, mock=args.mock)
+        return await run_one(m, e, r, mock=args.mock, defaults=defaults)
 
     sweep_result = asyncio.run(sweep(
         _runner, models=models, inputs=inputs,

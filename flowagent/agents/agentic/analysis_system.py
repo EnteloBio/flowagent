@@ -9,6 +9,7 @@ import numpy as np
 import os
 
 from .analysis_agents import QualityAnalysisAgent, QuantificationAnalysisAgent, TechnicalQCAgent
+from .assay_detector import detect_assay, assay_report_summary
 
 logger = logging.getLogger(__name__)
 
@@ -350,70 +351,113 @@ class AgenticAnalysisSystem:
     async def analyze_results(self, results_dir: Path) -> Dict[str, Any]:
         """Analyze workflow results using specialized agents."""
         try:
-            # Prepare data for analysis
+            # Detect assay type first so non-RNA-seq analyses get meaningful metadata
+            assay_info = detect_assay(results_dir)
+            assay = assay_info.get("assay", "generic")
+            logger.info("Detected assay: %s", assay)
+
+            # Prepare data for analysis (RNA-seq / QC data structures)
             data = await self._prepare_analysis_data(results_dir)
-            
+
+            # Override workflow_type from assay detector when it's more specific
+            if assay != "rna_seq" and data["workflow_type"] == "rna_seq":
+                data["workflow_type"] = assay
+
             # Run specialized agent analyses
             quality_results = await self.quality_agent.analyze(data)
             quant_results = await self.quantification_agent.analyze(data)
             tech_results = await self.technical_agent.analyze(data)
-            
+
             # Combine results
             analysis = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "directory": str(results_dir),
+                "assay": assay,
+                "assay_summary": assay_report_summary(assay_info),
+                "assay_metrics": assay_info.get("metrics", {}),
                 "workflow_info": {
                     "type": data["workflow_type"],
-                    "tools_used": data["tools_used"]
+                    "tools_used": data["tools_used"],
                 },
                 "quality_analysis": {
                     "fastqc_available": bool(data["qc_data"].get("fastqc")),
                     "multiqc_available": bool(data["qc_data"].get("multiqc")),
-                    **quality_results
+                    **quality_results,
                 },
                 "quantification_analysis": {
                     "tools": {
                         "kallisto": {
-                            "sample_count": len(data["quantification_data"].get("kallisto", {}).get("samples", {})),
-                            "samples": data["quantification_data"].get("kallisto", {}).get("samples", {})
+                            "sample_count": len(
+                                data["quantification_data"].get("kallisto", {}).get("samples", {})
+                            ),
+                            "samples": data["quantification_data"].get("kallisto", {}).get("samples", {}),
                         }
                     },
-                    **quant_results
+                    **quant_results,
                 },
                 "technical_analysis": {
                     "tool_versions": data["technical_data"]["tool_versions"],
                     "log_files": len(data["technical_data"]["logs"]),
-                    **tech_results
+                    **tech_results,
                 },
-                "recommendations": []
+                "recommendations": [],
             }
-            
-            # Add recommendations based on findings
+
+            # Generic recommendations
             if not data["qc_data"].get("fastqc"):
-                analysis["recommendations"].append("Run FastQC on all input files to ensure data quality")
+                analysis["recommendations"].append(
+                    "Run FastQC on all input files to ensure data quality"
+                )
             if not data["qc_data"].get("multiqc"):
                 analysis["recommendations"].append("Generate MultiQC report to compare samples")
             if not data["technical_data"]["tool_versions"]:
                 analysis["recommendations"].append("Record tool versions for reproducibility")
-            
-            # Add quantification-specific recommendations
-            kallisto_data = data["quantification_data"].get("kallisto", {})
-            if kallisto_data.get("samples"):
-                low_expressed = []
-                for sample, metrics in kallisto_data["samples"].items():
-                    if metrics["metrics"]["expressed_transcripts"] < 1000:
-                        low_expressed.append(sample)
-                if low_expressed:
+
+            # Assay-specific recommendations
+            if assay == "rna_seq":
+                kallisto_data = data["quantification_data"].get("kallisto", {})
+                if kallisto_data.get("samples"):
+                    low_expressed = [
+                        sample for sample, m in kallisto_data["samples"].items()
+                        if m.get("metrics", {}).get("expressed_transcripts", 9999) < 1000
+                    ]
+                    if low_expressed:
+                        analysis["recommendations"].append(
+                            f"Review samples with low expressed transcript counts: {', '.join(low_expressed)}"
+                        )
+                mr = assay_info.get("metrics", {}).get("mapping_rate_mean_pct")
+                if mr is not None and mr < 60:
                     analysis["recommendations"].append(
-                        f"Review samples with low expressed transcript counts: {', '.join(low_expressed)}"
+                        f"Mean mapping rate is low ({mr:.1f}%). Check reference transcriptome and read quality."
                     )
-            
+
+            elif assay == "chip_atac":
+                n_peaks = assay_info.get("metrics", {}).get("n_peaks_total", 0)
+                if n_peaks < 1000:
+                    analysis["recommendations"].append(
+                        f"Low peak count ({n_peaks}). Check alignment quality and peak calling parameters."
+                    )
+                frip = assay_info.get("metrics", {}).get("frip_proxy")
+                if frip is not None and frip < 1.0:
+                    analysis["recommendations"].append(
+                        "FRiP proxy is low. Consider re-running peak calling with adjusted parameters."
+                    )
+
+            elif assay == "variant":
+                titv = assay_info.get("metrics", {}).get("ti_tv")
+                if titv is not None:
+                    if titv < 1.8 or titv > 3.5:
+                        analysis["recommendations"].append(
+                            f"Ti/Tv ratio ({titv:.2f}) is outside expected range (1.8–3.5 for WGS). "
+                            "Check variant calling and filtering."
+                        )
+
             return analysis
-            
+
         except Exception as e:
-            logger.error(f"Error in agentic analysis: {str(e)}")
+            logger.error("Error in agentic analysis: %s", str(e))
             return {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "directory": str(results_dir),
-                "error": str(e)
+                "error": str(e),
             }

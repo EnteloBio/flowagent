@@ -11,8 +11,39 @@ OpenAI strict mode requirements:
 """
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+
+
+# ── Node typing (DAG-Plan inspired) ────────────────────────────
+#
+# Bioinformatics-domain analogue of DAG-Plan's
+# {occupy, tool_use, release, operate, complete} taxonomy. The
+# enum is small and stable so the planner LLM can emit one of
+# these values reliably. The validator in
+# ``flowagent/core/completeness.py`` uses these labels (or
+# heuristically infers them from ``command`` / ``name`` when the
+# LLM omits the field) to enforce structural completeness:
+# ``align`` requires an ``index`` ancestor, ``de`` requires a
+# ``report`` descendant, every ``download`` must be consumed, etc.
+#
+# ``other`` is the safe escape hatch for steps that don't fit any
+# specialised category (e.g. ``mkdir -p``, custom Rscript glue).
+class StepKind(str, Enum):
+    DOWNLOAD = "download"
+    INDEX = "index"
+    QC = "qc"
+    TRIM = "trim"
+    ALIGN = "align"
+    SORT = "sort"
+    DEDUP = "dedup"
+    CALL = "call"
+    QUANTIFY = "quantify"
+    DE = "de"
+    REPORT = "report"
+    TERMINAL = "terminal"
+    OTHER = "other"
 
 
 # ── Pipeline planning context ─────────────────────────────────
@@ -55,6 +86,18 @@ class WorkflowStepSchema(BaseModel):
     dependencies: List[str] = Field(default_factory=list, description="Names of prerequisite steps")
     outputs: List[str] = Field(default_factory=list, description="Expected output file patterns")
     description: str = Field("", description="Brief description of the step")
+    kind: StepKind = Field(
+        StepKind.OTHER,
+        description=(
+            "Structural category of this step. One of: download, index, qc, "
+            "trim, align, sort, dedup, call, quantify, de, report, terminal, "
+            "other. The completeness validator uses these labels to enforce "
+            "structural rules (every align needs an index ancestor; every "
+            "de/call/quantify needs a report descendant; every download must "
+            "be consumed downstream). Use 'other' only when no specialised "
+            "category fits (e.g. mkdir, custom glue)."
+        ),
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -63,6 +106,37 @@ class WorkflowPlanSchema(BaseModel):
     """Complete workflow plan returned by the LLM."""
     workflow_type: str = Field(..., description="Type of workflow e.g. rna_seq_kallisto")
     steps: List[WorkflowStepSchema]
+
+    model_config = {"extra": "forbid"}
+
+
+# ── DAG-blind variant (ablation) ───────────────────────────────
+
+class WorkflowStepSchemaNoDAG(BaseModel):
+    """A single step in a DAG-blind workflow plan.
+
+    Same shape as ``WorkflowStepSchema`` but without a ``dependencies``
+    field, so the LLM is given no structural cue that a dependency graph
+    exists. Steps are interpreted as a flat ordered list (top-to-bottom).
+    """
+    name: str = Field(..., description="Short unique name for the step")
+    command: str = Field(..., description="Shell command to execute")
+    outputs: List[str] = Field(default_factory=list, description="Expected output file patterns")
+    description: str = Field("", description="Brief description of the step")
+
+    model_config = {"extra": "forbid"}
+
+
+class WorkflowPlanSchemaNoDAG(BaseModel):
+    """DAG-blind ablation variant of ``WorkflowPlanSchema``.
+
+    Used when ``Settings.LLM_DAG_AWARE`` is False. The LLM emits a flat
+    ordered list of steps with no ``dependencies`` field. Downstream
+    code injects empty dependency lists so the resulting plan is still a
+    (trivially valid) DAG with no edges.
+    """
+    workflow_type: str = Field(..., description="Type of workflow e.g. rna_seq_kallisto")
+    steps: List[WorkflowStepSchemaNoDAG]
 
     model_config = {"extra": "forbid"}
 
@@ -83,6 +157,59 @@ class FilePatternResponse(BaseModel):
     """File pattern extraction response."""
     patterns: List[str]
     relationships: FileRelationships
+
+
+# ── Plan verification (CoVe) ──────────────────────────────────
+#
+# Used by ``flowagent.core.verifier`` for the CoVe-style independent
+# verifier (todo T4). The verifier runs in a fresh LLM context with no
+# generator chain-of-thought visible, asks targeted questions about the
+# plan, and returns a list of (question, answer, concern) tuples. The
+# planner then uses the count of ``concern=True`` items to decide
+# whether to abstain (refuse to ship) or ship with annotations.
+
+class VerificationConcern(BaseModel):
+    """One verifier question + answer + concern flag."""
+    question: str = Field(
+        ..., description="The targeted question asked of the verifier",
+    )
+    answer: str = Field(
+        ...,
+        description=(
+            "The verifier's free-form answer. Cited so a human reviewer "
+            "can audit the verifier's reasoning, not just the boolean."
+        ),
+    )
+    concern: bool = Field(
+        ...,
+        description=(
+            "True iff the answer reveals a real problem with the plan. "
+            "False means the plan passes this check."
+        ),
+    )
+    severity: str = Field(
+        "medium",
+        description=(
+            "One of 'low', 'medium', 'high'. High = ship-blocking issue "
+            "(wrong workflow type, fictional tool). Medium = should fix "
+            "but plan may still execute. Low = nit / preference."
+        ),
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class VerificationResult(BaseModel):
+    """Top-level shape for the CoVe verifier's structured response."""
+    concerns: List[VerificationConcern] = Field(
+        default_factory=list,
+        description=(
+            "One entry per question the verifier was asked. Order matches "
+            "the question order in the prompt so callers can correlate."
+        ),
+    )
+
+    model_config = {"extra": "forbid"}
 
 
 # ── Prompt routing ─────────────────────────────────────────────
@@ -135,6 +262,14 @@ class AnalysisReport(BaseModel):
 
 def _make_strict(schema: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively enforce OpenAI strict-mode constraints on a JSON Schema."""
+    # OpenAI strict mode forbids sibling keywords alongside $ref.
+    # When a schema node is purely a reference, keep only the $ref key.
+    if "$ref" in schema:
+        ref = schema["$ref"]
+        schema.clear()
+        schema["$ref"] = ref
+        return schema
+
     if schema.get("type") == "object":
         schema["additionalProperties"] = False
         props = schema.get("properties", {})
@@ -145,8 +280,6 @@ def _make_strict(schema: Dict[str, Any]) -> Dict[str, Any]:
             prop.pop("default", None)
     if "items" in schema:
         _make_strict(schema["items"])
-    if "$ref" in schema:
-        pass  # $ref is resolved at the top level via $defs
     for key in ("anyOf", "oneOf", "allOf"):
         if key in schema:
             for sub in schema[key]:

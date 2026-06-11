@@ -36,28 +36,34 @@ def _latest_merged(base: Path) -> Optional[Path]:
     return runs[-1] if runs else None
 
 
-# Historical model IDs that appeared in earlier sweeps. The Gemini 1.5
-# family was removed from the active registry but is still callable on
-# Google's v1 API; the two renamed-preview entries reflect Google
-# attaching an explicit ``-preview`` suffix mid-2026 to all 3.x models.
-_LEGACY_REGISTRY = [
-    {
-        "model": "gemini-1.5-flash", "provider": "google",
-        "family": "gemini-1.5", "tier": "legacy", "context_k": 1000,
-        "input_per_1k": 0.000075, "output_per_1k": 0.000300,
-    },
-    {
-        "model": "gemini-1.5-pro", "provider": "google",
-        "family": "gemini-1.5", "tier": "legacy", "context_k": 2000,
-        "input_per_1k": 0.00125, "output_per_1k": 0.00500,
-    },
-]
+# Historical model IDs that appeared in earlier sweeps but are not in
+# config/models.yaml. Prefer adding callable baselines to models.yaml
+# directly (tier: legacy) so the harness and plots stay in sync.
+_LEGACY_REGISTRY: list = []
 # Old ID → current canonical ID. Pricing/family/etc. are taken from the
 # canonical entry in models.yaml; only the displayed model column keeps
 # the historical name so it lines up with the metrics CSV.
 _ID_ALIASES = {
-    "gemini-3-flash":    "gemini-3-flash-preview",
-    "gemini-3.1-pro":    "gemini-3.1-pro-preview",
+    # Google — preview / rename → GA
+    "gemini-3-flash":                  "gemini-3.5-flash",
+    "gemini-3-flash-preview":          "gemini-3.5-flash",
+    "gemini-3.1-pro":                  "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite-preview":   "gemini-3.1-flash-lite",
+    # Anthropic — dated snapshot / bare 4.0 → current
+    "claude-sonnet-4":                 "claude-sonnet-4-6",
+    "claude-sonnet-4-0":               "claude-sonnet-4-6",
+    "claude-sonnet-4-20250514":        "claude-sonnet-4-6",
+    "claude-opus-4":                   "claude-opus-4-8",
+    "claude-opus-4-0":                 "claude-opus-4-8",
+    "claude-opus-4-20250514":          "claude-opus-4-8",
+    "claude-haiku-3-5":                "claude-haiku-4-5",
+    # OpenAI — Oct-2026 shutdown list → successors (gpt-3.5-turbo kept
+    # as tier:legacy baseline in models.yaml, not aliased away)
+    "gpt-4-turbo":                     "gpt-5.5",
+    "gpt-4.1-nano":                    "gpt-5.4-nano",
+    "o1":                              "gpt-5.5",
+    "o3-mini":                         "gpt-5.4-mini",
+    "o4-mini":                         "gpt-5.4-mini",
 }
 
 

@@ -40,6 +40,25 @@ class StepStatus(str, enum.Enum):
     ERROR = "failed"
 
 
+def step_status_succeeded(status: Optional[str]) -> bool:
+    """True when a step result indicates successful completion."""
+    return status in (StepStatus.COMPLETED.value, "success")
+
+
+def step_status_failed(status: Optional[str]) -> bool:
+    """True when a step result indicates failure."""
+    return status in (StepStatus.FAILED.value, "error", "failed")
+
+
+def normalize_step_status(status: Optional[str], *, default: str = "pending") -> str:
+    """Map legacy executor statuses onto the canonical vocabulary."""
+    if step_status_succeeded(status):
+        return StepStatus.COMPLETED.value
+    if step_status_failed(status):
+        return StepStatus.FAILED.value
+    return status or default
+
+
 @dataclass
 class StepResult:
     """Standardised result from any executor."""

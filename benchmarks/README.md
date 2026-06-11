@@ -1,10 +1,16 @@
 # FlowAgent Benchmarks
 
-Reproducible benchmarks that measure FlowAgent's seven core claims: natural-language
-**planning correctness**, **per-model cost**, **adaptive error recovery**,
-**generator fidelity**, **executor coverage**, **output fidelity** against
-published references, and **biological-interpretation quality**. Drive the
-manuscript figures.
+Reproducible benchmarks that measure FlowAgent's ten core claims:
+natural-language **planning correctness**, **per-model cost**, **adaptive
+error recovery**, **generator fidelity**, **executor coverage**, **output
+fidelity** against published references, **biological-interpretation
+quality**, and three ablation studies -- FlowAgent's **DAG-awareness**
+(does telling the LLM about the dependency graph help?), FlowAgent's
+**completeness reflection** (does a DAG-Plan-style "regenerate if
+structurally incomplete" loop help?), and a competitor-side
+**DAG-prompt** ablation that asks the same DAG-vs-no-DAG question of an
+external framework (Claude Code) over which we have only prompt-level
+control. Drive the manuscript figures.
 
 ## Layout
 
@@ -16,7 +22,7 @@ benchmarks/
 │   ├── fidelity_cases.yaml             # Output-fidelity cases (Benchmark F)
 │   └── interpretation_questions.yaml   # MCQ + open-ended questions (Benchmark G)
 ├── corpus/
-│   └── prompts.yaml                    # 41 prompts (23 standard + 18 hard)
+│   └── prompts.yaml                    # 66 prompts (23 explicit-tool + 18 hard explicit-tool + 25 tool-inference)
 ├── references/                         # Materialised gold-standard outputs (gitignored)
 │   ├── download_references.py          # Orchestrator — fetches each Benchmark F reference
 │   ├── install_r_deps.R                # Installs Bioconductor packages used by R recipes
@@ -34,6 +40,7 @@ benchmarks/
 │   ├── competitors.py                  # Competitor interface + adapters
 │   ├── biomaster_shim.py               # Subprocess shim driving upstream BioMaster
 │   ├── autoba_shim.py                  # Subprocess shim driving upstream AutoBA
+│   ├── biomni_shim.py                  # Subprocess shim driving upstream Biomni
 │   ├── fidelity_metrics.py             # de_table / peak_bed / vcf comparators (Benchmark F)
 │   └── plot.py                         # Publication-ready figures (colour-blind safe)
 ├── bench_planning.py                   # A — planning correctness + cost
@@ -44,39 +51,69 @@ benchmarks/
 ├── bench_fidelity.py                   # F — pure scoring layer for output fidelity
 ├── bench_fidelity_run.py               # F — end-to-end driver (runs flowagent then scores)
 ├── bench_interpretation.py             # G — MCQ + open-ended interpretation
+├── bench_ablation.py                   # H — DAG-aware vs DAG-blind planner ablation
+├── make_ablation_figure.py             # H — figure + paired stats for Benchmark H
+├── bench_reflection_ablation.py        # I — completeness-reflection ablation
+├── make_reflection_figure.py           # I — figure + paired stats for Benchmark I
+├── bench_competitor_dag_ablation.py    # J — competitor DAG-prompt ablation (Claude Code)
+├── make_competitor_dag_figure.py       # J — figure + paired stats for Benchmark J
 ├── rescore_planning.py                 # Re-evaluate existing plans with updated metrics
 ├── recovery_taxonomy.py                # Classify Benchmark B responses
 ├── merge_runs.py                       # Combine runs across models/sessions
 ├── supp_table_models.py                # Supplementary Table 2 (model registry × empirical stats)
+├── make_supp_tables.py                 # Supplementary Tables 1 (prompts) + 2 (models)
+├── make_supp_table3.py                 # Supplementary Table 3 (software environment versions)
+├── make_supp_table4.py                 # Supplementary Table 4 (pricing snapshot for cost reproducibility)
 ├── Makefile                            # Convenience orchestration
 └── results/                            # Gitignored outputs (CSV, JSON, PDF)
 ```
 
-## The seven benchmarks
+## The twelve benchmarks
 
-| ID | Claim | Needs API key | Needs infra |
-|---|---|---|---|
-| **A** | FlowAgent generates valid plans from natural language | yes | no |
-| **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no |
-| **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` |
-| **D** | All six execution backends function | no | best-effort — mock mode if infra absent |
-| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA clones on disk |
-| **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download |
-| **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F |
+| ID | Claim | Needs API key | Needs infra | Make target |
+|---|---|---|---|---|
+| **A** | FlowAgent generates valid plans from natural language | yes | no | `make plan` / `make plan-all` |
+| **B** | FlowAgent self-heals faults that break traditional WMS (28 faults, 3 tiers) | yes | no | `make recovery` |
+| **C** | Generated Nextflow / Snakemake is valid and preserves plan intent | no (preset path) | `nextflow` + `snakemake` for `.validate()` | `make gen` |
+| **D** | All six execution backends function | no | best-effort — mock mode if infra absent | `make exec` |
+| **E** | FlowAgent is competitive with other agentic bio systems on the same corpus | yes | BioMaster + AutoBA + Biomni + Claude Code clones / CLIs (Edison opt-in) | `make competitors` / `make competitors-all` |
+| **F** | FlowAgent's *outputs* match published references (Spearman ρ / Jaccard / F1) | no — pure scorer | network for first-run reference download | `make fidelity-run` (live) / `make fidelity` (score-only) |
+| **G** | LLMs interpret bioinformatics outputs correctly + abstain when evidence is insufficient | yes | reference files materialised by F | `make interpretation` |
+| **H** | Telling FlowAgent's planner about the dependency DAG improves bioinformatics plan quality | yes | no | `make ablation` / `make ablation-pilot` |
+| **I** | DAG-Plan-style completeness validator + LLM reflection retry improves plan quality | yes | no | `make reflection` / `make reflection-pilot` |
+| **J** | Telling a *competitor* framework (Claude Code) about the DAG via prompt-only intervention improves its plan quality | yes (Claude Code CLI auth) | Claude Code CLI installed | `make competitor-dag-ablation` / `make competitor-dag-ablation-pilot` |
+| **K** | The post-generation command-level validator + auto-fix layer improves plan quality on top of the LLM (todo T0 in the architecture review) | yes | no | `make validator-ablation` / `make validator-ablation-pilot` |
+| **L** | An independently-prompted CoVe verifier (todo T4) produces a useful signal for predicting plan failure, suitable for a future abstention gate | yes | no | `make cove-ablation` / `make cove-ablation-pilot` |
+| **M** | Injecting the per-workflow tool allowlist into the planning prompt improves tool selection / plan quality | yes | no | `make tool-hint-ablation` / `make tool-hint-ablation-pilot` |
 
 ### Prompt corpus
 
-`corpus/prompts.yaml` contains **41 prompts** across two difficulty tiers:
+`corpus/prompts.yaml` contains **66 prompts** across two scoring tiers:
 
-- **23 standard prompts** — covering common RNA-seq, ChIP-seq, ATAC-seq,
-  variant calling, scRNA-seq, and QC workflows. Designed to probe whether the
-  LLM produces a sensible, tool-correct, stepwise plan.
-- **18 hard prompts** (IDs prefixed `hard_`) — designed to stress one or more
-  LLM failure modes: niche domains (bisulfite sequencing, metagenomics,
-  miRNA, Hi-C), long end-to-end chains (8+ steps), modern tool selection
-  (hifiasm vs spades, Mutect2 vs HaplotypeCaller), forbidden shortcuts
-  (kallisto when STAR is required), and R-package wrappers (DADA2, DiffBind,
-  QDNAseq, tximport).
+- **41 explicit-tool prompts** (YAML `tier: transcription`, the default) —
+  each prompt names the canonical tools to use, so the score measures
+  whether the LLM faithfully turns that tool list into a structured plan
+  with valid commands, dependencies, and forbidden-tool exclusions.
+  23 are "standard" everyday workflows; the remaining 18 (`hard_*`)
+  stress niche domains (bisulfite, metagenomics, Hi-C), long chains,
+  modern tool selection, and R-package wrappers.
+- **25 tool-inference prompts** (YAML `tier: inference`, IDs prefixed `inf_`) —
+  scored by [`score_plan_inference`](harness/metrics.py). Each prompt
+  describes the *goal* and *input data only*, never tool names
+  ("Quantify transcript abundance from paired-end RNA-seq for downstream
+  DESeq2"). Each prompt declares an `acceptable_tool_sets` list (e.g.
+  `[[salmon, multiqc], [kallisto, multiqc], [star, featurecounts, multiqc]]`);
+  the plan passes only if **at least one** set is fully covered using
+  *strict* tool matching (prose fallback disabled). Hallucinated tools,
+  malformed commands (per
+  [`harness/command_validator.py`](harness/command_validator.py)), and
+  forbidden tools all gate `overall_pass`.
+
+**What this benchmark does NOT test.** Whether the LLM picks the
+*best* toolchain among the acceptable set, runtime/memory profile of
+the resulting pipeline, scientific correctness of downstream
+parameters (e.g. DESeq2 `lfcShrink` flavour). Those are evaluated end-
+to-end by Benchmark F, not by plan inspection.
 
 ### Fault catalogue (Benchmark B)
 
@@ -103,6 +140,37 @@ Each fault produces a real failure signature (genuine exit code + stderr
 via shell stubs or real tools), so recovery is judged on the LLM's ability
 to read and fix an authentic error.
 
+**Recovery contract.** A recovery proposal can either patch a single
+command (`patch_command`), restructure the DAG via a structured
+`plan_patch` operation (`insert_before`, `insert_after`,
+`replace_step`, `remove_step`), or refuse (`refuse`). The LLM is
+prompted in two phases (diagnose → respond) so it commits to a fault
+class before being shown the patching guidance. DAG patches preserve
+acyclicity and are rolled back on failure (see
+[`flowagent/core/workflow_dag.py`](../flowagent/core/workflow_dag.py)
+`apply_plan_patch`).
+
+**Antipatterns rejected up front.** Bare no-ops (`true` / `:` /
+`exit 0` / `test 0`), trailing failure-suppression operators
+(`|| true`, `|| continue`, `|| :`, `|| exit 0`), leading `set +e`,
+and "fixes" that drop the original tool family and leave only shell
+builtins are detected by
+[`_is_recovery_antipattern`](../flowagent/core/workflow_manager.py)
+before execution. Every fault in
+[`harness/fault_inject.py`](harness/fault_inject.py) declares
+non-empty `outputs`, so the verifier engages on every cell — a
+"successful" recovery that produces no artifacts is failed
+explicitly. Recovery outcomes that pass exit-code-wise but match a
+no-op shape are bucketed as `cheat_repair` by
+[`recovery_taxonomy.py`](recovery_taxonomy.py), separately from
+`unsafe_repair` (silent corruption of valid data).
+
+**What this benchmark does NOT test.** Recovery from genuine data
+corruption (Tier 3, where the right answer is `refuse`), recovery
+across multiple sequential failures in one run (each fault is
+isolated), or the wall-clock cost of recovery (we report attempts and
+prompt size, not minutes-to-fix).
+
 ### Fidelity cases (Benchmark F)
 
 `config/fidelity_cases.yaml` declares **7 cases** spanning three assay
@@ -127,17 +195,58 @@ materialised references with `bench_fidelity.py`.
 
 ### Interpretation questions (Benchmark G)
 
-`config/interpretation_questions.yaml` contains **32 questions across the
-same 7 datasets** as Benchmark F (24 MCQ + 8 open-ended), with a
-calibrated refusal-correct question per dataset to test whether models
-abstain when the supplied evidence is insufficient. Open-ended responses
-are graded by an LLM judge (default `gpt-5.4`) against a per-question
-rubric and reference answer.
+`config/interpretation_questions.yaml` contains MCQ + open-ended
+questions across the same 7 datasets as Benchmark F. Every question
+is tagged with an `evidence_class`:
+
+- `data_required` — answer is derivable only from the supplied input
+  files. Each dataset contributes **≥3** of these.
+- `internal_knowledge` — answer comes from textbook biology /
+  experimental design (e.g. "what does an SUZ12 ChIP-seq target?");
+  retained as a control to separate "the model knows the
+  field" from "the model can read the supplied data".
+- `calibrated_refusal` — exactly one option says "the supplied data
+  cannot answer this"; correctness rewards the refusal. Tests
+  abstention.
+
+Open-ended questions declare `depends_on_inputs: [...]` listing which
+input fields they require, and the rubric only credits claims
+derivable from those files (out-of-evidence speculation is penalised
+explicitly). Responses are graded by an LLM judge (default `gpt-5.4`)
+against five anchored score bands (0-20, 21-40, 41-59, 60-79, 80-100)
+with the **pass mark stated explicitly (≥60)**. The judge returns
+structured JSON with `score`, `hits[]`, `misses[]`, `fabrications[]`,
+`grounding_quote`, and `justification` so each judgment is auditable
+in the metrics CSV.
+
+MCQ responses are extracted by a tag-aware parser (the prompt asks
+for `<answer>X</answer><explain>...</explain>`) with a tiered regex
+fallback for models that emit prose, and a final pass that prefers
+the *last* in-set capital letter (so "I believe the answer is B"
+returns `B`, not `I`).
+
+Inter-judge calibration is a separate harness:
+
+```bash
+python benchmarks/judge_calibration.py \
+    --metrics results/interpretation/<run>/metrics.csv \
+    --judge-a gpt-5.4 --judge-b claude-opus-4-7 --n 30
+```
+
+emitting Pearson r, Cohen's κ on pass/fail, and mean score delta —
+report in the manuscript supplement.
 
 The benchmark feeds each dataset's reference file (DE table, peak BED,
 truth VCF) directly to the model under test — FlowAgent itself is not in
 the loop. This makes Benchmark G a model-vs-model comparison on
 deterministic inputs, in the spirit of BixBench.
+
+**What this benchmark does NOT test.** Multi-turn dialogue,
+follow-up clarification, or the ability to *generate* analysis code
+(only to interpret existing outputs). Open-ended grading is by LLM
+judge, calibrated against a second judge but not against
+field-expert annotation — see the calibration harness output for the
+inter-judge κ and treat scores accordingly.
 
 ### Reference data
 
@@ -155,19 +264,33 @@ notes, sizes, and license caveats. CI / no-R-install runs:
 
 ### Models
 
-`config/models.yaml` defines **30 models** across three tiers, plus
-several legacy/preview aliases for back-compatibility with archived runs:
+`config/models.yaml` defines **40 models** across four tiers; the default
+``make plan-all`` sweep runs **28** (skips ``tier: deprecated`` only).
+Legacy-tier entries include **generational baselines** — GPT-3.5 era,
+Claude 3.x, and Gemini 1.5 — that still plot in the legacy heatmap panel.
+Alias rows in ``supp_table_models.py`` map retired IDs to current successors
+for longitudinal figures:
 
 | Tier | OpenAI | Anthropic | Google |
 |---|---|---|---|
-| current | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `o3`, `o3-mini`, `o4-mini` | `claude-opus-4-5/6/7`, `claude-sonnet-4-5/6`, `claude-haiku-4-5` | `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
-| preview | — | — | `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite-preview`, `gemini-3-flash-preview` |
-| legacy | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o1` | `claude-opus-4`, `claude-opus-4-1`, `claude-sonnet-4`, `claude-haiku-3-5` | `gemini-1.5-pro`, `gemini-1.5-flash` |
+| current | `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.4-pro`, `gpt-4.1`, `gpt-4.1-mini`, `o3` | `claude-opus-4-5/6/7`, `claude-sonnet-4-5/6`, `claude-haiku-4-5` | `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| preview | — | — | `gemini-3.1-pro-preview` |
+| legacy | `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo` | `claude-opus-4-1`, `claude-3-5-sonnet-20241022`, `claude-3-haiku-20240307` | — |
+| deprecated | `gpt-4-turbo`, `gpt-4.1-nano`, `gpt-5.5-mini` (API stand-in: `gpt-5.4-mini`), `o1`, `o3-mini`, `o4-mini` | `claude-opus-4`, `claude-sonnet-4`, `claude-haiku-3-5` | `gemini-1.5-pro`, `gemini-1.5-flash`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview` |
 
 Add or remove a model by editing `config/models.yaml` — the harness,
 scoring, and plot code pick up new IDs automatically (so long as the
 short name is registered in [`harness/plot.py`](harness/plot.py) for
 axis labels).
+
+**Reasoning capability (`reasoning: bool`, `reasoning_default: low|
+medium|high|none`)** is declared per model in `models.yaml`, sourced
+from each provider's documented model card (Anthropic extended-
+thinking, Google Gemini thinking-budget, OpenAI reasoning-effort).
+[`harness/plot.py`](harness/plot.py) reads this YAML at figure-
+generation time, so the recovery reasoning-vs-non-reasoning split
+panel is always grounded in the latest provider documentation rather
+than a hand-curated list.
 
 ## API keys
 
@@ -196,8 +319,16 @@ Keys set in the shell win over `.env` (standard dotenv semantics).
 make smoke
 ```
 
-Runs every benchmark in mock mode to verify the harness imports cleanly and
-the scoring pipeline is sound.
+Runs Benchmarks A–D in mock mode to verify the harness imports cleanly and
+the scoring pipeline is sound. The three ablations (H, I, J) and the
+live-run benchmarks (E, F, G) are not in `make smoke` because they
+require API keys (or a Claude Code login for J); pilot them instead with:
+
+```bash
+make ablation-pilot              MODEL=claude-haiku-4-5         # ~$0.05, 5 prompts × 2 arms
+make reflection-pilot            MODEL=claude-haiku-4-5         # ~$0.20, 8 prompts × 2 arms
+make competitor-dag-ablation-pilot CDAG_MODEL=claude-haiku-4-5  # ~$0.10-0.50, 3 prompts × 2 arms (Claude Code)
+```
 
 ### Single model — Benchmark A
 
@@ -212,7 +343,7 @@ make plan-all REPLICATES=3
 ```
 
 Sweeps every model in `config/models.yaml` **concurrently (4 at a time)**.
-With 20 models × 41 prompts × 3 replicates this is **2 460 cells**, roughly
+With 28 models × 66 prompts × 3 replicates this is **5 544 cells**, roughly
 30–60 min wall clock depending on API latency. See the cost table below.
 
 ### Benchmark B — error recovery
@@ -283,31 +414,123 @@ make exec     # Benchmark D: executor coverage
 make competitors MODEL=gpt-4.1 REPLICATES=3
 ```
 
-Runs every registered competitor (currently `flowagent`, `biomaster`, and
-`autoba`) on the same prompt corpus, scored with the same `score_plan`
-metrics so the comparison is apples-to-apples. Results land in
+Runs the default-sweep competitors (currently `flowagent`,
+`biomaster`, `autoba`, `biomni`, `claude_code`, plus optional
+zero-shot `raw_<model_id>` baselines) on the same prompt corpus,
+scored with the same `score_plan` metrics so the comparison is
+apples-to-apples.
+
+**Opt-in lanes excluded from the default sweep.** `edison` is
+registered but **not** included in `make competitors`. Edison
+Analysis is structurally different from the other competitors -- it
+runs the full bioinformatics pipeline end-to-end (3-15 min/task and
+real credits) instead of just generating a plan, so it is not
+directly comparable on wall-clock or pass-rate. Each timed-out cell
+also still consumes credits because the analysis continues on
+Edison's servers after the harness kills the local subprocess. To
+include it, name it explicitly:
+
+```bash
+# Edison-only sweep (use a long timeout so polling can finish):
+python bench_competitors.py --competitors=edison \
+    --model=gpt-4.1 --replicates=3 --timeout=1800 --out=results
+
+# Manuscript-grade four-way comparison (FlowAgent + Claude Code +
+# Biomni + Edison) — uses --competitors=...,edison explicitly and
+# enforces a credit cap:
+make competitors-all MODEL=claude-haiku-4-5 REPLICATES=3 EDISON_BUDGET=50
+```
+
+The opt-in set is defined as `_OPT_IN_COMPETITORS` in
+[`bench_competitors.py`](bench_competitors.py) and pinned by
+`tests/test_competitors.py::TestOptInFilter`.
+
+**Fairness convention -- universal no-DAG default for competitors.**
+Every non-FlowAgent competitor in Benchmark E runs in **DAG-blind**
+mode by default. FlowAgent's differentiator is its DAG-aware planner
+(prompt + retry loop + structured-output schema), and any
+DAG-related signal in a competitor's plan would silently hand them
+part of FlowAgent's contribution. The flip is enforced at two
+layers, depending on whether the competitor exposes a prompt knob:
+
+| Competitor | Mechanism | Default |
+|---|---|---|
+| `claude_code` | Shim has two prompt templates; `--with-dag-instruction` flag toggles. `ClaudeCodeCompetitor(with_dag=...)` propagates. | `with_dag=False` (DAG-blind prompt) |
+| `edison` | Shim has two `_PLAN_GUIDELINES` system-prompt variants; `--with-dag-instruction` flag toggles. `EdisonCompetitor(with_dag=...)` propagates. | `with_dag=False` (DAG-blind prompt) |
+| `raw_<model>` | Shim has two `_RAW_LLM_SYSTEM_PROMPT` variants. `RawLLMCompetitor(with_dag=...)` propagates. | `with_dag=False` (DAG-blind prompt) |
+| `biomni` | Agent has no DAG-aware mode upstream (LangChain ReAct loop). Shim **does not synthesise** linear `[step_N-1]` deps from tool-call order. | Always empty `dependencies` |
+| `biomaster` | PLAN.json has no `dependencies` field. Shim **does not synthesise** `[step_N-1]` from `step_number` ordering. | Always empty `dependencies` |
+| `autoba` | Plan is a flat list of task sentences. Shim **does not synthesise** `[step_N-1]` from enumeration order. | Always empty `dependencies` |
+| `flowagent` | The system under test. Uses its DAG-aware planner. | `LLM_DAG_AWARE=true` (real DAG) |
+
+The combined effect: in Benchmark E, only `flowagent` plans carry
+non-trivial `dependencies`, so `dag_edge_density` /
+`parallel_width` / `stage_efficiency` become a clean signal of "did
+the planner actually think about a DAG?" rather than a parsing
+artefact. The metric pipeline normalises flat-list plans
+(`parallel_width=1`, `stage_efficiency=1.0`) so flat competitors
+aren't unfairly inflated either way. See [Benchmark
+J](#benchmark-j--prompt-level-dag-instruction-for-competitors) for
+the paired ablation that turns the prompt-level DAG instruction back
+on for competitors only, in isolation. The DAG-aware opt-in lanes
+live under `*_dag_aware`-suffixed slugs and are exercised only by
+Benchmark J.
+
+**Pinned by tests.** The convention is enforced by:
+- `tests/test_competitors.py::TestRegistry::test_default_competitors_are_dag_blind` -- registry-level black-box check.
+- `tests/test_shim_no_dag_synthesis.py` -- per-shim unit tests for Biomni / BioMaster / AutoBA parsers.
+- `tests/test_claude_code_shim.py`, `tests/test_edison_shim_dag_toggle.py`, `tests/test_raw_llm_dag_toggle.py` -- prompt-template defaults + slug rename for the toggleable competitors.
+
+A future PR that re-introduces a DAG instruction or a synthetic
+`[step_N-1]` chain in any default Benchmark E competitor will turn
+at least one of these red.
+
+The four-way ablation comparison (FlowAgent vs Claude Code vs Biomni vs
+Edison Analysis) requested by the manuscript can be launched as:
+
+```bash
+make competitors-all MODEL=claude-haiku-4-5 REPLICATES=3 EDISON_BUDGET=50
+```
+
+`EDISON_BUDGET` is forwarded as `--edison-budget-credits`; once the
+shared budget file (default `$TMPDIR/edison_budget.json`) crosses the
+cap, further Edison cells short-circuit with a clear error envelope. Results land in
 `results/competitors/<ts>/` with per-row `competitor`, `plan`,
 `prompt_tokens`, `completion_tokens`, `cost_usd`, `wall_seconds`, and the
 standard scoring columns. At the end of each run, the driver prints a
-per-competitor **pass / fail / crash** rollup and writes it to
-`summary.tsv`:
+per-competitor rollup with **two co-primary outcomes** plus cost, and
+writes it to `summary.tsv`:
 
 ```
-Head-to-head rollup (pass / fail / crash per competitor):
-  Competitor        Pass   Fail  Crash   Pass%    $/cell    Wall
-  --------------------------------------------------------------
-  FlowAgent         8/10      2      0   80.0%   $0.0123   15.4s
-  BioMaster         4/10      4      2   40.0%   $0.0087   18.2s
-  AutoBA            5/10      5      0   50.0%   $0.0195   22.1s
+Head-to-head rollup (two co-primary metrics + cost):
+  Pass% = strict overall_pass rate.  Tools% = mean expected-tool fraction (partial credit, crashes excluded).
+  Competitor        Pass   Fail  Crash   Pass%  Tools%    $/cell    Wall
+  -----------------------------------------------------------------------
+  FlowAgent         8/10      2      0   80.0%   95.0%   $0.0123   15.4s
+  BioMaster         4/10      4      2   40.0%   62.5%   $0.0087   18.2s
+  AutoBA            5/10      5      0   50.0%   71.0%   $0.0195   22.1s
+  Biomni            6/10      3      1   60.0%   83.3%   $0.0210   25.0s
 ```
 
 Where:
-- **Pass** = plan produced and scored True on every `score_plan` gate.
+- **Pass** (strict) = plan produced and scored True on every `score_plan`
+  gate. The headline single-number ranking.
+- **Tools** (partial credit) = mean `tools_present_fraction` over scored
+  cells (crashes excluded). Pre-registered as a co-primary outcome so a
+  5-of-6 plan no longer scores identically to a 0-of-6 plan, and so
+  narrative-style competitors aren't erased by a single missed gate.
 - **Fail** = plan produced but missed at least one scoring gate
   (workflow type, expected tools, forbidden tools, min step count).
 - **Crash** = the competitor raised before producing any scorable plan.
   Broken out separately so robustness shows up as its own column rather
   than silently dragging down the pass rate.
+
+Both headline metrics also appear as side-by-side panels in
+`results/figures/competitors.pdf` (and `competitors.png`). When cost data
+is present the figure includes USD cost per successful plan and a
+fold-change vs. the cheapest system. A standalone
+`competitors_cost_per_pass_relative.pdf` is also emitted for manuscript
+layouts that need a wider single panel.
 
 **Subsetting:**
 
@@ -320,6 +543,15 @@ python bench_competitors.py \
 
 `--mock` runs offline with canned plans derived from each prompt's
 `gold_preset` / `expected_tools`, useful for smoke-testing the harness.
+
+**If you see `cli-adapter: RuntimeError: … no JSON envelope on stdout`:**
+the subprocess shim did not print a parseable JSON line on stdout (often
+upstream crashed before the shim’s final `print`, or the wrong `python`
+/env was used). Progress lines only show a short status — open the run’s
+`results/competitors/<ts>/results.json` or `metrics.csv` for the full error,
+or run the shim by hand, e.g.
+`python harness/autoba_shim.py --prompt "…" --model gpt-4.1 --autoba-dir "$AUTOBA_DIR"`
+and read stderr.
 
 #### BioMaster setup (one-off, ~5 min)
 
@@ -433,6 +665,160 @@ python benchmarks/harness/autoba_shim.py \
   tool-signature mapping.
 - AutoBA's `app.py` has a top-level `import torch.cuda`, so `torch` must
   be installed even if you never invoke its GPU paths.
+- **macOS:** if the shim dies with OpenMP / `libomp.dylib already initialized`
+  and exit code **-6**, the harness sets `KMP_DUPLICATE_LIB_OK=TRUE` for the
+  AutoBA subprocess (and `autoba_shim.py` does the same when run manually).
+  You can also export it in your shell for other tools.
+- **Exit -11 (`SIGSEGV`) with empty stdout/stderr:** the child crashed in native
+  code (typically PyTorch / Accelerate / BLAS) before Python could print or
+  flush. The harness now runs the shim with `python -u`, `PYTHONFAULTHANDLER=1`,
+  single-threaded BLAS/OMP defaults (`OMP_NUM_THREADS=1`, etc.), and the shared
+  helpers in [`harness/autoba_child_env.py`](harness/autoba_child_env.py). If it
+  still segfaults: reinstall `torch`/`numpy` from the **same** conda channel,
+  try `conda install pytorch cpuonly -c pytorch`, or run Benchmark E on Linux.
+
+#### Biomni setup (one-off, ~15+ min for full upstream env)
+
+Biomni (biorxiv [10.1101/2025.05.30.656746](https://www.biorxiv.org/content/10.1101/2025.05.30.656746v1))
+is a LangGraph ReAct biomedical agent. The harness drives it through
+[`harness/biomni_shim.py`](harness/biomni_shim.py), which sets
+`react.configure(plan=True, …)` and a **bounded** LangGraph
+`recursion_limit` (default 15, overridable via `BIOMNI_RECURSION_LIMIT`) so
+runs stay closer in cost to the other competitors than Biomni’s interactive
+default. Tool calls in the trace become `steps[]`; if the model only emits
+a narrative plan, the shim falls back to text-derived steps. `workflow_type`
+uses the same `biomaster_shim._classify_workflow_type` post-hoc mapper as
+AutoBA / BioMaster.
+
+```bash
+# 1. Clone
+git clone https://github.com/snap-stanford/Biomni.git /path/to/Biomni
+cd /path/to/Biomni
+
+# 2. Install the package (full scientific stack: see biomni_env/README.md)
+pip install -e .
+
+# 3. API keys & provider — follow upstream .env.example (ANTHROPIC_API_KEY,
+#    OPENAI_API_KEY, LLM_SOURCE, …). Align the model with your sweep:
+#    export BIOMNI_LLM=gpt-4.1   # or match OPENAI_MODEL / --model
+
+# 4. Point the harness at the repo root (directory that contains biomni/)
+echo 'BIOMNI_DIR=/path/to/Biomni' >> /path/to/flowagent/.env
+```
+
+Smoke-test:
+
+```bash
+python benchmarks/harness/biomni_shim.py \
+  --prompt "Run a kallisto RNA-seq quantification on paired-end FASTQs" \
+  --model gpt-4.1
+```
+
+**Notes:**
+
+- By default the shim sets `BIOMNI_USE_TOOL_RETRIEVER=true` and, after
+  `configure()`, rebuilds the LangGraph app with **prompt-based retrieval**
+  (mirroring Biomni’s own `go()`), because **OpenAI caps the `tools` array at
+  128** while the full Biomni registry is much larger. Set
+  `BIOMNI_USE_TOOL_RETRIEVER=false` only for providers without that limit
+  (and use `BIOMNI_MAX_TOOLS_PER_REQUEST` if a different cap applies).
+- Token / cost: OpenAI models use `get_openai_callback`; other providers
+  use LangChain’s `UsageMetadataCallbackHandler` when available — otherwise
+  counts may be zero while the plan is still scored.
+- If Biomni crashes with ``AttributeError: module 'biomni.tool.…' has no attribute '…'``,
+  the tool registry is out of sync with the Python modules (upstream drift).
+  ``biomni_shim.py`` patches ``api_schema_to_langchain_tool`` to register a
+  small placeholder for missing APIs so the agent can still run in Benchmark E.
+- **ImportError: zarr-python major version > 2 is not supported** (often while
+  importing ``scanpy`` / ``anndata``): your env has **Zarr 3.x**, but the
+  installed **anndata** build only supports **Zarr 2.x**. In the same conda env
+  as Biomni, pin Zarr v2, then retry:
+
+  ```bash
+  pip install "zarr>=2.18,<3"
+  # or: conda install "zarr<3"
+  ```
+
+  If conflicts persist, use Biomni’s documented ``biomni_env`` setup or a
+  dedicated conda env for Benchmark E competitors.
+- **ImportError: cannot import name ``ZarrRuntimeWarning`` from ``zarr.errors``**
+  (or other broken imports under ``site-packages/zarr/``): the install is
+  **mixed or half-upgraded** (v2 and v3 files together). Remove Zarr completely,
+  then install a single v2 line:
+
+  ```bash
+  pip uninstall zarr zarr-python -y   # both names can exist
+  pip install "zarr>=2.18,<3"
+  python -c "import zarr; print(zarr.__version__)"
+  ```
+
+  With conda: ``conda remove zarr --yes`` then ``conda install -c conda-forge "zarr>=2.18,<3"``.
+
+#### Claude Code setup (one-off, ~2 min)
+
+Claude Code is Anthropic's general-purpose CLI coding agent. The
+adapter ([`harness/competitors.py:ClaudeCodeCompetitor`](harness/competitors.py))
+drives it via [`harness/claude_code_shim.py`](harness/claude_code_shim.py)
+with `--print --output-format json --permission-mode plan` so the
+agent emits its full reply as a single JSON object on stdout and never
+edits files.
+
+```bash
+# 1. Install the Claude Code CLI per Anthropic's docs:
+#    https://docs.claude.com/en/docs/claude-code/overview
+# 2. Authenticate
+claude /login
+
+# 3. (optional) pin the binary if it isn't on PATH
+echo 'CLAUDE_CODE_BIN=/path/to/claude' >> /path/to/flowagent/.env
+# 4. (optional) pin a model; default is whatever Claude Code chose
+echo 'CLAUDE_CODE_MODEL=claude-sonnet-4-5' >> /path/to/flowagent/.env
+```
+
+Smoke-test the shim directly before wiring it into the sweep:
+
+```bash
+python benchmarks/harness/claude_code_shim.py \
+  --prompt "Run a kallisto RNA-seq quantification on paired-end FASTQs"
+```
+
+Expect a JSON envelope on stdout with `plan`, `prompt_tokens`,
+`completion_tokens`, `cost_usd`, `wall_seconds`. Cost is read from
+Claude Code's own `total_cost_usd` field.
+
+#### Edison Analysis setup (one-off, ~3 min)
+
+Edison Scientific's Edison Analysis (FutureHouse spinout) is a hosted,
+execution-oriented bioinformatics agent. The adapter
+([`harness/competitors.py:EdisonCompetitor`](harness/competitors.py))
+drives it via [`harness/edison_shim.py`](harness/edison_shim.py),
+overriding the system prompt so Edison emits a JSON workflow plan
+without actually running any code.
+
+```bash
+# 1. Install the SDK
+pip install edison-client
+
+# 2. Sign up at https://platform.edisonscientific.com  (academic .edu
+#    accounts get a free monthly credit allocation), generate an API key.
+echo 'EDISON_API_KEY=...'              >> /path/to/flowagent/.env
+
+# 3. (recommended) cap cumulative spend across this process
+echo 'EDISON_BUDGET_CREDITS=100'        >> /path/to/flowagent/.env
+```
+
+Edison Analysis runs are slow (3–10 min/task) and cost credits per
+task. Always pilot first:
+
+```bash
+make competitors-all MODEL=claude-haiku-4-5 REPLICATES=1 \
+    EDISON_BUDGET=20  # hard cap
+```
+
+The shim writes a shared budget file at `$EDISON_BUDGET_FILE` (default
+`$TMPDIR/edison_budget.json`) so parallel cells share the running
+total; once consumed exceeds `EDISON_BUDGET_CREDITS`, subsequent
+cells short-circuit with a clear error envelope.
 
 ### Benchmark F — output fidelity
 
@@ -580,7 +966,7 @@ make interpretation MODEL=gpt-4.1 JUDGE=gpt-5.4
 
 # Multi-model sweep (recommended for the manuscript figure)
 python bench_interpretation.py \
-  --models gpt-5.4,gpt-5.4-mini,o3,gpt-4.1,claude-opus-4-7,claude-sonnet-4-6,claude-haiku-4-5,gemini-2.5-pro,gemini-2.5-flash,gemini-3.1-flash-lite-preview \
+  --models gpt-5.5,gpt-5.4,gpt-5.4-mini,o3,gpt-4.1,claude-opus-4-7,claude-sonnet-4-6,claude-haiku-4-5,gemini-3.5-flash,gemini-2.5-pro,gemini-2.5-flash,gemini-3.1-flash-lite \
   --judge gpt-5.4
 
 # Every model in models.yaml
@@ -604,11 +990,629 @@ The `interpretation_figure` in `harness/plot.py` renders three panels:
 - **Model × dataset MCQ-accuracy heatmap** (grey cells = no data).
 - **Per-model open-ended judge mean** ± 1 SD.
 
+### Benchmark H — DAG-awareness ablation
+
+```bash
+# 5-prompt smoke (validates the whole pipeline; ~$0.05 on Claude Haiku)
+make ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep
+make ablation MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_ablation.pdf + figure_ablation__stats.tsv (uses the most recent run)
+make ablation-figure
+# Or point at a specific run
+make ablation-figure ABLATION_DIR=results/ablation/2026-05-06T21-33-42
+```
+
+Tests whether telling the LLM about the dependency DAG -- the standard
+"Dependencies must form a valid DAG (no cycles)" rule plus the
+`dependencies` field in the structured-output schema -- changes
+bioinformatics plan quality. Same model, same prompt, two planner
+configurations:
+
+| Arm | `LLM_DAG_AWARE` | Schema | Prompt rule |
+|---|---|---|---|
+| `dag_aware` | `true` (default) | [`WorkflowPlanSchema`](../flowagent/core/schemas.py) (with `dependencies`) | "Dependencies must form a valid DAG (no cycles)" |
+| `dag_blind` | `false` | [`WorkflowPlanSchemaNoDAG`](../flowagent/core/schemas.py) (no `dependencies`) | Flat ordered list, dependencies never mentioned |
+
+Empty dependency lists are injected post-parse on the DAG-blind side
+so the resulting plan is a trivially valid DAG with zero edges -- this
+keeps the existing `dag_valid` gate green for both arms and makes the
+delta show up only in metrics that actually reflect plan quality:
+
+| Metric | Where | What it measures |
+|---|---|---|
+| `dag_edge_density` | [`harness/metrics.dag_shape`](harness/metrics.py) | edges / max(steps - 1, 1). Sanity: should be 0 for `dag_blind`. |
+| `parallel_width` | same | max width of a topological layer. Sanity: 1 for `dag_blind`. |
+| `stage_efficiency` | same | `num_steps / num_dag_layers` (DAG-Plan analogue, Gao & Mu 2025). 1.0 for linear; >1 for parallel; normalised to 1.0 when there are zero edges. |
+| `completeness_pass` | [`harness/metrics.completeness_metrics`](harness/metrics.py) | does the plan satisfy the four DAG-Plan-style structural rules (every `align` has an `index`/`download` ancestor; every `download` has a consumer; every `quantify`/`call`/`de` reaches an informative sink; weakly connected with terminal sink)? |
+| `tools_present_fraction` | [`score_plan`](harness/metrics.py) | did DAG awareness change tool selection? |
+| `hallucination_rate` | same | did it suppress unknown / made-up tool names? |
+| `preset_command_f1` | same | did it improve adherence to the gold preset commands? |
+| `overall_pass` | same | did it move the gating outcome? (paired McNemar) |
+
+`stage_efficiency` and `completeness_pass` were added to support
+Benchmark I (see below) but are recorded for *every* run, so they
+appear as new columns in Benchmark H's `paired_metrics.csv` too.
+
+Output:
+
+* `results/ablation/<ts>/dag_aware/results.jsonl` + `metrics.csv`
+* `results/ablation/<ts>/dag_blind/results.jsonl` + `metrics.csv`
+* `results/ablation/<ts>/paired_metrics.csv` -- single CSV with an `arm`
+  column, joined by `(model, input_id, replicate)` so paired tests
+  ([`make_ablation_figure.py`](make_ablation_figure.py)) line up the
+  same prompt across the two planner configurations.
+* `figure_ablation.pdf` / `.png` -- per-metric arm means with bootstrap
+  95% CIs.
+* `figure_ablation__stats.tsv` -- paired Wilcoxon (continuous) and
+  McNemar (`overall_pass`) per metric (default basename `<out>__stats.tsv`,
+  override with `--stats-out`).
+
+**Combined ablation summary (Benchmarks H / I / K / L / M).** After
+running the individual ablations, ``make ablation-summary-figure``
+(or ``python make_ablation_summary_figure.py``) reads the newest
+``paired_metrics.csv`` from each run tree and emits:
+
+| Output | Contents |
+|---|---|
+| `ablation_summary.pdf` | Headline pass rates: `overall_pass` + `completeness_pass` |
+| `ablation_summary_secondary.pdf` | Tool coverage, hallucination rate, DAG edge density, stage efficiency |
+| `ablation_summary__stats.tsv` | Headline pass-rate table (McNemar, bootstrap CIs) |
+| `ablation_summary__metrics.tsv` | Long-format paired stats for every metric present (Wilcoxon / McNemar) |
+| `ablation_summary__metrics_wide.tsv` | One row per component; `<metric>_on_mean` / `_off_mean` / `_delta` / `_p` columns for manuscript tables |
+
+**Manuscript run (66 prompts × 3 replicates = 198 paired cells,
+gpt-5.4-mini, $6.84 total, 0 errors)**: the DAG-aware arm wins the
+headline gate and dominates every structural metric. `overall_pass`
+80.3% vs 75.8% (+4.5 pp, McNemar p = 0.022) and `completeness_pass`
+100% vs 0% (p ≈ 0); `dag_edge_density` 1.40 vs 0.0, `parallel_width`
+3.03 vs 1.0, `stage_efficiency` 1.51 vs 1.0. DAG-aware plans are
+slightly longer (11.6 vs 10.3 steps) and carry a small hallucination
+cost (`hallucination_rate` 0.023 vs 0.0, p = 1.6e-6). See
+[`figures/ablation.pdf`](../figures/ablation.pdf) and
+[`figures/ablation__stats.tsv`](../figures/ablation__stats.tsv).
+
+### Benchmark I — completeness-reflection ablation
+
+```bash
+# 8-prompt smoke (validates the whole pipeline; ~$0.20 on Claude Haiku)
+make reflection-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep
+make reflection MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Same sweep but cap retries (default 2) — useful to study cost/benefit
+make reflection MODEL=claude-haiku-4-5 REPLICATES=3 MAX_RETRIES=1
+
+# Render figure_reflection.pdf + stats_reflection.tsv (uses the most recent run)
+make reflection-figure
+# Or point at a specific run
+make reflection-figure REFLECTION_DIR=results/reflection/2026-05-06T22-09-17
+```
+
+Tests whether the DAG-Plan-style structural completeness validator
+(introduced in [`flowagent/core/completeness.py`](../flowagent/core/completeness.py))
+plus an LLM reflection retry loop improves plan quality. Both arms keep
+`LLM_DAG_AWARE=true` so this is a clean A/B of the reflection retry
+alone (not a confound with the Benchmark H DAG-prompt toggle):
+
+| Arm | `LLM_COMPLETENESS_REFLECT` | Behaviour |
+|---|---|---|
+| `reflect_on` | `true` (default) | After each plan, run [`validate_workflow_completeness`](../flowagent/core/completeness.py). On failure, append the failure list to the conversation as a reflection prompt and re-query the LLM, up to `LLM_COMPLETENESS_MAX_RETRIES` times (default 2 → max 3 LLM calls). The most recent plan wins regardless. |
+| `reflect_off` | `false` | The validator still runs at score time (so `completeness_pass` and `num_completeness_failures` are reported for both arms), but the planner accepts the first draft without retry. |
+
+Both arms share the rest of the planner stack: the typed-node `kind`
+field on each step, the post-hoc heuristic `fill_missing_kinds` fallback,
+the reference-download wiring, and the structured-output schema. The
+delta is the retry loop alone.
+
+The four structural rules the validator enforces (each contributes at
+most one failure message; see
+[`validate_workflow_completeness`](../flowagent/core/completeness.py)):
+
+1. Every `align` step needs an `index` or `download` ancestor.
+2. Every `download` step must have a downstream consumer (no
+   "fetched but never used" references).
+3. Every `quantify`/`call`/`de` step must reach an informative sink
+   (`report`, `terminal`, or another `quantify`/`call`/`de`) — chains
+   ending in a glue `other` sink fail.
+4. The DAG must be weakly connected with at least one terminal sink
+   and no cycles.
+
+Step `kind` is one of `download | index | qc | trim | align | sort |
+dedup | call | quantify | de | report | terminal | other` and is
+emitted by the LLM (asked for in the prompt) or, on the
+`WorkflowPlanSchemaNoDAG` ablation arm + JSON-repair retries that drop
+fields, inferred heuristically from `command + name`.
+
+Headline metrics for this benchmark:
+
+| Metric | What it measures |
+|---|---|
+| `completeness_pass` | binary pass/fail per plan against the four rules. Headline McNemar test in `stats_reflection.tsv`. |
+| `num_completeness_failures` | count of rule violations per plan. |
+| `completeness_attempts` | number of LLM calls used to reach the final plan (1 = no retries; 2-3 = reflection fired). |
+| `stage_efficiency` | `num_steps / num_dag_layers`. Reflected here because reflection can change graph topology. |
+| `cost_usd` | the cost overhead of reflection — directly comparable across arms. |
+| `overall_pass`, `tools_present_fraction`, `hallucination_rate` | inherited from `score_plan`; should be neutral in a clean reflection-only ablation. |
+
+Output (mirrors Benchmark H's layout):
+
+* `results/reflection/<ts>/reflect_on/results.jsonl` + `metrics.csv`
+* `results/reflection/<ts>/reflect_off/results.jsonl` + `metrics.csv`
+* `results/reflection/<ts>/paired_metrics.csv` -- joined by
+  `(model, input_id, replicate)`.
+* `figure_reflection.pdf` / `.png` -- per-metric arm means with
+  bootstrap 95% CIs (panels: `completeness_pass`, `stage_efficiency`,
+  `overall_pass`, `dag_edge_density`, `parallel_width`,
+  `completeness_failures`, `hallucination_rate`,
+  `tools_present_fraction`, `num_steps`).
+* `stats_reflection.tsv` -- paired Wilcoxon (continuous) + McNemar
+  (binary) per metric, with `mean_reflect_on`, `mean_reflect_off`,
+  `mean_diff`, `p_value`, `test`, and `(b_only, c_only)` discordant
+  counts for the McNemar tests.
+
+**Manuscript run (66 prompts × 3 replicates = 198 paired cells,
+gpt-5.4-mini, $3.90 total, 0 errors)** in
+`results/reflection/2026-06-02T17-49-32/`: `completeness_pass` rises
+from 69.7% (`reflect_off`) to 100% (`reflect_on`) — a +30.3 pp gain
+(McNemar p = 1.7e-18; 60 plans recovered by reflection, 0 degraded).
+The headline `overall_pass` gate is unchanged (79.8% on both arms,
+p = 1.0): reflection repairs structural completeness without moving
+the explicit-tool gate. Cost overhead is concentrated on the cells
+that actually retry — per-cell mean cost rose from $0.0085 to $0.0112
+(~33%) and mean LLM calls from 2.0 to 2.8 (mean `completeness_attempts`
+1.0 → 1.28). See [`figures/reflection.pdf`](../figures/reflection.pdf)
+and [`figures/reflection__stats.tsv`](../figures/reflection__stats.tsv).
+
+Use the new `MAX_RETRIES` knob to study cost/benefit:
+
+```bash
+# 1 retry only (max 2 LLM calls per plan)
+make reflection MAX_RETRIES=1
+
+# Validation runs but no retries — completeness_pass still reported
+make reflection MAX_RETRIES=0
+```
+
+`MAX_RETRIES=0` is also useful as a third arm: it keeps the validator
+in the scoring loop (so the metric is comparable) but disables the
+retry, isolating the cost of *running the validator* from the cost of
+*acting on it*.
+
+### Benchmark J — competitor DAG-prompt ablation
+
+```bash
+# 3-prompt smoke (~$0.10-0.50 on Claude Haiku 4.5)
+make competitor-dag-ablation-pilot CDAG_MODEL=claude-haiku-4-5
+
+# Full 66-prompt × REPLICATES × 2 arms sweep, Claude Code only
+make competitor-dag-ablation CDAG_MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_competitor_dag__claude_code.pdf + per-competitor stats
+make competitor-dag-figure
+# Or point at a specific run
+make competitor-dag-figure CDAG_DIR=results/competitor_dag_ablation/2026-05-07T15-06-15
+```
+
+#### What it tests
+
+Benchmark H toggles FlowAgent's **own** DAG awareness, which flips
+both the planner prompt **and** the structured-output schema
+(`WorkflowPlanSchemaNoDAG` removes the `dependencies` field entirely).
+That ablation conflates "prompt-level DAG instruction" with
+"schema-level DAG enforcement".
+
+For *competitor* frameworks (Claude Code, Biomni, Edison) we don't
+control the schema. Benchmark J asks the cleanest question we can:
+**does prompt-level DAG instruction alone change a competitor's plan
+quality?** If yes, prompt engineering is enough. If no — and FlowAgent's
+H ablation shows a positive delta — schema-level enforcement is the
+necessary intervention, not just any mention of the word "dependency"
+in a prompt. That's the manuscript story for FlowAgent's contribution
+beyond raw LLM prompting.
+
+#### Arms (Claude Code)
+
+The Claude Code shim
+([`harness/claude_code_shim.py`](harness/claude_code_shim.py)) ships
+with two prompt templates and a `--with-dag-instruction` CLI flag.
+`ClaudeCodeCompetitor(with_dag=...)` propagates the flag.
+
+| Arm | Prompt template | Slug |
+|---|---|---|
+| `dag_blind` | Schema example has **no** `dependencies` field; no topological-order rule. **This is the default** -- the slug `claude_code` in every other benchmark refers to this DAG-blind variant. | `claude_code` |
+| `dag_aware` | Schema includes `dependencies: [<prior step>]`, plus rules: *"Steps must be in topological order"* and *"`dependencies` must reference names of prior steps exactly."* Every other rule (tool-first command, no side effects, no markdown fences, etc.) is byte-identical to `dag_blind`, so the only experimental variable is the DAG instruction. Pinned by the unit test `TestSelectTemplate.test_non_dag_rules_unchanged_between_arms`. | `claude_code_dag_aware` |
+
+The asymmetry between the two slugs is intentional: it lets the same
+ablation arms co-exist as separate competitors in the registry (so
+Benchmark J can run them paired) while keeping `claude_code` --
+the slug Benchmark E uses -- pointing at the *fair head-to-head*
+DAG-blind variant. The figure script knows which arm each row came
+from via the `competitor_arm` column. The same convention applies to
+`EdisonCompetitor` (default `edison` = DAG-blind, opt-in
+`edison_dag_aware`) and `RawLLMCompetitor` (default `raw_<model>` =
+DAG-blind, opt-in `raw_<model>_dag_aware`).
+
+#### Why DAG-blind is the default for competitors
+
+FlowAgent's contribution is a **DAG-aware planner** (LLM prompt asks
+for `dependencies`, retry loop validates them against
+`networkx.is_directed_acyclic_graph`, and the structured-output
+schema reserves a slot for them). Other competitors don't have any
+of that scaffolding; their only knob is the prompt template the
+shim wraps around the user's request.
+
+If we ran Benchmark E's head-to-head with the competitor shims
+**also** asking for `dependencies`, the comparison would be
+contaminated: any "FlowAgent wins" delta could just as easily come
+from "FlowAgent's prompt happens to ask for the right field". By
+defaulting every competitor (including the raw-LLM lane) to the
+DAG-blind template, Benchmark E isolates the value of FlowAgent's
+*full* DAG-aware stack -- planner + retry loop + schema -- against
+agents that get a vanilla bioinformatics-pipeline prompt with no
+graph instructions. Benchmark J then re-introduces the DAG
+instruction *only on the competitor side* to measure how much of
+that gap closes from prompt engineering alone.
+
+#### Currently supported competitors
+
+* **Claude Code** — wired up. Default driver model
+  `claude-haiku-4-5` (override with `CDAG_MODEL=claude-sonnet-4-5`
+  for the manuscript figure).
+* **Edison Analysis** — shim has the
+  `--with-dag-instruction` toggle and `EdisonCompetitor(with_dag=...)`
+  is supported (the default `edison` slug in Benchmark E is
+  DAG-blind). Not yet enabled in `_build_arm_competitors`; flipping
+  it on is a one-line change once the manuscript run gets a budget
+  allocation for paired Edison cells (each task is 3-10 min and
+  costs credits per call).
+* **Biomni** — not wired up. Biomni's LangGraph ReAct loop has its
+  own upstream system prompt and may ignore user-level DAG
+  instructions entirely; adding it requires a shim-level prompt
+  template the harness can toggle, plus an availability sanity-check
+  that the framework actually emits `dependencies` fields when asked.
+* **Raw LLM** — `RawLLMCompetitor(model_id, with_dag=...)` is
+  supported (default `raw_<model>` slug is DAG-blind). Not currently
+  in `_build_arm_competitors` because the manuscript story for
+  Benchmark J focuses on agentic competitors with their own
+  scaffolding; raw-LLM ablations against a DAG instruction
+  duplicate Benchmark H's question more directly.
+
+#### Headline metrics (same set as Benchmark H, plotted side by side)
+
+| Metric | What it measures |
+|---|---|
+| `dag_edge_density` | Sanity: did the DAG-aware arm actually emit dependencies? On Claude Code we expect ≫0 in `dag_aware` and ≈0 in `dag_blind`. |
+| `parallel_width` | Sanity: max width of a topological layer. Should rise with `dag_edge_density`. |
+| `stage_efficiency` | `num_steps / num_dag_layers`. Higher = more parallelism exposed. |
+| `overall_pass` | Strict gating outcome. Headline McNemar test in `figure_competitor_dag__claude_code__stats.tsv`. |
+| `tools_present_fraction` | Partial-credit tool coverage. |
+| `hallucination_rate` | Fraction of plan tools we don't recognise. |
+| `preset_command_f1` | Token-F1 vs the gold preset command (subset metric — ~5 of 66 prompts have a gold preset). |
+| `preset_name_jaccard` | Step-name Jaccard vs the gold preset (same subset). |
+| `num_steps` | Raw step count. |
+
+#### Output layout
+
+```
+results/competitor_dag_ablation/<ts>/
+├── claude_code/
+│   ├── dag_aware/
+│   │   └── results.jsonl + results.json + metrics.csv + manifest.json
+│   ├── dag_blind/
+│   │   └── results.jsonl + ...
+│   └── paired_metrics.csv          # joined by (model, input_id, replicate)
+├── paired_metrics.csv              # cross-competitor — one row per cell
+└── manifest.json
+```
+
+The figure script renders one PDF per competitor:
+`figure_competitor_dag__claude_code.pdf` + the matching
+`__stats.tsv`. When future competitors are added, each gets its own
+PDF in the same run output.
+
+#### Decision tree for interpreting the result
+
+| dag_edge_density (aware) | overall_pass delta | What it tells you |
+|---|---|---|
+| ≈ 0 | any | Claude Code ignored the `dependencies` instruction. Prompt-level DAG instruction is insufficient for this framework. **Null result is itself a finding.** |
+| > 0, sane | aware ≫ blind | Prompt engineering alone helps Claude Code. (FlowAgent's H delta should still be larger if schema-level enforcement adds value.) |
+| > 0, sane | aware ≈ blind | Claude Code can emit DAGs but it doesn't help its plan quality. Suggests other quality determinants (tool selection, command syntax) dominate over graph structure. |
+| > 0, sane | aware < blind | Adding the DAG instruction *hurts* — likely confuses the planner. (Unlikely but possible — useful signal that prompt engineering is fragile.) |
+
+### Benchmark K — command-level validator ablation (todo T0)
+
+```bash
+# 5-prompt smoke (~$0.10 on Claude Haiku 4.5)
+make validator-ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep (~$5-8, ~30 min on Haiku)
+make validator-ablation MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_validator.pdf + figure_validator__stats.tsv (uses the most recent run)
+make validator-figure
+# Or point at a specific run
+make validator-figure VALIDATOR_DIR=results/validator_ablation/2026-05-08T22-00-59
+```
+
+Tests how much of FlowAgent's robustness comes from the
+post-generation command-level validator + auto-fix layer
+([`flowagent/core/llm.py`](../flowagent/core/llm.py),
+`_autofix_generated_steps` + `_validate_generated_steps`) versus the
+underlying LLM's first-pass plan quality. Motivated by the validator-
+as-mitigation pattern catalogued in the architecture review §3.6 and
+by the unanswered question of whether retry-driven correction earns
+its keep on the planning hot path.
+
+| Arm | `FLOWAGENT_VALIDATOR_ENABLED` | Behaviour |
+|---|---|---|
+| `validator_on` | `true` (default) | Auto-fix transforms (archive nesting, `\n`-literal escape, T3 typo correction) run on the LLM-emitted plan; the command-level validator's rule set fires (placeholder paths, role-name globs, fictional script invocations, archive-target nesting, …); validator failures are appended to the existing reflection feedback so the LLM gets one combined retry message per attempt. |
+| `validator_off` | `false` | Both the autofix and the validator are bypassed on the primary path. The retry triggered by validator failures is therefore also skipped — so the off-arm doesn't lose to the on-arm on extra inference rounds rather than on validator quality. |
+
+Both arms keep `LLM_DAG_AWARE=true` and the structural completeness
+reflection (`LLM_COMPLETENESS_REFLECT=true`). The structural completeness
+validator is intentionally *not* gated; the ablation scope is the
+command-level layer alone.
+
+#### Plan envelopes
+
+Every cell's `plan` field carries a `_validator` envelope so the
+benchmark scorer doesn't have to re-derive validator outcome from logs:
+
+```json
+"_validator": {
+  "pass": true,
+  "failures": [],
+  "enabled": true
+}
+```
+
+`enabled` reflects the env-var at planning time; `failures` is the
+*final* validator outcome after retries (a plan that converged inside
+the retry budget reads `pass=true` even if earlier attempts failed).
+
+#### Headline metrics (all in `paired_metrics.csv`)
+
+Same set as Benchmark H plus completeness columns. The McNemar test on
+`overall_pass` is the headline answer to the ablation; `attempts`
+(LLM call count per plan) and `cost_usd` quantify the retry-loop
+overhead the on-arm pays.
+
+#### What the manuscript run on gpt-5.4-mini found
+
+198 paired cells (66 × 3 reps), 0 errors, $5.33 total. Headline
+`overall_pass`: 80.3% on, 79.8% off (McNemar p ≈ 1.0, n.s.). No
+continuous metric significantly favoured the on-arm; `stage_efficiency`
+was a wash (1.509 on vs 1.505 off, p = 0.97). The on-arm paid for
+~0.9 extra LLM call per plan (3.33 vs 2.39 mean calls; mean
+`completeness_attempts` 1.76 vs 1.30) without converting it into
+measurable plan-quality gains — and `completeness_pass` actually
+regressed (76.3% on vs 100% off, p = 1.4e-14), because the retry
+budget that structural reflection wants to use was exhausted on
+command-level fixes that the LLM didn't reliably produce.
+
+This null result is consistent with the recovery-taxonomy benchmark
+(Benchmark B): LLMs are reliably bad at correction-on-feedback in the
+same context as the original generation. The validator's autofix
+transforms — which don't loop the LLM — are still useful (the
+recovery-taxonomy ceiling doesn't apply to deterministic rewrites);
+the *retry* triggered by validator failures is what earns nothing on
+this evidence. See the architecture review §3.6 for the
+prevention-vs-correction framing this result strengthens.
+
+Output:
+
+* `results/validator_ablation/<ts>/validator_on/results.jsonl` + `metrics.csv`
+* `results/validator_ablation/<ts>/validator_off/results.jsonl` + `metrics.csv`
+* `results/validator_ablation/<ts>/paired_metrics.csv` — joined by
+  `(model, input_id, replicate)`.
+* `figure_validator.pdf` / `.png` — per-metric arm means with bootstrap
+  95% CIs.
+* `figure_validator__stats.tsv` — paired Wilcoxon (continuous) and
+  McNemar (`overall_pass`) per metric.
+
+### Benchmark L — CoVe verifier ablation (todo T4)
+
+```bash
+# 5-prompt smoke (~$0.20 on Claude Haiku 4.5)
+make cove-ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep (~$5-8, ~30-40 min)
+make cove-ablation MODEL=claude-haiku-4-5 REPLICATES=3
+
+# Render figure_cove.pdf + figure_cove__stats.tsv + figure_cove__signal.tsv
+make cove-figure
+# Or point at a specific run
+make cove-figure COVE_DIR=results/cove_ablation/2026-05-09T08-25-41
+```
+
+Tests whether an independently-prompted Chain-of-Verification verifier
+(Dhuliawala et al. 2024, [arXiv:2309.11495](https://arxiv.org/abs/2309.11495))
+produces a signal that correlates with downstream plan failure.
+Implemented in [`flowagent/core/verifier.py`](../flowagent/core/verifier.py):
+runs after the existing reflection loop, in a fresh LLM context with
+no generator chain-of-thought visible, and asks five targeted questions
+(tool-name reality, assay/tool match, report-sink wiring, dependency
+consistency, workflow-type match). The verifier returns one
+`VerificationConcern` per question (question + answer + concern flag +
+severity). The planner uses the *count* of severity-weighted concerns
+as an abstention signal.
+
+#### Why this benchmark is signal-measurement, not behaviour-change
+
+This run **always runs in annotation-only mode**: the verifier records
+its concerns on the plan envelope but the plan still ships regardless
+of what the verifier finds. The benchmark's question is "does the
+verifier's signal correlate with `overall_pass`?" — not "does refusing
+flagged plans improve outcomes?". A separate run with
+`FLOWAGENT_COVE_ABSTAIN=true` will test the abstention behaviour change
+once the signal is shown to be useful here.
+
+| Arm | `FLOWAGENT_COVE_VERIFY` | `FLOWAGENT_COVE_ABSTAIN` | Behaviour |
+|---|---|---|---|
+| `verifier_off` | `false` | `false` | Baseline. No verifier call, no overhead beyond today's planner. |
+| `verifier_on` | `true` | `false` | Verifier runs after the reflection loop; concerns recorded on `plan["_verifier"]`; plan ships even when concerns are raised. |
+
+Both arms keep `LLM_DAG_AWARE=true` and `FLOWAGENT_VALIDATOR_ENABLED=true`
+(the T0-recommended default).
+
+#### Empirical motivation: the recovery-taxonomy ceiling
+
+The recovery taxonomy (Benchmark B / `recovery_taxonomy.py`) shows
+~37% correct refusal vs ~57% confabulated-fix across 9 reasoning
+models on unrecoverable-tier faults. The lesson: LLMs are reliably bad
+at correction-on-feedback when the verifier shares context with the
+generator. CoVe's *factored* variant breaks that failure mode by
+running the verifier in a fresh context — it can't anchor on the
+generator's hallucinations because it never saw the generator's
+reasoning trace.
+
+The *abstention semantics* (rather than feedback-driven retry) are
+the second design choice: the planner uses concern counts to *refuse*
+flagged plans rather than asking the LLM to fix them. That sidesteps
+the retry-reliability ceiling entirely; abstention is the only
+behaviour the recovery taxonomy shows LLMs do reliably (the green
+bar in the taxonomy figure). The catch: we don't ask the LLM to
+abstain — *we* (the planner) do, based on a count threshold.
+
+#### Plan envelopes
+
+Every cell's `plan` field carries a `_verifier` envelope:
+
+```json
+"_verifier": {
+  "enabled": true,
+  "pass": true,
+  "weighted_concern_count": 0,
+  "abstention_threshold": 2,
+  "concerns": [
+    {"question": "...", "answer": "all real",
+     "concern": false, "severity": "high"},
+    ...
+  ]
+}
+```
+
+`weighted_concern_count` weights `high`=2, `medium`=1, `low`=0; the
+default threshold of 2 means a single ship-blocking concern is enough
+to flag, and two medium concerns are also enough.
+
+#### Env knobs
+
+| Var | Default | Effect |
+|---|---|---|
+| `FLOWAGENT_COVE_VERIFY` | `false` | Master toggle. False = 0ms no-op; provider never called. |
+| `FLOWAGENT_COVE_ABSTAIN` | `false` | When true, threshold breach raises `ValueError` rather than just annotating the envelope. **Pinned false in this benchmark.** |
+| `FLOWAGENT_COVE_THRESHOLD` | `2` | Severity-weighted concern count needed to flag. |
+
+#### Headline outputs
+
+Same per-metric paired figure as the other ablations, plus a
+**verifier-signal contingency table** (`figure_cove__signal.tsv`)
+specific to T4:
+
+```
+verifier_flagged | overall_pass=True | overall_pass=False
+-----------------|-------------------|-------------------
+       True      |        FP         |         TP
+       False     |        TN         |         FN
+```
+
+with derived `precision = TP/(TP+FP)`, `recall = TP/(TP+FN)`, and
+`abstention rate = (TP+FP)/N`. The benchmark scorer doesn't re-run any
+LLM calls to build this table — it reads `_verifier.weighted_concern_count`
+and `_verifier.abstention_threshold` straight from the JSONL.
+
+#### Decision rule for interpreting the result
+
+| Verifier precision | Verifier recall | Implication |
+|---|---|---|
+| ≥ 70% | ≥ 30% | Useful failure predictor; flip `FLOWAGENT_COVE_ABSTAIN=true` for a follow-up run to measure the abstention behaviour change. |
+| 40-70% | any | Marginal. Tune the questions / threshold (`FLOWAGENT_COVE_THRESHOLD`) before shipping abstention. |
+| ≤ 40% | any | Verifier flags too many good plans. Reframe as instrumentation only or change the question set. |
+| any | < 10% | Most failures slip past the verifier. Different problem — questions don't cover the missed failure modes. |
+
+Output:
+
+* `results/cove_ablation/<ts>/verifier_on/results.jsonl` + `metrics.csv`
+* `results/cove_ablation/<ts>/verifier_off/results.jsonl` + `metrics.csv`
+* `results/cove_ablation/<ts>/paired_metrics.csv` — joined by
+  `(model, input_id, replicate)`.
+* `figure_cove.pdf` / `.png` — per-metric arm means with bootstrap 95% CIs.
+* `figure_cove__stats.tsv` — paired Wilcoxon + McNemar per metric.
+* `figure_cove__signal.tsv` — verifier-as-failure-predictor
+  contingency table (built from the `_verifier` envelopes in the
+  `verifier_on` JSONL).
+
+#### What the manuscript run on gpt-5.4-mini found
+
+198 paired cells (66 × 3 reps), 0 errors, $5.32 total. As
+annotation-only, `overall_pass` is unchanged between arms (78.3% on
+vs 78.8% off, McNemar p ≈ 1.0). The verifier signal is **sensitive but
+not specific**: recall 0.95 (41/43 failing plans flagged, only 2 false
+negatives) but precision 0.25 (120 of 161 flagged plans actually
+passed), for an 81% abstention rate. By the decision rule above this
+lands in the "≤ 40% precision" band — the verifier is useful as
+instrumentation / a failure tripwire, but flags too many good plans to
+ship as an abstention gate without retuning the question set or
+threshold. See [`figures/cove_ablation__signal.tsv`](../figures/cove_ablation__signal.tsv).
+
+### Benchmark M — workflow tool-hint ablation
+
+```bash
+# 5-prompt smoke (~$0.10 on Claude Haiku 4.5)
+make tool-hint-ablation-pilot MODEL=claude-haiku-4-5
+
+# Full 66-prompt × MODEL × REPLICATES × 2 arms sweep
+make tool-hint-ablation MODEL=gpt-5.4-mini REPLICATES=3
+
+# Render figure_tool_hint.pdf + figure_tool_hint__stats.tsv (uses the most recent run)
+make tool-hint-figure
+# Or point at a specific run
+make tool-hint-figure TOOL_HINT_DIR=results/tool_hint_ablation/2026-06-02T19-01-43
+```
+
+Tests whether the per-workflow tool allowlist injected into the
+planning prompt (`LLMInterface._tool_hint_for_workflow_type`, "Valid
+tool names for this workflow…") improves plan quality. Both arms keep
+`LLM_DAG_AWARE=true` and the rest of the default planner stack so this
+isolates the tool-hint layer.
+
+| Arm | `FLOWAGENT_TOOL_HINT` | Behaviour |
+|---|---|---|
+| `hint_on` | `true` (default) | The planning prompt lists the valid tool catalogue for the detected workflow type. |
+| `hint_off` | `false` | No tool catalogue in the prompt; the LLM chooses tools from training data alone. |
+
+#### What the manuscript run on gpt-5.4-mini found
+
+198 paired cells (66 × 3 reps), 0 errors, $4.59 total. The tool hint
+gives a small, non-significant lift on the headline gate
+(`overall_pass` 79.3% on vs 75.8% off, +3.5 pp, McNemar p = 0.065) and
+a significant lift in tool coverage (`tools_present_fraction` 0.904 vs
+0.892, p = 0.020). The trade-off: the hint slightly *raises*
+hallucination (`hallucination_rate` 0.024 vs 0.014, p = 0.028;
+`num_hallucinated_tools` 0.17 vs 0.10, p = 0.016) — naming a catalogue
+nudges the LLM to reach for adjacent tools it doesn't always invoke
+correctly. Net: a modest tool-selection aid, not a robustness fix.
+
+Output mirrors the other ablations:
+
+* `results/tool_hint_ablation/<ts>/hint_on/results.jsonl` + `metrics.csv`
+* `results/tool_hint_ablation/<ts>/hint_off/results.jsonl` + `metrics.csv`
+* `results/tool_hint_ablation/<ts>/paired_metrics.csv` — joined by
+  `(model, input_id, replicate)`.
+* `figure_tool_hint.pdf` / `.png` — per-metric arm means with bootstrap
+  95% CIs.
+* `figure_tool_hint__stats.tsv` — paired Wilcoxon + McNemar per metric.
+
 ### Everything at once
 
 ```bash
 make all         # single MODEL (default gpt-4.1): plan + recovery + gen + exec + report
-make all-sweep   # full 30-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report
+make all-sweep   # full 28-model sweep: plan-all + recovery + gen + exec + competitors + rescore + merge + report
 ```
 
 Use `make all` for a quick end-to-end smoke of one model (fast, cheap). Use
@@ -616,15 +1620,108 @@ Use `make all` for a quick end-to-end smoke of one model (fast, cheap). Use
 `rescore → merge → report` in the right order so all models appear in the
 final figures.
 
-Benchmarks F and G are **not** included in `all-sweep` because they have
-distinct workflow shapes (F needs prior FlowAgent runs to score; G is an
-LLM-only sweep against fixed reference inputs). Run them separately:
+Benchmarks F, G, H, I, and J are **not** included in `all-sweep` because
+they have distinct workflow shapes:
+- **F** needs prior FlowAgent runs to score (or `fidelity-run` to drive
+  end-to-end pipelines that take hours).
+- **G** is an LLM-only sweep against fixed reference inputs.
+- **H** and **I** are paired ablations (two arms per model) and would
+  double the planning cost of `all-sweep`.
+- **J** drives an external CLI (Claude Code) and uses different
+  authentication / cost accounting than FlowAgent's own benchmarks.
+
+Run them separately:
 
 ```bash
 make references                                # one-time, materialises Benchmark F refs
 make fidelity                                  # bulk-score a fidelity_runs/ tree
 make interpretation MODEL=gpt-4.1 JUDGE=gpt-5.4
+make ablation MODEL=claude-haiku-4-5 REPLICATES=3 && make ablation-figure
+make reflection MODEL=claude-haiku-4-5 REPLICATES=3 && make reflection-figure
+make competitor-dag-ablation CDAG_MODEL=claude-haiku-4-5 REPLICATES=3 && make competitor-dag-figure
 ```
+
+## Hallucination detector
+
+The planning benchmarks (A, H, I, J) detect *tool hallucinations* — CLI
+tool names produced by the model that are not recognised as real
+bioinformatics tools.
+
+### Source of truth
+
+The detector uses a checked-in snapshot (`data/known_tools.yaml`, ~16 k
+entries) built from three sources:
+
+| Source | Coverage | Example entries |
+|--------|----------|-----------------|
+| **Bioconda** (noarch + linux-64 repodata) | ~12 k packages | `kallisto`, `star`, `macs2` |
+| **Bioconductor** (Software + Annotation + Experiment) | ~3.7 k packages | `deseq2`, `edger`, `chipqc` |
+| **Runtime / infra list** | ~60 curated entries | `bash`, `conda`, `nextflow`, `docker`, `aws` |
+
+The snapshot replaces the legacy ~150-entry `_BIOINFO_TOOLS` hand-curated
+set. `_BIOINFO_TOOLS` is retained as an automatic fallback when
+`data/known_tools.yaml` has not been generated (e.g. fresh checkouts before
+`make refresh-tools`).
+
+### Refresh cadence
+
+The snapshot is checked in; CI and every evaluation run use it without
+network access. Refresh it before a manuscript-grade sweep (roughly every
+6 months or when a major Bioconda release cycle turns over):
+
+```bash
+make refresh-tools            # fetches bioconda + bioconductor, writes data/known_tools.yaml
+# or
+python benchmarks/refresh_known_tools.py --skip-bioconductor
+```
+
+### Five-category classification
+
+Each unrecognised token is classified rather than simply counted:
+
+| Category | Meaning | Counts toward `hallucination_rate`? |
+|----------|---------|-------------------------------------|
+| `typo` | Damerau-Levenshtein distance ≤ 2 to a known tool (both ≥ 5 chars) | **Yes** |
+| `unknown` | Genuinely unrecognised — true hallucination candidate | **Yes** |
+| `r_code` | Inline R expression / object name misparsed as a CLI token | No |
+| `filename` | Has a path separator or a biodata extension (`.bam`, `.fastq`, …) | No |
+| `runtime_glue` | Common shell / cloud / HPC command — not a bioinfo tool | No |
+
+Command parsing is **quote-aware** so semicolons inside ``Rscript -e
+'...'`` do not spawn fake CLI segments. Common CLI aliases (e.g.
+``featureCounts`` → ``subread``, deepTools subcommands → ``deeptools``)
+are resolved against the catalog before classification.
+
+### Metrics emitted
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `num_hallucinated_tools` | int | Typo + unknown tokens only (true hallucination candidates) |
+| `hallucination_rate` | float | `num_hallucinated_tools / num_tools` |
+| `hallucinated_tools` | str | `"name:category[:correction];..."` (v2 schema; all categories) |
+| `num_hallucinated_typos` | int | Tokens classified as `typo` |
+| `hallucinated_typos` | str | `"token->correction;..."` for each typo |
+| `num_r_code_tokens` | int | Inline R fragments classified as `r_code` (informational) |
+
+`overall_pass` always keys on `num_hallucinated_tools == 0` when
+`strict_hallucinations=True`; the category breakdown is informational.
+
+### Parsing the `hallucinated_tools` column
+
+```python
+# Minimal v1-compatible parse (names only):
+names = [e.split(":")[0] for e in row["hallucinated_tools"].split(";") if e]
+
+# Full v2 parse:
+for entry in row["hallucinated_tools"].split(";"):
+    if not entry:
+        continue
+    parts = entry.split(":")
+    token, category = parts[0], parts[1] if len(parts) > 1 else "unknown"
+    correction = parts[2] if len(parts) > 2 else None
+```
+
+---
 
 ## Post-processing (important order)
 
@@ -632,10 +1729,14 @@ When scoring logic or `prompts.yaml` is updated, you can re-evaluate existing
 runs without spending more API budget. **The order matters**:
 
 ```bash
-make rescore    # 1. Rescore each run with the current metrics code
-make merge      # 2. Combine rescored runs into one deduplicated CSV
-make report     # 3. Render figures from the merged CSV
+make rescore-all  # 1. Rescore *every* planning run (not just the latest)
+make merge        # 2. Combine rescored runs into one deduplicated CSV
+make report       # 3. Render figures from the merged CSV
 ```
+
+For a single fresh run, ``make rescore`` is enough; after scoring-logic
+changes always prefer ``make rescore-all`` so older model sweeps pick up
+the new metrics too.
 
 - `rescore` reads each run's `results.json`, re-applies `score_plan` with the
   current `metrics.py`, preserves token counts, and re-computes `cost_usd`
@@ -687,14 +1788,26 @@ Two publication-ready cost figures are emitted by `make report`:
 - **`planning_cost_summary.pdf`** — two-panel bar chart: cost per 100 plans
   and cost per **successful** plan (the latter penalises cheap-but-flaky
   models).
+- **`planning_cost_summary_relative.pdf`** (and split
+  `planning_cost_per_100_plans_relative.pdf` /
+  `planning_cost_per_pass_relative.pdf`) — same layout in **fold-change vs
+  the cheapest model** (no USD on axes; suitable for journals that discourage
+  dollar amounts in the main text). Caption can name the reference model once.
 - **`planning_cost_quality.pdf`** — scatter of pass-rate vs. cost on a log
   x-axis, with Pareto-frontier models annotated.
 - **`planning_cost_summary.tsv`** — a plaintext per-model table
-  (`model`, `mean_cost`, `cost_per_pass`, `cost_per_100_plans`, `pass_rate`,
-  mean input/output tokens) for dropping straight into a manuscript.
+  (`model`, `mean_cost`, `cost_per_pass`, `cost_per_100_plans`,
+  `rel_cost_per_pass`, `rel_cost_per_100_plans`, `pass_rate`, mean
+  input/output tokens) for dropping straight into a manuscript.
 
 **Updating pricing** — if a provider lowers their rates, edit `models.yaml`
 and run `make rescore && make merge && make report`. No re-bench needed.
+When you re-check prices, also bump `defaults.pricing_snapshot` in
+`models.yaml` (or set a per-model `pricing_as_of:` if only one rate
+changed) and regenerate `python make_supp_table4.py`. Supplementary
+Table 4 records the exact unit prices and the snapshot date behind every
+dollar figure, so absolute costs stay reproducible even as provider list
+prices drift.
 
 ## Figures
 
@@ -706,15 +1819,16 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 
 | File | Content |
 |---|---|
-| `planning.pdf` | Pass rate by model, split into standard vs. hard prompts |
+| `planning.pdf` | Pass rate by model: explicit-tool (standard / hard) and tool-inference panels |
 | `planning_heatmap.pdf` | Per-prompt × per-model pass-rate heatmap |
-| `planning_heatmap_by_tier.pdf` | Heatmap split into current vs legacy model panels |
-| `planning_cost_summary.pdf` | Per-model cost bar chart (two panels) |
+| `planning_heatmap_by_tier.pdf` | Heatmap split into current vs legacy model panels; row labels: red = `hard_*` explicit-tool, blue = `inf_*` tool-inference, black = standard explicit-tool |
+| `planning_cost_summary.pdf` | Per-model cost bar chart (two panels, USD) |
+| `planning_cost_summary_relative.pdf` | Same, relative to cheapest model (no USD) |
 | `planning_cost_quality.pdf` | Pass-rate vs cost scatter (log x-axis), Pareto frontier |
 | `planning_latency.pdf` | Per-model wall-clock + speed-vs-quality trade-off |
 | `planning_turns.pdf` | Mean LLM calls per plan (turns to completion) |
 | `planning_consistency.pdf` | Inter-replicate unanimity per model |
-| `planning_hallucination.pdf` | Hallucinated-tool fraction per model |
+| `planning_hallucination.pdf` | Hallucinated-tool fraction per model; 3-panel with category breakdown when v2 data is present |
 | `planning_tokens.pdf` | Mean prompt + completion tokens per plan |
 | `recovery.pdf` | Benchmark B per-fault recovery, grouped Easy / Hard / Unrecoverable |
 | `recovery_tier_summary.pdf` | Compact per-tier summary |
@@ -724,12 +1838,24 @@ Writes PDF + 300 DPI PNG to `results/figures/`. Outputs:
 | `recovery_per_model/recovery_<model>.pdf` | Per-model breakdown across all faults |
 | `generation.pdf` | Benchmark C generator-fidelity heatmap |
 | `executors.pdf` | Benchmark D executor-coverage matrix |
-| `competitors.pdf` | Benchmark E pass / fail / crash per competitor |
+| `competitors.pdf` / `competitors.png` | Benchmark E pass, tool recovery, USD cost, and relative cost per competitor |
+| `competitors_cost_per_pass_relative.pdf` | Benchmark E cost per successful plan (× lowest-cost system) |
 | `competitors_perprompt.pdf` | Competitor × prompt outcome heatmap |
-| `competitors_agentic.pdf` | FlowAgent vs BioMaster vs AutoBA focused comparison |
+| `competitors_agentic.pdf` | FlowAgent vs BioMaster vs AutoBA vs Biomni focused comparison |
 | `interpretation.pdf` | Benchmark G three-panel: MCQ accuracy + heatmap + open-ended judge mean |
+| `ablation_summary.pdf` | Combined H/I/K/L/M pass rates (`overall_pass`, `completeness_pass`) |
+| `ablation_summary_secondary.pdf` | Combined ablation: tool coverage, hallucination, DAG density, stage efficiency |
+| `ablation.pdf` / `ablation__stats.tsv` | Benchmark H: DAG-aware vs DAG-blind, per-metric |
+| `reflection.pdf` / `reflection__stats.tsv` | Benchmark I: completeness-reflection on vs off |
+| `validator_ablation.pdf` / `validator_ablation__stats.tsv` | Benchmark K: command-validator on vs off |
+| `cove_ablation.pdf` / `cove_ablation__stats.tsv` / `cove_ablation__signal.tsv` | Benchmark L: CoVe verifier signal + contingency table |
+| `tool_hint_ablation.pdf` / `tool_hint_ablation__stats.tsv` | Benchmark M: tool-hint on vs off |
+| `competitor_dag__claude_code.pdf` / `competitor_dag__claude_code__stats.tsv` | Benchmark J: Claude Code DAG-prompt ablation |
+| `ablation_summary__metrics.tsv` | Long-format paired ablation stats (all metrics; Wilcoxon / McNemar) |
+| `ablation_summary__metrics_wide.tsv` | Wide manuscript table: one row per component, prefixed metric columns |
 | `planning_cost_summary.tsv` | Per-model cost / pass-rate / token table for the manuscript |
 | `supp_table2_models.tsv` | Supplementary Table 2: model registry × empirical token / cost / latency stats |
+| `supp_table4_pricing.tsv` / `.md` | Supplementary Table 4: per-model unit prices + pricing snapshot date used for all cost figures (`python make_supp_table4.py`) |
 
 Pass `--svg` to also emit editable SVGs for Illustrator / Inkscape:
 
@@ -781,12 +1907,13 @@ make report
 
 ## Cost + wall-clock estimates
 
-Rough guide at current (Apr 2026) rates across the full 30-model registry.
+Rough guide at current (May 2026) rates across the default 28-model plan-all sweep
+(40 in the registry; deprecated IDs excluded):
 
 | Target | Models | Wall time | API cost |
 |---|---|---|---|
 | `make plan` | 1 | ~5–15 min | ~$0.05–$2 (depends on model tier) |
-| `make plan-all` | 30 | ~45–90 min (concurrent) | ~$20–40 |
+| `make plan-all` | 28 | ~45–90 min (concurrent) | ~$20–40 |
 | `make recovery` | 1 | ~35–45 min (28 faults × 5 seeds) | ~$2–3 |
 | `make gen` | — | <1 min | $0 |
 | `make exec` | — | <1 min | $0 |
@@ -799,6 +1926,13 @@ Rough guide at current (Apr 2026) rates across the full 30-model registry.
 | `make fidelity-run MODELS=a,b,c` | 3 | ~30+ h sequential | ~$10–45 (21 cells); without `CLEANUP=1`, **>1 TB peak disk** |
 | `make interpretation` | 1 | ~5–10 min (32 questions) | ~$0.50–$2 |
 | `bench_interpretation.py --models=…` | 10 | ~30–60 min | ~$5–15 |
+| `make ablation-pilot` | 1 | ~3–5 min (5 prompts × 2 arms) | ~$0.05 on Claude Haiku |
+| `make ablation` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1–4 on Claude Haiku, ~$10+ on flagship |
+| `make reflection-pilot` | 1 | ~3–5 min (8 prompts × 2 arms) | ~$0.20 on Claude Haiku |
+| `make reflection` | 1 | ~30–60 min (66 prompts × 3 reps × 2 arms) | ~$1.5–6 on Claude Haiku, ~$15+ on flagship (~33% per-cell overhead vs Benchmark H from retries) |
+| `make competitor-dag-ablation-pilot` | Claude Code (1) | ~2–4 min (3 prompts × 2 arms) | ~$0.10–$0.50 on Claude Haiku 4.5 |
+| `make competitor-dag-ablation` | Claude Code (1) | ~30–60 min (66 prompts × 3 reps × 2 arms, conc=2) | ~$5–15 on Claude Haiku 4.5; multiply by ~3-5× for Sonnet |
+| `make ablation-figure` / `make reflection-figure` / `make competitor-dag-figure` | — | ~10–20 s | $0 |
 | `make rescore` / `merge` / `report` | — | ~5 s | $0 |
 | `make install-r-deps` | — | ~5–10 min (one-off) | $0 |
 

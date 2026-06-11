@@ -167,6 +167,7 @@ async def gather_pipeline_context(
     interactive: bool = True,
     ask_fn: Optional[Callable[[str, str], str]] = None,
     answers: Optional[Dict[str, str]] = None,
+    samplesheet: Optional[str] = None,
 ) -> PipelineContext:
     """Scan the filesystem and (optionally) ask the user to fill gaps.
 
@@ -184,6 +185,9 @@ async def gather_pipeline_context(
         Pre-supplied answers keyed by field name (``organism``,
         ``genome_build``, ``reference_source``).  Skips asking for
         any key already present.
+    samplesheet
+        Optional path to a samplesheet CSV. When provided, input files and
+        pairing are derived from the sheet rather than filesystem globbing.
     """
     answers = dict(answers or {})
     if ask_fn is None and interactive and sys.stdin.isatty():
@@ -191,8 +195,26 @@ async def gather_pipeline_context(
     # If not interactive and no ask_fn, we'll just use defaults.
 
     # ── 1. Discover input files ───────────────────────────────
-    input_files = _scan_files(_INPUT_GLOBS)
-    paired_end = _detect_pairing(input_files) if input_files else True
+    if samplesheet:
+        from .samplesheet import load_samplesheet as _load_ss
+        try:
+            sheet = _load_ss(samplesheet)
+            input_files = [
+                f for s in sheet.samples
+                for f in (([s.fastq_1, s.fastq_2] if s.paired_end else [s.fastq_1]))
+                if f
+            ]
+            paired_end = sheet.paired_end
+            # Inject samplesheet summary into extra_params for LLM context
+            answers.setdefault("_samplesheet_summary", sheet.to_planner_text())
+            logger.info("Loaded samplesheet: %s", sheet.summary())
+        except Exception as exc:
+            logger.warning("Could not parse samplesheet %s: %s", samplesheet, exc)
+            input_files = _scan_files(_INPUT_GLOBS)
+            paired_end = _detect_pairing(input_files) if input_files else True
+    else:
+        input_files = _scan_files(_INPUT_GLOBS)
+        paired_end = _detect_pairing(input_files) if input_files else True
 
     # ── 2. Detect workflow type ───────────────────────────────
     workflow_type = _detect_workflow_type_from_prompt(prompt)
@@ -313,7 +335,19 @@ def context_to_prompt_supplement(ctx: PipelineContext) -> str:
 
     Tells the LLM exactly which reference files are available (either local
     or will be downloaded) so it generates correct commands.
+
+    The "Steps that need the reference should list 'download_reference' in
+    their dependencies" lines are dropped when ``Settings.LLM_DAG_AWARE`` is
+    False so the DAG-blind ablation truly never sees the word
+    "dependencies" in the planning prompt. The deterministic
+    download-step wiring in ``LLMInterface.generate_workflow_plan`` still
+    runs in both modes, so the executable plans remain comparable.
     """
+    # Avoid an import cycle by importing settings lazily.
+    from ..config.settings import Settings
+
+    dag_aware = Settings().LLM_DAG_AWARE
+
     lines: List[str] = []
 
     if ctx.reference_fasta:
@@ -324,14 +358,22 @@ def context_to_prompt_supplement(ctx: PipelineContext) -> str:
         else:
             lines.append("Reference genome is at: reference/genome.fa")
         lines.append("DO NOT create a download step -- it is handled externally.")
-        lines.append("Steps that need the reference should list 'download_reference' in their dependencies.")
+        if dag_aware:
+            lines.append(
+                "Steps that need the reference should list 'download_reference' "
+                "in their dependencies."
+            )
 
     if ctx.annotation_gtf:
         lines.append(f"Annotation GTF (local): {ctx.annotation_gtf}")
     elif ctx.annotation_url:
         lines.append("Annotation GTF is at: reference/genes.gtf")
         lines.append("DO NOT create a download step -- it is handled externally.")
-        lines.append("Steps that need the annotation should list 'download_annotation' in their dependencies.")
+        if dag_aware:
+            lines.append(
+                "Steps that need the annotation should list 'download_annotation' "
+                "in their dependencies."
+            )
 
     if not ctx.reference_fasta and not ctx.reference_url:
         lines.append("WARNING: No reference file found and no download URL resolved. "

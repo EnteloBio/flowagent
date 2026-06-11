@@ -7,7 +7,7 @@ name = "flowagent"
 version = "0.2.0"
 description = "Multi-agent framework for automating bioinformatics workflows"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-only"}
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0.0",

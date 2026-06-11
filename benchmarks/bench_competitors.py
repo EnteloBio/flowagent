@@ -1,6 +1,6 @@
 """Benchmark E — Head-to-head against other agentic bioinformatics systems.
 
-Each competitor (FlowAgent baseline, BioMaster, and future additions)
+Each competitor (FlowAgent baseline, BioMaster, AutoBA, Biomni, …)
 implements the ``Competitor`` interface in ``harness/competitors.py`` and
 must produce a FlowAgent-compatible plan dict. This module drives the
 evaluation loop, scoring every competitor with the same ``score_plan``
@@ -22,6 +22,16 @@ Subset of competitors / prompts::
     python bench_competitors.py --competitors=flowagent,biomaster \\
         --prompts=rnaseq_kallisto_basic,hard_full_germline_pipeline \\
         --replicates=2
+
+Opt-in competitors
+------------------
+Some lanes are excluded from the default sweep because they are slow,
+expensive, or not directly comparable (see :data:`_OPT_IN_COMPETITORS`).
+To include them, name them explicitly via ``--competitors``. As of
+this writing only ``edison`` is opt-in; routine ``make competitors``
+runs therefore skip Edison Analysis. The full four-way comparison
+remains available via ``make competitors-all`` (which lists ``edison``
+explicitly) or ``--competitors=edison`` for an Edison-only sweep.
 """
 
 from __future__ import annotations
@@ -30,6 +40,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -40,7 +51,7 @@ sys.path.insert(0, str(_HERE_DIR))
 sys.path.insert(0, str(_HERE_DIR.parent))
 
 from harness.competitors import (                              # noqa: E402
-    Competitor, CompetitorResult, build_registry, _empty_plan,
+    Competitor, CompetitorResult, RawLLMCompetitor, build_registry, _empty_plan,
 )
 from harness.metrics import score_plan, cost_usd               # noqa: E402
 from harness.mock_plans import mock_plan_from_prompt             # noqa: E402
@@ -50,6 +61,55 @@ from harness.runner import (                                    # noqa: E402
 
 LOG = logging.getLogger("bench_competitors")
 HERE = Path(__file__).parent
+
+
+# ── Opt-in competitors (excluded from the default sweep) ─────────
+#
+# Some competitors are too slow / expensive / unreliable to include in
+# routine ``make competitors`` runs but are still wanted for the
+# manuscript-grade comparison or for explicit opt-in via
+# ``--competitors=<name>``.
+#
+# ``edison`` belongs here because:
+#   * Its analysis API runs the workflow end-to-end (3-15 min/task) while
+#     every other competitor only *plans* it — they are not directly
+#     comparable on wall-clock or pass-rate.
+#   * Each cell consumes real Edison credits even when the harness times
+#     out, which makes accidental inclusion costly.
+#   * The harness's default ``--timeout=180`` triggers a kill before
+#     Edison's polling loop typically finishes (its own
+#     ``EDISON_TIMEOUT`` defaults to 1800), so default-sweep cells fail
+#     systematically.
+#
+# Edison stays in :func:`harness.competitors.build_default_competitor_registry`
+# (so the DAG-toggle invariant tests and Benchmark J still see it), and
+# it remains opt-in via ``--competitors=edison`` on the CLI or via
+# ``make competitors-all`` which names it explicitly.
+_OPT_IN_COMPETITORS: frozenset[str] = frozenset({"edison"})
+
+
+def _filter_to_run_set(
+    registry: Dict[str, Competitor],
+    requested: Optional[str],
+) -> Dict[str, Competitor]:
+    """Apply the default-vs-explicit-opt-in selection for a sweep.
+
+    * If ``requested`` is set (a comma-separated list of competitor ids,
+      from ``--competitors``), return exactly that subset. Opt-in
+      competitors are included when named explicitly.
+    * Otherwise return the registry minus :data:`_OPT_IN_COMPETITORS`,
+      so a routine ``make competitors`` invocation does not pull in
+      slow / expensive lanes by accident.
+
+    Raises :class:`SystemExit` if ``requested`` names no known competitor.
+    """
+    if requested:
+        wanted = {s.strip() for s in requested.split(",") if s.strip()}
+        out = {k: v for k, v in registry.items() if k in wanted}
+        if not out:
+            raise SystemExit(f"No known competitors in {requested!r}")
+        return out
+    return {k: v for k, v in registry.items() if k not in _OPT_IN_COMPETITORS}
 
 
 # ── Mock fallback ────────────────────────────────────────────────
@@ -69,13 +129,16 @@ def _mock_plan(prompt_entry: Dict[str, Any]) -> Dict[str, Any]:
 async def _run_cell(competitor: Competitor, prompt_entry: Dict[str, Any],
                     replicate: int, *, mock: bool, timeout: float,
                     model_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    row_model = model_cfg.get("id", "")
+    if isinstance(competitor, RawLLMCompetitor):
+        row_model = competitor.model_id
     row_base = {
         "competitor":  competitor.id,
         "competitor_name": competitor.name,
         "input_id":    prompt_entry["id"],
         "prompt":      prompt_entry["prompt"],
         "replicate":   replicate,
-        "model":       model_cfg.get("id", ""),
+        "model":       row_model,
     }
 
     if mock:
@@ -177,7 +240,13 @@ async def _drive(competitors: Dict[str, Competitor],
                 elapsed = time.perf_counter() - t0
                 status = ("pass" if row.get("overall_pass")
                           else (row.get("error") or "fail"))
-                print(f"{status[:40]} ({elapsed:.1f}s)", flush=True)
+                # Show a short line in the progress stream; long errors (e.g. shim
+                # tracebacks) would be unreadable. Print the full error on a
+                # second line when it is long or non-trivial.
+                line1 = str(status) if len(str(status)) <= 72 else str(status)[:69] + "…"
+                print(f"{line1} ({elapsed:.1f}s)", flush=True)
+                if row.get("error") and len(str(row["error"])) > 72:
+                    print(f"    {row['error']}", flush=True)
                 rows.append(row)
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +274,15 @@ async def _drive(competitors: Dict[str, Competitor],
 def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Group rows by competitor and compute pass/fail/crash counts + means.
 
+    Reports two co-primary outcomes per competitor:
+
+    * ``pass_rate`` — strict ``overall_pass`` rate. Every rubric gate
+      (workflow type, expected tools, forbidden tools, min step count,
+      schema, DAG) must hold.
+    * ``tool_recovery`` — mean ``tools_present_fraction`` over scored
+      cells (crashes excluded). Partial-credit view, so a 5-of-6 plan
+      contributes 0.83 instead of 0.
+
     pass = ``overall_pass`` is True
     crash = ``error`` is set AND the plan has zero scored steps (no plan
             produced — distinct from a plan that failed scoring)
@@ -214,15 +292,22 @@ def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for r in rows:
         by_comp.setdefault(r.get("competitor", "?"), []).append(r)
 
+    def _is_crash(r: Dict[str, Any]) -> bool:
+        return bool(r.get("error")) and not (r.get("plan") or {}).get("steps")
+
     out: List[Dict[str, Any]] = []
     for comp, cells in by_comp.items():
         total = len(cells)
         n_pass = sum(1 for r in cells if r.get("overall_pass"))
-        n_crash = sum(
-            1 for r in cells
-            if r.get("error") and not (r.get("plan") or {}).get("steps")
-        )
+        n_crash = sum(1 for r in cells if _is_crash(r))
         n_fail = total - n_pass - n_crash
+        scored = [r for r in cells if not _is_crash(r)]
+        if scored:
+            tool_recovery = sum(
+                float(r.get("tools_present_fraction") or 0.0) for r in scored
+            ) / len(scored)
+        else:
+            tool_recovery = 0.0
         def _mean(key: str) -> float:
             vals = [float(r.get(key) or 0.0) for r in cells]
             return sum(vals) / len(vals) if vals else 0.0
@@ -234,6 +319,8 @@ def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "fail": n_fail,
             "crash": n_crash,
             "pass_rate": n_pass / total if total else 0.0,
+            "tool_recovery": tool_recovery,
+            "n_scored": len(scored),
             "mean_cost_usd": _mean("cost_usd"),
             "mean_wall_s": _mean("wall_seconds"),
         })
@@ -243,25 +330,31 @@ def _summarise(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _print_summary(summary: List[Dict[str, Any]]) -> None:
-    print("\nHead-to-head rollup (pass / fail / crash per competitor):")
+    print("\nHead-to-head rollup (two co-primary metrics + cost):")
+    print("  Pass% = strict overall_pass rate.  "
+          "Tools% = mean expected-tool fraction (partial credit, "
+          "crashes excluded).")
     header = (f"  {'Competitor':<14} {'Pass':>8} {'Fail':>6} "
-              f"{'Crash':>6} {'Pass%':>7} {'$/cell':>9} {'Wall':>7}")
+              f"{'Crash':>6} {'Pass%':>7} {'Tools%':>7} "
+              f"{'$/cell':>9} {'Wall':>7}")
     print(header)
     print("  " + "-" * (len(header) - 2))
     for s in summary:
         pr = f"{s['pass_rate'] * 100:.1f}%"
+        tr = f"{s['tool_recovery'] * 100:.1f}%"
         cost = f"${s['mean_cost_usd']:.4f}"
         wall = f"{s['mean_wall_s']:.1f}s"
         row = (f"  {s['name']:<14} "
                f"{s['pass']:>3}/{s['total']:<4} "
                f"{s['fail']:>6} {s['crash']:>6} "
-               f"{pr:>7} {cost:>9} {wall:>7}")
+               f"{pr:>7} {tr:>7} {cost:>9} {wall:>7}")
         print(row)
 
 
 def _format_summary_tsv(summary: List[Dict[str, Any]]) -> str:
     keys = ["competitor", "name", "total", "pass", "fail", "crash",
-            "pass_rate", "mean_cost_usd", "mean_wall_s"]
+            "pass_rate", "tool_recovery", "n_scored",
+            "mean_cost_usd", "mean_wall_s"]
     lines = ["\t".join(keys)]
     for s in summary:
         lines.append("\t".join(str(s[k]) for k in keys))
@@ -283,10 +376,14 @@ def _load_prompts(path: Path, ids: Optional[List[str]]) -> List[Dict[str, Any]]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--competitors",
-                    help="Comma-separated competitor ids "
-                         "(default: all registered, including raw-LLM lanes)")
+                    help="Comma-separated competitor ids. Default: all "
+                         "registered EXCEPT opt-in lanes "
+                         f"({', '.join(sorted(_OPT_IN_COMPETITORS))}). "
+                         "Name them explicitly to include them, e.g. "
+                         "``--competitors=edison`` for an Edison-only sweep, "
+                         "or use ``make competitors-all``.")
     ap.add_argument("--raw-models",
-                    default="gpt-5.4,claude-opus-4-7,gemini-2.5-pro",
+                    default="gpt-5.4,claude-opus-4-8,gemini-2.5-pro",
                     help="Comma-separated model IDs to run as zero-shot "
                          "raw-LLM baselines (one provider call, no "
                          "scaffolding). Each becomes a ``raw_<model_id>`` "
@@ -304,6 +401,14 @@ def main() -> None:
                     help="Per-cell timeout in seconds")
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--out", default="results")
+    ap.add_argument(
+        "--edison-budget-credits", type=float, default=None,
+        help="Hard cap on cumulative Edison Analysis credits across this "
+             "process (writes a shared budget file the shim reads). Once "
+             "exceeded, further Edison cells short-circuit with an error "
+             "envelope instead of submitting tasks. Has no effect if the "
+             "Edison adapter is not registered or unavailable.",
+    )
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -324,19 +429,34 @@ def main() -> None:
     if not args.mock:
         set_provider(model_cfg)
 
+    if args.edison_budget_credits is not None:
+        # The Edison shim reads ``EDISON_BUDGET_CREDITS`` (and tracks
+        # cumulative usage in ``EDISON_BUDGET_FILE``). Setting it here
+        # lets a long sweep enforce the cap even though each task runs
+        # in a fresh subprocess.
+        os.environ["EDISON_BUDGET_CREDITS"] = str(args.edison_budget_credits)
+        # Reset the budget tally for this run so a stale file from an
+        # earlier sweep doesn't make every cell short-circuit.
+        from tempfile import gettempdir
+        budget_file = (
+            os.environ.get("EDISON_BUDGET_FILE")
+            or str(Path(gettempdir()) / "edison_budget.json")
+        )
+        try:
+            Path(budget_file).write_text('{"credits_used": 0.0}')
+        except Exception:
+            pass
+
     # Competitors — includes zero-shot raw-LLM baselines alongside the
-    # scaffolded agentic systems (FlowAgent / BioMaster / AutoBA).
+    # scaffolded agentic systems (FlowAgent / BioMaster / AutoBA /
+    # Biomni / ClaudeCode / Edison).
     raw_models = [m.strip() for m in (args.raw_models or "").split(",") if m.strip()]
     registry = build_registry(
         model_cfg=model_cfg,
         raw_models=raw_models,
         models_yaml_cfg=cfg,
     )
-    if args.competitors:
-        wanted = set(args.competitors.split(","))
-        registry = {k: v for k, v in registry.items() if k in wanted}
-        if not registry:
-            raise SystemExit(f"No known competitors in {args.competitors!r}")
+    registry = _filter_to_run_set(registry, args.competitors)
 
     # Prompts — default to a compact balanced subset if none specified
     default_subset = [
@@ -359,5 +479,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    import os
     main()

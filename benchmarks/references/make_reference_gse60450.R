@@ -67,12 +67,20 @@ tt <- tt[!is.na(tt$ensembl_id), ]
 tt <- tt[order(tt$adj.P.Val, na.last = TRUE), ]
 tt <- tt[!duplicated(tt$ensembl_id), ]
 
+sym <- mapIds(org.Mm.eg.db,
+              keys      = as.character(tt$gene_id),
+              column    = "SYMBOL",
+              keytype   = "ENTREZID",
+              multiVals = "first")
+
 de <- data.frame(
   gene_id        = tt$ensembl_id,
+  gene_symbol    = unname(sym),
   log2FoldChange = tt$logFC,
   padj           = tt$adj.P.Val,
   stringsAsFactors = FALSE
 )
+de$gene_symbol[is.na(de$gene_symbol)] <- ""
 de <- de[!is.na(de$log2FoldChange), ]
 
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)

@@ -22,7 +22,7 @@ class AnthropicProvider(LLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-sonnet-4-6",
         max_retries: int = 3,
         timeout: float = 120.0,
     ):
@@ -41,7 +41,7 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _accepts_temperature(model: str) -> bool:
-        """Recent Opus thinking-style models (opus-4-5 / 4-6 / 4-7 etc.)
+        """Recent Opus thinking-style models (opus-4-5 / 4-6 / 4-7 / 4-8 etc.)
         removed the ``temperature`` parameter and the API returns 400
         if it's included. Detect those by prefix so we can omit it.
         """
@@ -53,6 +53,7 @@ class AnthropicProvider(LLMProvider):
             "claude-opus-4-5",
             "claude-opus-4-6",
             "claude-opus-4-7",
+            "claude-opus-4-8",
         ):
             if m.startswith(prefix):
                 return False

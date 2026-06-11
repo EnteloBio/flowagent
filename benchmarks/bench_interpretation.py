@@ -44,63 +44,220 @@ from harness.runner import (  # noqa: E402
 
 # ── Prompt assembly ──────────────────────────────────────────────
 
-_SYSTEM_RESPONDENT = (
+_SYSTEM_DATA = (
     "You are a careful computational-biology research assistant. "
-    "Answer using only the supplied analysis outputs; if those outputs "
-    "do not contain the evidence needed to answer, say so explicitly."
+    "Answer using only the supplied analysis outputs and any dataset "
+    "metadata block prepended to them. If those outputs do not contain "
+    "the evidence needed to answer, pick the refusal option or say so "
+    "explicitly."
+)
+
+_SYSTEM_PRIORS = (
+    "You are a careful computational-biology research assistant. "
+    "You may use established biological knowledge together with any "
+    "supplied analysis outputs. Answer the question directly; do not "
+    "refuse merely because the supplied files lack detail when textbook "
+    "biology suffices."
+)
+
+_SYSTEM_REFUSAL = (
+    "You are a careful computational-biology research assistant. "
+    "Answer using only the supplied analysis outputs. If the supplied "
+    "data genuinely cannot answer the question, pick the refusal option."
+)
+
+
+def _system_prompt(evidence_class: str) -> str:
+    if evidence_class == "internal_knowledge":
+        return _SYSTEM_PRIORS
+    if evidence_class == "calibrated_refusal":
+        return _SYSTEM_REFUSAL
+    return _SYSTEM_DATA
+
+# ── Judge calibration ────────────────────────────────────────────
+#
+# The reviewer flagged that the previous judge prompt told the model
+# nothing about the score scale or the pass mark. Replies were therefore
+# implicitly anchored on whatever calibration the judge's pre-training
+# happened to bake in. The new prompt:
+#
+#   - States the pass mark (≥60) explicitly.
+#   - Defines five anchored score bands with concrete examples of what
+#     belongs in each.
+#   - Requires structured JSON output with rubric ``hits`` / ``misses``
+#     / ``fabrications`` lists plus a ``grounding_quote`` taken
+#     verbatim from the candidate answer, so each judgment is auditable.
+#   - Forbids credit for fabricated facts.
+#
+# A separate calibration harness (see ``benchmarks/judge_calibration.py``)
+# is provided to re-score a sample of N=30 responses with a second
+# judge model and report inter-judge κ.
+
+_JUDGE_SCORE_ANCHORS = (
+    "  0-20  : Fabricated, contradicted by the supplied evidence, or "
+    "answers a different question. Confidently wrong direction.\n"
+    "  21-40 : Generic / textbook prose with no grounding in the "
+    "supplied inputs; or hits at most one rubric item.\n"
+    "  41-59 : Partially correct. Hits some rubric items but misses "
+    "most, or hits them at the wrong granularity.\n"
+    "  60-79 : Covers the majority of rubric items, with minor gaps "
+    "or one factual slip. PASSING quality.\n"
+    "  80-100: Hits all rubric items, properly grounded in the "
+    "candidate's own quoted evidence, no fabrications."
 )
 
 _SYSTEM_JUDGE = (
     "You are a strict scientific-writing grader. You will receive "
     "(i) a question, (ii) a grading rubric, (iii) a reference answer, "
-    "and (iv) a candidate answer to grade. Return JSON with keys "
-    "``score`` (integer 0-100) and ``justification`` (one short paragraph). "
-    "Do not award credit for fabricated facts, even if fluently written."
+    "and (iv) a candidate answer to grade. The pass mark is 60. "
+    "Use these anchored score bands:\n\n"
+    f"{_JUDGE_SCORE_ANCHORS}\n\n"
+    "Do not award credit for fabricated facts, even if fluently "
+    "written; mark them in ``fabrications``. Score on the rubric "
+    "items listed, NOT on writing style. Return strictly the JSON "
+    "schema requested — no commentary outside the JSON."
 )
 
 
-def _bundle_inputs(input_paths: Dict[str, Path], char_budget: int = 24_000) -> str:
+def _read_text_path(path: Path) -> str:
+    """Read a text or gzip-compressed text file."""
+    if path.name.endswith(".gz") or path.suffix == ".gz":
+        import gzip
+        with gzip.open(path, "rt", errors="replace") as fh:
+            return fh.read()
+    return path.read_text(errors="replace")
+
+
+def _summarize_bed_like(text: str) -> str:
+    """Return a one-line summary for BED / narrowPeak content."""
+    rows = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
+    if not rows:
+        return "peak rows: 0"
+    widths = []
+    chroms: Dict[str, int] = {}
+    for ln in rows:
+        parts = ln.split("\t")
+        if len(parts) < 3:
+            continue
+        chrom = parts[0]
+        chroms[chrom] = chroms.get(chrom, 0) + 1
+        try:
+            widths.append(int(parts[2]) - int(parts[1]))
+        except ValueError:
+            pass
+    med_w = sorted(widths)[len(widths) // 2] if widths else 0
+    top_chr = max(chroms, key=chroms.get) if chroms else "?"
+    return (
+        f"peak rows: {len(rows)}; median width: {med_w} bp; "
+        f"most peaks on: {top_chr} ({chroms.get(top_chr, 0)} rows)"
+    )
+
+
+def _summarize_vcf(text: str) -> str:
+    """Return a one-line summary for VCF variant records."""
+    n = indel = 0
+    chroms: set = set()
+    for ln in text.splitlines():
+        if not ln or ln.startswith("#"):
+            continue
+        parts = ln.split("\t")
+        if len(parts) < 5:
+            continue
+        n += 1
+        chroms.add(parts[0])
+        ref, alt = parts[3], parts[4].split(",")[0]
+        if len(ref) > 1 or len(alt) > 1:
+            indel += 1
+    if n == 0:
+        return "variant records: 0"
+    frac = indel / n
+    return (
+        f"variant records: {n}; chromosomes present: {sorted(chroms)}; "
+        f"indel fraction (|REF|>1 or |ALT|>1): {frac:.1%}"
+    )
+
+
+def _bundle_inputs(
+    input_paths: Dict[str, Path],
+    char_budget: int = 24_000,
+    *,
+    dataset_context: str = "",
+) -> str:
     """Concatenate the named input files into a single context block.
 
     Each input is preceded by a header line ``=== <name> (path=<rel>) ===``
-    and is truncated to fit a per-input share of ``char_budget``.
+    and is truncated to fit a per-input share of ``char_budget``.  Gzip
+    files are decompressed.  Large BED/VCF inputs get a computed summary
+    line so row-count / composition questions remain answerable even when
+    the excerpt is truncated.
     """
-    if not input_paths:
-        return ""
-    share = max(2_000, char_budget // max(1, len(input_paths)))
     chunks: List[str] = []
+    if dataset_context.strip():
+        chunks.append(f"=== dataset metadata ===\n{dataset_context.strip()}\n")
+    if not input_paths:
+        return "".join(chunks)
+    share = max(2_000, char_budget // max(1, len(input_paths)))
     for name, path in input_paths.items():
         header = f"\n=== {name} ({path}) ===\n"
         try:
-            text = path.read_text(errors="replace")
+            text = _read_text_path(path)
         except FileNotFoundError:
             chunks.append(header + f"[file not found: {path}]\n")
             continue
-        if len(text) > share:
-            text = text[:share] + f"\n... [truncated; {len(text)-share} chars omitted]\n"
-        chunks.append(header + text)
+        summary = ""
+        low = name.lower()
+        if low.endswith("vcf") or path.name.endswith(".vcf.gz"):
+            summary = _summarize_vcf(text) + "\n"
+        elif "peak" in low or path.suffix.lower() in (".bed", ".narrowpeak"):
+            summary = _summarize_bed_like(text) + "\n"
+        body = summary + text
+        if len(body) > share:
+            body = body[:share] + f"\n... [truncated; {len(text)-share} chars omitted]\n"
+        chunks.append(header + body)
     return "".join(chunks)
 
 
 def _mcq_prompt(question: Dict[str, Any], context: str) -> str:
     choices = "\n".join(f"  {k}) {v}" for k, v in question["choices"].items())
+    valid = "/".join(question["choices"].keys())
+    system = _system_prompt(question.get("evidence_class", ""))
     return (
-        f"{_SYSTEM_RESPONDENT}\n\n"
+        f"{system}\n\n"
         f"Analysis outputs:\n{context}\n\n"
         f"Question: {question['question']}\n\n"
         f"Choices:\n{choices}\n\n"
-        f"Reply with a single capital letter (A, B, C, ...) on its "
-        f"own line, optionally followed by a one-sentence justification."
+        f"Respond in EXACTLY this format, using the literal tags shown:\n\n"
+        f"  <answer>X</answer>\n"
+        f"  <explain>One short sentence of justification.</explain>\n\n"
+        f"where X is one of {valid}. The ``<answer>`` tag must contain "
+        f"only a single capital letter and nothing else. Do not put any "
+        f"prose outside the two tags."
     )
 
 
 def _open_prompt(question: Dict[str, Any], context: str) -> str:
+    system = _system_prompt(question.get("evidence_class", "data_required"))
     return (
-        f"{_SYSTEM_RESPONDENT}\n\n"
+        f"{system}\n\n"
         f"Analysis outputs:\n{context}\n\n"
         f"Question: {question['question']}\n\n"
         f"Answer concisely and stay grounded in the supplied evidence."
     )
+
+
+_JUDGE_JSON_SCHEMA = (
+    '{\n'
+    '  "score": <integer 0-100, anchored to the bands above>,\n'
+    '  "hits": ["<rubric item the candidate hit>", ...],\n'
+    '  "misses": ["<rubric item the candidate missed>", ...],\n'
+    '  "fabrications": ["<claim the candidate made that is unsupported '
+    'by the supplied inputs>", ...],\n'
+    '  "grounding_quote": "<short verbatim quote from the candidate '
+    'answer showing it grounded in the supplied evidence; empty '
+    'string if there is no such grounding>",\n'
+    '  "justification": "<one short paragraph explaining the score>"\n'
+    '}'
+)
 
 
 def _judge_prompt(question: Dict[str, Any], candidate: str) -> str:
@@ -110,7 +267,12 @@ def _judge_prompt(question: Dict[str, Any], candidate: str) -> str:
         f"Rubric:\n{question.get('rubric','(no rubric provided)')}\n\n"
         f"Reference answer:\n{question.get('reference_answer','(none)')}\n\n"
         f"Candidate answer:\n{candidate}\n\n"
-        f"Return JSON: {{\"score\": <0-100>, \"justification\": \"...\"}}"
+        f"PASS MARK: a score of 60 or higher counts as a passing answer; "
+        f"60 means the candidate covered the majority of rubric items with "
+        f"only minor gaps. Do NOT pad scores into the 60-79 band out of "
+        f"politeness — apply the anchors strictly.\n\n"
+        f"Return EXACTLY this JSON schema and nothing else:\n\n"
+        f"{_JUDGE_JSON_SCHEMA}"
     )
 
 
@@ -130,42 +292,158 @@ async def _call_llm(prompt: str, *, model_cfg: Dict[str, Any]) -> str:
     return (resp or "").strip()
 
 
-_LETTER_RE = re.compile(r"\b([A-Z])\b")
+# ── MCQ letter extraction ────────────────────────────────────────
+#
+# The reviewer of FlowAgent's interpretation benchmark observed that the
+# previous extractor returned ``I`` for replies like "I believe the
+# answer is B" because it pulled the FIRST standalone capital letter
+# from the first line. The new parser is tag-aware (the prompt asks for
+# ``<answer>X</answer>``) with a tiered regex fallback for models that
+# return prose instead. ``valid_choices`` constrains the letters that
+# count — important for questions with non-A-D choice keys.
+
+_TAG_RE = re.compile(
+    r"<\s*answer\s*>\s*([A-Z])\s*<\s*/\s*answer\s*>",
+    flags=re.IGNORECASE,
+)
+
+_TIERED_PATTERNS = (
+    # Tier 1: the entire reply (or first line) is just one letter.
+    re.compile(r"^\s*([A-Z])\s*[\.\)\]:]?\s*$",
+               flags=re.MULTILINE),
+    # Tier 2: explicit "Answer: X" / "Answer - X" header.
+    re.compile(r"^\s*answer\s*[:\-]\s*\(?([A-Z])\)?",
+               flags=re.IGNORECASE | re.MULTILINE),
+    # Tier 3: "the answer is X" / "answer is (X)" / "option X" / "choice X".
+    re.compile(
+        r"\b(?:answer|choice|option|select|pick)\s*"
+        r"(?:would\s+be|is|=|:)?\s*\(?([A-Z])\)?",
+        flags=re.IGNORECASE,
+    ),
+    # Tier 4: "(X)" anywhere — common when the LLM brackets the letter.
+    re.compile(r"\(\s*([A-Z])\s*\)"),
+)
 
 
-def _extract_letter(reply: str) -> Optional[str]:
-    """Pull the first standalone capital letter from a reply."""
-    m = _LETTER_RE.search(reply.strip().split("\n", 1)[0])
-    return m.group(1) if m else None
+def _extract_letter(
+    reply: str,
+    valid_choices: Optional[List[str]] = None,
+) -> Optional[str]:
+    """Extract the chosen letter from an MCQ reply.
+
+    Strategy:
+      1. Look for a ``<answer>X</answer>`` tag (the format the prompt
+         asks for explicitly).
+      2. Fall back through a tiered regex sequence in priority order.
+      3. As a last resort, take the LAST standalone capital letter in
+         the reply that is in ``valid_choices`` — last not first, so
+         "I believe the answer is B" returns ``B`` instead of ``I``.
+
+    ``valid_choices`` is a list of allowed letters (e.g.
+    ``["A", "B", "C", "D"]``); when provided, candidates not in the
+    set are rejected. The fallback path (step 3) requires this set so
+    it cannot "discover" a stray ``I`` or ``T`` in narrative text.
+    """
+    text = reply or ""
+    valid = {c.upper() for c in (valid_choices or [])}
+
+    def _ok(letter: str) -> Optional[str]:
+        letter = (letter or "").upper()
+        if not letter or len(letter) != 1 or not letter.isalpha():
+            return None
+        if valid and letter not in valid:
+            return None
+        return letter
+
+    # 1. Structured tag.
+    m = _TAG_RE.search(text)
+    cand = _ok(m.group(1)) if m else None
+    if cand:
+        return cand
+
+    # 2. Tiered regex fallbacks.
+    for pat in _TIERED_PATTERNS:
+        for m in pat.finditer(text):
+            cand = _ok(m.group(1))
+            if cand:
+                return cand
+
+    # 3. Last-resort: take the LAST in-set capital letter.
+    if valid:
+        last = None
+        for m in re.finditer(r"\b([A-Z])\b", text):
+            if m.group(1) in valid:
+                last = m.group(1)
+        if last:
+            return last
+    return None
 
 
-def _parse_judge_json(reply: str) -> Tuple[Optional[float], str]:
-    """Robust JSON extraction from a possibly-noisy judge reply."""
+def _parse_judge_json(reply: str) -> Dict[str, Any]:
+    """Robust JSON extraction from a possibly-noisy judge reply.
+
+    Returns a dict with keys ``score`` (float|None), ``justification``
+    (str), ``hits`` (list[str]), ``misses`` (list[str]),
+    ``fabrications`` (list[str]) and ``grounding_quote`` (str). Missing
+    or malformed fields collapse to safe defaults so the upstream row
+    schema is always populated.
+    """
+    out: Dict[str, Any] = {
+        "score":            None,
+        "justification":    "",
+        "hits":             [],
+        "misses":           [],
+        "fabrications":     [],
+        "grounding_quote":  "",
+    }
+    if not reply:
+        return out
+    # Greedy match — the judge sometimes wraps the JSON in prose despite
+    # the instructions; we want the largest balanced-looking block.
     m = re.search(r"\{.*\}", reply, flags=re.DOTALL)
     if not m:
-        return None, reply.strip()[:200]
+        out["justification"] = reply.strip()[:600]
+        return out
     try:
         obj = json.loads(m.group(0))
     except json.JSONDecodeError:
-        return None, reply.strip()[:200]
+        out["justification"] = reply.strip()[:600]
+        return out
+
     raw = obj.get("score")
     try:
         score = float(raw)
         score = max(0.0, min(100.0, score))
     except (TypeError, ValueError):
         score = None
-    return score, str(obj.get("justification", ""))[:600]
+    out["score"] = score
+    out["justification"] = str(obj.get("justification", ""))[:600]
+
+    def _as_str_list(value: Any) -> List[str]:
+        if isinstance(value, list):
+            return [str(x)[:300] for x in value if str(x).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()[:300]]
+        return []
+
+    out["hits"]            = _as_str_list(obj.get("hits"))
+    out["misses"]          = _as_str_list(obj.get("misses"))
+    out["fabrications"]    = _as_str_list(obj.get("fabrications"))
+    out["grounding_quote"] = str(obj.get("grounding_quote", ""))[:300]
+    return out
 
 
 # ── Per-question scoring ─────────────────────────────────────────
 
 async def _score_mcq(question: Dict[str, Any], context: str,
                      model_cfg: Dict[str, Any], *, mock: bool) -> Dict[str, Any]:
+    valid_choices = list(question["choices"].keys())
     if mock:
-        reply, letter = "A (mock)", "A"
+        reply = "<answer>A</answer><explain>mock</explain>"
+        letter = "A"
     else:
         reply = await _call_llm(_mcq_prompt(question, context), model_cfg=model_cfg)
-        letter = _extract_letter(reply)
+        letter = _extract_letter(reply, valid_choices=valid_choices)
     truth = question["answer"]
     refusal_letters = {k for k, v in question["choices"].items()
                        if "cannot determine" in str(v).lower()}
@@ -179,8 +457,17 @@ async def _score_mcq(question: Dict[str, Any], context: str,
         "answer_truth":    truth,
         "is_refusal":      bool(is_refusal),
         "correct":         bool(correct),
+        "evidence_class":  question.get("evidence_class", ""),
         "raw_response":    reply[:400],
     }
+
+
+_PASS_MARK = 60.0
+
+
+def _flatten_list(items: List[str]) -> str:
+    """Newline-join a short list for storage in a CSV cell."""
+    return "\n".join(items)[:1000]
 
 
 async def _score_open(question: Dict[str, Any], context: str,
@@ -188,18 +475,31 @@ async def _score_open(question: Dict[str, Any], context: str,
                       judge_cfg: Dict[str, Any], *, mock: bool) -> Dict[str, Any]:
     if mock:
         candidate = "(mock candidate answer — no LLM call made)"
-        score, just = 50.0, "(mock judge)"
+        parsed: Dict[str, Any] = {
+            "score":           50.0,
+            "justification":   "(mock judge)",
+            "hits":            [],
+            "misses":          ["(mock — full rubric)"],
+            "fabrications":    [],
+            "grounding_quote": "",
+        }
     else:
         candidate = await _call_llm(_open_prompt(question, context),
                                     model_cfg=model_cfg)
         judge_reply = await _call_llm(_judge_prompt(question, candidate),
                                       model_cfg=judge_cfg)
-        score, just = _parse_judge_json(judge_reply)
+        parsed = _parse_judge_json(judge_reply)
+    score = parsed["score"]
     return {
-        "candidate_answer": candidate[:1000],
-        "judge_score":      score,
-        "judge_justification": just,
-        "correct":          (score is not None and score >= 60.0),
+        "candidate_answer":     candidate[:1000],
+        "judge_score":          score,
+        "judge_justification":  parsed["justification"],
+        "judge_hits":           _flatten_list(parsed["hits"]),
+        "judge_misses":         _flatten_list(parsed["misses"]),
+        "judge_fabrications":   _flatten_list(parsed["fabrications"]),
+        "judge_grounding_quote": parsed["grounding_quote"],
+        "correct":              (score is not None and score >= _PASS_MARK),
+        "evidence_class":       question.get("evidence_class", ""),
     }
 
 
@@ -213,7 +513,10 @@ async def _run_sweep(datasets: List[Dict[str, Any]],
     for ds in datasets:
         input_paths = {k: inputs_base / v
                        for k, v in (ds.get("inputs") or {}).items()}
-        context = _bundle_inputs(input_paths)
+        context = _bundle_inputs(
+            input_paths,
+            dataset_context=ds.get("analysis_context", ""),
+        )
         for q in ds["questions"]:
             t0 = time.perf_counter()
             try:
@@ -236,6 +539,7 @@ async def _run_sweep(datasets: List[Dict[str, Any]],
                 "accession":     ds.get("accession", ""),
                 "question_id":   q["id"],
                 "question_type": q["type"],
+                "evidence_class": q.get("evidence_class", ""),
                 "model":         model_cfg["id"],
                 "provider":      model_cfg["provider"],
                 "judge_model":   judge_cfg["id"] if q["type"] == "open_ended" else "",
@@ -248,6 +552,10 @@ async def _run_sweep(datasets: List[Dict[str, Any]],
                 "raw_response":  "",
                 "candidate_answer":     "",
                 "judge_justification":  "",
+                "judge_hits":           "",
+                "judge_misses":         "",
+                "judge_fabrications":   "",
+                "judge_grounding_quote": "",
             }
             row.update(detail)
             rows.append(row)

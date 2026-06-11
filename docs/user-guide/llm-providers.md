@@ -8,9 +8,9 @@ variables — no code changes required.
 
 | Provider | Set `LLM_PROVIDER=` | Auth env var | Examples of `LLM_MODEL` |
 |---|---|---|---|
-| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4.1`, `gpt-4o`, `o3-mini` |
-| Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514`, `claude-opus-4` |
-| Google Gemini | `google` | `GOOGLE_API_KEY` | `gemini-2.5-flash`, `gemini-2.5-pro` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-5.5`, `gpt-5.4-mini`, `gpt-4.1`, `o3` |
+| Anthropic Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6`, `claude-opus-4-8` |
+| Google Gemini | `google` | `GOOGLE_API_KEY` | `gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-2.5-pro` |
 | Ollama (local) | `ollama` | none | `llama3.1:70b`, `qwen2.5:32b`, `mistral` |
 
 The provider is auto-detected from `LLM_MODEL` if you omit
@@ -34,7 +34,7 @@ export OPENAI_BASE_URL=https://api.openai.com/v1
 
 ```bash
 export LLM_PROVIDER=anthropic
-export LLM_MODEL=claude-sonnet-4-20250514
+export LLM_MODEL=claude-sonnet-4-6
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
@@ -94,6 +94,13 @@ Uses `response_format={"type": "json_schema", "strict": true}` —
 `flowagent.core.schemas.to_json_schema()`. Failures fall back through
 plain chat with prompt repair.
 
+**Model strings:** some registry ids are logical labels for stable CSV
+keys and differ from the API slug (e.g. `gpt-5.5-mini` is not released
+on the API as of May 2026 — the benchmark maps it to `gpt-5.4-mini` via
+`api_id` in `benchmarks/config/models.yaml` and
+`flowagent.core.providers.openai_models`). Prefer `gpt-5.4-mini` for new
+mini-tier sweeps. Unknown models fail loudly (no silent fallback).
+
 ### Anthropic tool use
 
 Uses Anthropic's tool-call API for both planning and the agent loop.
@@ -104,6 +111,18 @@ Retries on `rate_limit_error` with exponential back-off.
 Uses Gemini's `responseSchema` for JSON output. Pricing is roughly an
 order of magnitude cheaper than GPT-4.1, with measurable quality
 trade-offs on adversarial prompts (see [Benchmarking](../benchmarking.md)).
+
+**Model strings:** the Generative Language API rejects retired models
+(notably the entire **Gemini 1.5** family — 404 even with version
+suffixes as of May 2026). Use current GA names (`gemini-2.5-flash`,
+`gemini-3.5-flash`). Historical 1.5 benchmark rows live in merged CSVs
+from earlier sweeps. The benchmark registry maps API ids via `api_id` in
+`benchmarks/config/models.yaml`. To list models your key can access:
+
+```bash
+curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GOOGLE_API_KEY" \
+  | python -m json.tool | grep '"name"'
+```
 
 ### Ollama
 

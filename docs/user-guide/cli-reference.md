@@ -160,7 +160,7 @@ flowagent prompt "Continue RNA-seq" \
     --checkpoint-dir wf_state --resume
 
 # 6. Generate a Snakemake pipeline using Anthropic
-LLM_PROVIDER=anthropic LLM_MODEL=claude-sonnet-4-20250514 \
+LLM_PROVIDER=anthropic LLM_MODEL=claude-sonnet-4-6 \
 flowagent prompt "ATAC-seq paired-end" --pipeline-format snakemake
 
 # 7. Analyze an existing results directory

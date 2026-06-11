@@ -1,7 +1,7 @@
 """Head-to-head competitor harness for Benchmark E.
 
 This module defines a small pluggable interface so that third-party
-agentic bioinformatics systems (BioMaster, AutoBA, CellAgent, …) can be
+agentic bioinformatics systems (BioMaster, AutoBA, Biomni, …) can be
 evaluated on the same prompt corpus + metric set as FlowAgent.
 
 Design
@@ -45,7 +45,44 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from harness.autoba_child_env import autoba_subprocess_environ
+
 LOG = logging.getLogger(__name__)
+
+
+def _parse_shim_stdout_json(
+    out: str,
+    stderr_b: bytes,
+    returncode: Optional[int],
+    label: str,
+) -> Dict[str, Any]:
+    """Parse the single JSON object shims print on stdout (tolerate extra lines)."""
+    err = stderr_b.decode(errors="replace")
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        pass
+    for line in reversed(out.splitlines()):
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    rc = returncode if returncode is not None else -1
+    o_prev = (out[:1200] + "…") if len(out) > 1200 else out
+    e_prev = (err[:2500] + "…") if len(err) > 2500 else err
+    hint = ""
+    # -11: Unix SIGSEGV — common when torch/MKL/OpenMP crash before flushing stderr.
+    if rc == -11 and not err.strip() and not out.strip():
+        hint = (
+            " Hint: native SIGSEGV (often PyTorch/BLAS on macOS); see "
+            "benchmarks/README.md (Benchmark E, AutoBA troubleshooting)."
+        )
+    raise RuntimeError(
+        f"{label} shim exited {rc}, no JSON envelope on stdout ({len(out)} chars). "
+        f"stdout_preview={o_prev!r} stderr_preview={e_prev!r}{hint}"
+    )
 
 
 # ── Shared plan schema ───────────────────────────────────────────
@@ -152,12 +189,16 @@ class FlowAgentCompetitor(Competitor):
         from flowagent.core.llm import LLMInterface
         from flowagent.core.schemas import PipelineContext
         from harness.metrics import cost_usd
+        from harness.runner import set_provider
 
         # Reuse the _TokenTracker from bench_planning
         import sys
         bench_dir = Path(__file__).resolve().parent.parent
         sys.path.insert(0, str(bench_dir))
         from bench_planning import _TokenTracker  # noqa: E402
+
+        if self.model_cfg:
+            set_provider(self.model_cfg)
 
         ctx = PipelineContext(
             input_files=(context or {}).get(
@@ -308,26 +349,8 @@ class BioMasterCompetitor(Competitor):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        out = stdout.decode(errors="replace")
-        # The shim always prints a JSON envelope on stdout, but a custom
-        # $BIOMASTER_CLI may intermix chatter. Try to parse the whole
-        # stream first; on failure, scan backwards for the last line that
-        # is a well-formed JSON object.
-        try:
-            return json.loads(out)
-        except json.JSONDecodeError:
-            pass
-        for line in reversed(out.splitlines()):
-            line = line.strip()
-            if line.startswith("{") and line.endswith("}"):
-                try:
-                    return json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-        raise RuntimeError(
-            f"BioMaster shim exited {proc.returncode}, "
-            f"no JSON envelope in stdout ({len(out)}B). "
-            f"stderr: {stderr.decode(errors='replace')[:400]}"
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "BioMaster"
         )
 
 
@@ -377,7 +400,8 @@ class AutoBACompetitor(Competitor):
         if self._autoba_dir and _AUTOBA_SHIM.exists():
             ab = Path(self._autoba_dir).expanduser()
             if (ab / "app.py").exists():
-                return [sys.executable, str(_AUTOBA_SHIM),
+                # -u: unbuffered stdout/stderr so a native crash still leaves traces.
+                return [sys.executable, "-u", str(_AUTOBA_SHIM),
                         "--autoba-dir", str(ab)]
         return None
 
@@ -427,24 +451,391 @@ class AutoBACompetitor(Competitor):
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=autoba_subprocess_environ(),
         )
         stdout, stderr = await proc.communicate()
-        out = stdout.decode(errors="replace")
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "AutoBA"
+        )
+
+
+# ── Biomni adapter ───────────────────────────────────────────────
+
+# Biomni: general biomedical agent (LangGraph ReAct). Upstream is a package +
+# heavy optional env; driven via ``biomni_shim.py`` like BioMaster/AutoBA.
+
+_BIOMNI_SHIM = Path(__file__).parent / "biomni_shim.py"
+
+_BIOMNI_IMPORT_HINT = (
+    "Biomni is not configured. Two-step setup:\n"
+    "  1. git clone https://github.com/snap-stanford/Biomni.git /path/to/Biomni\n"
+    "     cd /path/to/Biomni && pip install -e .\n"
+    "     (or follow biomni_env/README.md for the full upstream env)\n"
+    "  2. export BIOMNI_DIR=/path/to/Biomni\n"
+    "     Set API keys per upstream (.env): ANTHROPIC_API_KEY / OPENAI_API_KEY, "
+    "LLM_SOURCE, etc.\n"
+    "The harness drives Biomni via harness/biomni_shim.py.\n"
+    "Alternatively, set BIOMNI_CLI to your own executable.\n"
+    "Paper: https://www.biorxiv.org/content/10.1101/2025.05.30.656746v1"
+)
+
+
+class BiomniCompetitor(Competitor):
+    """Adapter for Biomni — drives upstream via ``biomni_shim.py``.
+
+    Same subprocess + JSON envelope pattern as :class:`AutoBACompetitor`.
+    """
+
+    id   = "biomni"
+    name = "Biomni"
+    url  = "https://www.biorxiv.org/content/10.1101/2025.05.30.656746v1"
+
+    def __init__(self, model: str = "gpt-4.1"):
+        self.model = model
+        self._cli = os.environ.get("BIOMNI_CLI")
+        self._biomni_dir = os.environ.get("BIOMNI_DIR")
+
+    def _effective_cli(self) -> Optional[List[str]]:
+        if self._cli and Path(self._cli).exists() and os.access(self._cli, os.X_OK):
+            return [self._cli]
+        if self._biomni_dir and _BIOMNI_SHIM.exists():
+            root = Path(self._biomni_dir).expanduser()
+            if (root / "biomni" / "__init__.py").exists():
+                return [sys.executable, str(_BIOMNI_SHIM),
+                        "--biomni-dir", str(root)]
+        return None
+
+    def available(self) -> Tuple[bool, str]:
+        return (True, "") if self._effective_cli() else (False, _BIOMNI_IMPORT_HINT)
+
+    async def plan(self, prompt: str, *, context=None) -> CompetitorResult:
+        ok, why = self.available()
+        if not ok:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=0.0,
+                error=f"not-available: {why.splitlines()[0]}",
+            )
+
+        t0 = time.perf_counter()
         try:
-            return json.loads(out)
-        except json.JSONDecodeError:
-            pass
-        for line in reversed(out.splitlines()):
-            line = line.strip()
-            if line.startswith("{") and line.endswith("}"):
-                try:
-                    return json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-        raise RuntimeError(
-            f"AutoBA shim exited {proc.returncode}, "
-            f"no JSON envelope in stdout ({len(out)}B). "
-            f"stderr: {stderr.decode(errors='replace')[:400]}"
+            envelope = await self._invoke_shim(prompt, context)
+        except Exception as e:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=time.perf_counter() - t0,
+                error=f"cli-adapter: {type(e).__name__}: {e}",
+            )
+
+        plan = _normalise_plan(envelope.get("plan") or {})
+        return CompetitorResult(
+            plan=plan,
+            wall_seconds=float(envelope.get("wall_seconds") or
+                               (time.perf_counter() - t0)),
+            prompt_tokens=int(envelope.get("prompt_tokens") or 0),
+            completion_tokens=int(envelope.get("completion_tokens") or 0),
+            llm_calls=int(envelope.get("llm_calls") or 0),
+            cost_usd=float(envelope.get("cost_usd") or 0.0),
+            raw_output=json.dumps(envelope)[:20_000],
+            error=envelope.get("error"),
+        )
+
+    async def _invoke_shim(self, prompt: str, context) -> Dict[str, Any]:
+        argv = self._effective_cli()
+        assert argv is not None
+        files: List[str] = []
+        if context and context.get("input_files"):
+            files = [f"{p}: input file" for p in context["input_files"]]
+        argv = [*argv, "--prompt", prompt,
+                "--files", json.dumps(files),
+                "--model", self.model]
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "Biomni"
+        )
+
+
+# ── Claude Code adapter ──────────────────────────────────────────
+
+# Claude Code: Anthropic's general-purpose CLI coding agent. Driven via
+# ``claude_code_shim.py`` -- the shim subprocesses ``claude --print
+# --output-format json --permission-mode plan`` so the agent only emits
+# its planning output (no actual file edits) and the harness gets a
+# clean JSON envelope identical in shape to the BioMaster / AutoBA /
+# Biomni shims.
+
+_CLAUDE_CODE_SHIM = Path(__file__).parent / "claude_code_shim.py"
+
+_CLAUDE_CODE_IMPORT_HINT = (
+    "Claude Code is not configured. One-step setup:\n"
+    "  1. Install the Claude Code CLI per Anthropic's docs and run\n"
+    "     ``claude /login`` to authenticate.\n"
+    "  2. (optional) export CLAUDE_CODE_BIN=/path/to/claude if it is not\n"
+    "     on PATH.\n"
+    "The harness then drives Claude Code via harness/claude_code_shim.py\n"
+    "with ``--permission-mode plan`` so no files are modified.\n"
+    "Docs: https://docs.claude.com/en/docs/claude-code/overview"
+)
+
+
+class ClaudeCodeCompetitor(Competitor):
+    """Adapter for Anthropic's Claude Code CLI -- planning-only mode.
+
+    The shim runs Claude Code with ``--print --output-format json
+    --permission-mode plan``, so the CLI returns its full reply as a
+    single JSON object on stdout and never writes to disk. Token /
+    cost figures come from Claude Code's own ``usage`` and
+    ``total_cost_usd`` fields.
+
+    The driver model defaults to whichever Claude version Claude Code
+    selects; pass ``CLAUDE_CODE_MODEL`` (env) or ``--model`` (kwarg) to
+    pin a specific Anthropic model.
+
+    DAG-awareness convention
+    ------------------------
+    Default is ``with_dag=False`` -- the shim uses its DAG-blind prompt
+    template (no ``dependencies`` field, no topological-order rule).
+    This is the fair head-to-head baseline for Benchmark E: FlowAgent's
+    differentiator is its DAG-aware planner, so giving Claude Code a
+    free DAG instruction in its prompt would be a confound. The default
+    slug ``claude_code`` therefore refers to the DAG-blind variant.
+
+    Pass ``with_dag=True`` to opt-in to the DAG-aware prompt template
+    (the prompt-level equivalent of FlowAgent's ``LLM_DAG_AWARE=true``).
+    The slug becomes ``claude_code_dag_aware`` so paired runs don't
+    collide in the registry / results CSV. Benchmark J's ``dag_aware``
+    arm uses this opt-in.
+    """
+
+    id   = "claude_code"
+    name = "Claude Code"
+    url  = "https://docs.claude.com/en/docs/claude-code/overview"
+
+    def __init__(self, model: Optional[str] = None, *, with_dag: bool = False):
+        # ``None`` means "let Claude Code choose its default model" so the
+        # adapter works out of the box. Benchmark runners that want to
+        # pin a model pass it here.
+        self.model = model
+        self.with_dag = with_dag
+        # Distinguish ablation arms in the registry / results CSV. The
+        # default ``False`` arm keeps the historical id ``claude_code``
+        # so existing Benchmark E callers see the slug they expect (now
+        # backed by the fair DAG-blind prompt). The DAG-aware arm is
+        # opt-in and gets a ``_dag_aware`` suffix so paired runs in
+        # Benchmark J don't collide.
+        if with_dag:
+            self.id = "claude_code_dag_aware"
+            self.name = "Claude Code (DAG-aware)"
+
+    def _binary(self) -> Optional[str]:
+        explicit = os.environ.get("CLAUDE_CODE_BIN")
+        if explicit and Path(explicit).exists() and os.access(explicit, os.X_OK):
+            return explicit
+        from shutil import which
+        return which("claude")
+
+    def available(self) -> Tuple[bool, str]:
+        if not _CLAUDE_CODE_SHIM.exists():
+            return False, f"missing shim: {_CLAUDE_CODE_SHIM}"
+        if self._binary():
+            return True, ""
+        return False, _CLAUDE_CODE_IMPORT_HINT
+
+    async def plan(self, prompt: str, *, context=None) -> CompetitorResult:
+        ok, why = self.available()
+        if not ok:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=0.0,
+                error=f"not-available: {why.splitlines()[0]}",
+            )
+
+        t0 = time.perf_counter()
+        try:
+            envelope = await self._invoke_shim(prompt, context)
+        except Exception as e:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=time.perf_counter() - t0,
+                error=f"cli-adapter: {type(e).__name__}: {e}",
+            )
+
+        plan = _normalise_plan(envelope.get("plan") or {})
+        return CompetitorResult(
+            plan=plan,
+            wall_seconds=float(envelope.get("wall_seconds")
+                                or (time.perf_counter() - t0)),
+            prompt_tokens=int(envelope.get("prompt_tokens") or 0),
+            completion_tokens=int(envelope.get("completion_tokens") or 0),
+            llm_calls=int(envelope.get("llm_calls") or 0),
+            cost_usd=float(envelope.get("cost_usd") or 0.0),
+            raw_output=json.dumps(envelope)[:20_000],
+            error=envelope.get("error"),
+        )
+
+    async def _invoke_shim(self, prompt: str, context) -> Dict[str, Any]:
+        argv = [sys.executable, str(_CLAUDE_CODE_SHIM)]
+        files: List[str] = []
+        if context and context.get("input_files"):
+            files = [f"{p}: input file" for p in context["input_files"]]
+        argv = [*argv, "--prompt", prompt,
+                "--files", json.dumps(files)]
+        if self.model:
+            argv += ["--model", self.model]
+        # Forward the ablation arm. The shim defaults to the DAG-blind
+        # template (fair head-to-head); we pass ``--with-dag-instruction``
+        # explicitly only when the caller opts-in (Benchmark J's
+        # ``dag_aware`` arm).
+        if self.with_dag:
+            argv += ["--with-dag-instruction"]
+        claude_bin = self._binary()
+        if claude_bin:
+            argv += ["--claude-bin", claude_bin]
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "ClaudeCode",
+        )
+
+
+# ── Edison Analysis adapter ──────────────────────────────────────
+
+# Edison Scientific's Edison Analysis -- a hosted, execution-oriented
+# bioinformatics agent (FutureHouse spinout). Driven via
+# ``edison_shim.py``, which uses the official ``edison-client`` Python
+# SDK to submit a planning-only task (system_prompt_additional_guidelines
+# forbids tool use) and parses the JSON workflow plan out of the
+# trajectory's final answer.
+#
+# Edison costs credits per task; the shim writes a shared budget file
+# (``EDISON_BUDGET_FILE``) so a long sweep cannot drain a researcher's
+# account, and ``EDISON_BUDGET_CREDITS`` lets the harness set a hard cap.
+
+_EDISON_SHIM = Path(__file__).parent / "edison_shim.py"
+
+_EDISON_IMPORT_HINT = (
+    "Edison Analysis is not configured. Two-step setup:\n"
+    "  1. pip install edison-client\n"
+    "  2. Sign up at https://platform.edisonscientific.com (academic .edu\n"
+    "     accounts get a free monthly credit allocation), generate an API\n"
+    "     key, and ``export EDISON_API_KEY=...``.\n"
+    "Optional knobs:\n"
+    "  EDISON_BUDGET_CREDITS = hard cap on credits consumed across the\n"
+    "                          shared budget file (default: unlimited).\n"
+    "  EDISON_MAX_STEPS      = per-task max_steps cap (default 5).\n"
+    "  EDISON_TIMEOUT        = overall wall-clock cap, seconds (default 1800).\n"
+    "Docs: https://docs.edisonscientific.com/edison-client/"
+)
+
+
+class EdisonCompetitor(Competitor):
+    """Adapter for Edison Scientific's Edison Analysis agent.
+
+    Drives Edison via ``edison_shim.py``. The shim runs the task with
+    a system-prompt override that forbids tool execution and forces a
+    JSON-only workflow-plan reply, so token / cost figures are
+    comparable to Claude Code and Biomni.
+
+    Reports unavailable when ``EDISON_API_KEY`` is unset or the
+    ``edison-client`` package is missing -- soft-skipped per cell so
+    a competitor sweep without an Edison account still runs.
+
+    DAG-awareness convention
+    ------------------------
+    Default is ``with_dag=False`` -- the shim uses its DAG-blind
+    system-prompt template. Pass ``with_dag=True`` to opt-in to the
+    DAG-aware template; the slug becomes ``edison_dag_aware`` so
+    paired ablation runs don't collide in the registry / results CSV.
+    Same fairness rationale as :class:`ClaudeCodeCompetitor`.
+    """
+
+    id   = "edison"
+    name = "Edison Analysis"
+    url  = "https://docs.edisonscientific.com/agents.md#analysis"
+
+    def __init__(self, *, with_dag: bool = False):
+        # Edison's model selection happens server-side; nothing to do here.
+        # The shim honours EDISON_LANGUAGE / EDISON_MAX_STEPS / EDISON_TIMEOUT.
+        self.with_dag = with_dag
+        if with_dag:
+            self.id = "edison_dag_aware"
+            self.name = "Edison Analysis (DAG-aware)"
+
+    def _has_sdk(self) -> bool:
+        try:
+            import edison_client  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def available(self) -> Tuple[bool, str]:
+        if not _EDISON_SHIM.exists():
+            return False, f"missing shim: {_EDISON_SHIM}"
+        if not os.environ.get("EDISON_API_KEY"):
+            return False, _EDISON_IMPORT_HINT
+        if not self._has_sdk():
+            return False, _EDISON_IMPORT_HINT
+        return True, ""
+
+    async def plan(self, prompt: str, *, context=None) -> CompetitorResult:
+        ok, why = self.available()
+        if not ok:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=0.0,
+                error=f"not-available: {why.splitlines()[0]}",
+            )
+
+        t0 = time.perf_counter()
+        try:
+            envelope = await self._invoke_shim(prompt, context)
+        except Exception as e:
+            return CompetitorResult(
+                plan=_empty_plan(),
+                wall_seconds=time.perf_counter() - t0,
+                error=f"cli-adapter: {type(e).__name__}: {e}",
+            )
+
+        plan = _normalise_plan(envelope.get("plan") or {})
+        return CompetitorResult(
+            plan=plan,
+            wall_seconds=float(envelope.get("wall_seconds")
+                                or (time.perf_counter() - t0)),
+            prompt_tokens=int(envelope.get("prompt_tokens") or 0),
+            completion_tokens=int(envelope.get("completion_tokens") or 0),
+            llm_calls=int(envelope.get("llm_calls") or 0),
+            cost_usd=float(envelope.get("cost_usd") or 0.0),
+            raw_output=json.dumps(envelope)[:20_000],
+            error=envelope.get("error"),
+        )
+
+    async def _invoke_shim(self, prompt: str, context) -> Dict[str, Any]:
+        argv = [sys.executable, str(_EDISON_SHIM)]
+        files: List[str] = []
+        if context and context.get("input_files"):
+            files = [f"{p}: input file" for p in context["input_files"]]
+        argv = [*argv, "--prompt", prompt, "--files", json.dumps(files)]
+        # Forward the ablation arm. Shim defaults to DAG-blind; only
+        # opt-in arms pass ``--with-dag-instruction`` (Benchmark J).
+        if self.with_dag:
+            argv += ["--with-dag-instruction"]
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return _parse_shim_stdout_json(
+            stdout.decode(errors="replace"), stderr, proc.returncode, "Edison",
         )
 
 
@@ -462,7 +853,23 @@ class AutoBACompetitor(Competitor):
 # rubric. No context gathering, no repair loop, no presets — exactly
 # one provider call per cell.
 
-_RAW_LLM_SYSTEM_PROMPT = """You are a bioinformatics pipeline planner.
+# Two raw-LLM system prompts following the same DAG-aware/blind
+# convention as the Claude Code + Edison shims:
+#
+# * The DEFAULT (``_RAW_LLM_SYSTEM_PROMPT_NO_DAG``) is DAG-blind. The
+#   raw-LLM lane is meant to test whether FlowAgent's *full* stack
+#   (scaffolding + DAG-aware prompt + DAG-aware schema) beats a naive
+#   one-shot LLM call. Giving the raw lane a free DAG instruction in
+#   its prompt would short-circuit that comparison (the raw lane
+#   would inherit FlowAgent's prompt-engineering wins for free).
+#
+# * ``_RAW_LLM_SYSTEM_PROMPT_DAG_AWARE`` is opt-in via
+#   ``RawLLMCompetitor(with_dag=True)``; useful when a researcher
+#   wants to test a different question -- e.g. "what does FlowAgent's
+#   scaffolding add *over and above* the DAG instruction the planner
+#   already includes?" -- but it isn't the default for fairness.
+
+_RAW_LLM_SYSTEM_PROMPT_DAG_AWARE = """You are a bioinformatics pipeline planner.
 Given a user's request, produce a JSON workflow plan using this schema:
 
 {
@@ -488,6 +895,48 @@ Rules:
 - Include every step needed to go from raw input to the requested output.
 
 Return ONLY the JSON object. No markdown fences. No commentary."""
+
+
+_RAW_LLM_SYSTEM_PROMPT_NO_DAG = """You are a bioinformatics pipeline planner.
+Given a user's request, produce a JSON workflow plan using this schema:
+
+{
+  "name": "<workflow_name>",
+  "description": "<short description>",
+  "workflow_type": "<rna_seq_kallisto | rna_seq_star | rna_seq_hisat | chip_seq | atac_seq | variant_calling | single_cell_10x | single_cell_kb | qc_only | custom>",
+  "steps": [
+    {
+      "name": "<unique_snake_case_id>",
+      "command": "<runnable shell command>",
+      "outputs": ["<declared output paths>"]
+    }
+  ]
+}
+
+Rules:
+- Commands should be runnable shell pipelines using standard
+  bioinformatics tools (fastqc, kallisto, salmon, STAR, bwa, samtools,
+  macs2, cellranger, kb-python, deseq2 via Rscript, multiqc, etc.).
+- Include every step needed to go from raw input to the requested output.
+
+Return ONLY the JSON object. No markdown fences. No commentary."""
+
+
+def _select_raw_llm_system_prompt(*, dag_aware: bool) -> str:
+    """Return the raw-LLM system prompt for the requested ablation arm."""
+    return (
+        _RAW_LLM_SYSTEM_PROMPT_DAG_AWARE
+        if dag_aware
+        else _RAW_LLM_SYSTEM_PROMPT_NO_DAG
+    )
+
+
+# Backwards-compat alias: any caller that imported _RAW_LLM_SYSTEM_PROMPT
+# from this module historically got the DAG-aware version. Now points
+# at the DAG-blind variant (the new default) so they get the fair
+# head-to-head prompt by default. Callers that explicitly want the
+# DAG-aware prompt should reach for ``_RAW_LLM_SYSTEM_PROMPT_DAG_AWARE``.
+_RAW_LLM_SYSTEM_PROMPT = _RAW_LLM_SYSTEM_PROMPT_NO_DAG
 
 
 _PROVIDER_ENV_VARS = {
@@ -518,13 +967,36 @@ class RawLLMCompetitor(Competitor):
     FlowAgent's planning infrastructure. If ``raw_gpt-5.4`` produces plans
     of comparable quality to FlowAgent on the same scoring rubric, the
     scaffolding isn't adding value; if it's measurably worse, it is.
+
+    DAG-awareness convention
+    ------------------------
+    By default the raw-LLM system prompt is **DAG-blind** (see
+    ``_RAW_LLM_SYSTEM_PROMPT_NO_DAG``) so the head-to-head against
+    FlowAgent isolates FlowAgent's full stack (scaffolding + DAG-aware
+    planner + retry loop) from a naive one-shot call. Pass
+    ``with_dag=True`` to opt-in to the DAG-aware system prompt; the
+    slug then becomes ``raw_<model>_dag_aware`` so paired runs don't
+    collide in the registry / results CSV.
     """
 
-    def __init__(self, model_id: str, models_yaml_cfg: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        model_id: str,
+        models_yaml_cfg: Optional[Dict[str, Any]] = None,
+        *,
+        with_dag: bool = False,
+    ):
         self.model_id = model_id
+        self.with_dag = with_dag
         # Slug-safe id for results CSV; keep model id human-readable in name.
-        self.id = f"raw_{model_id}"
-        self.name = f"Raw LLM ({model_id})"
+        # The DAG-aware opt-in lane gets a distinct slug so the two
+        # configurations can co-exist in the registry / results.
+        suffix = "_dag_aware" if with_dag else ""
+        self.id = f"raw_{model_id}{suffix}"
+        self.name = (
+            f"Raw LLM ({model_id}, DAG-aware)" if with_dag
+            else f"Raw LLM ({model_id})"
+        )
         self.url = ""
         # Used for pricing lookup. Accept either a single {id: ..., pricing: ...}
         # dict, or a full models.yaml cfg dict {"models": [...]}.
@@ -568,7 +1040,9 @@ class RawLLMCompetitor(Competitor):
             tracker = _TokenTracker(provider)
             resp = await tracker.chat(
                 [
-                    {"role": "system", "content": _RAW_LLM_SYSTEM_PROMPT},
+                    {"role": "system",
+                     "content": _select_raw_llm_system_prompt(
+                         dag_aware=self.with_dag)},
                     {"role": "user", "content": prompt},
                 ],
                 model=self.model_id,
@@ -616,7 +1090,7 @@ class RawLLMCompetitor(Competitor):
 # expensive premium-reasoning tier.
 DEFAULT_RAW_FRONTIER_MODELS = (
     "gpt-5.4",
-    "claude-opus-4-7",
+    "claude-opus-4-8",
     "gemini-2.5-pro",
 )
 
@@ -631,7 +1105,7 @@ def build_registry(
     Parameters
     ----------
     model_cfg : dict, optional
-        Single-model cfg passed to FlowAgent / BioMaster / AutoBA lanes
+        Single-model cfg passed to FlowAgent / BioMaster / AutoBA / Biomni lanes
         (they all share one "driver model" for token accounting).
     raw_models : list[str], optional
         Model IDs to add as zero-shot raw-LLM baselines. Each becomes a
@@ -646,10 +1120,17 @@ def build_registry(
     # Ordering: third-party competitors first, FlowAgent last. Means any
     # adapter / shim issues surface before the (known-good) FlowAgent
     # baseline is spent on, so a broken sweep fails fast.
+    #
+    # ``claude_code`` and ``edison`` are anthropic / edison-scientific
+    # systems driven via their own shims; they are soft-skipped when
+    # ``CLAUDE_CODE_BIN`` / ``EDISON_API_KEY`` are not configured.
     reg: Dict[str, Competitor] = {
-        "autoba":     AutoBACompetitor(model=model_id),
-        "biomaster":  BioMasterCompetitor(model=model_id),
-        "flowagent":  FlowAgentCompetitor(model_cfg=model_cfg),
+        "autoba":      AutoBACompetitor(model=model_id),
+        "biomaster":   BioMasterCompetitor(model=model_id),
+        "biomni":      BiomniCompetitor(model=model_id),
+        "claude_code": ClaudeCodeCompetitor(),
+        "edison":      EdisonCompetitor(),
+        "flowagent":   FlowAgentCompetitor(model_cfg=model_cfg),
     }
     for raw_id in (raw_models or []):
         key = f"raw_{raw_id}"

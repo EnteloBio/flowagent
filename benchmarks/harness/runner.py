@@ -66,7 +66,7 @@ _DOTENV_PATH = _load_dotenv_once()
 
 # ── Provider switching ────────────────────────────────────────────
 
-def set_provider(model_cfg: Dict[str, Any]) -> None:
+def set_provider(model_cfg: Dict[str, Any], *, defaults: Optional[Dict[str, Any]] = None) -> None:
     """Switch FlowAgent to a specific LLM provider+model for the current process.
 
     Mutates environment variables that ``flowagent.config.settings.Settings``
@@ -74,7 +74,18 @@ def set_provider(model_cfg: Dict[str, Any]) -> None:
     because ``Settings`` is re-constructed on demand in FlowAgent.
     """
     os.environ["LLM_PROVIDER"] = model_cfg["provider"]
-    os.environ["LLM_MODEL"] = model_cfg["id"]
+    # Optional api_id: registry label (id) vs provider API string (api_id).
+    api_model = model_cfg.get("api_id") or model_cfg["id"]
+    if model_cfg["provider"] == "openai":
+        from flowagent.core.providers.openai_models import resolve_openai_model
+        api_model = resolve_openai_model(api_model)
+    os.environ["LLM_MODEL"] = api_model
+
+    timeout = model_cfg.get("timeout_seconds")
+    if timeout is None and defaults:
+        timeout = defaults.get("timeout_seconds")
+    if timeout is not None:
+        os.environ["LLM_TIMEOUT_SECONDS"] = str(int(timeout))
 
     env_var = model_cfg.get("env_var")
     if env_var and env_var not in os.environ:
@@ -91,6 +102,18 @@ def set_provider(model_cfg: Dict[str, Any]) -> None:
 def load_yaml(path: Path) -> Dict[str, Any]:
     with open(path) as f:
         return yaml.safe_load(f)
+
+
+def parse_models_filter(models_arg: Optional[str]) -> List[str]:
+    """Parse ``--models``; reject empty string (e.g. ``make target MODEL=$MODEL``)."""
+    if models_arg is None:
+        return []
+    if not str(models_arg).strip():
+        raise SystemExit(
+            "Empty --models value. Pass e.g. --models=gpt-5.4-mini "
+            "(shell `make target MODEL=$MODEL` leaves $MODEL unset)."
+        )
+    return [m.strip() for m in models_arg.split(",") if m.strip()]
 
 
 # ── Manifest ──────────────────────────────────────────────────────
@@ -254,11 +277,14 @@ async def sweep(
             status = "err" if result.get("error") else "ok"
             cost = float(result.get("cost_usd") or 0.0)
             wall = float(result.get("wall_seconds") or 0.0)
+            err_hint = ""
+            if result.get("error"):
+                err_hint = f" — {result['error'][:100]}"
             print(
                 f"[{idx:>4}/{total_cells}] "
                 f"{model_cfg['id']:<32s} "
                 f"{str(entry.get('id', '?')):<28s} "
-                f"rep={rep} {status} "
+                f"rep={rep} {status}{err_hint} "
                 f"${cost:6.4f} {wall:6.1f}s",
                 flush=True,
             )

@@ -1,12 +1,34 @@
 # Benchmark A prompt corpus.
 #
-# Each entry is scored against:
-#   expected_workflow_type - must match plan["workflow_type"] exactly
-#   expected_tools         - every tool must appear in some step command
-#   forbidden_tools        - none may appear anywhere (portability-critical)
-#   expected_min_steps     - plan must have >= this many steps
-#   gold_preset (optional) - use the named preset in PRESET_CATALOG as
-#                            a gold reference for Jaccard/F1 concordance
+# Two scoring tiers (both live in this file under ``prompts:``; the absence
+# of an explicit ``tier:`` field is shorthand for ``tier: transcription``,
+# a.k.a. **explicit-tool** in figures and the manuscript):
+#
+#   tier: transcription  →  explicit-tool (default — original 41 prompts)
+#     Naming the rubric tools in the prompt is allowed and common.
+#     Scored against:
+#       expected_workflow_type - must match plan["workflow_type"]
+#       expected_tools         - every tool must appear in some step command
+#       forbidden_tools        - none may appear anywhere (portability-critical)
+#       expected_min_steps     - plan must have >= this many steps
+#       gold_preset (optional) - use the named preset in PRESET_CATALOG as
+#                                a gold reference for Jaccard/F1 concordance
+#     This tier mostly checks that the LLM emits valid JSON reflecting a
+#     toolchain that the prompt itself names.
+#
+#   tier: inference  →  tool-inference (goal + data only; tools not named)
+#     Prompts state goal + input data only, never naming tools.
+#     Scored against:
+#       acceptable_tool_sets   - list of valid toolchains; the plan passes if
+#                                AT LEAST ONE set is fully covered (strict
+#                                first-token matching, no prose fallback)
+#       forbidden_tools        - none may appear (used for "obvious shortcut"
+#                                bans — e.g. forbid kallisto when the goal
+#                                requires gene-level alignment)
+#       expected_min_steps
+#     This tier tests whether the LLM can pick a valid toolchain from
+#     biological intent — the failure mode the original corpus could not
+#     surface because every rubric tool was named in the prompt.
 #
 # Prompts are written the way a bench scientist or analyst would phrase them.
 
@@ -15,7 +37,11 @@ prompts:
   # ── RNA-seq (8) ────────────────────────────────────────────────
 
   - id: rnaseq_kallisto_basic
-    prompt: "Run an RNA-seq quantification pipeline with Kallisto on the paired-end FASTQ files"
+    # Names the three rubric tools so narrative agents (Biomni, etc.) can pass
+    # prose-based tool coverage; the old one-line prompt only mentioned Kallisto.
+    prompt: >-
+      Run an RNA-seq pipeline on paired-end FASTQ files: QC reads with FastQC,
+      quantify abundances with Kallisto, and aggregate QC and quant outputs with MultiQC.
     expected_workflow_type: rna_seq_kallisto
     expected_tools: [fastqc, kallisto, multiqc]
     expected_min_steps: 4
@@ -314,8 +340,13 @@ prompts:
 
   - id: hard_metagenomics_kraken
     # D+C: shotgun-metagenomics taxonomic profiling — niche enough that
-    # weaker models will reach for bwa/bowtie2 against a reference instead
-    # of using a k-mer classifier.
+    # weaker models will reach for bwa/bowtie2 *as a classifier* instead
+    # of using a k-mer classifier.  bowtie2 is intentionally NOT forbidden
+    # here because host-decontamination (aligning to GRCh38 and discarding
+    # human reads) is a legitimate and common pre-step before Kraken2.
+    # The gate that matters is expected_tools: [kraken2] — if the model
+    # omits the k-mer classifier it fails on tool coverage, not on the
+    # forbidden list.
     prompt: >-
       Shotgun-metagenomics taxonomic profiling on paired-end reads:
       QC with FastQC, host-decontaminate by removing human reads, classify
@@ -325,7 +356,7 @@ prompts:
     expected_workflow_type: [metagenomics, custom]
     expected_tools: [fastqc, kraken2, bracken, multiqc]
     expected_min_steps: 5
-    forbidden_tools: [wget, bwa, bowtie2, kallisto, star]
+    forbidden_tools: [wget, kallisto, star]
 
   # ── Extra hard benchmarks (10) — domain breadth + tricky planning ──
   # These extend the hard set to probe specific LLM failure modes:
@@ -464,3 +495,393 @@ prompts:
     expected_tools: [fastqc, fastp, bwa, samtools, qdnaseq, multiqc]
     expected_min_steps: 6
     forbidden_tools: [wget, kallisto, star, gatk]
+
+  # ── Tool-inference tier (25; YAML tier: inference) ─────────────
+  # Prompts that describe goal + input data only — never name a tool.
+  # The plan passes if it uses any toolchain in ``acceptable_tool_sets``
+  # (a list of valid alternatives), with strict first-token matching.
+  # Tests whether the LLM can pick a tool from biological intent rather
+  # than transcribing names supplied in the prompt.
+
+  - id: inf_rnaseq_de_preprocessing
+    tier: inference
+    prompt: >-
+      You are given paired-end Illumina RNA-seq FASTQ files from a
+      two-condition human study and need to produce a per-gene count
+      matrix that downstream collaborators will load into DESeq2 for
+      differential expression. Plan the bioinformatics pipeline.
+    acceptable_tool_sets:
+      - [star, featurecounts, multiqc]
+      - [star, htseq_count, multiqc]
+      - [hisat2, featurecounts, multiqc]
+      - [hisat2, htseq_count, multiqc]
+      - [salmon, tximport, multiqc]
+      - [kallisto, tximport, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget, bwa]
+
+  - id: inf_rnaseq_transcript_quant
+    tier: inference
+    prompt: >-
+      Quantify transcript-level abundance from paired-end Illumina bulk
+      RNA-seq reads against a human transcriptome reference. Downstream
+      use is differential transcript usage, so the output should be
+      transcript-level estimates, not gene-level alignments.
+    acceptable_tool_sets:
+      - [salmon, multiqc]
+      - [kallisto, multiqc]
+      - [salmon]
+      - [kallisto]
+    expected_min_steps: 3
+    forbidden_tools: [wget, star, hisat2, bwa, bowtie2]
+
+  - id: inf_rnaseq_strand_specific
+    tier: inference
+    prompt: >-
+      Reverse-stranded paired-end RNA-seq from a human cell line; you
+      need a per-gene count matrix and the protocol's strand information
+      must be honoured (a non-strand-aware count would halve the apparent
+      expression). The data goes into a downstream DESeq2 contrast.
+    acceptable_tool_sets:
+      - [star, featurecounts, multiqc]
+      - [star, htseq_count, multiqc]
+      - [hisat2, featurecounts, multiqc]
+      - [hisat2, htseq_count, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, salmon]
+
+  - id: inf_rnaseq_long_read
+    tier: inference
+    prompt: >-
+      Oxford Nanopore long-read direct cDNA sequencing from a human
+      sample. You want per-gene expression estimates for downstream
+      differential analysis; reads are far too long for short-read
+      aligners and the protocol does not give a transcriptome you can
+      trust for pseudo-alignment.
+    acceptable_tool_sets:
+      - [minimap2, featurecounts]
+      - [minimap2, htseq_count]
+      - [minimap2, samtools, featurecounts]
+      - [minimap2, stringtie]
+    expected_min_steps: 3
+    forbidden_tools: [wget, bwa, bowtie2, kallisto, salmon, star, hisat2]
+
+  - id: inf_rnaseq_geo_full
+    tier: inference
+    prompt: >-
+      Reproduce the gene-level expression matrix for GEO study GSE186412
+      starting from the public SRA, going all the way to a per-gene count
+      matrix suitable for differential expression. Aggregate QC at the
+      end so a reviewer can spot bad samples.
+    acceptable_tool_sets:
+      - [prefetch, fasterq_dump, kallisto, multiqc]
+      - [prefetch, fasterq_dump, salmon, multiqc]
+      - [prefetch, fasterq_dump, star, featurecounts, multiqc]
+      - [prefetch, fasterq_dump, hisat2, featurecounts, multiqc]
+      - [sra_toolkit, kallisto, multiqc]
+      - [sra_toolkit, salmon, multiqc]
+    expected_min_steps: 5
+    forbidden_tools: [wget]
+
+  - id: inf_chipseq_tf_peaks
+    tier: inference
+    prompt: >-
+      Locate the genomic binding sites of a transcription factor from
+      paired-end ChIP-seq Illumina data of a human cell line. You have
+      ChIP and matched input control libraries. Output should be a peak
+      coordinate file that downstream motif analysis can consume.
+    acceptable_tool_sets:
+      - [bowtie2, samtools, macs2]
+      - [bowtie2, samtools, macs3]
+      - [bwa, samtools, macs2]
+      - [bwa, samtools, macs3]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, salmon, star, hisat2]
+
+  - id: inf_chipseq_histone_broad
+    tier: inference
+    prompt: >-
+      Map the genome-wide deposition of a broad histone mark
+      (H3K27me3-style) from paired-end ChIP-seq. The signal is diffuse
+      over hundreds of kilobases, so the peak caller has to be configured
+      for that, not for sharp transcription-factor peaks.
+    acceptable_tool_sets:
+      - [bowtie2, samtools, macs2]
+      - [bowtie2, samtools, epic2]
+      - [bwa, samtools, macs2]
+      - [bowtie2, samtools, macs3]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, salmon, star]
+
+  - id: inf_chipseq_diffbind
+    tier: inference
+    prompt: >-
+      Two-condition ChIP-seq comparison (treated vs untreated, three
+      replicates each) for a transcription factor; the goal is a list of
+      genomic regions whose binding is significantly different between
+      conditions. Per-sample peak calls are an intermediate, not the
+      final output.
+    acceptable_tool_sets:
+      - [bowtie2, samtools, macs2, diffbind]
+      - [bwa, samtools, macs2, diffbind]
+      - [bowtie2, samtools, macs2, multiqc, diffbind]
+    expected_min_steps: 5
+    forbidden_tools: [wget, kallisto, salmon, star]
+
+  - id: inf_atac_open_chromatin
+    tier: inference
+    prompt: >-
+      Identify regions of accessible chromatin from paired-end ATAC-seq
+      data. Mitochondrial reads are a major contaminant in this assay
+      and must be removed; the Tn5 insertion bias also matters for
+      downstream interpretation but you only need a peak file as the
+      primary output.
+    acceptable_tool_sets:
+      - [bowtie2, samtools, macs2]
+      - [bowtie2, samtools, macs3]
+      - [bowtie2, samtools, genrich]
+      - [bwa, samtools, macs2]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, salmon, star, hisat2]
+
+  - id: inf_atac_full_qc
+    tier: inference
+    prompt: >-
+      Full ATAC-seq pipeline starting from raw paired-end FASTQ: you
+      need adapter-cleaned, deduplicated, mitochondrial-filtered
+      alignments and a peak file ready for differential accessibility
+      analysis. Aggregate QC at the end.
+    acceptable_tool_sets:
+      - [fastqc, trim_galore, bowtie2, samtools, picard, macs2, multiqc]
+      - [fastqc, fastp, bowtie2, samtools, picard, macs2, multiqc]
+      - [fastqc, trim_galore, bowtie2, samtools, picard, macs3, multiqc]
+    expected_min_steps: 6
+    forbidden_tools: [wget, kallisto, salmon, star, bwa]
+
+  - id: inf_germline_short_variants
+    tier: inference
+    prompt: >-
+      Germline short-variant calling from human paired-end whole-genome
+      sequencing. You need a filtered VCF of high-confidence SNVs and
+      small indels. Duplicate marking matters because the library was
+      PCR-amplified.
+    acceptable_tool_sets:
+      - [bwa, picard, gatk]
+      - [bwa, samtools, gatk]
+      - [bwa, samtools, bcftools]
+      - [bwa, picard, gatk, bcftools]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, star, bowtie2, hisat2]
+
+  - id: inf_somatic_variants
+    tier: inference
+    prompt: >-
+      Somatic short-variant calling from paired tumour/normal whole-genome
+      sequencing in a human patient sample. The output is a filtered VCF
+      of somatic SNVs/indels; germline variants need to be subtracted out
+      and a panel-of-normals filter is expected if available.
+    acceptable_tool_sets:
+      - [bwa, picard, gatk]
+      - [bwa, samtools, gatk]
+      - [bwa, picard, gatk, bcftools]
+    expected_min_steps: 5
+    forbidden_tools: [wget, kallisto, star, bowtie2, bcftools]
+
+  - id: inf_structural_variants
+    tier: inference
+    prompt: >-
+      Discover structural variants (deletions, duplications,
+      translocations >50 bp) from paired-end Illumina whole-genome
+      sequencing of a single human sample. Short-variant callers will
+      not pick these up, so the toolchain has to be different from a
+      vanilla SNV pipeline.
+    acceptable_tool_sets:
+      - [bwa, samtools, manta]
+      - [bwa, samtools, delly]
+      - [bwa, samtools, gridss]
+      - [bwa, picard, samtools, manta]
+      - [bwa, picard, samtools, delly]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, gatk, freebayes]
+
+  - id: inf_longread_variants
+    tier: inference
+    prompt: >-
+      Variant calling from Oxford Nanopore long reads on a human
+      sample. Short-read aligners and short-read-trained variant callers
+      will misbehave on this read length and error profile, so the
+      toolchain has to be long-read aware.
+    acceptable_tool_sets:
+      - [minimap2, samtools, medaka]
+      - [minimap2, samtools, clair3]
+      - [minimap2, samtools, medaka, bcftools]
+      - [minimap2, samtools, clair3, bcftools]
+    expected_min_steps: 4
+    forbidden_tools: [wget, bwa, bowtie2, gatk]
+
+  - id: inf_scrna_10x
+    tier: inference
+    prompt: >-
+      Quantify single-cell gene expression from 10x Chromium 3'
+      paired-end reads. The output is a cell-by-gene count matrix
+      ready for downstream clustering. Bulk-RNA-seq tools will collapse
+      cell barcodes and lose the per-cell information you need.
+    acceptable_tool_sets:
+      - [kb]
+      - [kb_python]
+      - [cellranger]
+      - [starsolo]
+      - [star]
+      - [alevin]
+      - [alevin_fry]
+    expected_min_steps: 2
+    forbidden_tools: [wget, kallisto, salmon, hisat2]
+
+  - id: inf_methylation_wgbs
+    tier: inference
+    prompt: >-
+      Whole-genome bisulfite-sequencing on paired-end reads. The chemistry
+      converts unmethylated cytosines to uracil, so a standard genomic
+      aligner will mis-align most reads — a bisulfite-aware aligner is
+      required, and the output is a per-cytosine methylation table.
+    acceptable_tool_sets:
+      - [bismark, multiqc]
+      - [bsmap, multiqc]
+      - [bwa_meth, methyldackel, multiqc]
+      - [bismark]
+    expected_min_steps: 4
+    forbidden_tools: [wget, bwa, bowtie2, hisat2, star, kallisto]
+
+  - id: inf_assembly_long_read
+    tier: inference
+    prompt: >-
+      De novo genome assembly from PacBio HiFi long reads of a single
+      eukaryotic isolate. You want a contig FASTA plus an assessment of
+      contiguity and completeness. Short-read assemblers will produce a
+      vastly more fragmented output and should not be used here.
+    acceptable_tool_sets:
+      - [hifiasm, quast, busco]
+      - [flye, quast, busco]
+      - [canu, quast, busco]
+      - [hifiasm, quast]
+    expected_min_steps: 3
+    forbidden_tools: [wget, spades, abyss, velvet, unicycler]
+
+  - id: inf_assembly_short_read
+    tier: inference
+    prompt: >-
+      De novo genome assembly of a bacterial isolate from paired-end
+      Illumina short reads. You want a polished assembly with a
+      contiguity report and gene annotations.
+    acceptable_tool_sets:
+      - [spades, quast, prokka]
+      - [unicycler, quast, prokka]
+      - [spades, quast, bakta]
+      - [spades, quast, prokka, multiqc]
+    expected_min_steps: 3
+    forbidden_tools: [wget, hifiasm, flye, canu]
+
+  - id: inf_metagenomics_taxonomy
+    tier: inference
+    prompt: >-
+      Profile the species composition of a shotgun metagenomics sample
+      from paired-end Illumina reads. The reads come from an
+      environmental sample and may contain hundreds of species — a
+      reference-free classifier suited to this regime is required.
+    acceptable_tool_sets:
+      - [kraken2, bracken]
+      - [kraken2, bracken, multiqc]
+      - [metaphlan]
+      - [centrifuge, kraken2]
+    expected_min_steps: 2
+    forbidden_tools: [wget, bwa, bowtie2, star]
+
+  - id: inf_amplicon_16s
+    tier: inference
+    prompt: >-
+      Profile the bacterial community in a 16S rRNA gene amplicon
+      sequencing dataset (paired-end Illumina, V3-V4 region). You need
+      amplicon sequence variants and taxonomic assignments — a
+      generic short-read aligner against a reference genome will not
+      produce the right output for this assay.
+    acceptable_tool_sets:
+      - [dada2, multiqc]
+      - [qiime2]
+      - [qiime, dada2]
+      - [vsearch, dada2]
+    expected_min_steps: 2
+    forbidden_tools: [wget, bwa, bowtie2, star, kraken2]
+
+  - id: inf_smallrna_mirna
+    tier: inference
+    prompt: >-
+      Quantify mature miRNA expression from single-end small-RNA-seq
+      Illumina reads. Standard mRNA quantifiers will reject these short
+      reads or align them spuriously — a miRBase-aware toolchain is
+      required, and adapter sequences are non-standard.
+    acceptable_tool_sets:
+      - [cutadapt, bowtie, mirdeep2]
+      - [cutadapt, mirdeep2]
+      - [cutadapt, bowtie, mirdeep2, multiqc]
+      - [cutadapt, mirge3]
+    expected_min_steps: 3
+    forbidden_tools: [wget, kallisto, salmon, star, hisat2]
+
+  - id: inf_hic_contact_map
+    tier: inference
+    prompt: >-
+      Generate a normalised Hi-C contact map from paired-end Illumina
+      Hi-C reads. The two mates have to be aligned independently and
+      paired up with a Hi-C-specific tool — a regular paired-end
+      aligner will throw away the long-range contacts that are the
+      whole point of the assay.
+    acceptable_tool_sets:
+      - [bwa, pairtools, cooler]
+      - [bowtie2, pairtools, cooler]
+      - [bwa, pairtools, cooler, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, salmon, star, hisat2]
+
+  - id: inf_cfdna_cnv
+    tier: inference
+    prompt: >-
+      Profile copy-number variation from low-pass whole-genome
+      sequencing of plasma cell-free DNA. Coverage is too low for
+      conventional SNV calling, but bin-level read counts are dense
+      enough to call gains and losses.
+    acceptable_tool_sets:
+      - [bwa, samtools, qdnaseq]
+      - [bwa, samtools, cnvkit]
+      - [bwa, samtools, control_freec]
+      - [bwa, samtools, qdnaseq, multiqc]
+    expected_min_steps: 4
+    forbidden_tools: [wget, kallisto, star, gatk]
+
+  - id: inf_qc_only
+    tier: inference
+    prompt: >-
+      You have paired-end FASTQ files of unknown provenance and the
+      reviewer has asked for a basic quality-control assessment before
+      anything else is done with them. Plan a minimal QC-only workflow
+      with one consolidated report at the end.
+    acceptable_tool_sets:
+      - [fastqc, multiqc]
+      - [fastp, multiqc]
+      - [fastqc, fastp, multiqc]
+    expected_min_steps: 2
+    forbidden_tools: [wget, kallisto, salmon, star, bwa]
+
+  - id: inf_reference_download_index
+    tier: inference
+    prompt: >-
+      Materialise a human transcriptome reference suitable for bulk
+      RNA-seq quantification, build whatever index the chosen
+      quantifier needs, and stop there — actual quantification will
+      happen later in a separate run.
+    acceptable_tool_sets:
+      - [curl, salmon]
+      - [curl, kallisto]
+      - [aria2c, salmon]
+      - [aria2c, kallisto]
+    expected_min_steps: 2
+    forbidden_tools: [wget]

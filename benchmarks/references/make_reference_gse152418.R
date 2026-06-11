@@ -16,6 +16,8 @@ out_path <- args[[1L]]
 
 suppressPackageStartupMessages({
   library(DESeq2)
+  library(org.Hs.eg.db)
+  library(AnnotationDbi)
 })
 
 # 1. Counts matrix (rows = genes, cols = samples).
@@ -72,12 +74,21 @@ dds <- DESeqDataSetFromMatrix(countData = counts,
 dds <- DESeq(dds)
 res <- results(dds, contrast = c("disease_state", "COVID-19", "Healthy"))
 
+ens_ids <- sub("\\..*$", "", rownames(res))
+sym <- mapIds(org.Hs.eg.db,
+              keys      = ens_ids,
+              column    = "SYMBOL",
+              keytype   = "ENSEMBL",
+              multiVals = "first")
+
 de <- data.frame(
-  gene_id        = sub("\\..*$", "", rownames(res)),
+  gene_id        = ens_ids,
+  gene_symbol    = unname(sym),
   log2FoldChange = res$log2FoldChange,
   padj           = res$padj,
   stringsAsFactors = FALSE
 )
+de$gene_symbol[is.na(de$gene_symbol)] <- ""
 de <- de[!is.na(de$log2FoldChange), ]
 
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
